@@ -1,6 +1,6 @@
 export type RowState = 'detected' | 'waiting' | 'downloading' | 'finishing' | 'paused' | 'problem' | 'saved' | 'missing';
 export interface RowAction {
-  id: 'download' | 'pause' | 'resume' | 'play' | 'open-page' | 'retry' | 'choose-folder' | 'locate' | 'details';
+  id: 'download' | 'pause' | 'resume' | 'play' | 'open-page' | 'retry' | 'choose-folder' | 'locate' | 'details' | 'use-chrome-session';
   label: string;
   style: 'primary' | 'bordered' | 'icon';
 }

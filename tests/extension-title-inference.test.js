@@ -189,3 +189,23 @@ test('settled same-page titles beat stale brand metadata without leaking across 
     helpers.setActiveTab(null);
   }
 });
+
+test('brand-only YouTube metadata falls back to the real page title without overriding genuine video metadata', () => {
+  const helpers = loadPopupTitleHelpers();
+  const item = {
+    sourcePageUrl: 'https://www.youtube.com/watch?v=abcdefghijk',
+    sourcePageTitle: 'YouTube',
+    url: 'https://www.youtube.com/watch?v=abcdefghijk',
+    mediaKind: 'youtube-page', contentType: 'video/youtube', type: 'file',
+    youtubeMetadata: { videoId: 'abcdefghijk', title: 'YouTube' },
+  };
+  try {
+    helpers.setActiveTab({ url: item.sourcePageUrl, title: 'The Actual Video - YouTube' });
+    assert.equal(helpers.getDisplayTitle(item), 'The Actual Video');
+    assert.equal(helpers.buildJobPayload(item).title, 'The Actual Video');
+    helpers.setActiveTab({ url: item.sourcePageUrl, title: 'YouTube' });
+    assert.equal(helpers.getDisplayTitle({ ...item, youtubeMetadata: { ...item.youtubeMetadata, title: 'Verified Video Title' } }), 'Verified Video Title', 'a loading tab title cannot replace genuine video metadata');
+  } finally {
+    helpers.setActiveTab(null);
+  }
+});

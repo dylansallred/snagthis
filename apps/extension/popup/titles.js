@@ -236,13 +236,13 @@ function pickPreferredContentTitle(item, pageTitle, tvContextFromUrl) {
 function getDisplayTitle(item) {
   const pageTitle = getSourcePageTitle(item);
   const youtubeTitle = cleanYoutubeTitleText(item && item.youtubeMetadata && item.youtubeMetadata.title);
-  if (youtubeTitle && !isLikelySiteSlogan(youtubeTitle)) {
+  if (youtubeTitle && !/^youtube$/i.test(youtubeTitle) && !isLikelySiteSlogan(youtubeTitle)) {
     return youtubeTitle;
   }
 
   if (isYoutubePageItem(item)) {
     const cleanedPageTitle = cleanYoutubeTitleText(pageTitle);
-    if (cleanedPageTitle && !isLikelySiteSlogan(cleanedPageTitle)) {
+    if (cleanedPageTitle && !/^youtube$/i.test(cleanedPageTitle) && !isLikelySiteSlogan(cleanedPageTitle)) {
       return cleanedPageTitle;
     }
   }

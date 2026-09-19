@@ -9,7 +9,7 @@
     underMinute: 'under a minute left', minutesLeft: '{m} min left', hoursLeft: '{h} hr {m} min left',
     paused: 'Paused at {pct}%', savedWhen: 'Saved {when}', about: 'about {size}',
     expired: 'Link expired. Reopen the page to continue from {pct}%.',
-    signInRequired: 'Sign-in required to download this video.',
+    signInRequired: 'Sign-in required to download this video.', useChromeSession: 'Use Chrome sign-in',
     connectionLost: 'Connection lost at {pct}%', diskFull: 'Not enough space in {folder}',
     unsupported: "This video can't be downloaded", missing: 'File was moved or deleted',
     unknownProblem: 'Something went wrong at {pct}%', saveFolder: 'your save folder',

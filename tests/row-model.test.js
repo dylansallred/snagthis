@@ -92,6 +92,21 @@ test('every problem has exactly the approved sentence and labelled recovery acti
   assert.notEqual(classifyProblem('Segment HTTP 403').code, 'expired');
 });
 
+test('YouTube sign-in is the visible desktop recovery action, with other sources kept in Details', () => {
+  const failed = job('failed', {
+    error: 'ERROR: [youtube] B0_13LSguRc: Sign in to confirm your age.',
+    sourcePageUrl: 'https://www.youtube.com/watch?v=B0_13LSguRc',
+  });
+  assert.deepEqual(toRowModel(failed, { surface: 'desktop' }).action, {
+    id: 'use-chrome-session', label: 'Use Chrome sign-in', style: 'bordered',
+  });
+  assert.equal(toRowModel(failed, { surface: 'popup' }).action.id, 'details', 'the popup cannot read Chrome credentials');
+  for (const url of ['https://youtube.com.evil.example/watch?v=B0_13LSguRc', 'https://www.youtube.com:8443/watch?v=B0_13LSguRc', 'https://user:secret@www.youtube.com/watch?v=B0_13LSguRc']) {
+    assert.equal(toRowModel({ ...failed, url }, { surface: 'desktop' }).action.id, 'details');
+  }
+  assert.equal(toRowModel({ ...failed, error: 'Network unreachable' }, { surface: 'desktop' }).action.id, 'retry');
+});
+
 test('thumbnail fill changes state without resetting when artwork arrives', () => {
   const before = toRowModel(job('downloading'));
   const after = toRowModel(job('downloading', { thumbnailUrls: ['https://example.com/frame.jpg'] }));

@@ -16,11 +16,6 @@ export function RowDetails({ row, folder, onCommand, onRefreshLink }: {
   const saved = row.state === 'saved' || row.state === 'missing';
   let host = '';
   try { host = new URL(source.sourcePageUrl || source.url || source.mediaUrl).hostname; } catch { /* no source available */ }
-  let youtube = false;
-  try {
-    const url = new URL(source.url || source.mediaUrl || source.sourcePageUrl);
-    youtube = url.protocol === 'https:' && !url.username && !url.password && !url.port && ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'].includes(url.hostname);
-  } catch { /* The API separately validates the actual stored download URL. */ }
   const path = source.absolutePath || source.outputDirectory || folder;
   const quality = [row.qualityLabel, source.selection?.audioLang && `${source.selection.audioLang} audio`, source.selection?.subtitleLang && source.selection.subtitleLang !== 'none' && `${source.selection.subtitleLang} subtitles`].filter(Boolean).join(' · ');
   const downloaded = formatSize(source.bytesDownloaded);
@@ -44,7 +39,6 @@ export function RowDetails({ row, folder, onCommand, onRefreshLink }: {
           {row.problem?.raw && <><dt>{ui.problem}</dt><dd>{row.problem.raw}</dd></>}
         </dl>
         <div className="detail-links">
-          {youtube && row.problem?.code === 'authentication' && <button onClick={() => onCommand('use-chrome-session')}>{ui.useChromeSession}</button>}
           {['waiting', 'paused'].includes(row.state) && <button onClick={() => onCommand('rename')}>{ui.rename}</button>}
           {(source.url || source.sourcePageUrl) && <><button onClick={() => onCommand('copy-link')}>{ui.copyLink}</button><button onClick={() => onCommand('open-page')}>{ui.openPage}</button></>}
           <button className="destructive-text" onClick={() => onCommand(saved ? 'remove' : 'cancel')}>{saved ? ui.remove : row.state === 'problem' ? ui.removeList : ui.cancelDownload}</button>

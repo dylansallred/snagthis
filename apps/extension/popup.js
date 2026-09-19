@@ -268,7 +268,20 @@
     video.play().catch(() => {});
   }
   function openSheet(title) { closeMenu(); $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); $('popup').style.minHeight = '430px'; if (!$('sheet').open) $('sheet').showModal(); return $('sheet-content'); }
-  function showProblem(row) { const content = openSheet('Video details'); const pad = el('div', 'sheet-pad'); pad.append(el('p', '', row.statusLine), el('p', '', row.problem?.raw || 'Open the source page and try again.')); pad.append(action('Open page', () => external(row.source.sourcePageUrl), 'bordered')); content.append(pad); }
+  function showProblem(row) {
+    const content = openSheet('Video details'); const pad = el('div', 'sheet-pad');
+    const youtube = VidSnagDetection.youtubeId(row.source.sourcePageUrl) || VidSnagDetection.youtubeId(row.source.url || row.source.mediaUrl);
+    pad.append(el('p', '', row.statusLine));
+    if (row.problem?.code === 'authentication' && youtube) {
+      pad.append(el('p', '', 'Open VidSnag and choose Use Chrome sign-in for this video. VidSnag will ask before using your Chrome sign-in for this download.'));
+      pad.append(action('Open VidSnag', () => openDesktop(), 'primary'));
+      pad.append(action('Open page', () => external(row.source.sourcePageUrl || `https://www.youtube.com/watch?v=${youtube}`)));
+    } else {
+      pad.append(el('p', '', row.problem?.raw || 'Open the source page and try again.'));
+      pad.append(action('Open page', () => external(row.source.sourcePageUrl), 'bordered'));
+    }
+    content.append(pad);
+  }
   function showRename(item) {
     const content = openSheet('Rename video'); const form = el('form', 'sheet-pad'); const input = el('input', 'text-input'); input.id = 'video-title'; input.value = customTitles[item.id] || titles.getDisplayTitle(item); input.maxLength = 255; input.required = true;
     const label = el('label', '', 'Video title'); label.htmlFor = input.id;

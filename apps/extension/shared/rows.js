@@ -113,6 +113,15 @@
         problem = classifyProblem(state === 'missing' ? { code: 'FILE_MISSING' } : item.error, { progress: originalProgress, folder: opts.folder || item.outputDirectory || item.folder });
         statusLine = problem.message;
         action = problem.action;
+        if (problem.code === 'authentication' && opts.surface === 'desktop') {
+          try {
+            const source = new URL(item.url || item.mediaUrl || item.sourcePageUrl);
+            if (['http:', 'https:'].includes(source.protocol) && !source.username && !source.password && !source.port
+              && ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'].includes(source.hostname)) {
+              action = { id: 'use-chrome-session', label: text.useChromeSession, style: 'bordered' };
+            }
+          } catch { /* Without a valid YouTube source, retain ordinary error details. */ }
+        }
         tone = 'attention';
         break;
       case 'saved': {
