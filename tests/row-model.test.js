@@ -107,7 +107,7 @@ test('YouTube sign-in is the visible desktop recovery action, with other sources
   assert.equal(toRowModel({ ...failed, error: 'Network unreachable' }, { surface: 'desktop' }).action.id, 'retry');
 });
 
-test('thumbnail fill changes state without resetting when artwork arrives', () => {
+test('row progress changes state without resetting when artwork arrives', () => {
   const before = toRowModel(job('downloading'));
   const after = toRowModel(job('downloading', { thumbnailUrls: ['https://example.com/frame.jpg'] }));
   assert.equal(before.thumbnailUrl, null);

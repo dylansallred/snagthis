@@ -10,6 +10,8 @@ export interface HistoryItem {
   modifiedAt: number;
   ext: string;
   thumbnailUrl: string | null;
+  previewClipUrl?: string | null;
+  previewClipDurationSeconds?: number;
   tmdbReleaseDate: string | null;
   tmdbMetadata: {
     overview?: string;

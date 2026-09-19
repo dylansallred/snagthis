@@ -395,6 +395,8 @@ class QueueManager {
           thumbnailPath,
           thumbnailPaths,
           thumbnailUrls: job.thumbnailUrls,
+          previewClipPath: job.previewClipPath || null,
+          previewClipDurationSeconds: job.previewClipDurationSeconds || null,
           cancelled,
           pauseRequested: !!pauseRequested,
           resumeRequested: !!resumeRequested,
@@ -516,6 +518,8 @@ class QueueManager {
       fallbackAttempted: !!job.fallbackAttempted,
       fallbackUsed: !!job.fallbackUsed,
       thumbnailUrls: this.buildThumbnailUrls(job),
+      previewClipUrl: this.buildPreviewClipUrl(job),
+      previewClipDurationSeconds: job.previewClipDurationSeconds || null,
       tmdbId: job.tmdbId,
       tmdbTitle: job.tmdbTitle,
       tmdbReleaseDate: job.tmdbReleaseDate,
@@ -524,6 +528,14 @@ class QueueManager {
       manualTitleOverride: !!job.manualTitleOverride,
       youtubeMetadata: job.youtubeMetadata || null,
     }));
+  }
+
+  buildPreviewClipUrl(job) {
+    if (!job.previewClipPath || !fs.existsSync(job.previewClipPath)) return null;
+    const candidate = path.resolve(job.previewClipPath);
+    const directory = path.resolve(this.downloadDir, '__previews');
+    if (path.dirname(candidate) !== directory || !/^[a-f0-9]{32}\.mp4$/i.test(path.basename(candidate))) return null;
+    return `/downloads/__previews/${path.basename(candidate)}`;
   }
 
   buildThumbnailUrls(job) {

@@ -564,6 +564,8 @@ function registerJobRoutes(
       fallbackAttempted: !!job.fallbackAttempted,
       fallbackUsed: !!job.fallbackUsed,
       thumbnailUrls: [...localThumbs, ...remoteThumbs],
+      previewClipUrl: queueManager.buildPreviewClipUrl(job),
+      previewClipDurationSeconds: job.previewClipDurationSeconds || null,
       subtitlePath: job.subtitlePath || null,
       subtitleDownloadUrl,
       segmentDiagnosticsSummary: segmentDiagnostics ? {

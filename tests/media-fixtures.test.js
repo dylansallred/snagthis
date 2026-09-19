@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const { startFixtureServer } = require('./fixtures/server');
 const { downloadMedia } = require('./fixtures/engine');
 
@@ -48,6 +49,34 @@ test('real media: delivery techniques produce playable MP4, unsupported sources 
     assert.ok(result.metadata.durationSeconds >= 2 && result.metadata.durationSeconds <= 4);
     assert.equal(result.metadata.hasAudio, true);
   });
+  await t.test('native workers download later pieces while the first waits to retry, then save all media', async () => {
+    const prefix = '/cases/native-retry/';
+    const result = await downloadMedia({ url: `${fixture.baseUrl}${prefix}index.m3u8`, directory: path.join(fixture.directory, 'outputs'), skipEarlyThumbnail: true });
+    const requests = fixture.requests.filter(request => request.pathname.startsWith(prefix) && request.pathname.endsWith('.m4s'));
+    const firstAttempts = requests.map((request, index) => ({ ...request, index })).filter(request => request.pathname.endsWith('segment-00.m4s'));
+    assert.equal(firstAttempts.length, 2, 'the first piece must recover on its second real request');
+    assert.ok(requests.some((request, index) => index < firstAttempts[1].index && !request.pathname.endsWith('segment-00.m4s')), 'other pieces must start before retrying the failed head piece');
+    assert.equal(result.job.completedSegments, result.job.totalSegments);
+    assert.equal(result.job.segmentStates[0].attempt, 2);
+    assert.equal(result.job.segmentStates[0].status, 'completed');
+    assert.equal(result.metadata.height, 1080);
+    assert.equal(result.metadata.hasAudio, true);
+    assert.ok(Math.abs(result.metadata.durationSeconds - 10) <= 1);
+    assert.ok(fs.readdirSync(result.job.storageDir).every(name => !name.startsWith('native-pieces-')), 'the temporary spool must be removed after success');
+  });
+  for (const [scenario, attempts, errorCode] of [['native-missing', 3, 'MEDIA_REQUEST_FAILED'], ['native-expired', 1, 'SOURCE_EXPIRED']]) {
+    await t.test(`${scenario} cannot produce a saved movie with missing pieces`, async () => {
+      await assert.rejects(downloadMedia({ url: `${fixture.baseUrl}/cases/${scenario}/index.m3u8`, directory: path.join(fixture.directory, 'outputs'), skipEarlyThumbnail: true }), error => {
+        assert.equal(error.job.status, 'error');
+        assert.equal(error.job.errorCode, errorCode);
+        assert.equal(error.job.segmentStates[0].status, 'failed');
+        assert.equal(error.job.segmentStates[0].attempt, attempts);
+        assert.ok(fs.readdirSync(error.job.storageDir).every(name => !name.endsWith('.mp4') && !name.endsWith('.part') && !name.startsWith('native-pieces-')), 'neither an incomplete MP4 nor its spool may survive a failed job');
+        return true;
+      });
+      assert.equal(fixture.attempts.get(`/cases/${scenario}/segment-00.m4s`), attempts);
+    });
+  }
   for (const [name, resource, pattern] of [
     ['DRM', '/cases/drm/index.m3u8', /DRM|protected|unsupported|can't be downloaded/i],
     ['live stream', '/cases/live/index.m3u8', /live|unsupported|can't be downloaded/i],

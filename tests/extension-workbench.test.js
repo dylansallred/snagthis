@@ -118,3 +118,13 @@ test('YouTube site sounds never become downloads or override the canonical watch
   assert.deepEqual(payload.selection, { subtitleLang: 'none' });
   assert.equal(detection.isYoutubeAuxiliaryResource('https://media.example.test/sound.mp3', 'https://example.test/watch', 'video'), false, 'ordinary direct downloads remain available');
 });
+
+test('thumbnail clips accept only signed preview assets from the connected local app', () => {
+  const base = 'http://127.0.0.1:49732';
+  const asset = `/downloads/__previews/owned-file.mp4?expires=9999999999999&signature=${'a'.repeat(64)}`;
+  assert.equal(model.previewClipUrl(asset, base), base + asset);
+  assert.equal(model.previewClipUrl(base + asset, base), base + asset);
+  for (const candidate of [asset.split('?')[0], '/downloads/entire-movie.mp4' + asset.slice(asset.indexOf('?')), `https://external.example${asset}`, `http://127.0.0.1:9999${asset}`, `http://user:secret@127.0.0.1:49732${asset}`, 'blob:fake-video']) {
+    assert.equal(model.previewClipUrl(candidate, base), '', candidate);
+  }
+});

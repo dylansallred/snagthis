@@ -239,7 +239,7 @@ function buildFfmpegHeaderBlob(headers = {}) {
   return `${entries.join('\r\n')}\r\n`;
 }
 
-function buildNativeHlsArgs({ job = {}, playlistUrl, outputPath, headers, selection = job.selection || {}, audioUrl, subtitleUrl, streamSelection = {}, scopedProxy = false, inputIsHls = true }) {
+function buildNativeHlsArgs({ job = {}, playlistUrl, outputPath, headers, selection = job.selection || {}, audioUrl, subtitleUrl, streamSelection = {}, scopedProxy = false, inputIsHls = true, spooledInput = false, maxSegmentAttempts = job.maxSegmentAttempts }) {
   const metadataArgs = buildFfmpegMetadataArgs(job);
   const headerBlob = scopedProxy ? '' : buildFfmpegHeaderBlob(headers);
   const args = [
@@ -254,11 +254,16 @@ function buildNativeHlsArgs({ job = {}, playlistUrl, outputPath, headers, select
     args.push('-headers', headerBlob);
   }
 
-  const addInput = (inputUrl, isHls = true) => {
+  const attempts = Number.isFinite(Number(maxSegmentAttempts)) ? Math.max(1, Math.min(30, Math.floor(Number(maxSegmentAttempts)))) : 30;
+  const addInput = (inputUrl, isHls = true, usesSpool = false) => {
     if (isHls) {
       // Playlist analysis already verified the content. Some CDNs label valid
       // HLS/fMP4 resources as JPEGs, so their suffixes must not choose a demuxer.
       args.push('-f', 'hls', '-allowed_extensions', 'ALL');
+      // The spool owns retries for its pieces; other HLS inputs use the same
+      // finite attempt budget. FFmpeg's default is to skip after the first error.
+      args.push('-seg_max_retry', String(usesSpool ? 0 : attempts - 1));
+      if (usesSpool) args.push('-http_multiple', '0');
       if (scopedProxy) {
         // Recent FFmpeg versions separately check segment suffixes against the
         // detected container. The relay only serves registered playlist URLs;
@@ -273,7 +278,7 @@ function buildNativeHlsArgs({ job = {}, playlistUrl, outputPath, headers, select
       '-i', inputUrl,
     );
   };
-  addInput(playlistUrl, inputIsHls);
+  addInput(playlistUrl, inputIsHls, spooledInput);
   let nextInput = 1;
   let audioInput = 0;
   let subtitleInput = 0;

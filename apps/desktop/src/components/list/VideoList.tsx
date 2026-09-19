@@ -3,12 +3,14 @@ import type { RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { VideoRow } from './VideoRow';
 import type { RowCommand } from './RowDetails';
 import { ui } from '@/lib/strings';
+import type { RequestThumbnailPreview } from './FillThumb';
 
-export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyId, hasMore, loadingMore, onLoadMore, onToggle, onCommand, onRename, onRefreshLink, onMoveTo }: {
+export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyId, hasMore, loadingMore, onLoadMore, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview }: {
   rows: RowModel[]; apiBase: string; folder: string; expandedId: string | null; renamingId: string | null; busyId: string | null;
   hasMore: boolean; loadingMore: boolean; onLoadMore: () => void; onToggle: (row: RowModel) => void;
   onCommand: (row: RowModel, command: RowCommand) => void; onRename: (row: RowModel, title: string | null) => Promise<void>;
   onRefreshLink: (row: RowModel, url: string) => Promise<void>; onMoveTo: (sourceId: string, targetId: string) => void;
+  onRequestPreview: RequestThumbnailPreview;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -26,7 +28,7 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
     if (rowElements[next]) { event.preventDefault(); rowElements[next].focus(); }
   }}>
     {rows.map((row) => <VideoRow key={row.id} row={row} apiBase={apiBase} folder={folder} expanded={expandedId === row.id} renaming={renamingId === row.id} busy={busyId === row.id}
-      onToggle={() => onToggle(row)} onCommand={(command) => onCommand(row, command)} onRename={(title) => onRename(row, title)} onRefreshLink={(url) => onRefreshLink(row, url)} onMoveTo={onMoveTo} />)}
+      onToggle={() => onToggle(row)} onCommand={(command) => onCommand(row, command)} onRename={(title) => onRename(row, title)} onRefreshLink={(url) => onRefreshLink(row, url)} onMoveTo={onMoveTo} onRequestPreview={onRequestPreview} />)}
     {hasMore && <div ref={sentinel} className="load-more"><button className="row-action" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? ui.loading : ui.loadMore}</button></div>}
   </div>;
 }

@@ -977,6 +977,7 @@ async function remuxAndGenerateThumbnails(job, filePathFinal, {
 }
 
 module.exports = {
+  generatePreviewClip: require('./PreviewClip').generatePreviewClip,
   generateThumbnailFromMp4,
   normalizeMp4ForPlayback,
   remuxAndGenerateThumbnails,

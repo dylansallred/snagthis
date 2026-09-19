@@ -1,6 +1,10 @@
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const fs = require('node:fs');
+const { pipeline } = require('node:stream/promises');
+const { createNativePieceSpool } = require('./NativePieceSpool');
+const { describeSegments } = require('./NativeProgress');
 
 // Headers needed for media delivery can cross a CDN boundary. Everything else,
 // including cookies and site-specific token headers, stays on its original origin.
@@ -106,7 +110,7 @@ function requestMediaWithRedirects(url, headers, onResponse, options = {}) {
         }
         try {
           Promise.resolve(onResponse(response, currentUrl.href, activeRequest))
-            .then((value) => finish(null, value), (error) => finish(error));
+            .then((value) => finish(null, value), (error) => { response.destroy(); finish(error); });
         } catch (error) {
           response.destroy();
           finish(error);
@@ -129,7 +133,7 @@ function requestMediaWithRedirects(url, headers, onResponse, options = {}) {
 // FFmpeg applies -headers to every child HLS request. This short-lived loopback
 // relay keeps all credentials in Node, where each redirect, key and segment can
 // be scoped independently. Only resources registered from a playlist are served.
-async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, credentialOrigin, onResourceEvent } = {}) {
+async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, credentialOrigin, onResourceEvent, pieceSpool, requiredPlaylistUrls = [] } = {}) {
   const root = mediaUrl(rootUrl);
   const token = crypto.randomBytes(24).toString('hex');
   const resources = new Map();
@@ -140,6 +144,44 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
   let lastError = null;
   let closed = false;
   let requestSequence = 0;
+  let spool = null;
+  let fatalError = null;
+  let resolveFailure;
+  const failure = new Promise(resolve => { resolveFailure = resolve; });
+  const requiredTracks = new Set(requiredPlaylistUrls.map(url => mediaUrl(url).href));
+  const observedTracks = new Set();
+  const requiredPieces = new Map();
+  const deliveredRanges = new Map();
+  const spooledUrls = new Set(pieceSpool?.segments || []);
+  const reportFatal = (error) => {
+    if (closed || fatalError) return;
+    fatalError = error;
+    lastError = error;
+    resolveFailure(error);
+  };
+  const notify = (event) => {
+    if (typeof onResourceEvent !== 'function') return;
+    try { onResourceEvent(event); } catch { /* Observers must not interrupt delivery. */ }
+  };
+  const recordDelivered = (url, { completeResource, range, totalBytes }) => {
+    const record = deliveredRanges.get(url) || { full: false, ranges: [], totalBytes: null };
+    record.full ||= completeResource === true;
+    if (Number.isSafeInteger(totalBytes) && totalBytes > 0) record.totalBytes = totalBytes;
+    if (range) {
+      record.ranges.push({ start: range.start, end: range.end });
+      record.ranges.sort((a, b) => a.start - b.start);
+      const merged = [];
+      for (const item of record.ranges) {
+        const previous = merged[merged.length - 1];
+        if (previous && item.start <= previous.end + 1) previous.end = Math.max(previous.end, item.end);
+        else merged.push(item);
+      }
+      record.ranges = merged;
+    }
+    if (record.totalBytes && record.ranges.some(item => item.start === 0 && item.end + 1 >= record.totalBytes)) record.full = true;
+    deliveredRanges.set(url, record);
+    return record;
+  };
   const mapUrl = (remoteUrl) => {
     const resolved = mediaUrl(remoteUrl, root).href;
     let id = ids.get(resolved);
@@ -152,12 +194,21 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
     const extension = new URL(resolved).pathname.match(/\.[a-zA-Z0-9]{1,8}$/)?.[0] || '.bin';
     return `${baseUrl}/${token}/${id}${extension}`;
   };
-  const rewriteManifest = (text, finalUrl) => {
+  const rewriteManifest = (text, finalUrl, requestedUrl) => {
     const info = require('./HlsNativeDownload').inspectHlsPlaylist(text, finalUrl);
     if (info.unsupportedReason) {
       const error = new Error(info.unsupportedReason);
       error.code = info.errorCode;
       throw error;
+    }
+    if (requiredTracks.has(requestedUrl)) {
+      observedTracks.add(requestedUrl);
+      // A selected rendition must supply every media URI/range. Initialization
+      // and encryption-key requests are still validated by FFmpeg itself.
+      const described = describeSegments(info, text, finalUrl);
+      const pieces = described ? [...described.values()].flat()
+        : info.segments.map(url => ({ url, range: null }));
+      requiredPieces.set(requestedUrl, pieces);
     }
     return text.split(/\r?\n/).map((line) => {
       const trimmed = line.trim();
@@ -176,9 +227,48 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
     const controller = new AbortController();
     controllers.add(controller);
     response.on('close', () => { if (!response.writableFinished) controller.abort(); });
-    const resourceEvent = typeof onResourceEvent === 'function' ? {
+    const consumer = request.headers['user-agent'] === 'VidSnag-Thumbnail/1.0' ? 'preview' : 'download';
+    if (spool && spooledUrls.has(remoteUrl) && consumer === 'download') {
+      try {
+        const piece = await spool.get(remoteUrl);
+        if (response.destroyed) return;
+        let start = 0;
+        let end = piece.bytes - 1;
+        const requestedRange = String(request.headers.range || '').match(/^bytes=(\d+)-(\d*)$/);
+        if (request.headers.range && !requestedRange) {
+          response.writeHead(416, { 'Content-Range': `bytes */${piece.bytes}` }).end();
+          return;
+        }
+        if (requestedRange) {
+          start = Number(requestedRange[1]);
+          end = requestedRange[2] ? Math.min(Number(requestedRange[2]), end) : end;
+        }
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end) {
+          response.writeHead(416, { 'Content-Range': `bytes */${piece.bytes}` }).end();
+          return;
+        }
+        const responseHeaders = {
+          'Content-Type': piece.headers?.['content-type'] || 'application/octet-stream',
+          'Content-Length': end - start + 1,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-store',
+        };
+        if (requestedRange) responseHeaders['Content-Range'] = `bytes ${start}-${end}/${piece.bytes}`;
+        response.writeHead(requestedRange ? 206 : 200, responseHeaders);
+        await pipeline(fs.createReadStream(piece.filePath, { start, end }), response);
+        const completeResource = start === 0 && end + 1 === piece.bytes;
+        const delivered = recordDelivered(remoteUrl, { completeResource, range: { start, end }, totalBytes: piece.bytes });
+        if (delivered.full) await spool.release(remoteUrl);
+      } catch (error) {
+        if (!response.headersSent && !response.destroyed) response.writeHead(502).end('The media piece could not be downloaded.');
+        else if (!response.destroyed) response.destroy();
+        if (!controller.signal.aborted) lastError = error;
+      } finally { controllers.delete(controller); }
+      return;
+    }
+    const resourceEvent = {
       requestId: String(++requestSequence),
-      consumer: request.headers['user-agent'] === 'VidSnag-Thumbnail/1.0' ? 'preview' : 'download',
+      consumer,
       url: remoteUrl,
       finalUrl: remoteUrl,
       statusCode: null,
@@ -188,11 +278,9 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
       range: null,
       requestedRange: request.headers.range || null,
       completeResource: false,
-    } : null;
+    };
     const emitResourceEvent = (type, extra = {}) => {
-      if (!resourceEvent) return;
-      // Progress observers must never interrupt an otherwise valid download.
-      try { onResourceEvent({ ...resourceEvent, type, bytesDelta: 0, ...extra }); } catch { /* Ignore observer errors. */ }
+      notify({ ...resourceEvent, type, bytesDelta: 0, ...extra });
     };
     const forwardedHeaders = { ...headers };
     // FFmpeg may request a byte range for an initialization section or segment.
@@ -233,7 +321,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
             if (size > maxManifestBytes) { upstream.destroy(); throw new Error('The media playlist is too large.'); }
             chunks.push(Buffer.from(part.value));
           }
-          const rewritten = Buffer.from(rewriteManifest(Buffer.concat(chunks).toString('utf8'), finalUrl));
+          const rewritten = Buffer.from(rewriteManifest(Buffer.concat(chunks).toString('utf8'), finalUrl, remoteUrl));
           response.writeHead(200, {
             'Content-Type': 'application/vnd.apple.mpegurl',
             'Content-Length': rewritten.length,
@@ -243,6 +331,10 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           return;
         }
         const responseHeaders = { 'Cache-Control': 'no-store' };
+        if (consumer === 'download' && requiredTracks.has(remoteUrl)) {
+          observedTracks.add(remoteUrl);
+          requiredPieces.set(remoteUrl, [{ url: remoteUrl, range: null }]);
+        }
         for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
           if (upstream.headers[name]) responseHeaders[name] = upstream.headers[name];
         }
@@ -313,6 +405,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           }
           resourceEvent.completeResource = statusCode === 200
             || (range !== null && range.start === 0 && range.total !== null && range.end + 1 === range.total);
+          if (consumer === 'download') recordDelivered(remoteUrl, resourceEvent);
           emitResourceEvent('complete');
         } else response.end();
       }, {
@@ -342,15 +435,116 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
     server.listen(0, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
   });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  if (pieceSpool && spooledUrls.size) {
+    try {
+      spool = await createNativePieceSpool({
+        ...pieceSpool,
+        onState(index, state) {
+          if (state.status === 'cancelled') {
+            notify({ type: 'cancelled', consumer: 'download', url: pieceSpool.segments[index] });
+            return;
+          }
+          if (state.status === 'ready') {
+            notify({ type: 'complete', consumer: 'download', requestId: `spool:${index}:${state.attempt}`,
+              url: pieceSpool.segments[index], bytesTransferred: state.bytes, totalBytes: state.bytes,
+              completeResource: true });
+            return;
+          }
+          if (state.status !== 'retrying' && state.status !== 'failed') return;
+          const url = pieceSpool.segments[index];
+          notify({ type: state.status === 'failed' ? 'failed' : 'error', consumer: 'download',
+            requestId: `spool:${index}:${state.attempt}`, url, attempt: state.attempt, code: state.code });
+          if (state.status === 'failed') {
+            const error = new Error(`Video piece ${index + 1} could not be downloaded after ${state.attempt} attempt${state.attempt === 1 ? '' : 's'}.`);
+            error.code = state.code || 'INCOMPLETE_HLS_DOWNLOAD';
+            reportFatal(error);
+          }
+        },
+        request: async (url, filePath, { signal, onBytes, onContentLength }) => {
+          const event = { requestId: `fetch:${++requestSequence}`, consumer: 'download', url,
+            finalUrl: url, statusCode: null, bytesTransferred: 0, contentLength: null,
+            totalBytes: null, range: null, completeResource: false };
+          notify({ ...event, type: 'start' });
+          const pieceHeaders = Object.fromEntries(Object.entries(headers).filter(([key]) => !['range', 'if-range'].includes(key.toLowerCase())));
+          let savedHeaders = {};
+          await requestMediaWithRedirects(url, pieceHeaders, async (upstream, finalUrl) => {
+            event.finalUrl = finalUrl;
+            event.statusCode = upstream.statusCode;
+            if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
+              const error = new Error(`Media request failed with status ${upstream.statusCode}.`);
+              error.statusCode = upstream.statusCode;
+              error.code = [401, 403, 410].includes(upstream.statusCode) ? 'LINK_EXPIRED' : 'MEDIA_REQUEST_FAILED';
+              upstream.resume();
+              throw error;
+            }
+            const rawLength = String(upstream.headers['content-length'] || '');
+            const contentLength = /^\d+$/.test(rawLength) ? Number(rawLength) : null;
+            event.contentLength = Number.isSafeInteger(contentLength) ? contentLength : null;
+            event.totalBytes = event.contentLength;
+            if (upstream.statusCode === 206) {
+              const range = String(upstream.headers['content-range'] || '').match(/^bytes 0-(\d+)\/(\d+)$/);
+              if (!range || Number(range[1]) + 1 !== Number(range[2])) {
+                upstream.destroy();
+                const error = new Error('The media server returned only part of a video piece.');
+                error.code = 'INCOMPLETE_MEDIA_RESPONSE';
+                throw error;
+              }
+            }
+            if (event.contentLength !== null) onContentLength(event.contentLength);
+            savedHeaders = { 'content-type': upstream.headers['content-type'] || 'application/octet-stream' };
+            await pipeline(upstream, async function* (source) {
+              for await (const chunk of source) {
+                onBytes(chunk.length);
+                event.bytesTransferred += chunk.length;
+                notify({ ...event, type: 'progress', bytesDelta: chunk.length });
+                yield chunk;
+              }
+            }, fs.createWriteStream(filePath, { flags: 'wx' }), { signal });
+            if (event.contentLength !== null && event.bytesTransferred !== event.contentLength) {
+              const error = new Error('The media response ended before the video piece was complete.');
+              error.code = 'INCOMPLETE_MEDIA_RESPONSE';
+              throw error;
+            }
+          }, { credentialOrigin: credentialOrigin || root.origin, sourcePageUrl, timeoutMs: 30_000, signal });
+          return { headers: savedHeaders, statusCode: 200, bytes: event.bytesTransferred };
+        },
+      });
+    } catch (error) {
+      closed = true;
+      for (const socket of sockets) socket.destroy();
+      await new Promise(resolve => server.close(resolve));
+      throw error;
+    }
+  }
   return {
     url: mapUrl(root.href),
     mapUrl,
     get lastError() { return lastError; },
+    get fatalError() { return fatalError; },
+    failure,
+    assertComplete() {
+      if (fatalError) throw fatalError;
+      let missing = 0;
+      for (const track of requiredTracks) {
+        if (!observedTracks.has(track)) { missing += 1; continue; }
+        for (const piece of requiredPieces.get(track) || []) {
+          const delivered = deliveredRanges.get(piece.url);
+          if (!delivered?.full && !(piece.range && delivered?.ranges.some(range => range.start <= piece.range.start && range.end >= piece.range.end))) missing += 1;
+        }
+      }
+      if (missing) {
+        const error = new Error(`The video is incomplete: ${missing} required media piece${missing === 1 ? '' : 's'} could not be delivered. Try refreshing the source and retrying.`);
+        error.code = 'INCOMPLETE_HLS_DOWNLOAD';
+        throw error;
+      }
+    },
     close: async () => {
       if (closed) return;
       closed = true;
+      resolveFailure(null);
       for (const controller of controllers) controller.abort();
       for (const socket of sockets) socket.destroy();
+      if (spool) await spool.close();
       await new Promise((resolve) => server.close(resolve));
     },
   };

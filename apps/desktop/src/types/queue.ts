@@ -54,6 +54,8 @@ export interface QueueJob {
   createdAt: number;
   updatedAt: number;
   thumbnailUrls?: string[];
+  previewClipUrl?: string | null;
+  previewClipDurationSeconds?: number;
   tmdbId?: number;
   tmdbTitle?: string;
   tmdbReleaseDate?: string;

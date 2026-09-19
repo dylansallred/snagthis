@@ -111,7 +111,19 @@ async function startFixtureServer({ ffmpegPath = process.env.FFMPEG_PATH || 'ffm
     let contentTypeOverride;
     if (pathname.startsWith('/cases/')) {
       const [, , scenario, name] = pathname.split('/');
-      if (scenario === 'misnamed-fmp4') {
+      if (['native-retry', 'native-missing', 'native-expired'].includes(scenario)) {
+        if (name === 'index.m3u8') {
+          respond(200, fs.readFileSync(path.join(directory, 'media/fmp4/index.m3u8')), 'application/vnd.apple.mpegurl'); return;
+        }
+        if (name === 'segment-00.m4s') {
+          const count = (attempts.get(pathname) || 0) + 1;
+          attempts.set(pathname, count);
+          if (scenario === 'native-expired') { respond(403, 'Fixture session expired'); return; }
+          if (scenario === 'native-missing') { respond(404, 'Fixture piece is unavailable'); return; }
+          if (count === 1) { respond(503, 'First piece fails once'); return; }
+        }
+        filePath = path.join(directory, 'media/fmp4', name || 'missing');
+      } else if (scenario === 'misnamed-fmp4') {
         // Real HLS bytes behind image filenames/MIME types, including the init
         // and fMP4 fragments. No site URLs or downloaded source media are used.
         if (name === 'master.jpg') {

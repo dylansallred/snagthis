@@ -129,6 +129,12 @@ async function handleMessage(message, sender) {
     await writePage(message.tabId, page); return { ok: true };
   });
   if (message.cmd === 'DOWNLOAD_MEDIA') return downloadMedia(message);
+  if (message.cmd === 'REQUEST_MEDIA_PREVIEW') {
+    const page = await readPage(message.tabId);
+    if (!page.items.some(item => item.id === message.mediaId) || !Object.values(page.mappings).includes(message.jobId)) return { ok: false, error: 'This video is no longer linked to a download.' };
+    const result = await appRequest(`/v1/jobs/${encodeURIComponent(message.jobId)}/preview`, {}, !chrome.runtime.getManifest().update_url ? localApiBase(message.apiBase) : API_BASE);
+    return { ok: true, ...result };
+  }
   if (message.cmd === 'RETRY_MEDIA' || message.cmd === 'REFRESH_MEDIA_SOURCE') {
     const page = await readPage(message.tabId);
     if (!page.items.some(item => item.id === message.mediaId)) return { ok: false, error: 'The video is no longer on this page.' };

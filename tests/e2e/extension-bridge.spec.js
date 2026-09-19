@@ -13,7 +13,8 @@ let worker;
 let extensionId;
 let profile;
 let stub;
-const state = { jobs: [], settings: { preferredQuality: 'best', subtitleLanguage: 'none', notifyOnComplete: true, launchAtLogin: false }, opened: [], minExtensionVersion: '1.0.0' };
+const state = { jobs: [], settings: { preferredQuality: 'best', subtitleLanguage: 'none', notifyOnComplete: true, launchAtLogin: false }, opened: [], previewRequests: 0, minExtensionVersion: '1.0.0' };
+const clipSignature = 'a'.repeat(64);
 
 test.beforeAll(async () => {
   test.setTimeout(90_000);
@@ -27,6 +28,11 @@ test.beforeAll(async () => {
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     const json = (status, data) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
     if (url.pathname === '/v1/health') { json(200, { status: 'ok', appVersion: '2.0.0', apiVersion: '1', protocolVersion: '1', supportedProtocolVersions: { min: 1, max: 1 }, minExtensionVersion: state.minExtensionVersion, pairingRequired: false }); return; }
+    if (url.pathname === '/downloads/__previews/fixture.mp4') {
+      if (url.searchParams.get('signature') !== clipSignature) { json(403, { error: 'Signed clip required' }); return; }
+      const bytes = fs.readFileSync(path.join(fixture.directory, 'media/direct.mp4'));
+      res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': bytes.length }); res.end(bytes); return;
+    }
     if (req.headers.authorization !== 'Bearer fixture-token') { json(401, { error: 'Fixture token required' }); return; }
     let body = '';
     for await (const chunk of req) body += chunk;
@@ -40,10 +46,16 @@ test.beforeAll(async () => {
       const job = { id: `fixture-job-${state.jobs.length + 1}`, title: payload.title, url: payload.mediaUrl, mediaType: payload.mediaType, queueStatus: 'downloading', status: 'downloading', progress: 34, etaSeconds: 300, thumbnailUrls: [payload.thumbnailUrl || `${fixture.baseUrl}/media/poster.jpg`], bytesDownloaded: 714_000_000, totalBytes: 2_100_000_000 };
       state.jobs.push(job); json(200, { ok: true, jobId: job.id, id: job.id, status: 'downloading' }); return;
     }
-    const match = url.pathname.match(/^\/v1\/jobs\/([^/]+)\/(pause|resume|open)$/);
+    const match = url.pathname.match(/^\/v1\/jobs\/([^/]+)\/(pause|resume|open|preview)$/);
     if (match) {
       const job = state.jobs.find((item) => item.id === match[1]);
       if (!job) { json(404, { error: 'Unknown job' }); return; }
+      if (match[2] === 'preview') {
+        state.previewRequests += 1;
+        job.previewClipUrl = `/downloads/__previews/fixture.mp4?expires=${Date.now() + 600000}&signature=${clipSignature}`;
+        job.previewClipDurationSeconds = 10;
+        json(200, { status: 'ready', previewClipUrl: job.previewClipUrl, previewClipDurationSeconds: 10 }); return;
+      }
       if (match[2] === 'open') state.opened.push(job.id);
       else { job.queueStatus = match[2] === 'pause' ? 'paused' : 'downloading'; job.status = job.queueStatus; }
       json(200, { ok: true, job }); return;
@@ -72,7 +84,7 @@ async function openFixture(kind, apiBase = stub.baseUrl) {
   return { page, popup, tabId };
 }
 
-test('actual popup: poster, Download → Pause → reopen → Saved → Play', async () => {
+test('actual popup: clean looping preview, Download → Pause → reopen → Saved → Play', async () => {
   const fixturePage = await openFixture('poster');
   let popup = fixturePage.popup;
   try {
@@ -81,9 +93,45 @@ test('actual popup: poster, Download → Pause → reopen → Saved → Play', a
     await expect(row().locator('.thumb img').first()).toHaveAttribute('src', /poster\.jpg/);
     await row().getByRole('button', { name: 'Download', exact: true }).click();
     await expect(row()).toContainText('34%');
-    await expect(row().locator('.thumb')).toHaveCSS('--p', '34%');
+    await expect(row().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '34');
+    await expect(row()).toHaveCSS('--row-progress', '34%');
+    await expect(row()).toHaveAttribute('data-progress-active', 'true');
+    await expect.poll(() => row().evaluate(node => Math.abs(node.querySelector('.row-fill').getBoundingClientRect().width / node.getBoundingClientRect().width * 100 - 34))).toBeLessThan(0.5);
+    expect(await row().locator('.row-fill').evaluate(node => getComputedStyle(node, '::after').animationName)).toBe('soft-sweep');
+    expect(await row().locator('.progress-edge').evaluate(node => getComputedStyle(node, '::after').animationName)).toBe('edge-travel');
+    await expect(row().locator('.thumb .ghost, .thumb .live, .thumb .edge, .thumb .duration, .thumb .preview-hint')).toHaveCount(0);
+    await expect(row().locator('.thumb-poster')).toHaveCSS('filter', 'none');
+    await expect(row().locator('.row-title-line .row-duration')).toHaveText(/\d+:\d{2}/);
+    const clip = () => row().locator('video.thumb-preview');
+    await row().hover();
+    await expect(clip()).toBeVisible();
+    await expect(clip()).toHaveJSProperty('muted', true);
+    await expect.poll(() => clip().evaluate(video => video.currentTime)).toBeGreaterThan(0.2);
+    await clip().evaluate(video => { video.currentTime = video.duration - 0.15; });
+    await expect.poll(() => clip().evaluate(video => video.currentTime < video.duration - 0.5)).toBe(true);
+    const playingVideo = await clip().elementHandle();
+    await popup.getByRole('button', { name: 'Settings', exact: true }).focus();
+    await popup.locator('.popup-header').hover();
+    await expect(clip()).toHaveCount(0);
+    expect(await playingVideo.evaluate(video => video.paused)).toBe(true);
+    await row().getByRole('button', { name: 'Pause', exact: true }).focus();
+    await expect.poll(() => clip().evaluate(video => video.currentTime)).toBeGreaterThan(0.2);
+    await popup.getByRole('button', { name: 'Settings', exact: true }).focus();
+    await expect(clip()).toHaveCount(0);
+    await popup.emulateMedia({ reducedMotion: 'reduce' });
+    await expect(row().locator('.row-fill')).toBeVisible();
+    await expect(row().locator('.progress-edge')).toBeHidden();
+    expect(await row().locator('.row-fill').evaluate(node => getComputedStyle(node, '::after').animationName)).toBe('none');
+    const previewRequests = state.previewRequests;
+    await row().hover();
+    await expect(clip()).toHaveCount(0);
+    expect(state.previewRequests).toBe(previewRequests);
+    await popup.emulateMedia({ reducedMotion: 'no-preference' });
     await row().getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(row()).toContainText('Paused at 34%');
+    await expect(row()).toHaveAttribute('data-progress-active', 'false');
+    await expect(row().locator('.progress-edge')).toBeHidden();
+    expect(await row().locator('.row-fill').evaluate(node => getComputedStyle(node, '::after').animationName)).toBe('none');
     const popupUrl = popup.url();
     await popup.close();
     popup = await context.newPage();
@@ -94,6 +142,7 @@ test('actual popup: poster, Download → Pause → reopen → Saved → Play', a
     await expect(row()).toContainText('34%');
     Object.assign(state.jobs[0], { queueStatus: 'completed', status: 'completed', progress: 100 });
     await expect(row()).toContainText('Saved');
+    await expect(row().locator('.row-fill')).toBeHidden();
     await row().getByRole('button', { name: 'Play', exact: true }).click();
     await expect.poll(() => state.opened.length).toBe(1);
     await popup.screenshot({ path: test.info().outputPath('popup-saved.png') });

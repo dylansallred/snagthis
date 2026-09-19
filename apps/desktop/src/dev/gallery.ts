@@ -25,7 +25,7 @@ const history = [
 ];
 export const galleryRows = mergeRows(galleryQueue, history, { surface: 'desktop', now });
 
-export async function loadGalleryVideo(row: RowModel): Promise<string | null> {
+export async function loadGalleryVideo(row: Pick<RowModel, 'thumbnailUrl'>): Promise<string | null> {
   if (!import.meta.env.DEV) return null;
   if (row.thumbnailUrl === sintel) return (await import('./media/sintel.mp4?url')).default;
   if (row.thumbnailUrl === bunny) return (await import('./media/big-buck-bunny.mp4?url')).default;

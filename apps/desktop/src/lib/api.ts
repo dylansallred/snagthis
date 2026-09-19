@@ -3,6 +3,7 @@ import type { HistoryItem } from '@/types/history';
 import { normalizeLocalApiBase } from '@/lib/network';
 
 export interface LibraryPage { items: HistoryItem[]; total: number; nextCursor: string | null }
+export interface ThumbnailPreview { status: 'pending' | 'ready' | 'unavailable'; previewClipUrl?: string | null; previewClipDurationSeconds?: number }
 export interface MediaSelection { variantUrl?: string; height?: number; audioLang?: string; subtitleLang?: string; audioOnly?: boolean }
 export interface MediaInspection {
   mediaUrl?: string;
@@ -36,6 +37,8 @@ export function createApiClient(baseUrl: string, authToken = '') {
     baseUrl: base, authToken, request,
     getQueue: () => request<QueueData>('/api/queue'),
     getJob: (jobId: string) => request<QueueJob>(`/api/jobs/${id(jobId)}?full=1`),
+    ensureJobPreview: (jobId: string) => post<ThumbnailPreview>(`/api/jobs/${id(jobId)}/preview`),
+    ensureHistoryPreview: (historyId: string) => post<ThumbnailPreview>(`/api/history/${id(historyId)}/preview`),
     getHistory: (query = '', cursor?: string | null) => {
       const params = new URLSearchParams({ limit: '100', q: query });
       if (cursor) params.set('cursor', cursor);

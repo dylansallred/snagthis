@@ -18,6 +18,7 @@
   let menuTrigger = null; let selected = new Map(); let customTitles = {}; let pending = new Map(); let failures = new Map();
   let noticeTimer; let openTimer; let queueTimer; let healthTimer;
   const rowElements = new Map();
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const icons = {
     gear: '<path d="m10 2 1 2 2 .8 2-.6 1.8 3-1.4 1.6v2.4l1.4 1.6-1.8 3-2-.6-2 .8-1 2H6l-1-2-2-.8-2 .6-1.8-3L.6 11V8.6L-.8 7 1 4l2 .6L5 3.8 1 2Z" transform="translate(2 1) scale(.9)"/><circle cx="10" cy="10" r="3"/>',
     play: '<path d="m7 4 9 6-9 6Z"/>', pause: '<path d="M7 4v12M13 4v12"/>',
@@ -56,6 +57,7 @@
     const unavailable = !reachable || !compatible || !appToken;
     $('video-list').classList.toggle('unavailable', unavailable);
     $('video-list').inert = unavailable;
+    if (unavailable) for (const node of rowElements.values()) stopThumbPreview(node);
     banner.hidden = !unavailable;
     if (!reachable) {
       banner.append(el('span', '', "VidSnag isn't open, so downloads can't start."), action(getAppFallback ? 'Get the app' : 'Open VidSnag', () => openDesktop(), 'primary'));
@@ -71,20 +73,53 @@
     if (reachable && activeCount) openButton.append(el('span', 'count-badge', String(activeCount)));
   }
   function updateThumb(thumb, row) {
-    thumb.style.setProperty('--p', `${row.fill.percent}%`);
-    thumb.classList.toggle('dimmed', row.fill.dimmed);
     const source = row.thumbnailUrl && row.thumbnailUrl !== thumb.dataset.failedSource ? row.thumbnailUrl : '';
     if (thumb.dataset.source !== source) {
+      stopThumbPreview(thumb.closest('.video-row'));
       thumb.dataset.source = source; thumb.replaceChildren();
-      for (const layer of ['ghost', 'live']) {
-        const fill = source ? el('img', `fill ${layer}`) : el('div', `fill placeholder ${layer}`);
-        if (source) { fill.alt = ''; fill.src = source; fill.referrerPolicy = 'no-referrer'; fill.addEventListener('error', () => { if (thumb.dataset.source === source) { thumb.dataset.failedSource = source; delete thumb.dataset.source; updateThumb(thumb, { ...(thumb.closest('.video-row')?.current?.row || row), thumbnailUrl: null }); } }, { once: true }); }
-        thumb.append(fill);
-      }
-      thumb.append(el('div', 'edge'), el('span', 'duration'));
+      const poster = source ? el('img', 'thumb-poster') : el('div', 'thumb-poster placeholder');
+      if (source) { poster.alt = ''; poster.src = source; poster.referrerPolicy = 'no-referrer'; poster.addEventListener('error', () => { if (thumb.dataset.source === source) { thumb.dataset.failedSource = source; delete thumb.dataset.source; updateThumb(thumb, { ...(thumb.closest('.video-row')?.current?.row || row), thumbnailUrl: null }); } }, { once: true }); }
+      thumb.append(poster);
     }
-    thumb.querySelector('.edge').hidden = !row.fill.scanLine;
-    const duration = thumb.querySelector('.duration'); duration.textContent = row.durationLabel; duration.hidden = !row.durationLabel;
+  }
+  function stopThumbPreview(node) {
+    if (!node) return;
+    const video = node.previewVideo;
+    node.previewVideo = null;
+    if (video) { video.pause(); video.removeAttribute('src'); video.load(); video.remove(); }
+    node.querySelector('.thumb')?.classList.remove('is-previewing');
+  }
+  function syncThumbPreview(node) {
+    const active = (node.previewHovered || node.previewFocused) && !reducedMotion.matches && !document.hidden && !$('sheet').open && reachable && compatible && appToken;
+    if (!active || !node.current) { stopThumbPreview(node); return; }
+    const { row, jobId, item } = node.current;
+    const demoName = isDemo && { sintel: 'sintel', bunny: 'big-buck-bunny', steel: 'tears-of-steel' }[item.id];
+    const clipUrl = demoName ? `popup/media/${demoName}.mp4` : model.previewClipUrl(row.source.previewClipUrl || (node.previewJobId === jobId ? node.previewClipUrl : ''), apiBase);
+    if (!clipUrl) {
+      stopThumbPreview(node);
+      const key = `${jobId}:${row.state}`;
+      if (!isDemo && jobId && node.previewRequestedFor !== key) {
+        node.previewRequestedFor = key;
+        message({ cmd: 'REQUEST_MEDIA_PREVIEW', tabId: activeTab?.id, mediaId: item.id, jobId, apiBase }).then(result => {
+          if (!result.ok || node.current?.jobId !== jobId || !node.isConnected) return;
+          node.previewJobId = jobId; node.previewClipUrl = result.previewClipUrl || '';
+          if (result.status === 'ready') syncThumbPreview(node);
+        }).catch(() => {});
+      }
+      return;
+    }
+    const clipKey = new URL(clipUrl, location.href).pathname;
+    if (node.previewFailedUrl === clipKey || node.previewVideo?.dataset.clipKey === clipKey) return;
+    stopThumbPreview(node);
+    const thumb = node.querySelector('.thumb'); const video = el('video', 'thumb-preview');
+    video.dataset.clipKey = clipKey; video.muted = true; video.defaultMuted = true; video.loop = true; video.playsInline = true; video.preload = 'none'; video.tabIndex = -1; video.setAttribute('aria-hidden', 'true');
+    const failed = () => { if (node.previewVideo === video) { node.previewFailedUrl = clipKey; stopThumbPreview(node); } };
+    video.addEventListener('playing', () => { if (node.previewVideo === video) thumb.classList.add('is-previewing'); });
+    video.addEventListener('error', failed, { once: true });
+    node.previewVideo = video; thumb.append(video); video.src = clipUrl; video.play().catch(failed);
+  }
+  function syncThumbPreviews() {
+    for (const node of rowElements.values()) syncThumbPreview(node);
   }
   function rowModel(item) {
     const choice = model.selectMedia(item, preferences, selected.get(item.id));
@@ -103,6 +138,7 @@
     $('page-count').textContent = mediaItems.length ? `${mediaItems.length} video${mediaItems.length === 1 ? '' : 's'} on this page` : 'No videos yet';
     const list = $('video-list');
     if (!mediaItems.length) {
+      for (const node of rowElements.values()) stopThumbPreview(node);
       rowElements.clear(); list.replaceChildren(emptyState()); renderConnection(); return;
     }
     list.querySelector('.empty-state')?.remove();
@@ -113,14 +149,24 @@
       let node = rowElements.get(item.id);
       if (!node) {
         node = el('div', 'video-row'); node.dataset.rowKey = item.id;
-        const thumb = el('div', 'thumb'); const body = el('div', 'row-body'); body.append(el('div', 'row-title'), el('div', 'row-status'));
+        const fill = el('div', 'row-fill'); const edge = el('div', 'progress-edge'); fill.setAttribute('aria-hidden', 'true'); edge.setAttribute('aria-hidden', 'true'); node.append(fill, edge);
+        const thumb = el('div', 'thumb'); const body = el('div', 'row-body'); const titleLine = el('div', 'row-title-line'); titleLine.append(el('div', 'row-title'), el('span', 'row-duration')); body.append(titleLine, el('div', 'row-status'));
         node.append(thumb, body); node.addEventListener('contextmenu', event => { event.preventDefault(); showContext(node.current.item, event); });
+        node.addEventListener('pointerenter', () => { node.previewHovered = true; node.previewRequestedFor = ''; node.previewFailedUrl = ''; syncThumbPreview(node); });
+        node.addEventListener('pointerleave', () => { node.previewHovered = false; syncThumbPreview(node); });
+        node.addEventListener('focusin', () => { if (!node.previewFocused) { node.previewRequestedFor = ''; node.previewFailedUrl = ''; } node.previewFocused = true; syncThumbPreview(node); });
+        node.addEventListener('focusout', event => { node.previewFocused = node.contains(event.relatedTarget); syncThumbPreview(node); });
         rowElements.set(item.id, node);
       }
       node.current = { item, row, choice, jobId };
       node.dataset.state = row.state;
+      const rowProgress = Math.max(0, Math.min(100, Number(row.progress) || 0));
+      node.style.setProperty('--row-progress', `${rowProgress}%`);
+      node.dataset.progressVisible = String(['downloading', 'finishing', 'paused', 'problem'].includes(row.state) && rowProgress > 0);
+      node.dataset.progressActive = String(['downloading', 'finishing'].includes(row.state) && rowProgress > 0);
       updateThumb(node.querySelector('.thumb'), row);
       const title = node.querySelector('.row-title'); title.textContent = row.title; title.title = row.title;
+      const duration = node.querySelector('.row-duration'); duration.textContent = row.durationLabel; duration.hidden = !row.durationLabel;
       const status = node.querySelector('.row-status'); status.className = `row-status tone-${row.tone}`; status.title = row.statusLine;
       if (row.state === 'detected') {
         status.removeAttribute('role'); status.removeAttribute('aria-valuenow'); status.removeAttribute('aria-valuetext');
@@ -152,8 +198,9 @@
         }
       }
       if (node.parentElement !== list) list.append(node);
+      syncThumbPreview(node);
     }
-    for (const [key, node] of rowElements) if (!valid.has(key)) { node.remove(); rowElements.delete(key); }
+    for (const [key, node] of rowElements) if (!valid.has(key)) { stopThumbPreview(node); node.remove(); rowElements.delete(key); }
     renderConnection();
   }
   function emptyState() {
@@ -267,7 +314,7 @@
     $('sheet').addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); }, { once: true });
     video.play().catch(() => {});
   }
-  function openSheet(title) { closeMenu(); $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); $('popup').style.minHeight = '430px'; if (!$('sheet').open) $('sheet').showModal(); return $('sheet-content'); }
+  function openSheet(title) { closeMenu(); $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); $('popup').style.minHeight = '430px'; if (!$('sheet').open) $('sheet').showModal(); syncThumbPreviews(); return $('sheet-content'); }
   function showProblem(row) {
     const content = openSheet('Video details'); const pad = el('div', 'sheet-pad');
     const youtube = VidSnagDetection.youtubeId(row.source.sourcePageUrl) || VidSnagDetection.youtubeId(row.source.url || row.source.mediaUrl);
@@ -351,7 +398,9 @@
     } finally { refreshBusy = false; }
   }
   async function initialize() {
-    $('sheet').addEventListener('close', () => { $('popup').style.minHeight = ''; });
+    $('sheet').addEventListener('close', () => { $('popup').style.minHeight = ''; syncThumbPreviews(); });
+    reducedMotion.addEventListener('change', syncThumbPreviews);
+    document.addEventListener('visibilitychange', syncThumbPreviews);
     $('settings-button').append(icon('gear')); $('close-sheet').append(icon('close'));
     $('settings-button').addEventListener('click', showSettings); $('close-sheet').addEventListener('click', () => $('sheet').close()); $('help-button').addEventListener('click', showHelp);
     $('open-app').addEventListener('click', () => !reachable ? external(RELEASES) : !appToken ? showPairing() : openDesktop());
@@ -374,6 +423,6 @@
     queueTimer = setInterval(refresh, 1000); healthTimer = setInterval(checkHealth, 2000);
     chrome.storage.onChanged.addListener((changes, area) => { if (area === 'session' && activeTab?.id && changes[`vidsnag:tab:${activeTab.id}`]) refresh(); });
   }
-  window.addEventListener('pagehide', () => { clearInterval(queueTimer); clearInterval(healthTimer); clearTimeout(openTimer); });
+  window.addEventListener('pagehide', () => { clearInterval(queueTimer); clearInterval(healthTimer); clearTimeout(openTimer); for (const node of rowElements.values()) stopThumbPreview(node); });
   initialize().catch(error => notice(error.message));
 })();

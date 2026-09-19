@@ -125,7 +125,14 @@ The only milestone that changes the download engine. Until it ships, the quality
 | 3.2 | Job payload + engine accept a selection: `selection: { variantUrl?, height?, audioLang?, subtitleLang?, audioOnly? }`. `JobProcessor` downloads the chosen variant instead of auto-picking; native-HLS path maps it to ffmpeg `-map`. | `packages/contracts`, `routes/jobs.js`, `JobProcessor.js`, `HlsNativeDownload.js` | Fixture: requesting 480p produces a 480p file (ffprobe assertion). |
 | 3.3 | YouTube path: map selection to yt-dlp format selectors. | yt-dlp job path | Requesting 720p yields ≤ 720p. |
 | 3.4 | Quality menu UI in popup; desktop paste flow shows the same menu inline while "Checking link…" resolves, defaulting to Preferred quality. Settings: `preferredQuality`, `subtitleLanguage`. | popup, `TopBar`, `SettingsSheet` | Keyboard-operable; default honours the setting. |
-| 3.5 | Early frame grab: after the first N segments (or first 2 MB of a direct file) run ffmpeg once to produce a 224×126 JPEG, publish it on the job (`thumbnailUrls`), push a queue update. Skip when a thumbnail already exists. | `JobProcessor.js`, `VideoConverter.js`, `QueueManager.buildThumbnailUrls` | HLS job with no poster shows a real thumbnail within a few seconds of starting; placeholder → image swap does not reset the fill. |
+| 3.5 | Early frame grab: after the first N segments (or first 2 MB of a direct file) run ffmpeg once to produce a 224×126 JPEG, publish it on the job (`thumbnailUrls`), push a queue update. Skip when a thumbnail already exists. | `JobProcessor.js`, `VideoConverter.js`, `QueueManager.buildThumbnailUrls` | HLS job with no poster shows a real thumbnail within a few seconds of starting; placeholder → image swap does not reset row progress. |
+
+**Owner field revisions, 2026-09-19:**
+
+- Smooth ETA from recent transfer rates, resetting between video/audio stages and attempts.
+- Extend bounded parallel piece scheduling and delayed retries to native HLS; require complete selected-track coverage before saving. A failed piece must release its worker so later pieces can download during backoff.
+- Replace thumbnail progress with the selected **A+B: Leading edge + Soft sweep** row background. Duration sits beside the title; no hover labels cover the video.
+- Generate silent, roughly ten-second previews from completed local files, and loop only on hover/focus. Keep the poster until a local clip is ready; the owner declined extra network preview fetching. Respect reduced motion.
 
 **Exit:** the full approved design is live.
 
@@ -133,8 +140,8 @@ The only milestone that changes the download engine. Until it ships, the quality
 
 | # | Task | Done when |
 |---|---|---|
-| 4.1 | Hallway test with 3–5 people: download a video, change quality, pause, find the file, recover an expired link. Watch specifically: do they notice the thumbnail fill? do they find the quality menu? do they find "⋯"? | Notes recorded in `docs/design/` |
-| 4.2 | Apply the pre-agreed fallbacks only if 4.1 shows the problem: 2px line on the thumbnail's bottom edge (§4); 1px border on the quality text-button. | Decision recorded either way |
+| 4.1 | Hallway test with 3–5 people: download a video, change quality, pause, find the file, recover an expired link. Watch specifically: do they understand the row background progress and hover/focus video preview? do they find the quality menu? do they find "⋯"? | Notes recorded in `docs/design/` |
+| 4.2 | Evaluate the owner-selected A+B row background motion (§4) in 4.1; retain the clean video thumbnail. Add the 1px quality-button border only if field evidence calls for it. | Decision recorded either way |
 | 4.3 | Move new strings into `_locales` / a desktop strings module. | No hard-coded UI strings in row/format code |
 | 4.4 | Update README / AGENTS.md / CLAUDE.md (they still describe `FetchTVPlugin/` and `local-downloader/`). | Docs match the repo |
 
@@ -297,7 +304,7 @@ Light theme, tray/menu-bar mode, collections, bulk actions, browsers other than 
 
 | Risk | Mitigation |
 |---|---|
-| Thumbnail fill is too subtle at 104×58 | Status line always carries `{pct}%`; fallback line pre-designed (4.2). |
+| Row progress is too subtle at popup width | Status line always carries `{pct}%`; evaluate the selected row motion in field checks (4.1–4.2). |
 | Many sites give no poster and block canvas capture → lots of placeholders in the popup | Placeholder is a designed state, not an error; M3.5 gives the desktop a real frame quickly; popup can adopt the job's thumbnail once the desktop has one (it already polls the queue). |
 | Merging queue + history causes duplicates/flicker at completion | Single `RowModel` keyed by `jobId`; de-dupe rule in 1.3 with a test that walks a job through every state. |
 | Collapsing detections hides a video the user wanted | Conservative collapse rule (§5.2); "No video?" help explains; right-click → "Show all detected streams" escape hatch in the popup. |

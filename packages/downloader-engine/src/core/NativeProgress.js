@@ -1,5 +1,7 @@
 // Native FFmpeg output progress and observed source-piece delivery are different
 // measurements. Never infer completed pieces from an output-time percentage.
+const { createDownloadEta } = require('./DownloadEta');
+
 function describeSegments(playlistInfo = {}, playlistText = '', playlistUrl = '') {
   const urls = Array.isArray(playlistInfo.segments) ? playlistInfo.segments : [];
   if (!urls.length) return null;
@@ -48,6 +50,7 @@ function createNativeProgress(job, { playlistInfo = {}, playlistText = '', playl
   const coverage = new Map();
   const starts = new Set();
   const samples = [{ time: now(), bytes: 0, seconds: 0 }];
+  const eta = createDownloadEta({ now });
   let outputSeconds = 0;
   let realtimeFactor = null;
   job.segmentProgressAvailable = Boolean(descriptors);
@@ -94,6 +97,19 @@ function createNativeProgress(job, { playlistInfo = {}, playlistText = '', playl
           if (state.status !== 'completed') job.segmentStates[item.index] = { status: 'downloading', attempt: state.attempt + 1 };
         }
       }
+    } else if (event.type === 'cancelled') {
+      for (const item of affected) {
+        const state = job.segmentStates[item.index];
+        if (state.status !== 'completed' && state.status !== 'failed') job.segmentStates[item.index] = { ...state, status: 'pending' };
+      }
+    } else if (event.type === 'failed') {
+      for (const item of affected) {
+        const state = job.segmentStates[item.index];
+        if (state.status === 'completed') job.completedSegments = Math.max(0, job.completedSegments - 1);
+        job.segmentStates[item.index] = { ...state, status: 'failed', code: event.code || 'MEDIA_REQUEST_FAILED' };
+        job.failedSegments ||= [];
+        if (!job.failedSegments.includes(item.index)) job.failedSegments.push(item.index);
+      }
     } else if (event.type === 'error') {
       for (const item of affected) {
         const state = job.segmentStates[item.index];
@@ -125,7 +141,7 @@ function createNativeProgress(job, { playlistInfo = {}, playlistText = '', playl
       const measuredFactor = Math.max(0, (sample.seconds - samples[0].seconds) / elapsed);
       const factor = realtimeFactor > 0 ? realtimeFactor : measuredFactor;
       const remaining = Math.max(0, durationSeconds - outputSeconds);
-      job.etaSeconds = durationSeconds > 0 && factor > 0 ? Math.ceil(remaining / factor) : null;
+      job.etaSeconds = durationSeconds > 0 ? eta.update(remaining, factor) : null;
     }
   }
 

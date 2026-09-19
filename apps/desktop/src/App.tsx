@@ -46,6 +46,12 @@ function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const apiBase = appInfo?.apiBaseUrl || 'http://127.0.0.1:49732';
   const api = useMemo(() => !gallery && appInfo?.apiStartupState === 'ready' && appInfo.apiAuthToken ? createApiClient(appInfo.apiBaseUrl, appInfo.apiAuthToken) : null, [appInfo?.apiAuthToken, appInfo?.apiBaseUrl, appInfo?.apiStartupState]);
+  const requestThumbnailPreview = useCallback(async (id: string, kind: 'job' | 'history', thumbnailUrl: string | null) => {
+    if (gallery) return thumbnailUrl ? loadGalleryVideo({ thumbnailUrl }) : null;
+    if (!api) return null;
+    const result = kind === 'history' ? await api.ensureHistoryPreview(id) : await api.ensureJobPreview(id);
+    return result.previewClipUrl || null;
+  }, [api]);
   const library = useLibrary(api, query);
   const expandedJob = library.rows.find((row) => row.id === expandedId);
   const expandedJobId = expandedJob && !expandedJob.isHistory ? expandedJob.jobId : null;
@@ -217,7 +223,7 @@ function App() {
       {pending && <QualityPicker key={pending.url} inspection={pending.inspection} initial={pending.selection} onDownload={finishSelection} onCancel={() => setPending(null)} busy={checking} />}
       {failure && <div className="connection-banner" role="alert"><span>{ui.unavailable}</span><button className="row-action labelled" onClick={() => { initialize(); library.refresh(); }}>{ui.tryAgain}</button><button className="row-action" onClick={() => setSettingsOpen(true)}>{ui.settings}</button></div>}
       <main className="workbench-content">
-        {!ready && !failure ? <div className="empty-note"><LoaderCircle className="spin" />{ui.startup}</div> : rows.length ? <VideoList rows={rows} apiBase={gallery ? window.location.origin : apiBase} folder={folder} expandedId={expandedId} renamingId={renamingId} busyId={busyId} hasMore={!gallery && library.hasMore && filter !== 'downloading'} loadingMore={library.loadingMore} onLoadMore={library.loadMore} onToggle={(row) => setExpandedId(expandedId === row.id ? null : row.id)} onCommand={command} onRename={rename}
+        {!ready && !failure ? <div className="empty-note"><LoaderCircle className="spin" />{ui.startup}</div> : rows.length ? <VideoList rows={rows} apiBase={gallery ? window.location.origin : apiBase} folder={folder} expandedId={expandedId} renamingId={renamingId} busyId={busyId} hasMore={!gallery && library.hasMore && filter !== 'downloading'} loadingMore={library.loadingMore} onLoadMore={library.loadMore} onToggle={(row) => setExpandedId(expandedId === row.id ? null : row.id)} onCommand={command} onRename={rename} onRequestPreview={requestThumbnailPreview}
           onRefreshLink={async (row, url) => { await run(row.id, async () => { if (gallery) mutateDemo(row, { queueStatus: 'downloading', error: null }); else await api?.refreshSource(row.jobId || row.id, url); }); }}
           onMoveTo={(sourceId, targetId) => { if (gallery) return; const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><div className="empty-icon"><Download /></div><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{!connectedOnce && <button className="row-action primary-action" onClick={() => run('chrome', () => openExternal(chromeInstallUrl))}>{ui.addChrome}</button>}</div> : !failure && <p className="empty-note">{query ? ui.noMatches : filter === 'downloading' ? ui.nothingDownloading : ui.noSaved}</p>}
       </main>

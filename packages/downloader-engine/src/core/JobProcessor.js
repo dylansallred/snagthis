@@ -6,6 +6,7 @@ const { spawn, spawnSync } = require('child_process');
 const { requestWithRedirects } = require('./PlaylistUtils');
 const { createHash } = require('crypto');
 const { createNativeProgress } = require('./NativeProgress');
+const { createDownloadEta } = require('./DownloadEta');
 const { sniffMedia, resolveHlsSelection, mediaError } = require('./MediaSelection');
 const { startScopedMediaProxy, scopeMediaHeaders } = require('./MediaRequest');
 const { getRetryBackoffMs, downloadSegment } = require('./SegmentDownloader');
@@ -424,6 +425,12 @@ function createJobProcessor({
     let currentDownloadPhaseIndex = 0;
     let currentPhaseProgress = 0;
     let destinationLineCount = 0;
+    const eta = createDownloadEta();
+    const updateEta = (downloadedBytes, totalBytes, speedBps, reportedEta) => {
+      const remaining = totalBytes > 0 ? Math.max(0, totalBytes - downloadedBytes)
+        : reportedEta > 0 && speedBps > 0 ? reportedEta * speedBps : null;
+      job.etaSeconds = eta.update(remaining, speedBps);
+    };
     const ytDebugEnabled = String(process.env.DEBUG_YTDLP_PROGRESS || '').trim() === '1';
     let ytDebugLineCount = 0;
     logger.info('yt-dlp debug mode', {
@@ -539,6 +546,9 @@ function createJobProcessor({
         }
 
         if (/^\[download\]\s+Destination:/i.test(text)) {
+          eta.reset();
+          job.etaSeconds = null;
+          job.speedBps = 0;
           destinationLineCount += 1;
           currentDownloadPhaseIndex = Math.min(
             Math.max(0, destinationLineCount - 1),
@@ -595,9 +605,7 @@ function createJobProcessor({
           if (speedBps > 0) {
             job.speedBps = speedBps;
           }
-          if (etaSeconds > 0) {
-            job.etaSeconds = etaSeconds;
-          }
+          updateEta(downloadedBytes, resolvedTotalBytes, speedBps, etaSeconds);
           applyProgress(computedPercent);
           progressUpdated = true;
         }
@@ -638,10 +646,8 @@ function createJobProcessor({
             job.speedBps = speedBps;
             progressUpdated = true;
           }
-          if (etaSeconds > 0) {
-            job.etaSeconds = etaSeconds;
-            progressUpdated = true;
-          }
+          if (etaMatch) progressUpdated = true;
+          if (progressUpdated) updateEta(totalBytes > 0 && percentMatch ? totalBytes * percent / 100 : downloadedBytes, totalBytes, speedBps, etaSeconds);
         }
 
         if (progressUpdated) {
@@ -932,7 +938,24 @@ function createJobProcessor({
     const tempMp4Path = `${mp4Path}.part`;
     const estimatedDurationSeconds = Number(playlistInfo && playlistInfo.totalDurationSeconds) || 0;
     const progressTracker = createNativeProgress(job, { playlistInfo, playlistText: resolved.playlistText || '', playlistUrl, durationSeconds: estimatedDurationSeconds });
-    const proxy = await startScopedMediaProxy({ rootUrl: playlistUrl, headers: job.headers || {}, sourcePageUrl: job.sourcePageUrl, credentialOrigin: job.credentialOrigin || job.url, onResourceEvent: progressTracker.onResourceEvent });
+    const primaryTrackSelected = !(job.selection?.audioOnly && resolved.audioUrl);
+    // A single resource holding multiple byte-range pieces stays on the scoped
+    // streaming path; downloading the entire object would defeat the disk bound.
+    const spooledInput = job.mediaType === 'hls' && primaryTrackSelected
+      && !playlistInfo.hasByteRange && playlistInfo.segments?.length > 0
+      && new Set(playlistInfo.segments).size === playlistInfo.segments.length;
+    const configuredAttempts = Number.isFinite(job.maxSegmentAttempts) ? job.maxSegmentAttempts : DEFAULT_MAX_SEGMENT_ATTEMPTS;
+    const maxSegmentAttempts = Math.max(1, Math.min(30, Number(configuredAttempts) || 30));
+    const requiredPlaylistUrls = job.mediaType === 'hls' ? [
+      ...(primaryTrackSelected ? [playlistUrl] : []),
+      ...(resolved.audioUrl ? [resolved.audioUrl] : []),
+      ...(!job.selection?.audioOnly && resolved.subtitleUrl ? [resolved.subtitleUrl] : []),
+    ] : [];
+    const proxy = await startScopedMediaProxy({ rootUrl: playlistUrl, headers: job.headers || {}, sourcePageUrl: job.sourcePageUrl, credentialOrigin: job.credentialOrigin || job.url, onResourceEvent: progressTracker.onResourceEvent,
+      requiredPlaylistUrls,
+      pieceSpool: spooledInput ? { segments: playlistInfo.segments, directory: outputDir,
+        concurrency: job.maxConcurrent || DEFAULT_MAX_CONCURRENT, maxAttempts: maxSegmentAttempts } : undefined,
+    });
     const nativeArgs = buildNativeHlsArgs({
       job,
       playlistUrl: proxy.url,
@@ -942,6 +965,8 @@ function createJobProcessor({
       headers: {},
       scopedProxy: true,
       inputIsHls: job.mediaType === 'hls',
+      spooledInput,
+      maxSegmentAttempts,
     });
 
     job.status = 'downloading';
@@ -975,6 +1000,9 @@ function createJobProcessor({
         const child = spawn(FFMPEG_PATH, nativeArgs, {
           stdio: ['ignore', 'ignore', 'pipe'],
         });
+        // Exhausted piece retries must stop the muxer; otherwise its HLS
+        // demuxer can skip a missing URI and return a deceptively successful MP4.
+        proxy.failure.then(error => { if (error && !child.killed) child.kill('SIGTERM'); });
 
         let progressBuffer = '';
         const cancelPoll = setInterval(() => {
@@ -1028,12 +1056,13 @@ function createJobProcessor({
           reject(new Error(lastErrorSummary || `ffmpeg exited with code ${code}`));
         }));
       });
+      if (!job.cancelled && !job.probe) proxy.assertComplete();
     } catch (err) {
       try {
         await fsPromises.unlink(tempMp4Path);
       } catch (_) {
       }
-      throw proxy.lastError || err;
+      throw proxy.fatalError || proxy.lastError || err;
     } finally {
       if (job._earlyThumbnailPromise) await job._earlyThumbnailPromise;
       await proxy.close();
@@ -1397,6 +1426,7 @@ function createJobProcessor({
     if (!job || !job.fallbackUrl || job.cancelled || job.fallbackAttempted) {
       return false;
     }
+    if (['LINK_EXPIRED', 'SOURCE_EXPIRED', 'INSECURE_REDIRECT', 'INVALID_MEDIA_URL'].includes(cause?.code)) return false;
 
     // Fallback is intended for HLS jobs that made no usable progress.
     if ((job.completedSegments || 0) > 0) {

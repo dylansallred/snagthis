@@ -6,10 +6,12 @@ const https = require('https');
 const { URL } = require('url');
 const { spawnSync } = require('child_process');
 const WebSocket = require('ws');
+const { createHash } = require('node:crypto');
 const rateLimit = require('express-rate-limit');
 const { API, HEADER, CLIENT, validateSelection, classifyProblem } = require('@m3u8/contracts');
 const { createBridgeSecurity, redact } = require('./utils/security');
 const { scopeMediaHeaders } = require('@m3u8/downloader-engine/src/core/MediaRequest');
+const { generatePreviewClip } = require('@m3u8/downloader-engine/src/core/VideoConverter');
 const {
   QueueManager,
   createJobProcessor,
@@ -456,6 +458,99 @@ function createApiServer(options = {}) {
     onChange: (payload) => notifyHistoryChange(payload),
   });
 
+  const previewTasks = new Map();
+  const previewAbort = new AbortController();
+  let previewWork = Promise.resolve();
+
+  async function publishPreview(entry) {
+    let queueChanged = false;
+    let historyChanged = false;
+    for (const jobId of entry.jobIds) {
+      const job = jobs.get(jobId);
+      if (!job || job.previewClipPath === entry.outputPath) continue;
+      job.previewClipPath = entry.outputPath;
+      job.previewClipDurationSeconds = entry.durationSeconds;
+      job.updatedAt = Date.now();
+      queueChanged = true;
+      broadcastJobUpdate(job);
+    }
+    for (const item of historyIndex.items) {
+      if (!entry.historyIds.has(item.id) && !entry.jobIds.has(item.jobId) && !entry.sourcePaths.has(path.resolve(item.absolutePath || ''))) continue;
+      if (item.previewClipPath === entry.outputPath) continue;
+      item.previewClipPath = entry.outputPath;
+      item.previewClipUrl = entry.url;
+      item.previewClipDurationSeconds = entry.durationSeconds;
+      historyChanged = true;
+    }
+    if (queueChanged) {
+      await queueManager.saveQueue();
+      broadcastQueueUpdate();
+    }
+    if (historyChanged) {
+      await historyIndex.persistIndex();
+      historyIndex.emitChange('preview');
+    }
+  }
+
+  async function requestPreview({ job, historyItem } = {}) {
+    if (previewAbort.signal.aborted || !FFMPEG_PATH || !FFPROBE_PATH) return { status: 'unavailable' };
+    // Read only completed local media. An active download keeps its poster.
+    if (job && !['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) return { status: 'unavailable' };
+    const inputPath = historyItem ? historyIndex.resolveFilePath(historyItem.id)
+      : job && (job.mp4Path && fs.existsSync(job.mp4Path) ? job.mp4Path : job.filePath);
+    if (!inputPath || !path.isAbsolute(inputPath)) return { status: 'unavailable' };
+    let sourcePath;
+    let stat;
+    try { sourcePath = await fsPromises.realpath(inputPath); stat = await fsPromises.stat(sourcePath); } catch { return { status: 'unavailable' }; }
+    if (!stat.isFile() || !stat.size) return { status: 'unavailable' };
+    const key = createHash('sha256').update(`${sourcePath}:${stat.size}:${stat.mtimeMs}`).digest('hex').slice(0, 32);
+    let entry = previewTasks.get(key);
+    if (!entry) {
+      const outputPath = path.join(resolvedDownloadDir, '__previews', `${key}.mp4`);
+      entry = {
+        outputPath, url: `/downloads/__previews/${key}.mp4`,
+        sourcePaths: new Set([path.resolve(inputPath), sourcePath]), jobIds: new Set(), historyIds: new Set(),
+        durationSeconds: (job || historyItem).previewClipDurationSeconds || null,
+        status: fs.existsSync(outputPath) ? 'ready' : 'pending',
+      };
+      previewTasks.set(key, entry);
+      if (entry.status === 'pending') {
+        // One bounded encoder at a time, independent of download workers.
+        previewWork = previewWork.then(async () => {
+          if (previewAbort.signal.aborted) { entry.status = 'unavailable'; return; }
+          try {
+            const clip = await generatePreviewClip(sourcePath, outputPath, { FFMPEG_PATH, FFPROBE_PATH, signal: previewAbort.signal });
+            entry.durationSeconds = clip.durationSeconds;
+            entry.status = 'ready';
+            await publishPreview(entry);
+          } catch {
+            entry.status = 'unavailable';
+          }
+        });
+      }
+    }
+    if (job) entry.jobIds.add(job.id);
+    if (historyItem) entry.historyIds.add(historyItem.id);
+    entry.sourcePaths.add(path.resolve(inputPath));
+    if (entry.status === 'ready') {
+      await publishPreview(entry);
+      return { status: 'ready', previewClipUrl: entry.url, previewClipDurationSeconds: entry.durationSeconds };
+    }
+    return { status: entry.status };
+  }
+
+  app.post(['/api/jobs/:id/preview', '/v1/jobs/:id/preview'], validateV1ClientHeaders, async (req, res) => {
+    const job = jobs.get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Download not found' });
+    return res.json(await requestPreview({ job }));
+  });
+
+  app.post('/api/history/:id/preview', async (req, res) => {
+    const historyItem = historyIndex.findById(req.params.id);
+    if (!historyItem) return res.status(404).json({ error: 'Saved item not found' });
+    return res.json(await requestPreview({ historyItem }));
+  });
+
   function isKnownManagedAssetPath(candidatePath) {
     if (typeof candidatePath !== 'string' || !candidatePath.trim()) return false;
     const resolvedCandidate = path.resolve(candidatePath);
@@ -542,6 +637,8 @@ function createApiServer(options = {}) {
       fallbackAttempted: !!job.fallbackAttempted,
       fallbackUsed: !!job.fallbackUsed,
       thumbnailUrls: mergeThumbnailUrls(job),
+      previewClipUrl: queueManager.buildPreviewClipUrl(job),
+      previewClipDurationSeconds: job.previewClipDurationSeconds || null,
       updatedAt: job.updatedAt,
       tmdbId: job.tmdbId || null,
       tmdbTitle: job.tmdbTitle || null,
@@ -1951,6 +2048,7 @@ function createApiServer(options = {}) {
         Number(job.progress || 0),
         Number(job.bytesDownloaded || 0),
         Number(job.completedSegments || 0),
+        job.previewClipUrl || '',
       ].join(':')),
     ].join('|');
   }
@@ -1965,6 +2063,7 @@ function createApiServer(options = {}) {
     for (const job of payload.queue || []) {
       if (!['completed', 'completed-with-errors'].includes(job.queueStatus || job.status) || notifiedCompletedJobs.has(job.id)) continue;
       notifiedCompletedJobs.add(job.id);
+      requestPreview({ job: jobs.get(job.id) }).catch(() => {});
       if (typeof onDownloadComplete === 'function') Promise.resolve(onDownloadComplete(job)).catch(() => {});
     }
     sendChannelMessage('queue', 'queue:update', payload);
@@ -2157,7 +2256,7 @@ function createApiServer(options = {}) {
     });
   }
 
-  function stop() {
+  async function stop() {
     if (!started) return Promise.resolve();
     started = false;
 
@@ -2170,6 +2269,10 @@ function createApiServer(options = {}) {
       clearInterval(historyRefreshTimer);
       historyRefreshTimer = null;
     }
+    previewAbort.abort();
+    await previewWork;
+    await queueManager.persistence;
+    await historyIndex.persistence;
 
     return new Promise((resolve, reject) => {
       for (const client of wss.clients) client.terminate();

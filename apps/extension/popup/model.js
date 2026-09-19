@@ -75,5 +75,12 @@
   function localApiBase(candidate) {
     try { const url = new URL(candidate); return url.protocol === 'http:' && url.hostname === '127.0.0.1' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash ? url.origin : null; } catch { return null; }
   }
-  return { chooseVariant, selectMedia, mappingFor, buildDownloadPayload, compatible, localApiBase };
+  function previewClipUrl(candidate, apiBase) {
+    if (!candidate || !localApiBase(apiBase)) return '';
+    try {
+      const url = new URL(candidate, apiBase);
+      return url.origin === apiBase && !url.username && !url.password && url.pathname.startsWith('/downloads/__previews/') && url.pathname.endsWith('.mp4') && /^\d+$/.test(url.searchParams.get('expires') || '') && /^[a-f0-9]{64}$/i.test(url.searchParams.get('signature') || '') ? url.href : '';
+    } catch { return ''; }
+  }
+  return { chooseVariant, selectMedia, mappingFor, buildDownloadPayload, compatible, localApiBase, previewClipUrl };
 });

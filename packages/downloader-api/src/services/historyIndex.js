@@ -184,6 +184,7 @@ class HistoryIndexService {
     this.lastRefreshAt = 0;
     this.lastSavedAt = 0;
     this.refreshInFlight = null;
+    this.persistence = Promise.resolve();
   }
 
   async init() {
@@ -226,9 +227,14 @@ class HistoryIndexService {
       items: this.items,
       removedPaths: [...this.removedPaths],
     };
-    const tempPath = `${this.indexFilePath}.tmp`;
-    await this.fsPromises.writeFile(tempPath, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 });
-    await this.fsPromises.rename(tempPath, this.indexFilePath);
+    const snapshot = JSON.stringify(payload, null, 2);
+    const persist = async () => {
+      const tempPath = `${this.indexFilePath}.tmp`;
+      await this.fsPromises.writeFile(tempPath, snapshot, { encoding: 'utf8', mode: 0o600 });
+      await this.fsPromises.rename(tempPath, this.indexFilePath);
+    };
+    this.persistence = this.persistence.then(persist, persist);
+    await this.persistence;
     this.lastSavedAt = Date.now();
   }
 
@@ -302,7 +308,7 @@ class HistoryIndexService {
       const fullPath = path.join(currentDir, entry.name);
 
       if (entry.isDirectory()) {
-        if (!relativeDir && entry.name.startsWith('temp-')) {
+        if (!relativeDir && (entry.name.startsWith('temp-') || entry.name === '__previews')) {
           continue;
         }
         const nested = await this.walkMediaFiles(fullPath, childRelative);
@@ -519,6 +525,9 @@ class HistoryIndexService {
       job,
       persistedItem,
     });
+    const previewClipPath = (job && job.previewClipPath) || (persistedItem && persistedItem.previewClipPath) || null;
+    const previewClipUrl = previewClipPath && fs.existsSync(previewClipPath)
+      ? buildDownloadAssetUrl(this.downloadDir, previewClipPath) : null;
 
     return {
       id: (persistedItem && persistedItem.id) || encodeHistoryItemId(mediaFile.absolutePath || relativePath),
@@ -532,6 +541,9 @@ class HistoryIndexService {
       modifiedAt: Number(mediaFile.stat.mtimeMs || Date.now()),
       ext,
       thumbnailUrl,
+      previewClipPath,
+      previewClipUrl,
+      previewClipDurationSeconds: (job && job.previewClipDurationSeconds) || (persistedItem && persistedItem.previewClipDurationSeconds) || null,
       missing: false,
       sourcePageUrl: (job && job.sourcePageUrl) || (persistedItem && persistedItem.sourcePageUrl) || null,
       selection: (job && job.selection) || (persistedItem && persistedItem.selection) || null,
@@ -543,7 +555,7 @@ class HistoryIndexService {
 
   static buildSignature(items) {
     return items
-      .map((item) => `${item.absolutePath || item.relativePath || item.fileName}:${item.sizeBytes}:${item.modifiedAt}:${item.thumbnailUrl || ''}:${item.missing ? 1 : 0}`)
+      .map((item) => `${item.absolutePath || item.relativePath || item.fileName}:${item.sizeBytes}:${item.modifiedAt}:${item.thumbnailUrl || ''}:${item.previewClipUrl || ''}:${item.missing ? 1 : 0}`)
       .join('|');
   }
 
@@ -731,6 +743,7 @@ class HistoryIndexService {
       relativePath: this.toRelativePath(selectedPath) || path.basename(selectedPath),
       fileName: path.basename(selectedPath),
       sizeBytes: stat.size, missing: false,
+      previewClipPath: null, previewClipUrl: null, previewClipDurationSeconds: null,
     });
     await this.persistIndex();
     this.emitChange('locate');

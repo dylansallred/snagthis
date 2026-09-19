@@ -1,6 +1,6 @@
 # VidSnag UI design spec — "Workbench, simplified"
 
-Status: approved direction, 2026-09-19. Applies to the Chrome popup (`apps/extension`) and the desktop app (`apps/desktop`).
+Status: approved direction, updated by the owner on 2026-09-19: clean hover/focus video thumbnails, duration beside the title, and progress on the row background. The owner selected **A+B: Leading edge + Soft sweep** from the interactive concepts. Applies to the Chrome popup (`apps/extension`) and the desktop app (`apps/desktop`).
 Companion: [roadmap.md](roadmap.md). Interactive mock-ups: [mockups/main-screens.html](mockups/main-screens.html), [mockups/states.html](mockups/states.html) (open in a browser; sample data, nothing is downloaded).
 
 | Popup | Desktop |
@@ -10,12 +10,12 @@ Companion: [roadmap.md](roadmap.md). Interactive mock-ups: [mockups/main-screens
 ## 1. Principles
 
 1. **One row, four things.** Every video is a row of: thumbnail, title, one quiet status line, one visible action. Nothing else is visible at rest.
-2. **The thumbnail is the progress bar.** Grey footage = not on disk yet; colour = downloaded. There is no separate bar in rows.
+2. **Keep the video clear.** Progress belongs on the row background. The thumbnail shows a full-colour poster or a silent loop on hover/focus; duration sits beside the title.
 3. **Same row everywhere.** The popup and the desktop render the same row component with the same states and copy.
 4. **Extras are one step away, never zero.** Quality/subtitles live in a menu; rename, remove, copy link, technical detail live in "⋯" / right-click; settings beyond five rows live under Advanced.
 5. **Plain words.** No HLS / M3U8 / MP4 / segment / thread / port in the default UI. "Pieces" is the only word used for segments, and only inside details.
 6. **Silence when healthy.** Connection state, errors and counts only appear when they need the user. Problems are one amber sentence + one labelled button.
-7. **Orange means "act" or "moving".** Primary button, the scan-line, focus ring. Nothing decorative is orange.
+7. **Orange means "act" or "moving".** Primary button, row progress, focus ring. Nothing decorative is orange.
 
 How we got here: the first concepts (Ember/Focus/Cinema) were rejected as generic; a dense variant (A+) was "too much going on"; a middle variant was tried and the user preferred the simple one. When in doubt, remove.
 
@@ -77,11 +77,11 @@ Rules:
 | State | Condition | Status line | Thumbnail | Visible action | Hover / ⋯ |
 |---|---|---|---|---|---|
 | Detected (popup only) | media item not yet sent | `[1080p ⌄]  2.1 GB` (quality is a text-button, §5) | full colour | **Download** (primary) | right-click: Rename, Hide |
-| Waiting | `queueStatus = queued` | `Waiting` or `Waiting · starts next` (first in queue) | grey, no line | none | ⋯: Start now, Move up, Remove |
-| Downloading | `queueStatus = downloading`, not finalizing | `{pct}% · {eta}` | fill to `progress`, scan-line | Pause (icon) | ⋯ |
-| Finishing | downloading and `status` indicates remux/convert/verify | `Finishing up…` | fill ≥ 97%, scan-line | none | ⋯ |
-| Paused by user | `queueStatus = paused` | `Paused at {pct}%` | fill to `progress`, no line, 50% opacity | Resume (play icon) | ⋯ |
-| Needs the user | `failed` with recoverable cause | amber sentence (§3.3) | fill to `progress`, no line, 50% opacity | labelled button (bordered) | ⋯ |
+| Waiting | `queueStatus = queued` | `Waiting` or `Waiting · starts next` (first in queue) | full-colour poster/preview | none | ⋯: Start now, Move up, Remove |
+| Downloading | `queueStatus = downloading`, not finalizing | `{pct}% · {eta}` | full-colour poster/preview | Pause (icon) | ⋯ |
+| Finishing | downloading and `status` indicates remux/convert/verify | `Finishing up…` | full-colour poster/preview | none | ⋯ |
+| Paused by user | `queueStatus = paused` | `Paused at {pct}%` | full-colour poster/preview | Resume (play icon) | ⋯ |
+| Needs the user | `failed` with recoverable cause | amber sentence (§3.3) | full-colour poster/preview | labelled button (bordered) | ⋯ |
 | Saved | history item / `completed` | `Saved {when} · {size}` | full colour | Play (icon) | folder, ⋯ |
 | Saved, file missing | file not on disk | amber `File was moved or deleted` | full colour | **Locate** (bordered) | ⋯: Remove from list |
 | Popup, just finished | job completed while popup open | green `Saved` | full colour | **Play** (bordered) | — |
@@ -114,45 +114,18 @@ One sentence, amber, ends with a full stop only if it contains two clauses. One 
 
 Raw error text is only shown in the details panel.
 
-## 4. Colour-fill thumbnail
+## 4. Video thumbnails and row progress
 
-![stalled](img/row-stalled.png) ![placeholder](img/row-placeholder.png)
+The owner replaced the original colour-fill thumbnail on 2026-09-19. Earlier screenshots and mock-ups record the previous design; they do not override this revision.
 
-Structure (three stacked layers inside a `position:relative; overflow:hidden` box):
-
-```html
-<div class="thumb" style="--p: 34%">
-  <img class="fill ghost" src="…">   <!-- always present -->
-  <img class="fill live"  src="…">   <!-- clipped to --p -->
-  <div class="edge"></div>           <!-- scan-line -->
-  <span class="dur">2:20:06</span>
-</div>
-```
-
-```css
-.fill  { position:absolute; inset:0; width:100%; height:100%; object-fit:cover }
-.ghost { filter: grayscale(1) brightness(.4) }
-.live  { clip-path: inset(0 calc(100% - var(--p)) 0 0); transition: clip-path 120ms linear }
-.edge  { position:absolute; top:0; bottom:0; left:var(--p); width:2px; margin-left:-1px;
-         background: var(--color-primary-hover);
-         box-shadow: 0 0 10px 2px hsl(20 96% 52% / .75); transition: left 120ms linear }
-```
-
-| Row state | `--p` | `.live` | `.edge` |
-|---|---|---|---|
-| Detected, Saved | — | unclipped | hidden |
-| Waiting | 0% | fully clipped | hidden |
-| Downloading / Finishing | `job.progress` | clipped | visible |
-| Paused / Needs the user | `job.progress` | clipped, `opacity:.5` | hidden |
-
-Rules:
-- Drive `--p` from `job.progress` (0–100). Do not animate with JS; the 120ms CSS transition smooths WebSocket updates.
-- `prefers-reduced-motion`: remove both transitions and the glow `box-shadow`.
-- **No thumbnail available:** render the striped placeholder for both layers — ghost = neutral stripes `repeating-linear-gradient(90deg, #1b1d22 0 14px, #22252b 14px 28px)`, live = the same stripes in `hsl(18 60% 22%)` / `hsl(18 60% 27%)`. It fills exactly like a real thumbnail.
-- Thumbnail source priority: (1) `job.thumbnailUrls[0]` / `youtubeMetadata.thumbnailUrl` / history `thumbnailUrl`; (2) popup: page poster (§5.3); (3) early frame grab once the first segments exist (roadmap M3); (4) placeholder. Swapping placeholder → real image mid-download must not reset `--p`.
-- Accessibility: the thumb is decorative (`alt=""`); progress is exposed on the row: `role="progressbar" aria-valuenow={pct} aria-valuetext="34%, 5 minutes left"` on the row's status line.
-
-Fallback if field-testing shows the fill is too subtle at popup size: add a 2px line on the thumbnail's bottom edge (`width: var(--p)`, same orange). Do not reintroduce a bar in the text column.
+- Show one unobscured full-colour poster, or a silent real video excerpt. No grayscale mask, progress clipping, scan-line or duration badge belongs inside the thumbnail.
+- A roughly ten-second clip loops only while the row is hovered or has keyboard focus. Stop when focus/pointer leaves, the page is hidden or the row is removed. Respect reduced motion by retaining the still poster.
+- Put video duration beside the title. It must remain readable without squeezing the title out at popup width.
+- Retain the poster while a clip is unavailable, being generated or fails to play. Produce clips from playable downloaded media; detecting a source alone does not guarantee a clip is available.
+- Drive row background progress from actual `job.progress`, with the existing status sentence and accessible progress value. Pause motion while paused or waiting. Motion may indicate activity, but must never invent progress.
+- Use the selected **A+B** treatment: a subdued warm fill, a moving glint along its progress edge, and a slow wash of light within the downloaded area. Both surfaces use the same colours and timing. Keep all motion behind the row content. The [interactive motion comparison](prototypes/download-motion/index.html) records the choice using licensed demo excerpts and simulated progress.
+- Do not put “Preview,” clip-length labels or other hover text over the video. Accessible labels may describe the preview without occupying video space.
+- Thumbnail source priority remains job/YouTube/history poster, page poster, early frame grab, then neutral placeholder. Poster updates must not reset download progress.
 
 ## 5. Popup (`apps/extension`)
 
@@ -175,7 +148,7 @@ Width 400px. Max height 560px; the list scrolls, header and footer are fixed.
 ### 5.1 Download flow
 
 1. Click **Download** → button shows a spinner for the POST (`/v1/jobs`), max 300ms before optimistic switch.
-2. Row switches to Downloading: status `0%`, thumbnail greys out and begins to fill. No toast.
+2. Row switches to Downloading: status `0%`, row progress begins while the thumbnail stays clear. No toast.
 3. Popup keeps the mapping `mediaItemId → jobId` in `chrome.storage.session` so reopening the popup shows the same row in its live state.
 4. Progress comes from polling `GET /v1/queue` every 1s while the popup is open (WebSocket is unnecessary for a short-lived popup).
 5. On completion: green `Saved` + **Play** (opens the file via the desktop app). On reopen after completion the row returns to Detected only if the page is reloaded.
@@ -280,7 +253,7 @@ The unified list makes "remove" ambiguous, so it is explicit:
 - Keyboard (desktop): ↑/↓ move row focus; Space/Enter toggle details; `P` pause/resume; ⌘F search; ⌘V paste link; ⌘, settings; Delete → cancel/remove flow.
 - Contrast: muted text on window surface ≥ 4.5:1 (current tokens pass); amber sentence ≥ 4.5:1.
 - Amber/green are never the only signal: every coloured line also changes its words and its button.
-- `prefers-reduced-motion`: no fill transition, no glow, no slide-in.
+- `prefers-reduced-motion`: no animated row fill, no glow, no slide-in and no automatic thumbnail playback.
 
 ## 11. Component map
 

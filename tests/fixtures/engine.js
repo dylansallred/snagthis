@@ -16,7 +16,7 @@ async function probeFile(filePath, ffprobePath = process.env.FFPROBE_PATH || 'ff
   };
 }
 
-async function downloadMedia({ url, directory, mediaType = 'hls', headers = {}, selection, probe, verify = true, ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg', ffprobePath = process.env.FFPROBE_PATH || 'ffprobe' }) {
+async function downloadMedia({ url, directory, mediaType = 'hls', headers = {}, selection, probe, verify = true, skipEarlyThumbnail = false, ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg', ffprobePath = process.env.FFPROBE_PATH || 'ffprobe' }) {
   process.env.DISABLE_FILE_LOGS = '1';
   const { createJobProcessor } = require('../../packages/downloader-engine/src/core/JobProcessor');
   const id = randomUUID();
@@ -38,6 +38,7 @@ async function downloadMedia({ url, directory, mediaType = 'hls', headers = {}, 
     filePath: path.join(output, mediaType === 'file' ? 'fixture.mp4' : 'fixture.ts'),
     storageDir: output, downloadName: 'fixture.ts', downloadNameMp4: 'fixture.mp4',
     skipThumbnailGeneration: true,
+    earlyThumbnailAttempted: skipEarlyThumbnail,
   };
   const timer = setTimeout(() => { job.cancelled = true; job.childProcess?.kill('SIGTERM'); }, 60_000);
   try {
