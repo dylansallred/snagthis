@@ -2,6 +2,8 @@
 
 The approved **Workbench, simplified** interface is implemented in the new VidSnag repository. The owner selected **GPL-3.0-only**. The predecessor repository and its uncommitted files were preserved.
 
+**Visual direction accepted, 2026-09-19:** after reviewing the implementation previews, the owner confirmed, “Yes, keep this direction.” Keep the current dark desktop and extension design as the baseline for further work.
+
 ## What changed
 
 - Desktop: one searchable, paginated library; paste multiple links; real quality choices; thumbnail progress; one visible row action; inline details; keyboard navigation; five simple settings with Advanced.
@@ -43,7 +45,7 @@ Serve `apps/extension` locally and open `popup.html?demo=default`. Other demo va
 
 ## Remaining release work and explicit departures
 
-- **M4:** three to five actual people must complete the [field check](field-check.md). No participant observations or approval of the final look have been fabricated. The conditional thumbnail-line/quality-border fallbacks remain pending that evidence.
+- **M4:** the owner has accepted the visual direction. Three to five actual people must still complete the [field check](field-check.md). The conditional thumbnail-line/quality-border fallbacks remain pending that evidence.
 - **Recovery:** refreshed links can be attached through “Continue previous download” or desktop Details. The implementation does not automatically attach a new detection merely because a page reopened; ambiguous matches require user choice and the engine checks playlist compatibility before reusing pieces.
 - **Direct-file resume:** pausing is supported, but resuming a direct file currently restarts its transfer. HLS resume retains compatible downloaded segments. Byte-range continuation for direct files remains follow-up work.
 - **Site reports:** the prefilled issue form contains redacted aggregate diagnostics. S1–S7 prompts are explicitly “not checked” unless supplied by a compatibility run; the app does not yet retain measured per-site stage traces.
