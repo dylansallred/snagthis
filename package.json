@@ -1,0 +1,39 @@
+{
+  "name": "m3u8-downloader-workspace",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Electron desktop app + Chrome extension for m3u8 downloading",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:desktop": "npm run dev --workspace @m3u8/desktop",
+    "build:desktop": "npm run build --workspace @m3u8/desktop",
+    "pack:desktop": "npm run pack --workspace @m3u8/desktop",
+    "dist:desktop": "npm run dist --workspace @m3u8/desktop",
+    "release:preflight": "./scripts/release-preflight.sh",
+    "release:tag": "./scripts/release-tag.sh",
+    "build:extension:css": "npm run build:css --workspace @m3u8/extension",
+    "dev:extension:css": "npm run dev:css --workspace @m3u8/extension",
+    "package:extension": "npm run build:extension:css && cd apps/extension && zip -r ../../m3u8-extension.zip . -x '*.DS_Store' -x 'node_modules/*' -x 'src/*'",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --cache --cache-location .eslintcache",
+    "lint:fix": "npm run lint -- --fix",
+    "typecheck:desktop": "tsc --noEmit --project apps/desktop/tsconfig.json",
+    "test": "node --test --test-force-exit tests/api.integration.test.js tests/extension-title-inference.test.js tests/extension-stream-player.test.js tests/hls-native-download.test.js tests/hls-remux-args.test.js tests/plex-metadata.test.js tests/queue-resume-segments.test.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@playwright/test": "^1.55.1"
+    ,
+    "eslint": "^9.38.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "globals": "^16.5.0",
+    "typescript-eslint": "^8.46.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

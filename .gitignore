@@ -1,0 +1,17 @@
+node_modules/
+**/dist*/
+.DS_Store
+**/bin/
+**/logs/
+**/downloads/
+*.log
+.vite/
+.eslintcache
+playwright-report/
+test-results/
+compat/results/
+work/
+.env
+.env.*
+!.env.example
+apps/extension/popup.css
