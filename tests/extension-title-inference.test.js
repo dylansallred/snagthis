@@ -156,3 +156,36 @@ test('media detector resolves URL objects passed to fetch', () => {
 
   assert.equal(resolveRequestUrl(url), 'https://media.example.com/master.m3u8');
 });
+
+test('settled same-page titles beat stale brand metadata without leaking across navigation', () => {
+  const helpers = loadPopupTitleHelpers();
+  const item = {
+    sourcePageTitle: 'Acme Video',
+    sourcePageUrl: 'https://acmevideo.test/watch/movie/42',
+    filename: 'master.m3u8',
+    url: 'https://media.example.test/master.m3u8',
+    type: 'hls',
+    pageTitleCandidates: [
+      { source: 'document.title', value: 'Acme Video' },
+      { source: 'meta[property="og:title"]', value: 'Acme Video' },
+    ],
+  };
+  try {
+    helpers.setActiveTab({ url: item.sourcePageUrl, title: 'Ember: Across the Sea - Acme Video' });
+    assert.equal(helpers.getDisplayTitle(item), 'Ember: Across the Sea');
+    const payload = helpers.buildJobPayload(item);
+    assert.equal(payload.title, 'Ember: Across the Sea');
+    assert.equal(payload.titleHints.lookupTitle, 'Ember: Across the Sea');
+    assert.equal(payload.sourcePageTitle, 'Ember: Across the Sea - Acme Video');
+
+    // Genuine content metadata still wins over a generic browser heading.
+    assert.equal(helpers.getDisplayTitle({ ...item, pageTitleCandidates: [
+      { source: 'meta[property="og:title"]', value: 'The Original Cut' },
+    ] }), 'The Original Cut');
+
+    helpers.setActiveTab({ url: 'https://acmevideo.test/watch/movie/99', title: 'A Different Movie - Acme Video' });
+    assert.equal(helpers.getDisplayTitle({ ...item, sourcePageTitle: 'Ember: Across the Sea - Acme Video' }), 'Ember: Across the Sea');
+  } finally {
+    helpers.setActiveTab(null);
+  }
+});

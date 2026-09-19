@@ -19,7 +19,7 @@
 
   function formatSize(bytes, options) {
     if (!finite(bytes) || bytes < 0) return '';
-    const size = bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + ' GB' : Math.round(bytes / 1e6) + ' MB';
+    const size = bytes > 0 && bytes < 1e6 ? '<1 MB' : bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + ' GB' : Math.round(bytes / 1e6) + ' MB';
     return options && options.estimated ? t('about', { size: size }) : size;
   }
 
@@ -52,11 +52,13 @@
     const raw = typeof error === 'string' ? error : [object.code, object.message, object.statusCode, object.status, object.cause && (object.cause.code || object.cause.message)].filter(Boolean).join(' ');
     let code = 'unknown';
     if (/drm|widevine|fairplay|playready|sample-aes|unsupported|not supported|live.stream|live playlist/i.test(raw)) code = 'unsupported';
+    else if (/\bsign[ -]?in\b|\blog[ -]?in required\b|\blogin_required\b|\bauthentication required\b|\bage[- ]restricted\b|\bconfirm your age\b/i.test(raw)) code = 'authentication';
     else if (/enospc|edquot|eacces|eperm|disk.full|not.enough.space|not.writable|permission.denied/i.test(raw)) code = 'disk';
     else if (/file.missing|output.missing|file.*(moved|deleted|not found)|enoent/i.test(raw)) code = 'missing';
     else if (/expired|source_expired|link_expired|\b410\b/i.test(raw) || (/\b403\b/i.test(raw) && !/segment|piece/i.test(raw))) code = 'expired';
     else if (/network|connection|unreachable|retry|retries|exhausted|econn|enotfound|etimedout|eai_again|timeout|timed out|fetch failed/i.test(raw)) code = 'network';
     const keys = {
+      authentication: ['signInRequired', 'details', 'details'],
       expired: ['expired', 'open-page', 'openPage'], network: ['connectionLost', 'retry', 'retry'],
       disk: ['diskFull', 'choose-folder', 'chooseFolder'], unsupported: ['unsupported', 'details', 'details'],
       missing: ['missing', 'locate', 'locate'], unknown: ['unknownProblem', 'retry', 'retry'],
@@ -82,7 +84,8 @@
     else if (item.queueStatus === 'queued') state = 'waiting';
     else if (item.queueStatus === 'downloading') state = isFinishing ? 'finishing' : 'downloading';
     if (state === 'saved' && (item.fileExists === false || item.exists === false || item.missing === true)) state = 'missing';
-    const sizeBytes = isHistory ? item.sizeBytes : item.totalBytes ?? item.sizeBytes ?? item.estimatedSizeBytes;
+    const reportedSize = isHistory ? item.sizeBytes : item.totalBytes ?? item.sizeBytes ?? item.estimatedSizeBytes;
+    const sizeBytes = finite(reportedSize) && reportedSize > 0 ? reportedSize : undefined;
     const duration = item.durationSeconds ?? item.duration ?? (item.youtubeMetadata && item.youtubeMetadata.durationSeconds) ?? (item.tmdbMetadata && item.tmdbMetadata.runtime ? item.tmdbMetadata.runtime * 60 : null);
     const qualityHeight = item.height || item.resolutionHeight || (item.selection && item.selection.height);
     const qualityLabel = qualityHeight ? qualityHeight + 'p' : (typeof item.resolution === 'string' ? item.resolution : '');

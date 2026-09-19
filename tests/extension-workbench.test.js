@@ -101,3 +101,20 @@ test('an explicitly observed direct-file alternative is submitted as a file, not
   assert.deepEqual(payload.headers, { cookie: 'file-session=1' });
   assert.deepEqual(payload.selection, { subtitleLang: 'none' });
 });
+
+test('YouTube site sounds never become downloads or override the canonical watch video', () => {
+  const sourcePageUrl = 'https://www.youtube.com/watch?v=abcdefghijk';
+  const sound = { id: 'sound', url: 'https://www.youtube.com/s/search/audio/no_input.mp3', type: 'file', mediaKind: 'video', contentType: 'audio/mpeg', sourcePageUrl, sourcePageTitle: 'A real video - YouTube', youtubeMetadata: { videoId: 'abcdefghijk', title: 'A real video' }, requestHeaders: { cookie: 'asset-cookie' }, requestHeadersOrigin: 'https://www.youtube.com' };
+  const video = { ...sound, id: 'youtube', url: sourcePageUrl, mediaKind: 'youtube-page', contentType: 'video/youtube' };
+  assert.equal(detection.isYoutubeAuxiliaryResource(sound.url, sourcePageUrl, sound.mediaKind), true);
+  assert.equal(detection.isYoutubeAuxiliaryResource('https://cdn.googlevideo.com/videoplayback', sourcePageUrl, 'video'), true);
+  assert.equal(detection.isYoutubeAuxiliaryResource(video.url, sourcePageUrl, video.mediaKind), false);
+  assert.deepEqual(detection.withoutManifestSegments([sound, video]).map(value => value.id), ['youtube']);
+  const payload = model.buildDownloadPayload({ ...sound, detectedStreams: [sound, video], selection: { variantUrl: sound.url, height: 1080 } });
+  assert.equal(payload.mediaUrl, sourcePageUrl, 'stale detections are safe even before the worker reloads');
+  assert.equal(payload.title, 'A real video');
+  assert.equal(payload.resourceName, 'A real video');
+  assert.deepEqual(payload.headers, {});
+  assert.deepEqual(payload.selection, { subtitleLang: 'none' });
+  assert.equal(detection.isYoutubeAuxiliaryResource('https://media.example.test/sound.mp3', 'https://example.test/watch', 'video'), false, 'ordinary direct downloads remain available');
+});

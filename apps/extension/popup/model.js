@@ -1,7 +1,7 @@
 (function(root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./titles'), require('../../../packages/contracts/src/hls'), require('../../../packages/contracts/src/selection'));
-  else root.VidSnagPopupModel = factory(root.VidSnagTitles, root.VidSnagHls, root.VidSnagSelection);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function(titles, hls, selection) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./titles'), require('../../../packages/contracts/src/hls'), require('../../../packages/contracts/src/selection'), require('../js/detection'));
+  else root.VidSnagPopupModel = factory(root.VidSnagTitles, root.VidSnagHls, root.VidSnagSelection, root.VidSnagDetection);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function(titles, hls, selection, detection) {
   'use strict';
   function chooseVariant(item, preferredQuality) {
     const variants = [...(item.variants || item.manifest?.variants || [])].sort((a, b) => (b.height || 0) - (a.height || 0) || (b.bandwidth || 0) - (a.bandwidth || 0));
@@ -29,6 +29,19 @@
   }
   function buildDownloadPayload(item, titleOverride = '') {
     const payload = titles.buildJobPayload(item, titleOverride);
+    const youtubeId = detection.youtubeId(item.sourcePageUrl) || detection.youtubeId(item.url);
+    if (youtubeId) {
+      // Site sounds and playback fragments can carry the video's page metadata.
+      // YouTube extraction must receive the watch page, never one of those assets
+      // or an apparent quality that came from a previously captured resource.
+      payload.mediaUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+      payload.mediaType = 'file';
+      payload.resourceName = payload.title;
+      payload.headers = {};
+      payload.selection = { subtitleLang: 'none' };
+      payload.durationSeconds = item.durationSeconds || undefined;
+      return payload;
+    }
     const checked = selection.validateSelection(item.selection);
     if (!checked.ok) throw new Error('Choose an available quality.');
     if (checked.value) payload.selection = checked.value;

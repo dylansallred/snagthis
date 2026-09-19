@@ -1,6 +1,6 @@
 export interface HlsVariant { id: string; url: string; variantUrl: string; width: number | null; height: number | null; bandwidth: number | null; averageBandwidth: number | null; codecs: string | null; frameRate: number | null; audioGroup: string | null; subtitleGroup: string | null; sizeBytes: number | null; }
 export interface HlsRendition { url: string | null; language: string | null; name: string; groupId: string | null; default: boolean; autoselect: boolean; forced: boolean; channels: string | null; }
-export interface HlsManifest { url: string; isMaster: boolean; variants: HlsVariant[]; audio: HlsRendition[]; subtitles: HlsRendition[]; durationSeconds: number | null; isLive: boolean | null; isDrm: boolean; encryption: { method: string; keyFormat: string; url: string | null; iv: string | null }[]; referencedUrls: string[]; segmentUrls: string[]; }
+export interface HlsManifest { url: string; isMaster: boolean; variants: HlsVariant[]; audio: HlsRendition[]; subtitles: HlsRendition[]; durationSeconds: number | null; isLive: boolean | null; isDrm: boolean; encryption: { method: string; keyFormat: string; url: string | null; iv: string | null }[]; referencedUrls: string[]; segmentUrls: string[]; initializationUrls: string[]; }
 export function parseAttributes(value: string): Record<string, string>;
 export function parseHlsManifest(text: string, url: string, options?: { durationSeconds?: number | null }): HlsManifest;
 export function estimateSizeBytes(bandwidth?: number | null, durationSeconds?: number | null): number | null;

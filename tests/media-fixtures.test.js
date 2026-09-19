@@ -14,7 +14,8 @@ test('real media: delivery techniques produce playable MP4, unsupported sources 
     { name: 'direct MP4 with byte ranges', resource: '/media/direct.mp4', mediaType: 'file' },
     { name: 'direct MP4 without byte ranges', resource: '/cases/no-range/direct.mp4', mediaType: 'file' },
     { name: 'transport-stream HLS', resource: '/media/ts/index.m3u8' },
-    { name: 'fragmented MP4 HLS with init', resource: '/media/fmp4/index.m3u8' },
+    { name: 'fragmented MP4 HLS with init', resource: '/media/fmp4/index.m3u8', nativePieces: true },
+    { name: 'JPEG-named HLS master, child playlist and fMP4 fragments', resource: '/cases/misnamed-fmp4/master.jpg', selection: { height: 1080 }, nativePieces: true },
     { name: 'tiny extensionless manifest', resource: '/cases/tiny/manifest' },
     { name: 'redirect and relative segments', resource: '/redirect.m3u8' },
     { name: 'disguised segment extensions', resource: '/cases/disguised/index.m3u8' },
@@ -32,6 +33,13 @@ test('real media: delivery techniques produce playable MP4, unsupported sources 
       assert.equal(result.metadata.height, entry.height ?? 1080);
       assert.equal(result.metadata.hasAudio, true, 'audio must survive the download');
       if (entry.subtitles) assert.equal(result.metadata.hasSubtitles, true, 'selected subtitles must survive the download');
+      if (entry.nativePieces) {
+        assert.equal(result.job.downloadMode, 'native-hls');
+        assert.equal(result.job.segmentProgressAvailable, true);
+        assert.ok(result.job.totalSegments > 0);
+        assert.equal(result.job.completedSegments, result.job.totalSegments);
+        assert.equal(Object.values(result.job.segmentStates).filter(state => state.status === 'completed').length, result.job.totalSegments, 'the native map reflects completed media responses');
+      }
     });
   }
   await t.test('bounded probe finalizes a short playable file', async () => {

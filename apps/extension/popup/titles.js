@@ -167,16 +167,60 @@ function scoreDisplayTitleCandidate(value, source, pageTitle, tvContextFromUrl) 
   return score;
 }
 
+function getSourcePageTitle(item, fallback = '') {
+  const sourcePageUrl = String(item && item.sourcePageUrl || '').trim();
+  // The tab title may settle after the first media request on a client-rendered
+  // page. Only use its fresh value for this exact page, never after navigation.
+  if (activeTab && sourcePageUrl && sourcePageUrl === String(activeTab.url || '').trim()) {
+    const currentTitle = String(activeTab.title || '').trim();
+    if (currentTitle) return currentTitle;
+  }
+  return String(item && item.sourcePageTitle || fallback || (!sourcePageUrl && activeTab && activeTab.title) || '').trim();
+}
+
+function siteTitleKeys(item) {
+  const keys = new Set();
+  const sourcePageUrl = String(item && item.sourcePageUrl || (activeTab && activeTab.url) || '').trim();
+  try {
+    const labels = new URL(sourcePageUrl).hostname.replace(/^www\./i, '').split('.');
+    for (const label of labels.slice(0, -1)) {
+      if (label.length > 2) keys.add(titleKey(label));
+    }
+  } catch { /* no site identity available */ }
+  for (const candidate of Array.isArray(item && item.pageTitleCandidates) ? item.pageTitleCandidates : []) {
+    if (/og:site_name/i.test(String(candidate && candidate.source || ''))) {
+      const key = titleKey(candidate.value);
+      if (key) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+function titleKey(value) {
+  return String(value || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+function removeSiteTitleSuffix(value, siteKeys) {
+  const text = String(value || '').trim();
+  const match = /^(.*)\s+[-–—|]\s+(.+)$/.exec(text);
+  return match && siteKeys.has(titleKey(match[2])) ? match[1].trim() : text;
+}
+
 function pickPreferredContentTitle(item, pageTitle, tvContextFromUrl) {
-  const candidates = Array.isArray(item && item.pageTitleCandidates) ? item.pageTitleCandidates : [];
+  const siteKeys = siteTitleKeys(item);
+  const storedCandidates = Array.isArray(item && item.pageTitleCandidates) ? item.pageTitleCandidates : [];
+  const candidates = storedCandidates.filter((entry) => String(entry && entry.source || '') !== 'document.title');
+  candidates.push({ source: 'document.title', value: pageTitle });
   let bestValue = '';
   let bestScore = -Infinity;
 
   for (const entry of candidates) {
     if (!entry || typeof entry !== 'object') continue;
     const source = String(entry.source || '').trim();
-    const value = String(entry.value || '').trim();
-    if (!value) continue;
+    const value = removeSiteTitleSuffix(entry.value, siteKeys);
+    // Sitewide OG metadata often stays at the brand name while the actual
+    // document title changes. A brand by itself is not a content title.
+    if (!value || siteKeys.has(titleKey(value))) continue;
 
     const score = scoreDisplayTitleCandidate(value, source, pageTitle, tvContextFromUrl);
     if (score > bestScore) {
@@ -190,7 +234,7 @@ function pickPreferredContentTitle(item, pageTitle, tvContextFromUrl) {
 }
 
 function getDisplayTitle(item) {
-  const pageTitle = String(item.sourcePageTitle || (activeTab && activeTab.title) || '').trim();
+  const pageTitle = getSourcePageTitle(item);
   const youtubeTitle = cleanYoutubeTitleText(item && item.youtubeMetadata && item.youtubeMetadata.title);
   if (youtubeTitle && !isLikelySiteSlogan(youtubeTitle)) {
     return youtubeTitle;
@@ -203,7 +247,6 @@ function getDisplayTitle(item) {
     }
   }
 
-  // Use stored source page title first so titles stay stable across navigation.
   const sourcePageUrl = String(item.sourcePageUrl || (activeTab && activeTab.url) || '').trim();
   const tvContextFromUrl = detectTvContextFromUrl(sourcePageUrl);
   const seriesTitleFromPageTitle = tvContextFromUrl ? extractSeriesTitleFromPageTitle(pageTitle) : '';
@@ -468,6 +511,7 @@ function pickPreferredEpisodeHint(currentHint, nextHint) {
 }
 
 function inferTitleHints(item, pageTitle, displayTitle) {
+  pageTitle = getSourcePageTitle(item, pageTitle);
   const isYoutubePageDetection = isYoutubePageItem(item);
   const sourcePageUrl = String(item && item.sourcePageUrl || (activeTab && activeTab.url) || '').trim();
   const sourceUrlHint = isYoutubePageDetection ? null : inferHintFromSourcePageUrl(sourcePageUrl);
@@ -759,7 +803,7 @@ function appendDisplayEpisodeTagToTitle(titleValue, titleHints) {
 
 function buildJobPayload(item, titleOverride = '') {
   const mediaUrl = item.url;
-  const pageTitle = String(item.sourcePageTitle || (activeTab && activeTab.title) || '').trim();
+  const pageTitle = getSourcePageTitle(item);
   const sourcePageUrl = String(item.sourcePageUrl || (activeTab && activeTab.url) || '').trim();
   const overrideTitle = normalizeCustomTitleOverride(titleOverride);
   const displayTitle = overrideTitle || getDisplayTitle(item);

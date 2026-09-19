@@ -129,7 +129,7 @@ function requestMediaWithRedirects(url, headers, onResponse, options = {}) {
 // FFmpeg applies -headers to every child HLS request. This short-lived loopback
 // relay keeps all credentials in Node, where each redirect, key and segment can
 // be scoped independently. Only resources registered from a playlist are served.
-async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, credentialOrigin } = {}) {
+async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, credentialOrigin, onResourceEvent } = {}) {
   const root = mediaUrl(rootUrl);
   const token = crypto.randomBytes(24).toString('hex');
   const resources = new Map();
@@ -139,6 +139,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
   let baseUrl = '';
   let lastError = null;
   let closed = false;
+  let requestSequence = 0;
   const mapUrl = (remoteUrl) => {
     const resolved = mediaUrl(remoteUrl, root).href;
     let id = ids.get(resolved);
@@ -175,11 +176,33 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
     const controller = new AbortController();
     controllers.add(controller);
     response.on('close', () => { if (!response.writableFinished) controller.abort(); });
+    const resourceEvent = typeof onResourceEvent === 'function' ? {
+      requestId: String(++requestSequence),
+      consumer: request.headers['user-agent'] === 'VidSnag-Thumbnail/1.0' ? 'preview' : 'download',
+      url: remoteUrl,
+      finalUrl: remoteUrl,
+      statusCode: null,
+      bytesTransferred: 0,
+      contentLength: null,
+      totalBytes: null,
+      range: null,
+      requestedRange: request.headers.range || null,
+      completeResource: false,
+    } : null;
+    const emitResourceEvent = (type, extra = {}) => {
+      if (!resourceEvent) return;
+      // Progress observers must never interrupt an otherwise valid download.
+      try { onResourceEvent({ ...resourceEvent, type, bytesDelta: 0, ...extra }); } catch { /* Ignore observer errors. */ }
+    };
     const forwardedHeaders = { ...headers };
     // FFmpeg may request a byte range for an initialization section or segment.
     if (request.headers.range) forwardedHeaders.Range = request.headers.range;
     try {
       await requestMediaWithRedirects(remoteUrl, forwardedHeaders, async (upstream, finalUrl) => {
+        if (resourceEvent) {
+          resourceEvent.finalUrl = finalUrl;
+          resourceEvent.statusCode = upstream.statusCode;
+        }
         if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
           const error = new Error(`Media request failed with status ${upstream.statusCode}.`);
           error.statusCode = upstream.statusCode;
@@ -223,16 +246,75 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
         for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
           if (upstream.headers[name]) responseHeaders[name] = upstream.headers[name];
         }
+        if (resourceEvent) {
+          const lengthHeader = String(upstream.headers['content-length'] || '');
+          const contentLength = /^\d+$/.test(lengthHeader) ? Number(lengthHeader) : null;
+          resourceEvent.contentLength = Number.isSafeInteger(contentLength) ? contentLength : null;
+          const rangeMatch = String(upstream.headers['content-range'] || '').match(/^bytes (\d+)-(\d+)\/(\d+|\*)$/i);
+          if (upstream.statusCode === 206 && rangeMatch) {
+            const start = Number(rangeMatch[1]);
+            const end = Number(rangeMatch[2]);
+            const total = rangeMatch[3] === '*' ? null : Number(rangeMatch[3]);
+            if (Number.isSafeInteger(start) && Number.isSafeInteger(end) && end >= start
+              && (total === null || (Number.isSafeInteger(total) && total > end))) {
+              resourceEvent.range = { start, end, total };
+              resourceEvent.totalBytes = total;
+            }
+          } else if (upstream.statusCode === 200) {
+            resourceEvent.totalBytes = resourceEvent.contentLength;
+          }
+          emitResourceEvent('start');
+        }
         response.writeHead(upstream.statusCode, responseHeaders);
         const writeChunk = (chunk) => new Promise((resolve, reject) => {
           if (response.destroyed) { reject(new Error('Media client disconnected.')); return; }
-          response.write(chunk, (error) => error ? reject(error) : resolve());
+          response.write(chunk, (error) => {
+            if (error) { reject(error); return; }
+            if (resourceEvent) {
+              resourceEvent.bytesTransferred += chunk.length;
+              emitResourceEvent('progress', { bytesDelta: chunk.length });
+            }
+            resolve();
+          });
         });
         if (head.length) await writeChunk(head);
         for (let part = await iterator.next(); !part.done; part = await iterator.next()) {
           await writeChunk(part.value);
         }
-        response.end();
+        if (resourceEvent) {
+          // EOF alone is insufficient: FFmpeg can abandon a request while its
+          // final bytes are still being written. Only count a finished response.
+          await new Promise((resolve, reject) => {
+            const finish = (error) => {
+              response.removeListener('finish', onFinish);
+              response.removeListener('close', onClose);
+              response.removeListener('error', onError);
+              if (error) reject(error); else resolve();
+            };
+            const onFinish = () => finish();
+            const onClose = () => {
+              if (response.writableFinished) { finish(); return; }
+              const error = new Error('Media client disconnected before the resource finished.');
+              error.code = 'ECONNRESET';
+              finish(error);
+            };
+            const onError = (error) => finish(error);
+            response.once('finish', onFinish);
+            response.once('close', onClose);
+            response.once('error', onError);
+            if (response.destroyed) onClose(); else response.end();
+          });
+          const { range, bytesTransferred, contentLength, statusCode } = resourceEvent;
+          const expectedBytes = range ? range.end - range.start + 1 : contentLength;
+          if (expectedBytes !== null && bytesTransferred !== expectedBytes) {
+            const error = new Error('Media response ended before the requested resource was complete.');
+            error.code = 'INCOMPLETE_MEDIA_RESPONSE';
+            throw error;
+          }
+          resourceEvent.completeResource = statusCode === 200
+            || (range !== null && range.start === 0 && range.total !== null && range.end + 1 === range.total);
+          emitResourceEvent('complete');
+        } else response.end();
       }, {
         credentialOrigin: credentialOrigin || root.origin,
         sourcePageUrl,
@@ -240,6 +322,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
         signal: controller.signal,
       });
     } catch (error) {
+      emitResourceEvent('error', { code: error.code || 'MEDIA_REQUEST_FAILED' });
       // FFmpeg closes surplus inputs when probing or stopping. A downstream
       // disconnect must not hide its actual demuxing/selection error.
       if (!['ABORT_ERR', 'EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED'].includes(error.code)) lastError = error;

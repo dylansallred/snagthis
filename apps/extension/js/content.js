@@ -4,8 +4,32 @@
   const CHANNEL = 'vidsnag:media';
   let lastPage = location.href;
   let scanTimer;
+  let retired = false;
+  const events = new AbortController();
   const watchedVideos = new WeakSet();
-  function send(message) { chrome.runtime.sendMessage(message).catch(() => {}); }
+  function retire() {
+    if (retired) return;
+    retired = true;
+    clearTimeout(scanTimer);
+    observer.disconnect();
+    events.abort();
+    try { chrome.runtime.onMessage.removeListener(onRuntimeMessage); } catch { /* The extension may already be unloaded. */ }
+  }
+  function messagingFailed(error) {
+    if (/extension context invalidated/i.test(String(error?.message || error || ''))) retire();
+  }
+  function send(message) {
+    if (retired) return false;
+    try {
+      // Reloading an extension invalidates old isolated worlds. Chrome can throw
+      // before returning a promise, so a promise rejection handler alone is not enough.
+      Promise.resolve(chrome.runtime.sendMessage(message)).catch(messagingFailed);
+      return true;
+    } catch (error) {
+      messagingFailed(error);
+      return false;
+    }
+  }
   function absolute(value) {
     if (!value) return '';
     try { const url = new URL(value, document.baseURI); return /^https?:$/.test(url.protocol) ? url.href : ''; } catch { return ''; }
@@ -50,44 +74,49 @@
     };
   }
   function navigation() {
+    if (retired) return;
     if (lastPage === location.href) return;
     lastPage = location.href;
     send({ cmd: 'PAGE_NAVIGATED', pageUrl: lastPage });
     scheduleScan();
   }
   function scan() {
+    if (retired) return;
     navigation();
+    if (retired) return;
     const context = collectPageContext();
-    send({ cmd: 'PAGE_CONTEXT', context });
+    if (!send({ cmd: 'PAGE_CONTEXT', context })) return;
     if (context.youtubeMetadata) {
-      send({ cmd: 'STORE_DETECTED_MEDIA', media: { ...context, url: `https://www.youtube.com/watch?v=${context.youtubeMetadata.videoId}`, type: 'youtube', mediaKind: 'youtube-page', contentType: 'video/youtube' } });
+      if (!send({ cmd: 'STORE_DETECTED_MEDIA', media: { ...context, url: `https://www.youtube.com/watch?v=${context.youtubeMetadata.videoId}`, type: 'youtube', mediaKind: 'youtube-page', contentType: 'video/youtube' } })) return;
     }
     for (const video of Array.from(document.querySelectorAll('video')).slice(0, 20)) {
       if (!watchedVideos.has(video)) {
         watchedVideos.add(video);
-        for (const event of ['loadedmetadata', 'playing', 'durationchange']) video.addEventListener(event, scheduleScan, { passive: true });
+        for (const event of ['loadedmetadata', 'playing', 'durationchange']) video.addEventListener(event, scheduleScan, { passive: true, signal: events.signal });
       }
       const sources = [video.currentSrc, video.getAttribute('src'), ...Array.from(video.querySelectorAll('source')).map(source => source.src)];
       for (const candidate of new Set(sources.map(absolute).filter(Boolean))) {
-        send({ cmd: 'STORE_DETECTED_MEDIA', media: { ...collectPageContext(candidate), url: candidate, contentType: video.querySelector('source')?.type || 'video/unknown', detectedAt: Date.now() } });
+        if (!send({ cmd: 'STORE_DETECTED_MEDIA', media: { ...collectPageContext(candidate), url: candidate, contentType: video.querySelector('source')?.type || 'video/unknown', detectedAt: Date.now() } })) return;
       }
     }
   }
-  function scheduleScan() { clearTimeout(scanTimer); scanTimer = setTimeout(scan, 150); }
+  function scheduleScan() { if (retired) return; clearTimeout(scanTimer); scanTimer = setTimeout(scan, 150); }
   window.addEventListener('message', event => {
-    if (event.source !== window || event.data?.source !== CHANNEL) return;
+    if (retired || event.source !== window || event.data?.source !== CHANNEL) return;
     if (event.data.navigation) { navigation(); return; }
     const incoming = event.data.media;
     if (!incoming || typeof incoming.url !== 'string' || !absolute(incoming.url)) return;
     if (String(incoming.manifestText || '').length > 262144) return;
     send({ cmd: 'STORE_DETECTED_MEDIA', media: { ...incoming, ...collectPageContext(absolute(incoming.url)) } });
-  });
-  chrome.runtime.onMessage.addListener(message => { if (message?.cmd === 'SCAN_PAGE') scan(); });
-  window.addEventListener('popstate', navigation); window.addEventListener('hashchange', navigation);
+  }, { signal: events.signal });
+  function onRuntimeMessage(message) { if (message?.cmd === 'SCAN_PAGE') scan(); }
+  chrome.runtime.onMessage.addListener(onRuntimeMessage);
+  window.addEventListener('popstate', navigation, { signal: events.signal }); window.addEventListener('hashchange', navigation, { signal: events.signal });
   const observer = new MutationObserver(scheduleScan);
   function start() {
+    if (retired) return;
     observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['src', 'poster', 'content'] });
     scan();
   }
-  if (document.documentElement) start(); else document.addEventListener('DOMContentLoaded', start, { once: true });
+  if (document.documentElement) start(); else document.addEventListener('DOMContentLoaded', start, { once: true, signal: events.signal });
 })();

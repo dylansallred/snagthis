@@ -83,3 +83,47 @@ test('selection validation preserves valid settings and rejects untrusted or mal
     assert.ok(result.errors.length > 0);
   }
 });
+
+test('a master owns its quality menu while repeated HLS observations never invent another 1080p', () => {
+  const pageUrl = 'https://example.test/watch/movie';
+  const rootUrl = 'https://media.example.test/movie/master.m3u8';
+  const masterText = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5692000,RESOLUTION=1920x1080\n1080.jpg\n#EXT-X-STREAM-INF:BANDWIDTH=2628000,RESOLUTION=1280x720\n720.jpg\n';
+  const parsed = parseHlsManifest(masterText, rootUrl, { durationSeconds: 7200 });
+  const root = { id: 'master', url: rootUrl, type: 'hls', pageUrl, durationSeconds: 7200, manifest: parsed };
+  const child = { id: 'child', url: parsed.variants[0].url, type: 'hls', contentType: 'image/jpeg', pageUrl, durationSeconds: 7200, height: 1080, manifest: parseHlsManifest('#EXTM3U\n#EXTINF:7200,\nsegment.jpg\n#EXT-X-ENDLIST\n', parsed.variants[0].url) };
+  const observation = { id: 'observation', url: 'https://media.example.test/movie/observed.m3u8', type: 'hls', pageUrl, durationSeconds: 7200, height: 1080 };
+  const collapsed = collapseDetections([root, child, observation]);
+  assert.equal(collapsed.length, 1);
+  assert.deepEqual(collapsed[0].variants.map(variant => variant.height), [1080, 720]);
+  assert.ok(collapsed[0].variants.every(variant => variant.bandwidth > 0 && variant.sizeBytes > 0));
+  assert.equal(collapsed[0].detectedStreams.length, 3, 'raw observations remain available through Show all');
+
+  const another1080 = '#EXT-X-STREAM-INF:BANDWIDTH=3500000,RESOLUTION=1920x1080,CODECS="av01.0.08M.08"\n1080-av1.jpg\n';
+  const alternateMaster = { ...root, manifest: parseHlsManifest(masterText + another1080, rootUrl, { durationSeconds: 7200 }) };
+  const direct = { id: 'direct', url: 'https://files.example.test/movie.mp4', type: 'file', contentType: 'video/mp4', height: 1080, pageUrl, durationSeconds: 7200, contentLength: 1000000 };
+  const alternatives = collapseDetections([alternateMaster, child, observation, direct])[0].variants;
+  assert.equal(alternatives.filter(variant => variant.bandwidth && variant.height === 1080).length, 2, 'different declared renditions at the same height remain available');
+  assert.equal(alternatives.length, 4, 'three declared renditions plus the actual direct file');
+  assert.equal(alternatives.find(variant => variant.url === direct.url).sizeBytes, 1000000);
+});
+
+test('playlist init and media references exclude MP4-looking components while preserving direct alternatives', () => {
+  const pageUrl = 'https://example.test/watch/42';
+  const rootUrl = 'https://media.example.test/movie/master.m3u8';
+  const master = parseHlsManifest('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5692000,RESOLUTION=1920x1080\n1080.jpg\n#EXT-X-STREAM-INF:BANDWIDTH=2628000,RESOLUTION=1280x720\n720.jpg\n', rootUrl);
+  const child = parseHlsManifest('#EXTM3U\n#EXT-X-MAP:URI="pieces/init.jpg"\n#EXTINF:10,\npieces/1.jpg\n#EXT-X-ENDLIST\n', master.variants[0].url);
+  assert.deepEqual(child.initializationUrls, ['https://media.example.test/movie/pieces/init.jpg']);
+  const init = { id: 'init', url: child.initializationUrls[0], type: 'file', contentType: 'video/mp4', height: 1080, contentLength: 1393 };
+  const segment = { id: 'segment', url: child.segmentUrls[0], type: 'file', contentType: 'video/mp4', height: 1080, contentLength: 6000000 };
+  const root = { id: 'master', url: rootUrl, pageUrl, durationSeconds: 10, manifest: master };
+  const media = { id: 'media', url: child.url, pageUrl, durationSeconds: 10, type: 'hls', contentType: 'image/jpeg', manifest: child };
+  const direct = { id: 'direct', url: 'https://files.example.test/full-movie.mp4', pageUrl, durationSeconds: 10, type: 'file', contentType: 'video/mp4', height: 1080, contentLength: 1000000 };
+  const collapsed = collapseDetections([init, segment, root, media, direct]);
+  assert.equal(collapsed.length, 1, 'exact playlist references group components even without copied page/duration metadata');
+  assert.equal(collapsed[0].id, 'master');
+  assert.deepEqual(new Set(collapsed[0].variants.map(variant => variant.url)), new Set([...master.variants.map(variant => variant.url), direct.url]));
+  assert.equal(collapsed[0].detectedStreams.length, 5, 'raw observations remain inspectable');
+  const standalone = collapseDetections([init, segment, media]);
+  assert.equal(standalone[0].id, 'media', 'a media playlist remains the source when no master was observed');
+  assert.deepEqual(standalone[0].variants.map(variant => variant.url), [media.url]);
+});

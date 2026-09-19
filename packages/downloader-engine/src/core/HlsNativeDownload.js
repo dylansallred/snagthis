@@ -255,7 +255,17 @@ function buildNativeHlsArgs({ job = {}, playlistUrl, outputPath, headers, select
   }
 
   const addInput = (inputUrl, isHls = true) => {
-    if (isHls) args.push('-allowed_extensions', 'ALL');
+    if (isHls) {
+      // Playlist analysis already verified the content. Some CDNs label valid
+      // HLS/fMP4 resources as JPEGs, so their suffixes must not choose a demuxer.
+      args.push('-f', 'hls', '-allowed_extensions', 'ALL');
+      if (scopedProxy) {
+        // Recent FFmpeg versions separately check segment suffixes against the
+        // detected container. The relay only serves registered playlist URLs;
+        // permit their real bytes to determine the format (e.g. fMP4 in .jpg).
+        args.push('-allowed_segment_extensions', 'ALL', '-extension_picky', '0');
+      }
+    }
     args.push(
       '-protocol_whitelist', scopedProxy ? 'http,tcp,crypto' : 'file,http,https,tcp,tls,crypto,data',
       '-fflags', '+genpts+discardcorrupt',

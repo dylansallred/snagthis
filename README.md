@@ -68,6 +68,7 @@ See [CONTRIBUTING](CONTRIBUTING.md), [PRIVACY](PRIVACY.md), [SECURITY](SECURITY.
 - **No video found:** press play on the page, then open VidSnag again. Use **No video?** for the detection checklist.
 - **App not open:** start the desktop app. If prompted, enter a fresh code from Settings → Advanced in the extension.
 - **Link expired:** reopen the source page so the site can issue a fresh link. VidSnag reuses completed pieces only when the refreshed playlist is compatible.
+- **YouTube asks you to sign in:** first check that the video plays while signed into Chrome. On the failed desktop row, open **Details → Use Chrome sign-in** and confirm access for that download attempt. Your system may ask for access to Chrome's saved sign-in. This uses your existing account access; it cannot grant access your account does not have.
 - **Not enough space:** choose a different save folder or free space, then retry.
 - **File was moved or deleted:** use **Locate** to reconnect its list entry with the file.
 - **App cannot start its local connection:** check that another VidSnag copy is not already using the local port.

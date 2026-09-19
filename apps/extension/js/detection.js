@@ -40,9 +40,13 @@
       return /^[\w-]{6,20}$/.test(id || '') ? id : '';
     } catch { return ''; }
   }
-  function withoutManifestSegments(items) {
-    const segments = new Set(items.flatMap(item => item.manifest?.segmentUrls || []));
-    return items.filter(item => !segments.has(item.url));
+  function isYoutubeAuxiliaryResource(url, pageUrl, mediaKind) {
+    const pageId = youtubeId(pageUrl);
+    return Boolean(pageId && (mediaKind !== 'youtube-page' || youtubeId(url) !== pageId));
   }
-  return { httpUrl, mediaType, sanitizeHeaders, thumbnailUrl, youtubeId, withoutManifestSegments };
+  function withoutManifestSegments(items) {
+    const segments = new Set(items.flatMap(item => (item.manifest?.segmentUrls || []).concat(item.manifest?.initializationUrls || [])));
+    return items.filter(item => !segments.has(item.url) && !isYoutubeAuxiliaryResource(item.url, item.sourcePageUrl, item.mediaKind));
+  }
+  return { httpUrl, mediaType, sanitizeHeaders, thumbnailUrl, youtubeId, isYoutubeAuxiliaryResource, withoutManifestSegments };
 });

@@ -33,7 +33,7 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
-  const layoutRef = useRef<{ cellW: number; cellH: number; cols: number; gap: number } | null>(null);
+  const layoutRef = useRef<{ cellW: number; cellH: number; cols: number; gap: number; piecesPerCell: number } | null>(null);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -45,22 +45,27 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
 
     const dpr = window.devicePixelRatio || 1;
     const containerWidth = container.clientWidth;
+    if (containerWidth <= 0) return;
 
-    // A consistent 32-column pieces map, confined to the expanded details panel.
+    // Use the available width and at most 20 short rows. Very large playlists
+    // combine adjacent pieces proportionally, so no piece is clipped or omitted.
     const gap = 2;
-    const cols = 32;
-    const cellSize = Math.max(1, (containerWidth - (cols - 1) * gap) / cols);
+    const cellSize = 4;
     const step = cellSize + gap;
-    const rows = Math.ceil(totalSegments / cols);
-    const visibleRows = rows;
-    const canvasHeight = visibleRows * step - gap;
+    const cols = Math.max(1, Math.floor((containerWidth + gap) / step));
+    const piecesPerCell = Math.max(1, Math.ceil(totalSegments / (cols * 20)));
+    const cells = Math.ceil(totalSegments / piecesPerCell);
+    const rows = Math.ceil(cells / cols);
+    const canvasHeight = rows * step - gap;
 
-    layoutRef.current = { cellW: cellSize, cellH: cellSize, cols, gap };
+    layoutRef.current = { cellW: cellSize, cellH: cellSize, cols, gap, piecesPerCell };
 
     canvas.width = containerWidth * dpr;
     canvas.height = canvasHeight * dpr;
     canvas.style.width = `${containerWidth}px`;
     canvas.style.height = `${canvasHeight}px`;
+    canvas.dataset.piecesPerCell = String(piecesPerCell);
+    canvas.setAttribute('aria-label', `${totalSegments} download pieces${piecesPerCell > 1 ? `, grouped in sets of up to ${piecesPerCell}` : ''}; status is summarized above`);
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, containerWidth, canvasHeight);
 
@@ -70,25 +75,22 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
       resolvedColors[status] = resolveCssColor(cssVar);
     }
 
-    // Batch draw by status
-    const byColor = new Map<string, number[]>();
-    for (let i = 0; i < totalSegments; i++) {
-      const state = segmentStates?.[String(i)];
-      const status = state?.status || 'pending';
-      const color = resolvedColors[status] || resolvedColors.pending;
-      if (!byColor.has(color)) byColor.set(color, []);
-      byColor.get(color)!.push(i);
-    }
-
-    for (const [color, indices] of byColor) {
-      ctx.fillStyle = color;
-      for (const i of indices) {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        if (row >= visibleRows) continue;
-        const x = col * step;
-        const y = row * step;
-        ctx.fillRect(x, y, cellSize, cellSize);
+    for (let cell = 0; cell < cells; cell++) {
+      const first = cell * piecesPerCell;
+      const last = Math.min(totalSegments, first + piecesPerCell);
+      const counts = new Map<string, number>();
+      for (let index = first; index < last; index++) {
+        const status = segmentStates?.[String(index)]?.status || 'pending';
+        counts.set(status, (counts.get(status) || 0) + 1);
+      }
+      const x = (cell % cols) * step;
+      const y = Math.floor(cell / cols) * step;
+      let offset = 0;
+      for (const [status, count] of counts) {
+        const width = cellSize * count / (last - first);
+        ctx.fillStyle = resolvedColors[status] || resolvedColors.pending;
+        ctx.fillRect(x + offset, y, width, cellSize);
+        offset += width;
       }
     }
   }, [totalSegments, segmentStates]);
@@ -116,9 +118,9 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     const step = layout.cellW + layout.gap;
     const col = Math.floor(x / step);
     const row = Math.floor(y / step);
-    const idx = row * layout.cols + col;
+    const idx = (row * layout.cols + col) * layout.piecesPerCell;
 
-    if (idx < 0 || idx >= totalSegments) {
+    if (col >= layout.cols || idx < 0 || idx >= totalSegments || x % step > layout.cellW || y % step > layout.cellH) {
       setTooltip(null);
       return;
     }
@@ -126,7 +128,16 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     const state = segmentStates?.[String(idx)];
     const status = state?.status || 'pending';
     const attempt = state?.attempt || 0;
-    const text = `Piece ${idx + 1}: ${status}${attempt > 1 ? ` (attempt ${attempt})` : ''}`;
+    let text = `Piece ${idx + 1}: ${status}${attempt > 1 ? ` (attempt ${attempt})` : ''}`;
+    if (layout.piecesPerCell > 1) {
+      const last = Math.min(totalSegments, idx + layout.piecesPerCell);
+      const counts = new Map<string, number>();
+      for (let index = idx; index < last; index++) {
+        const itemStatus = segmentStates?.[String(index)]?.status || 'pending';
+        counts.set(itemStatus, (counts.get(itemStatus) || 0) + 1);
+      }
+      text = `Pieces ${idx + 1}–${last}: ${[...counts].map(([itemStatus, count]) => `${count} ${itemStatus}`).join(', ')}`;
+    }
 
     const containerRect = containerRef.current?.getBoundingClientRect();
     const tooltipX = containerRect ? e.clientX - containerRect.left : x;
@@ -150,7 +161,7 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
       {tooltip && (
         <div
           className="absolute pointer-events-none bg-popover text-popover-foreground text-[10px] px-1.5 py-0.5 rounded shadow-md whitespace-nowrap z-10"
-          style={{ left: Math.min(tooltip.x, (containerRef.current?.clientWidth || 200) - 120), top: tooltip.y }}
+          style={{ left: Math.max(0, Math.min(tooltip.x, (containerRef.current?.clientWidth || 200) - 260)), top: tooltip.y, maxWidth: '100%' }}
         >
           {tooltip.text}
         </div>

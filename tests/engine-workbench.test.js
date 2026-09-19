@@ -52,7 +52,7 @@ test('a finalizing or pausing runner retains its slot until it exits', async () 
 test('queue snapshots are atomic, retain latest state, and never persist request secrets', async () => {
   const fixture = await queueFixture();
   try {
-    const job = { id: 'private-source', title: 'First', url: 'https://media.test/video', headers: { Cookie: 'session=secret-cookie', Authorization: 'Bearer secret-auth', 'X-Token': 'secret-token', Referer: 'https://page.test/watch' } };
+    const job = { id: 'private-source', youtubeBrowserSession: 'chrome', title: 'First', url: 'https://media.test/video', headers: { Cookie: 'session=secret-cookie', Authorization: 'Bearer secret-auth', 'X-Token': 'secret-token', Referer: 'https://page.test/watch' } };
     fixture.manager.addJob(job);
     const firstWrite = fixture.manager.saveQueue();
     job.title = 'Latest';
@@ -62,7 +62,8 @@ test('queue snapshots are atomic, retain latest state, and never persist request
     assert.equal(snapshot.queue[0].title, 'Latest');
     assert.equal(snapshot.queue[0].requiresSourceRefresh, true);
     assert.equal(snapshot.queue[0].headers.Referer, 'https://page.test/watch');
-    assert.doesNotMatch(text, /secret-cookie|secret-auth|secret-token/);
+    assert.doesNotMatch(text, /secret-cookie|secret-auth|secret-token|youtubeBrowserSession/);
+    assert.equal(fixture.manager.getQueue()[0].youtubeBrowserSession, undefined);
     assert.equal(fs.existsSync(`${fixture.manager.queueFilePath}.tmp`), false);
     // Windows exposes synthetic mode bits; its ACL controls access instead.
     if (process.platform !== 'win32') assert.equal(fs.statSync(fixture.manager.queueFilePath).mode & 0o777, 0o600);
@@ -153,4 +154,80 @@ test('a pause during media sniffing stops before starting another manifest reque
     await new Promise((resolve) => source.close(resolve));
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+
+test('Chrome browser access requires an explicit per-job choice and a real YouTube URL', () => {
+  const { buildYouTubeBrowserSessionArgs } = require('../packages/downloader-engine/src/core/JobProcessor').__test;
+  assert.deepEqual(buildYouTubeBrowserSessionArgs({ url: 'https://www.youtube.com/watch?v=example' }), []);
+  assert.deepEqual(buildYouTubeBrowserSessionArgs({ url: 'https://www.youtube.com/watch?v=example', youtubeBrowserSession: 'chrome' }), ['--cookies-from-browser', 'chrome']);
+  assert.deepEqual(buildYouTubeBrowserSessionArgs({ url: 'https://youtu.be/example', youtubeBrowserSession: 'chrome' }), ['--cookies-from-browser', 'chrome']);
+  assert.deepEqual(buildYouTubeBrowserSessionArgs({ url: 'https://www.youtube.com/watch?v=example', youtubeBrowserSession: true }), []);
+  for (const url of ['https://youtube.com.example.org/watch', 'https://example.org/video', 'file://youtube.com/watch', 'https://name:password@youtube.com/watch']) {
+    assert.throws(() => buildYouTubeBrowserSessionArgs({ url, youtubeBrowserSession: 'chrome' }), { code: 'UNSUPPORTED_AUTH_SOURCE' });
+  }
+});
+
+test('yt-dlp uses the app Node runtime without launching a second Electron app', () => {
+  const { buildYtDlpRuntimeOptions } = require('../packages/downloader-engine/src/core/JobProcessor').__test;
+  const originalEnvironment = { PATH: '/runtime', ELECTRON_RUN_AS_NODE: '0' };
+  const desktop = buildYtDlpRuntimeOptions({ execPath: '/Applications/VidSnag App/Contents/MacOS/VidSnag', electron: true, env: originalEnvironment });
+  assert.deepEqual(desktop.args, ['--js-runtimes', 'node:/Applications/VidSnag App/Contents/MacOS/VidSnag']);
+  assert.equal(desktop.env.ELECTRON_RUN_AS_NODE, '1');
+  assert.equal(desktop.env.PATH, originalEnvironment.PATH);
+  assert.equal(originalEnvironment.ELECTRON_RUN_AS_NODE, '0', 'only the yt-dlp child receives the Electron runtime flag');
+  const standalone = buildYtDlpRuntimeOptions({ execPath: process.execPath, electron: false, env: { PATH: '/runtime' } });
+  assert.deepEqual(standalone.args, ['--js-runtimes', `node:${process.execPath}`]);
+  assert.equal(standalone.env.ELECTRON_RUN_AS_NODE, undefined);
+  assert.ok(!desktop.args.includes('--cookies-from-browser'), 'runtime support must not enable browser access');
+});
+
+test('yt-dlp child receives trusted CA certificates and removes its temporary bundle', async () => {
+  const { createYtDlpTrustOptions, getYtDlpTransportError } = require('../packages/downloader-engine/src/core/JobProcessor').__test;
+  const originalEnvironment = { PATH: '/runtime' };
+  const trust = await createYtDlpTrustOptions(originalEnvironment);
+  try {
+    const pem = await fs.promises.readFile(trust.env.SSL_CERT_FILE, 'utf8');
+    const certificates = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g);
+    assert.ok(certificates.length > 0);
+    for (const certificate of certificates) assert.ok(new (require('node:crypto').X509Certificate)(certificate).ca);
+    assert.equal(trust.env.PATH, '/runtime');
+    assert.equal(originalEnvironment.SSL_CERT_FILE, undefined, 'trust setup changes only the child environment');
+  } finally { await trust.cleanup(); }
+  assert.equal(fs.existsSync(trust.env.SSL_CERT_FILE), false);
+  const custom = { SSL_CERT_FILE: '/managed/certificates.pem' };
+  const preserved = await createYtDlpTrustOptions(custom);
+  assert.equal(preserved.env, custom, 'an explicitly configured trust store remains authoritative');
+  await preserved.cleanup();
+  const error = getYtDlpTransportError('[tls] error:0A000086:SSL routines::certificate verify failed');
+  assert.equal(error.code, 'TLS_CERTIFICATE_ERROR');
+  assert.match(error.message, /security certificate could not be verified/);
+  assert.equal(getYtDlpTransportError('ERROR: ffmpeg exited with code 251'), null);
+});
+
+test('a saved queue cannot restore consent to read a browser session', async () => {
+  const fixture = await queueFixture();
+  try {
+    fs.mkdirSync(path.dirname(fixture.manager.queueFilePath), { recursive: true });
+    fs.writeFileSync(fixture.manager.queueFilePath, JSON.stringify({ queue: [{ id: 'restored-consent', url: 'https://www.youtube.com/watch?v=example', queueStatus: 'paused', status: 'paused', youtubeBrowserSession: 'chrome' }], settings: { autoStart: false } }));
+    await fixture.manager.loadQueue();
+    assert.equal(fixture.jobs.get('restored-consent').youtubeBrowserSession, undefined);
+  } finally { await fixture.close(); }
+});
+
+
+test('YouTube auxiliary page audio resolves to the selected video instead of a channel tab', () => {
+  const { resolveYouTubeVideoUrl } = require('../packages/downloader-engine/src/core/JobProcessor').__test;
+  const canonical = 'https://www.youtube.com/watch?v=0SerEuqAlAA';
+  assert.equal(resolveYouTubeVideoUrl({
+    url: 'https://www.youtube.com/s/search/audio/no_input.mp3',
+    sourcePageUrl: canonical,
+    youtubeMetadata: { videoId: '0SerEuqAlAA' },
+  }), canonical);
+  assert.equal(resolveYouTubeVideoUrl({ url: 'https://youtu.be/0SerEuqAlAA?si=sharing', sourcePageUrl: 'https://www.youtube.com/' }), canonical);
+  assert.equal(resolveYouTubeVideoUrl({ url: 'https://www.youtube.com/shorts/0SerEuqAlAA' }), canonical);
+  assert.equal(resolveYouTubeVideoUrl({ url: 'https://www.youtube.com/watch?v=B0_13LSguRc&list=playlist', sourcePageUrl: canonical }), 'https://www.youtube.com/watch?v=B0_13LSguRc', 'an explicit video URL takes priority over stale page metadata');
+  assert.throws(() => resolveYouTubeVideoUrl({ url: 'https://www.youtube.com/s/search/audio/no_input.mp3' }), { code: 'INVALID_VIDEO_URL' });
+  assert.throws(() => resolveYouTubeVideoUrl({ url: 'https://www.youtube.com/playlist?list=playlist' }), { code: 'INVALID_VIDEO_URL' });
+  assert.equal(resolveYouTubeVideoUrl({ url: 'https://media.example/video.mp4', sourcePageUrl: canonical }), 'https://media.example/video.mp4');
 });

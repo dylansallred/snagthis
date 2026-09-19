@@ -54,7 +54,7 @@ export function VideoRow({ row, apiBase, folder, expanded, renaming, busy, onTog
               {(row.source.url || row.source.sourcePageUrl) && <><DropdownMenuItem onSelect={() => command('copy-link')}>{ui.copyLink}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('open-page')}>{ui.openPage}</DropdownMenuItem></>}
               {saved && row.state !== 'missing' && <DropdownMenuItem onSelect={() => command('show-folder')}>{ui.showFolder}</DropdownMenuItem>}
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="destructive-text" onSelect={() => command(saved ? 'remove' : 'cancel')}>{saved ? ui.remove : ui.cancelDownload}</DropdownMenuItem>
+              <DropdownMenuItem className="destructive-text" onSelect={() => command(saved ? 'remove' : 'cancel')}>{saved ? ui.remove : row.state === 'problem' ? ui.removeList : ui.cancelDownload}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           {row.action && <button className={`row-action ${row.action.style === 'icon' ? '' : row.action.style === 'primary' ? 'primary-action' : 'labelled'}`} disabled={busy} aria-label={`${row.action.label}: ${row.title}`} title={row.action.label} onClick={() => command(row.action!.id as RowCommand)}>

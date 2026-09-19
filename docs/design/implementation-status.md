@@ -57,3 +57,22 @@ Serve `apps/extension` locally and open `popup.html?demo=default`. Other demo va
 ## Change-review decision
 
 Keep the corrected connection normalization and request-context work in the successor. Drop the HTTPS-to-HTTP downgrade, tracked dependency/build output and stale legacy instructions. Do not merge old branches or the predecessor's entire dirty tree wholesale. See [the original change review](../review/change-review-2026-09-19.md) and [project review](../review/project-review-2026-09-19.md).
+
+## Site fixes and owner field check — 2026-09-19
+
+This batch addresses problems found while using the real desktop app and Chrome extension:
+
+- Native HLS input accepts media segments disguised with `.jpg` filenames. Piece progress comes from actual proxy requests; Details shows the resulting progress, ETA and full-width piece map, and distinguishes unavailable piece counts from measured progress.
+- Cancelling failed, paused or waiting jobs now persists the cancelled state and removes the row from view. Undo remains available; cancelling cannot delete a saved file.
+- Quality choices filter out manifest components that are not video variants. Titles use fresh metadata from the matching source page. After reloading the extension, the owner confirmed the live Cinejoy popup shows **Thor: Love and Thunder** with only the real **1080p and 720p** choices.
+- YouTube auxiliary audio detections resolve to the canonical video URL. Authentication recovery offers an explicit **Use Chrome sign-in** action for one attempt; permission is neither automatic nor persisted.
+- YouTube extraction explicitly uses the existing Node/Electron JavaScript runtime. Its FFmpeg child receives a temporary bundle of Node's trusted certificates when no custom trust store is configured; certificate verification remains enabled and the temporary file is removed afterward.
+- Reloaded extension contexts retire their old content-script observers, timers and listeners. Synchronous message errors and asynchronous invalidation are handled without repeated uncaught exceptions.
+
+One full-length owner-selected Cinejoy HLS download completed: job `mu8uu891-b7o5jy`, **5,137,662,212 bytes**. FFprobe reported **1920×1080 H.264 video, AAC audio and 7,123.872333 seconds**. The root agent opened the saved file through VidSnag's real **Play** action, which launched QuickTime, and observed playback at **1:03:01** with an actual Thor frame. This records one completed download and an observed playback sample.
+
+All **75 focused cases passed across the initial run and the affected-test rerun**. The initial run passed 74/75; the remaining failure was test teardown racing Undo's pending queue write. After waiting for that required write, the cancellation test passed. Desktop TypeScript and ESLint also passed. Local evidence: [initial focused run](../../work/verification/site-fixes-final.log), [cancellation rerun](../../work/verification/cancel-fix-rerun.log), [static checks](../../work/verification/site-fixes-static.log).
+
+A second live movie job, `mu8vow3b-7bjv0m`, completed under the corrected title with all **1,781 of 1,781** pieces measured complete. At 85% it reported 1,517 completed pieces and a 51-second ETA. The live gallery also confirmed that the piece canvas spans the full width beneath the details.
+
+The exact age-restricted YouTube video `B0_13LSguRc` passed an explicit Chrome-session retry through an isolated instance of the production API. It saved a **30.03-second, 1920×1080 AV1 + AAC MP4**, 4,195,235 bytes. FFprobe checked the streams and duration, and FFmpeg decoded the complete sample's video and audio without errors. This is a bounded download check, not a full-length YouTube download. Local evidence: `work/verification/youtube-live-check.json` and `youtube-final-check.log`. All 11 affected engine cases and two extension lifecycle cases passed, with ESLint passing for those changes. The roadmap's separate 3–5 person usability check remains open.

@@ -548,6 +548,8 @@ function registerJobRoutes(
       progress: job.progress,
       totalSegments: job.totalSegments,
       completedSegments: job.completedSegments,
+      downloadMode: job.downloadMode || null,
+      segmentProgressAvailable: typeof job.segmentProgressAvailable === 'boolean' ? job.segmentProgressAvailable : null,
       bytesDownloaded: job.bytesDownloaded,
       totalBytes: Number(job.totalBytes || 0) || 0,
       speedBps: Number(job.speedBps || 0) || 0,
@@ -626,20 +628,26 @@ function registerJobRoutes(
     });
   });
 
-  // Cancel a running job
-  app.post('/api/jobs/:id/cancel', jobIdValidation, (req, res) => {
+  // Keep cancelled jobs available for Undo, while hiding them from the list.
+  app.post('/api/jobs/:id/cancel', jobIdValidation, async (req, res) => {
     const job = jobs.get(req.params.id);
     if (!job) {
       logger.warn('Cancel requested for missing job', { jobId: req.params.id });
       return res.status(404).json({ error: 'Job not found' });
     }
 
+    if (job.queueStatus === 'completed' || job.status === 'completed' || job.status === 'completed-with-errors') {
+      return res.status(409).json({ error: 'This video is already saved. Use Remove from list or Move file to Trash.' });
+    }
     job.cancelled = true;
     job.cleanupOnCancel = true;
-    if (job.status === 'pending' || job.status === 'fetching-playlist' || job.status === 'downloading') {
-      job.status = 'cancelled';
-      job.updatedAt = Date.now();
-    }
+    job.pauseRequested = false;
+    job.resumeRequested = false;
+    job.status = 'cancelled';
+    job.queueStatus = 'cancelled';
+    job.updatedAt = Date.now();
+    job.completedAt = job.updatedAt;
+    await queueManager.saveQueue();
 
     logger.info('Job cancelled', { jobId: job.id, status: job.status });
     res.json({ ok: true });

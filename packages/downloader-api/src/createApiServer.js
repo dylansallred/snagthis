@@ -7,7 +7,7 @@ const { URL } = require('url');
 const { spawnSync } = require('child_process');
 const WebSocket = require('ws');
 const rateLimit = require('express-rate-limit');
-const { API, HEADER, CLIENT, validateSelection } = require('@m3u8/contracts');
+const { API, HEADER, CLIENT, validateSelection, classifyProblem } = require('@m3u8/contracts');
 const { createBridgeSecurity, redact } = require('./utils/security');
 const { scopeMediaHeaders } = require('@m3u8/downloader-engine/src/core/MediaRequest');
 const {
@@ -527,6 +527,8 @@ function createApiServer(options = {}) {
       progress: job.progress,
       totalSegments: job.totalSegments,
       completedSegments: job.completedSegments,
+      downloadMode: job.downloadMode || null,
+      segmentProgressAvailable: typeof job.segmentProgressAvailable === 'boolean' ? job.segmentProgressAvailable : null,
       bytesDownloaded: job.bytesDownloaded,
       totalBytes: Number(job.totalBytes || 0) || 0,
       speedBps: Number(job.speedBps || 0) || 0,
@@ -1565,6 +1567,43 @@ function createApiServer(options = {}) {
       res.status(changed ? 200 : 409).json(changed ? { ok: true } : { error: `This download cannot ${action} now` });
     });
   }
+
+  app.post('/api/queue/:id/use-chrome-session', async (req, res) => {
+    const job = jobs.get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Download not found' });
+    let source;
+    try { source = new URL(job.url); } catch { /* Reject invalid stored sources. */ }
+    const youtubeHosts = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be']);
+    if (!source || !['http:', 'https:'].includes(source.protocol) || source.username || source.password || source.port || !youtubeHosts.has(source.hostname.toLowerCase())) {
+      return res.status(409).json({ error: 'Chrome sign-in can only retry a YouTube download' });
+    }
+    await queueManager.waitForJobIdle(job.id);
+    if (jobs.get(job.id) !== job || job.queueStatus !== 'failed' || classifyProblem(job.error || '').code !== 'authentication') {
+      return res.status(409).json({ error: 'This download does not need a sign-in retry' });
+    }
+    if (queueManager.getActiveCount() >= queueManager.getSettings().maxConcurrent) {
+      return res.status(409).json({ error: 'Wait for an active download to finish, then try Chrome sign-in again' });
+    }
+    const previous = {
+      status: job.status, queueStatus: job.queueStatus, cancelled: job.cancelled,
+      pauseRequested: job.pauseRequested, resumeRequested: job.resumeRequested,
+      error: job.error, errorCode: job.errorCode, progress: job.progress,
+      completedAt: job.completedAt, requiresSourceRefresh: job.requiresSourceRefresh,
+    };
+    Object.assign(job, {
+      status: 'pending', queueStatus: 'queued', cancelled: false,
+      pauseRequested: false, resumeRequested: false, error: null, errorCode: null,
+      progress: 0, completedAt: null, requiresSourceRefresh: false,
+      youtubeBrowserSession: 'chrome',
+    });
+    if (!queueManager.startJob(job.id)) {
+      Object.assign(job, previous);
+      delete job.youtubeBrowserSession;
+      return res.status(409).json({ error: 'The download could not be restarted' });
+    }
+    await queueManager.saveQueue();
+    return res.json({ ok: true, jobId: job.id, status: job.queueStatus });
+  });
 
   app.post(['/v1/jobs/:id/open', '/v1/jobs/:id/open-file'], async (req, res) => {
     const job = jobs.get(req.params.id);

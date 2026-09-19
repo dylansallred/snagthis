@@ -30,6 +30,7 @@ test('row copy and its only visible action match every specified state', () => {
     assert.equal(row.action && row.action.id, action);
   }
   assert.equal(toRowModel(job('cancelled')), null);
+  assert.equal(toRowModel({ id: 'unknown-size', height: 1080, sizeBytes: 0 }).statusLine, '1080p');
   assert.equal(toRowModel(job('completed'), { surface: 'popup' }).tone, 'success');
   assert.equal(toRowModel(job('completed'), { surface: 'popup' }).action.style, 'bordered');
   assert.equal(toRowModel(job('completed')).action.style, 'icon');
@@ -46,6 +47,8 @@ test('ETA, sizes, dates and duration use the documented boundary rules', () => {
   assert.equal(formatEta(3600), '1 hr 0 min left');
   assert.equal(formatEta(7500), '2 hr 5 min left');
   assert.equal(formatSize(undefined), '');
+  assert.equal(formatSize(0), '0 MB');
+  assert.equal(formatSize(1393), '<1 MB');
   assert.equal(formatSize(182400000), '182 MB');
   assert.equal(formatSize(2100000000), '2.1 GB');
   assert.equal(formatSize(2100000000, { estimated: true }), 'about 2.1 GB');
@@ -67,6 +70,7 @@ test('ETA, sizes, dates and duration use the documented boundary rules', () => {
 
 test('every problem has exactly the approved sentence and labelled recovery action', () => {
   const examples = [
+    ['ERROR: [youtube] B0_13LSguRc: Sign in to confirm your age. Use --cookies-from-browser or --cookies for the authentication.', 'authentication', 'Sign-in required to download this video.', 'Details'],
     ['Manifest HTTP 403', 'expired', 'Link expired. Reopen the page to continue from 34%.', 'Open page'],
     [{ statusCode: 410 }, 'expired', 'Link expired. Reopen the page to continue from 34%.', 'Open page'],
     ['Retries exhausted', 'network', 'Connection lost at 34%', 'Try again'],

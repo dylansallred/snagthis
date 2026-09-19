@@ -41,6 +41,7 @@ function App() {
   const [confirm, setConfirm] = useState<{ row: RowModel; mode: 'cancel' | 'remove' } | null>(null);
   const [pending, setPending] = useState<{ url: string; inspection: MediaInspection; selection: MediaSelection } | null>(null);
   const [galleryVideo, setGalleryVideo] = useState<{ title: string; url: string } | null>(null);
+  const [chromeSessionRow, setChromeSessionRow] = useState<RowModel | null>(null);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const apiBase = appInfo?.apiBaseUrl || 'http://127.0.0.1:49732';
@@ -121,7 +122,7 @@ function App() {
     });
     if (success) {
       setConfirm(null);
-      toast(ui.cancelled, { duration: 5000, action: { label: ui.undo, onClick: () => { if (gallery) setDemoRows(previous); else run(row.id, () => api!.retryJob(row.jobId || row.id)); } } });
+      toast(row.state === 'problem' ? ui.removed : ui.cancelled, { duration: 5000, action: { label: ui.undo, onClick: () => { if (gallery) setDemoRows(previous); else run(row.id, () => api!.retryJob(row.jobId || row.id)); } } });
     }
   };
   const removeRow = async (mode: 'list' | 'trash') => {
@@ -137,10 +138,11 @@ function App() {
     if (success) { setConfirm(null); toast.success(mode === 'list' ? ui.removed : ui.trashed); }
   };
   const command = (row: RowModel, action: RowCommand) => {
+    if (action === 'use-chrome-session') { setChromeSessionRow(row); return; }
     if (action === 'details') { setExpandedId((current) => current === row.id ? null : row.id); return; }
     if (action === 'rename') { setRenamingId(row.id); return; }
     if (action === 'remove') { setConfirm({ row, mode: 'remove' }); return; }
-    if (action === 'cancel') { if (row.progress > 50) setConfirm({ row, mode: 'cancel' }); else cancelRow(row); return; }
+    if (action === 'cancel') { if (row.state !== 'problem' && row.progress > 50) setConfirm({ row, mode: 'cancel' }); else cancelRow(row); return; }
     run(row.id, async () => {
       const jobId = row.jobId || row.id;
       if (gallery) {
@@ -225,6 +227,16 @@ function App() {
         <button className="row-action" aria-label={ui.settings} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}><Settings /></button>
       </footer>
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} settings={settings} onSave={save} updater={updater} appInfo={appInfo} api={api} gallery={gallery} />
+      <Dialog open={!!chromeSessionRow} onOpenChange={(open) => { if (!open && !busyId) setChromeSessionRow(null); }}><DialogContent className="remove-dialog"><DialogTitle>{ui.chromeSessionTitle}</DialogTitle><DialogDescription>{ui.chromeSessionBody}</DialogDescription><p>{ui.chromeSessionHint}</p><div className="remove-options"><button className="row-action labelled primary-action" disabled={!!busyId} onClick={async () => {
+        if (!chromeSessionRow) return;
+        const row = chromeSessionRow;
+        const success = await run(row.id, async () => {
+          if (gallery) mutateDemo(row, { queueStatus: 'downloading', status: 'downloading', error: null });
+          else if (api) await api.useChromeSession(row.jobId || row.id);
+          else throw new Error(ui.unavailable);
+        });
+        if (success) setChromeSessionRow(null);
+      }}>{ui.useChromeSession}</button><button className="row-action" disabled={!!busyId} onClick={() => setChromeSessionRow(null)}>{ui.cancel}</button></div></DialogContent></Dialog>
       {gallery && <Dialog open={!!galleryVideo} onOpenChange={(open) => { if (!open) setGalleryVideo(null); }}><DialogContent className="gallery-video-dialog"><DialogTitle>{galleryVideo?.title}</DialogTitle><DialogDescription className="sr-only">{ui.galleryVideoDescription}</DialogDescription>{galleryVideo && <video src={galleryVideo.url} controls autoPlay playsInline preload="metadata" aria-label={galleryVideo.title} />}</DialogContent></Dialog>}
       <Dialog open={!!confirm} onOpenChange={(open) => { if (!open && !busyId) setConfirm(null); }}><DialogContent className="remove-dialog"><DialogTitle>{confirm?.mode === 'remove' ? ui.removeTitle : ui.cancelTitle}</DialogTitle><DialogDescription>{confirm?.mode === 'remove' ? ui.removeBody : ui.cancelBody}</DialogDescription><p className="dialog-video-title">{confirm?.row.title}</p>{confirm?.mode === 'remove' ? <div className="remove-options"><button className="remove-choice" autoFocus disabled={!!busyId} onClick={() => removeRow('list')}><strong>{ui.removeList}</strong><small>{ui.keepFile}</small></button>{confirm.row.state !== 'missing' && <button className="row-action labelled destructive-text" disabled={!!busyId} onClick={() => removeRow('trash')}>{ui.trash}</button>}</div> : <button className="row-action labelled destructive-text" disabled={!!busyId} onClick={() => confirm && cancelRow(confirm.row)}>{ui.cancelDownload}</button>}<button className="row-action" disabled={!!busyId} onClick={() => setConfirm(null)}>{ui.cancel}</button></DialogContent></Dialog>
     </div>

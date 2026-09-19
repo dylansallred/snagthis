@@ -79,6 +79,9 @@ class QueueManager {
 
       // Restore jobs to the jobs Map and reset states for recovery
       this.queue.forEach((queuedJob) => {
+        // Browser-session consent is a trusted desktop action for one attempt.
+        // It must never be restored from a saved or imported queue.
+        delete queuedJob.youtubeBrowserSession;
         if (!queuedJob.storageDir && queuedJob.filePath) {
           queuedJob.storageDir = path.dirname(queuedJob.filePath);
         }
@@ -503,6 +506,8 @@ class QueueManager {
       error: job.error,
       sourcePageUrl: job.sourcePageUrl || null,
       mediaType: job.mediaType || null,
+      downloadMode: job.downloadMode || null,
+      segmentProgressAvailable: typeof job.segmentProgressAvailable === 'boolean' ? job.segmentProgressAvailable : null,
       selection: job.selection || null,
       durationSeconds: job.durationSeconds || null,
       errorCode: job.errorCode || null,

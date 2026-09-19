@@ -47,6 +47,7 @@ export function createApiClient(baseUrl: string, authToken = '') {
     pauseJob: (jobId: string) => post(`/api/queue/${id(jobId)}/pause`),
     resumeJob: (jobId: string) => post(`/api/queue/${id(jobId)}/resume`),
     retryJob: (jobId: string) => post(`/api/jobs/${id(jobId)}/retry`),
+    useChromeSession: (jobId: string) => post(`/api/queue/${id(jobId)}/use-chrome-session`),
     cancelJob: (jobId: string) => post(`/api/jobs/${id(jobId)}/cancel`),
     renameJob: (jobId: string, title: string) => post(`/api/queue/${id(jobId)}/rename`, { title }),
     moveJob: (jobId: string, position: number) => post(`/api/queue/${id(jobId)}/move`, { position }),

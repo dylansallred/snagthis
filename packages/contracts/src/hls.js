@@ -42,6 +42,7 @@
     const subtitles = [];
     const encryption = [];
     const segmentUrls = [];
+    const initializationUrls = [];
     let pendingVariant = null;
     let endList = false;
     let playlistType = null;
@@ -66,6 +67,10 @@
       } else if (/^#EXT-X-(?:SESSION-)?KEY:/.test(line)) {
         const attrs = parseAttributes(line.slice(line.indexOf(':') + 1));
         if (attrs.METHOD && attrs.METHOD !== 'NONE') encryption.push({ method: attrs.METHOD, keyFormat: attrs.KEYFORMAT || 'identity', url: httpUrl(attrs.URI, url), iv: attrs.IV || null });
+      } else if (line.startsWith('#EXT-X-MAP:')) {
+        const attrs = parseAttributes(line.slice(line.indexOf(':') + 1));
+        const initUrl = httpUrl(attrs.URI, url);
+        if (initUrl && !initializationUrls.includes(initUrl)) initializationUrls.push(initUrl);
       } else if (line.startsWith('#EXTINF:')) {
         const seconds = number(line.slice(8).split(',')[0]);
         if (seconds !== null) { duration += seconds; hasDuration = true; }
@@ -97,7 +102,7 @@
       url: url, isMaster: isMaster, variants: variants, audio: audio, subtitles: subtitles,
       durationSeconds: durationSeconds, isLive: isMaster ? null : !endList && playlistType !== 'VOD',
       isDrm: encryption.some(function (key) { return key.method !== 'AES-128' || key.keyFormat !== 'identity'; }),
-      encryption: encryption, referencedUrls: referencedUrls, segmentUrls: segmentUrls,
+      encryption: encryption, referencedUrls: referencedUrls, segmentUrls: segmentUrls, initializationUrls: initializationUrls,
     };
   }
 
@@ -109,9 +114,13 @@
       return index;
     }
     function manifest(item) { return item.manifest || item.hls || item; }
+    function components(item) {
+      const hls = manifest(item);
+      return (hls.segmentUrls || []).concat(hls.initializationUrls || []).map(function (url) { return httpUrl(url, item.url); }).filter(Boolean);
+    }
     function urls(item) {
       const hls = manifest(item);
-      return new Set((hls.referencedUrls || []).concat((hls.variants || []).map(function (variant) { return variant.url || variant.variantUrl; })).map(function (url) { return httpUrl(url, item.url); }).filter(Boolean));
+      return new Set((hls.referencedUrls || []).concat((hls.variants || []).map(function (variant) { return variant.url || variant.variantUrl; }), components(item)).map(function (url) { return httpUrl(url, item.url); }).filter(Boolean));
     }
     const references = detected.map(urls);
     for (let i = 0; i < detected.length; i += 1) {
@@ -136,8 +145,10 @@
       groups.get(key).push(item);
     });
     return Array.from(groups.values()).map(function (group) {
-      const main = group.find(function (item) { return manifest(item).isMaster || (manifest(item).variants || []).length > 0; }) || group[0];
+      const main = group.find(function (item) { return manifest(item).isMaster || (manifest(item).variants || []).length > 0; })
+        || group.find(function (item) { return Array.isArray(manifest(item).segmentUrls); }) || group[0];
       const hls = manifest(main);
+      const componentUrls = new Set(group.flatMap(components));
       const variants = [];
       const seen = new Set();
       const addVariant = function (variant) {
@@ -145,12 +156,33 @@
         if (url && !seen.has(url)) { seen.add(url); variants.push(Object.assign({}, variant, { url: url, variantUrl: url })); }
       };
       group.forEach(function (item) { (manifest(item).variants || []).forEach(addVariant); });
+      const hasDeclaredVariants = variants.length > 0;
       group.forEach(function (item) {
         // A master is a container, not a second selectable quality.
         if (manifest(item).isMaster || (manifest(item).variants || []).length) return;
         if (item === main && group.length === 1) return;
+        // An fMP4 init or media segment can look like a direct MP4 request.
+        // Its exact playlist reference proves it is a component, not a quality.
+        if (componentUrls.has(httpUrl(item.url))) return;
         if ((hls.audio || []).concat(hls.subtitles || []).some(function (rendition) { return rendition.url === item.url; })) return;
-        addVariant({ url: item.url, height: item.height || null, sizeBytes: item.sizeBytes || null });
+        if (hasDeclaredVariants) {
+          // Observing a master/child request again does not discover another quality.
+          // Its height may merely be copied from the currently playing video. Keep
+          // the master's actual renditions authoritative, including equal heights.
+          // Separately observed direct files can still be genuine alternatives.
+          const kind = String(item.mediaKind || '');
+          const contentType = String(item.contentType || '').toLowerCase();
+          const isPlaylist = item.type === 'hls' || item.streamType === 'hls'
+            || kind.startsWith('hls-') || /mpegurl|dash\+xml/.test(contentType)
+            || Array.isArray(manifest(item).segmentUrls)
+            || /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(item.url || '');
+          const isDirectFile = !isPlaylist && kind !== 'youtube-page' && (
+            /\.(?:mp4|m4v|mov|webm|mkv|avi|flv|ogv|mp3|m4a|ogg|wav)(?:[?#]|$)/i.test(item.url || '')
+            || /^(?:video|audio)\/(?!unknown(?:;|$)|youtube(?:;|$)|mp2t(?:;|$))/.test(contentType)
+          );
+          if (!isDirectFile) return;
+        }
+        addVariant({ url: item.url, height: item.height || null, sizeBytes: item.sizeBytes || item.contentLength || null });
       });
       variants.sort(function (a, b) { return (b.height || 0) - (a.height || 0) || (b.bandwidth || 0) - (a.bandwidth || 0); });
       return Object.assign({}, main, {

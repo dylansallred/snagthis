@@ -4,7 +4,7 @@ export interface RowAction {
   label: string;
   style: 'primary' | 'bordered' | 'icon';
 }
-export interface RowProblem { code: 'expired' | 'network' | 'disk' | 'unsupported' | 'missing' | 'unknown'; message: string; action: RowAction; raw: string; }
+export interface RowProblem { code: 'authentication' | 'expired' | 'network' | 'disk' | 'unsupported' | 'missing' | 'unknown'; message: string; action: RowAction; raw: string; }
 export interface RowModel {
   id: string;
   jobId: string | null;

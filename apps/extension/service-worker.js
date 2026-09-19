@@ -55,7 +55,7 @@ async function storeMedia(tabId, incoming, frameId = 0, topUrl = '') {
     const context = { ...(page.contexts[frameId] || {}), ...cleanContext(incoming, topUrl || page.url) };
     const youtube = incoming.mediaKind === 'youtube-page' && D.youtubeId(url);
     const type = youtube ? 'youtube' : D.mediaType(url, incoming.contentType, incoming.manifestText);
-    if (!type || (!youtube && D.youtubeId(topUrl || page.url) && new URL(url).hostname.endsWith('.googlevideo.com'))) return { ok: true, ignored: true };
+    if (!type || D.isYoutubeAuxiliaryResource(url, topUrl || page.url || context.sourcePageUrl, incoming.mediaKind)) return { ok: true, ignored: true };
     if (!page.url) page.url = topUrl || context.sourcePageUrl;
     let manifest;
     try { if (type === 'hls' && incoming.manifestText) manifest = VidSnagHls.parseHlsManifest(incoming.manifestText, url, { durationSeconds: context.durationSeconds }); } catch { /* Detection still works if a manifest is incomplete. */ }

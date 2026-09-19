@@ -1,9 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const tls = require('node:tls');
 const { spawn, spawnSync } = require('child_process');
 const { requestWithRedirects } = require('./PlaylistUtils');
 const { createHash } = require('crypto');
+const { createNativeProgress } = require('./NativeProgress');
 const { sniffMedia, resolveHlsSelection, mediaError } = require('./MediaSelection');
 const { startScopedMediaProxy, scopeMediaHeaders } = require('./MediaRequest');
 const { getRetryBackoffMs, downloadSegment } = require('./SegmentDownloader');
@@ -22,6 +24,89 @@ const {
 } = require('./HlsSegmentDiagnostics');
 const { generateThumbnailFromMp4, normalizeMp4ForPlayback, remuxAndGenerateThumbnails } = require('./VideoConverter');
 const logger = require('../utils/logger');
+
+function isYouTubeUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  try {
+    const parsed = new URL(value.trim());
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return false;
+    const host = String(parsed.hostname || '').toLowerCase();
+    return host === 'youtube.com'
+      || host.endsWith('.youtube.com')
+      || host === 'youtu.be'
+      || host.endsWith('.youtu.be');
+  } catch {
+    return false;
+  }
+}
+
+
+function resolveYouTubeVideoUrl(job = {}) {
+  if (!isYouTubeUrl(job.url)) return job.url;
+  const videoIdFromUrl = (value) => {
+    if (!isYouTubeUrl(value)) return null;
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    const id = host === 'youtu.be' || host.endsWith('.youtu.be')
+      ? url.pathname.split('/').filter(Boolean)[0]
+      : url.pathname === '/watch' ? url.searchParams.get('v')
+        : /^\/(?:shorts|embed|live|v)\/([^/]+)/.exec(url.pathname)?.[1];
+    return /^[A-Za-z0-9_-]{11}$/.test(id || '') ? id : null;
+  };
+  const metadataId = String(job.youtubeMetadata?.videoId || '');
+  // YouTube pages also request UI sounds such as /s/search/audio/no_input.mp3.
+  // Those URLs describe neither the selected video nor an authenticated channel.
+  const id = videoIdFromUrl(job.url) || videoIdFromUrl(job.sourcePageUrl)
+    || (/^[A-Za-z0-9_-]{11}$/.test(metadataId) ? metadataId : null);
+  if (!id) throw mediaError('This YouTube link does not identify a video. Open the video and copy its link.', 'INVALID_VIDEO_URL');
+  return `https://www.youtube.com/watch?v=${id}`;
+}
+
+function buildYouTubeBrowserSessionArgs(job = {}) {
+  if (job.youtubeBrowserSession !== 'chrome') return [];
+  if (!isYouTubeUrl(job.url)) {
+    throw mediaError('Chrome sign-in is only available for YouTube downloads.', 'UNSUPPORTED_AUTH_SOURCE');
+  }
+  return ['--cookies-from-browser', 'chrome'];
+}
+
+function buildYtDlpRuntimeOptions({
+  execPath = process.execPath,
+  electron = Boolean(process.versions.electron),
+  env = process.env,
+} = {}) {
+  // yt-dlp only enables Deno by default. Reuse our supported Node runtime so
+  // its bundled YouTube challenge solver also works on a fresh desktop install.
+  return {
+    args: ['--js-runtimes', `node:${execPath}`],
+    env: electron ? { ...env, ELECTRON_RUN_AS_NODE: '1' } : env,
+  };
+}
+
+async function createYtDlpTrustOptions(env, fsPromises = fs.promises) {
+  if (env.SSL_CERT_FILE || env.SSL_CERT_DIR) return { env, cleanup: async () => {} };
+  // Static OpenSSL builds may point at a CA directory on the build machine.
+  // Give the child the same public CA roots trusted by our Node requests.
+  const certificates = typeof tls.getCACertificates === 'function'
+    ? tls.getCACertificates('default') : tls.rootCertificates;
+  const directory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'vidsnag-ca-'));
+  const cleanup = () => fsPromises.rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
+  try {
+    const filePath = path.join(directory, 'certificates.pem');
+    await fsPromises.writeFile(filePath, certificates.join('\n') + '\n', { mode: 0o600 });
+    return { env: { ...env, SSL_CERT_FILE: filePath }, cleanup };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+}
+
+function getYtDlpTransportError(line) {
+  if (/certificate verify failed|unable to get local issuer certificate|self[- ]signed certificate/i.test(String(line))) {
+    return mediaError('The video server\'s security certificate could not be verified.', 'TLS_CERTIFICATE_ERROR');
+  }
+  return null;
+}
 
 function createJobProcessor({
   downloadDir,
@@ -62,7 +147,8 @@ function createJobProcessor({
     job.earlyThumbnailAttempted = true;
     const outputPath = path.join(job.storageDir || path.dirname(job.filePath), `${job.id}-early.jpg`);
     job._earlyThumbnailPromise = new Promise((resolve) => {
-      const child = spawn(FFMPEG_PATH, ['-nostdin', '-v', 'error', '-i', inputPath, '-frames:v', '1', '-vf', 'scale=224:126:force_original_aspect_ratio=increase,crop=224:126', '-q:v', '5', '-y', outputPath], { stdio: 'ignore' });
+      const previewIdentity = /^http:\/\//.test(inputPath) ? ['-user_agent', 'VidSnag-Thumbnail/1.0'] : [];
+      const child = spawn(FFMPEG_PATH, ['-nostdin', '-v', 'error', ...previewIdentity, '-i', inputPath, '-frames:v', '1', '-vf', 'scale=224:126:force_original_aspect_ratio=increase,crop=224:126', '-q:v', '5', '-y', outputPath], { stdio: 'ignore' });
       const timer = setTimeout(() => child.kill('SIGKILL'), 8000);
       const finish = (code) => {
         clearTimeout(timer);
@@ -87,6 +173,8 @@ function createJobProcessor({
     };
     try {
       if (stopCancelled()) return;
+      job.url = resolveYouTubeVideoUrl(job);
+      buildYouTubeBrowserSessionArgs(job); // Validate explicit browser access before any network request.
       job.credentialOrigin ||= new URL(job.headerOrigin || job.url).origin;
       job.error = null;
       job.errorCode = null;
@@ -110,6 +198,9 @@ function createJobProcessor({
       job.error = error.message;
       job.errorCode = classifyError(error);
       job.updatedAt = Date.now();
+    } finally {
+      // Consent applies to this attempt, never to an automatic retry or restart.
+      delete job.youtubeBrowserSession;
     }
   }
 
@@ -147,19 +238,6 @@ function createJobProcessor({
     return `Incomplete HLS download: ${count} of ${totalSegments} segment(s) are ${reason}.${sampleSuffix}`;
   }
 
-  function isYouTubeUrl(value) {
-    if (typeof value !== 'string' || !value.trim()) return false;
-    try {
-      const parsed = new URL(value.trim());
-      const host = String(parsed.hostname || '').toLowerCase();
-      return host === 'youtube.com'
-        || host.endsWith('.youtube.com')
-        || host === 'youtu.be'
-        || host.endsWith('.youtu.be');
-    } catch {
-      return false;
-    }
-  }
 
   function hasYtDlp() {
     if (typeof ytDlpAvailable === 'boolean') {
@@ -278,8 +356,12 @@ function createJobProcessor({
       }
     }
 
+    const browserSessionArgs = buildYouTubeBrowserSessionArgs(job);
+    const runtimeOptions = buildYtDlpRuntimeOptions();
     const args = [
       '--ignore-config',
+      ...browserSessionArgs,
+      ...runtimeOptions.args,
       '--no-playlist',
       '--no-part',
       '--no-keep-video',
@@ -314,7 +396,9 @@ function createJobProcessor({
     }
     let cookieJarPath = null;
     let cookieJarDirectory = null;
-    if (rawHeaders.cookie) {
+    // The browser-session flow lets yt-dlp load its own cookies. Do not combine
+    // them with a captured Cookie header or create a second cookie file.
+    if (rawHeaders.cookie && browserSessionArgs.length === 0) {
       const source = new URL(job.url);
       const cookies = rawHeaders.cookie.split(';').map((entry) => entry.trim()).filter(Boolean).map((entry) => {
         const separator = entry.indexOf('=');
@@ -326,13 +410,16 @@ function createJobProcessor({
       await fsPromises.writeFile(cookieJarPath, '# Netscape HTTP Cookie File\n' + cookies.join('\n') + '\n', { mode: 0o600 });
       args.push('--cookies', cookieJarPath);
     }
+    let trustOptions = null;
     try {
+    trustOptions = await createYtDlpTrustOptions(runtimeOptions.env, fsPromises);
     if (job.selection && job.selection.audioOnly) args.push('--extract-audio', '--audio-format', 'm4a');
     if (job.selection && job.selection.subtitleLang && job.selection.subtitleLang !== 'none') args.push('--write-subs', '--sub-langs', job.selection.subtitleLang, '--embed-subs');
     if (job.probe) args.push('--download-sections', `*0-${Math.max(1, Math.min(30, Number(job.probe.seconds) || 30))}`);
 
     let resolvedPath = '';
     let lastErrorLine = '';
+    let transportError = null;
     let totalDownloadPhases = 1;
     let currentDownloadPhaseIndex = 0;
     let currentPhaseProgress = 0;
@@ -404,6 +491,7 @@ function createJobProcessor({
       const child = spawn(YT_DLP_PATH, args, {
         cwd: storageDir,
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: trustOptions.env,
       });
       if (ytDebugEnabled) {
         logger.info('yt-dlp spawned', {
@@ -572,8 +660,9 @@ function createJobProcessor({
           return;
         }
 
+        if (fromStderr) transportError ||= getYtDlpTransportError(text);
         if (fromStderr && /error/i.test(text)) {
-          lastErrorLine = text;
+          lastErrorLine = text.replace(/https?:\/\/\S+/g, '[URL]');
         }
 
         if (ytDebugEnabled && ytDebugLineCount < 40) {
@@ -624,7 +713,7 @@ function createJobProcessor({
           return;
         }
 
-        reject(new Error(lastErrorLine || `yt-dlp exited with code ${code}`));
+        reject(transportError || new Error(lastErrorLine || `yt-dlp exited with code ${code}`));
       }));
     });
 
@@ -660,7 +749,11 @@ function createJobProcessor({
     job.status = 'completed';
     job.updatedAt = Date.now();
     } finally {
-      if (cookieJarDirectory) await fsPromises.rm(cookieJarDirectory, { recursive: true, force: true });
+      try {
+        if (trustOptions) await trustOptions.cleanup();
+      } finally {
+        if (cookieJarDirectory) await fsPromises.rm(cookieJarDirectory, { recursive: true, force: true });
+      }
     }
 
   }
@@ -838,7 +931,8 @@ function createJobProcessor({
     const mp4Path = path.join(outputDir, `${job.id}-${job.downloadNameMp4}`);
     const tempMp4Path = `${mp4Path}.part`;
     const estimatedDurationSeconds = Number(playlistInfo && playlistInfo.totalDurationSeconds) || 0;
-    const proxy = await startScopedMediaProxy({ rootUrl: playlistUrl, headers: job.headers || {}, sourcePageUrl: job.sourcePageUrl, credentialOrigin: job.credentialOrigin || job.url });
+    const progressTracker = createNativeProgress(job, { playlistInfo, playlistText: resolved.playlistText || '', playlistUrl, durationSeconds: estimatedDurationSeconds });
+    const proxy = await startScopedMediaProxy({ rootUrl: playlistUrl, headers: job.headers || {}, sourcePageUrl: job.sourcePageUrl, credentialOrigin: job.credentialOrigin || job.url, onResourceEvent: progressTracker.onResourceEvent });
     const nativeArgs = buildNativeHlsArgs({
       job,
       playlistUrl: proxy.url,
@@ -856,9 +950,9 @@ function createJobProcessor({
     job.bytesDownloaded = 0;
     job.totalBytes = 0;
     job.speedBps = 0;
-    job.etaSeconds = estimatedDurationSeconds > 0 ? Math.round(estimatedDurationSeconds) : null;
+    job.etaSeconds = null;
+    job.downloadMode = job.mediaType === 'hls' ? 'native-hls' : 'native-file';
     job.threadStates = [];
-    job.segmentStates = {};
     job.failedSegments = [];
 
     const parseProgressLine = (line) => {
@@ -869,28 +963,8 @@ function createJobProcessor({
       const key = rawKey.trim();
       const value = rest.join('=').trim();
 
-      if (key === 'total_size') {
-        const totalSize = Number.parseInt(value, 10);
-        if (Number.isFinite(totalSize) && totalSize >= 0) {
-          job.bytesDownloaded = totalSize;
-          if (totalSize > 0 && !job.selection?.audioOnly) attemptEarlyThumbnail(job, proxy.url);
-        }
-      }
-
-      if (key === 'out_time_ms') {
-        const outTimeMs = Number.parseInt(value, 10);
-        if (Number.isFinite(outTimeMs) && outTimeMs >= 0 && estimatedDurationSeconds > 0) {
-          const playedSeconds = outTimeMs / 1_000_000;
-          const percent = Math.max(0, Math.min(99, Math.round((playedSeconds / estimatedDurationSeconds) * 100)));
-          job.progress = Math.max(Number(job.progress || 0), percent);
-          const remainingSeconds = Math.max(0, estimatedDurationSeconds - playedSeconds);
-          job.etaSeconds = Number.isFinite(remainingSeconds) ? Math.round(remainingSeconds) : null;
-        }
-      }
-
-      if (key === 'progress' && value === 'end') {
-        job.progress = 99;
-      }
+      progressTracker.onFfmpegProgress(key, value);
+      if (key === 'total_size' && Number(value) > 0 && !job.selection?.audioOnly) attemptEarlyThumbnail(job, proxy.url);
 
       job.updatedAt = Date.now();
     };
@@ -1001,7 +1075,8 @@ function createJobProcessor({
     }
 
     job.mp4Path = mp4Path;
-    job.completedSegments = Number(playlistInfo && playlistInfo.totalSegments) || 0;
+    // Keep the observed piece count. Successful muxing is not evidence that a
+    // particular HTTP resource response completed in full.
     job.totalSegments = Number(playlistInfo && playlistInfo.totalSegments) || 0;
     job.progress = 100;
     job.speedBps = 0;
@@ -1434,6 +1509,8 @@ function createJobProcessor({
         return;
       }
 
+      job.downloadMode = 'segmented';
+      job.segmentProgressAvailable = true;
       // Initialize all segments as pending
       for (let i = 0; i < segments.length; i++) {
         job.segmentStates[i] = { status: 'pending', attempt: 0 };
@@ -2121,4 +2198,4 @@ function createJobProcessor({
   return { runJob, runDirectJob };
 }
 
-module.exports = { createJobProcessor };
+module.exports = { createJobProcessor, __test: { buildYouTubeBrowserSessionArgs, buildYtDlpRuntimeOptions, createYtDlpTrustOptions, getYtDlpTransportError, resolveYouTubeVideoUrl } };

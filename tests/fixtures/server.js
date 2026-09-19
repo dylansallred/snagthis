@@ -108,8 +108,25 @@ async function startFixtureServer({ ffmpegPath = process.env.FFMPEG_PATH || 'ffm
     let throttle = false;
     let ranges = true;
     let junk = false;
+    let contentTypeOverride;
     if (pathname.startsWith('/cases/')) {
       const [, , scenario, name] = pathname.split('/');
+      if (scenario === 'misnamed-fmp4') {
+        // Real HLS bytes behind image filenames/MIME types, including the init
+        // and fMP4 fragments. No site URLs or downloaded source media are used.
+        if (name === 'master.jpg') {
+          respond(200, '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080\nvariant.jpg\n', 'image/jpeg'); return;
+        }
+        if (name === 'variant.jpg') {
+          const playlist = fs.readFileSync(path.join(directory, 'media/fmp4/index.m3u8'), 'utf8')
+            .replaceAll('init.mp4', 'init.jpg').replace(/segment-(\d+)\.m4s/g, 'segment-$1.jpg');
+          respond(200, playlist, 'image/jpeg'); return;
+        }
+        const originalName = name === 'init.jpg' ? 'init.mp4'
+          : /^segment-\d+\.jpg$/.test(name || '') ? name.replace(/\.jpg$/, '.m4s') : 'missing';
+        filePath = path.join(directory, 'media/fmp4', originalName);
+        contentTypeOverride = 'image/jpeg';
+      } else {
       if (scenario === 'gated') {
         const expected = headers();
         if (req.headers.referer !== expected.Referer || req.headers.origin !== expected.Origin || !String(req.headers.cookie || '').includes('fixture=allowed')) {
@@ -144,6 +161,7 @@ async function startFixtureServer({ ffmpegPath = process.env.FFMPEG_PATH || 'ffm
       throttle = scenario === 'throttled';
       ranges = scenario !== 'no-range';
       filePath = name === 'direct.mp4' ? path.join(directory, 'media/direct.mp4') : path.join(directory, 'media/ts', segmentName || 'missing');
+      }
     } else {
       filePath = path.resolve(directory, '.' + pathname);
     }
@@ -165,7 +183,7 @@ async function startFixtureServer({ ffmpegPath = process.env.FFMPEG_PATH || 'ffm
       }
     }
     body = body.subarray(start, end + 1);
-    res.writeHead(status, { 'Content-Type': TYPES[path.extname(filePath)] || 'application/octet-stream', 'Content-Length': body.length });
+    res.writeHead(status, { 'Content-Type': contentTypeOverride || TYPES[path.extname(filePath)] || 'application/octet-stream', 'Content-Length': body.length });
     if (req.method === 'HEAD') { res.end(); return; }
     if (!throttle) { res.end(body); return; }
     let offset = 0;
