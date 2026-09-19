@@ -62,9 +62,11 @@ async function resolveHlsSelection(job) {
   let selectedHeight;
   const seen = new Set();
   for (let depth = 0; depth < 5; depth += 1) {
+    if (job.cancelled) throw mediaError('Job cancelled', 'ABORT_ERR');
     if (seen.has(currentUrl)) throw mediaError('The video playlist contains a loop', 'UNSUPPORTED_MEDIA');
     seen.add(currentUrl);
     const fetched = await fetchText(currentUrl, headers, options);
+    if (job.cancelled) throw mediaError('Job cancelled', 'ABORT_ERR');
     if (!String(fetched.text).replace(/^\uFEFF/, '').trimStart().startsWith('#EXTM3U')) throw mediaError('The source did not return a video playlist', 'UNSUPPORTED_MEDIA');
     const info = inspectHlsPlaylist(fetched.text, fetched.finalUrl);
     if (info.unsupportedReason) throw mediaError(info.unsupportedReason, info.errorCode);

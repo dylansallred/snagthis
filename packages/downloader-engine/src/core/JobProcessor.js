@@ -78,7 +78,15 @@ function createJobProcessor({
   }
 
   async function dispatchJob(job) {
+    const stopCancelled = () => {
+      if (!job.cancelled) return false;
+      job.status = 'cancelled';
+      job.error = null;
+      job.updatedAt = Date.now();
+      return true;
+    };
     try {
+      if (stopCancelled()) return;
       job.credentialOrigin ||= new URL(job.headerOrigin || job.url).origin;
       job.error = null;
       job.errorCode = null;
@@ -87,6 +95,9 @@ function createJobProcessor({
       if (isYouTubeUrl(job.url)) return await runDirectJobInternal(job);
       const headers = buildHlsRequestHeaders(job.headers || {}, { sourcePageUrl: job.sourcePageUrl });
       const detected = await sniffMedia(job.url, headers, { credentialOrigin: job.credentialOrigin, sourcePageUrl: job.sourcePageUrl });
+      // A pause may arrive while sniffing. Do not begin another manifest
+      // request before the old runner gives its slot back to the queue.
+      if (stopCancelled()) return;
       job.mediaType = detected.mediaType;
       if (detected.mediaType === 'hls') return await runHlsJobInternal(job);
       if (job.probe && detected.mediaType === 'direct') {

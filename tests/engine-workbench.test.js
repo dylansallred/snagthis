@@ -120,3 +120,37 @@ test('refresh accepts only the same VOD topology, preserving partial files on mi
     assert.equal(job.completedSegments, 1);
   } finally { await fixture.close(); await new Promise((resolve) => source.close(resolve)); }
 });
+
+
+test('a pause during media sniffing stops before starting another manifest request', async () => {
+  const { createJobProcessor } = require('../packages/downloader-engine/src/core/JobProcessor');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-pause-sniff-'));
+  let requestCount = 0;
+  let finishResponse;
+  let notifyRequest;
+  const requested = new Promise((resolve) => { notifyRequest = resolve; });
+  const source = http.createServer((_request, response) => {
+    requestCount += 1;
+    finishResponse = () => response.end(playlist('current'));
+    notifyRequest();
+    // A second request must finish too, so a regression fails its assertion
+    // instead of depending on a timeout to complete the test.
+    if (requestCount > 1) finishResponse();
+  });
+  await new Promise((resolve) => source.listen(0, '127.0.0.1', resolve));
+  try {
+    const job = { id: 'pause-sniff', url: `http://127.0.0.1:${source.address().port}/video`, filePath: path.join(directory, 'video.ts'), downloadNameMp4: 'video.mp4', headers: {} };
+    const processor = createJobProcessor({ downloadDir: directory, fsPromises: fs.promises });
+    const running = processor.runJob(job);
+    await requested;
+    job.cancelled = true;
+    job.pauseRequested = true;
+    finishResponse();
+    await running;
+    assert.equal(job.status, 'cancelled');
+    assert.equal(requestCount, 1, 'the pausing runner must not fetch the manifest again');
+  } finally {
+    await new Promise((resolve) => source.close(resolve));
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
