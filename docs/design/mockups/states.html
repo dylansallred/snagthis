@@ -1,0 +1,181 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>VidSnag — simplified, states</title><link rel="stylesheet" href="shared.css"><style>
+:root{--bg:#121316;--hi:#1a1c20;--line:#23252a;--fg:#ece7e3;--mut:#9b958f;--sub:#6d6863}
+.win{background:var(--bg);border:1px solid #2a2d33;border-radius:10px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);color:var(--fg)}
+
+/* one row: thumbnail · title + one quiet line · one action. No boxes, no badges, no bar. */
+.row{--p:0%;display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row:hover{background:var(--hi)}
+.thumb{width:104px;height:58px;border-radius:6px}
+.b{min-width:0;flex:1}
+.t{font-weight:570;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m{font-size:12px;color:var(--mut);margin-top:3px;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.m .warn{color:var(--amber)}.m .ok{color:var(--green)}
+.q{display:inline-flex;align-items:center;gap:3px;color:var(--fg);font-weight:550;height:20px;padding:0 6px;margin-left:-6px;border-radius:5px}
+.q:hover{background:#2a2d33}
+.q .ic{width:10px;height:10px;stroke-width:2.4}
+
+/* colour-fill thumbnail: the only progress indicator */
+.fill{position:absolute;inset:0}.fill::before{content:"";position:absolute;inset:0}
+.ghost{filter:grayscale(1) brightness(.4)}
+.live{transition:clip-path .12s linear}
+.edge{display:none;position:absolute;top:0;bottom:0;left:var(--p);width:2px;margin-left:-1px;background:var(--orange-hi);box-shadow:0 0 10px 2px hsl(20 96% 52%/.75);transition:left .12s linear}
+.prog .live,[data-state=running] .live{clip-path:inset(0 calc(100% - var(--p)) 0 0)}
+.prog .edge,[data-state=running] .edge{display:block}
+.stalled .edge{display:none}.stalled .live{opacity:.5}
+.dur{z-index:1}
+/* no thumbnail yet: the placeholder fills the same way, stripes warm up to orange */
+.ph.ghost{filter:none}
+.ph.live::before{background:repeating-linear-gradient(90deg,hsl(18 60% 22%) 0 14px,hsl(18 60% 27%) 14px 28px)}
+
+/* actions: exactly one visible; extras appear on hover */
+.btn{height:30px;padding:0 14px;border-radius:7px;background:var(--orange);color:#fff;font-weight:600;font-size:12.5px;flex:none}
+.btn:hover{background:var(--orange-hi)}
+.act{height:30px;min-width:30px;padding:0 9px;border-radius:7px;color:var(--mut);display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;flex:none}
+.act:hover{background:#2a2d33;color:var(--fg)}
+.act.lbl{border:1px solid #2f3238;color:var(--fg)}
+.act .ic{width:15px;height:15px}
+.hov{display:none}.row:hover .hov{display:flex}
+.cts{display:contents}
+[data-state] .idle,.s-run,.s-done{display:none}
+[data-state=running] .s-run,[data-state=done] .s-done{display:flex}
+span.s-run,span.s-done{align-items:center;gap:6px}
+[data-state=running] span.s-run,[data-state=done] span.s-done{display:inline-flex}
+[data-state] .m .idle{display:none}
+
+/* popup */
+.ext{width:400px}
+.head{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.head img{height:17px}
+.head .n{font-size:12.5px;color:var(--mut)}
+.foot{display:flex;align-items:center;gap:2px;padding:6px 8px;border-top:1px solid var(--line)}
+.foot .gap{flex:1}
+.cnt{font:600 10px var(--mono);background:var(--orange);color:#fff;border-radius:8px;padding:0 5px;line-height:15px}
+
+/* desktop */
+.desk{width:820px}
+.top{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:7px}.lights i{width:11px;height:11px;border-radius:50%;background:#33363c}
+.top img{height:17px}
+.paste{flex:1;display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:8px;background:#0c0d0f;border:1px solid var(--line);color:var(--sub);font-size:13px}
+.paste .ic{width:14px;height:14px}
+.tabs{display:flex;gap:2px;font-size:12.5px}
+.tabs button{padding:5px 10px;border-radius:6px;color:var(--mut)}.tabs button.on{background:var(--hi);color:var(--fg)}
+.desk .thumb{width:112px;height:63px}
+.bottom{display:flex;align-items:center;padding:6px 8px 6px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--sub)}
+.bottom .gap{flex:1}
+
+.cut{margin-top:30px;max-width:1100px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cut div{border:1px solid #1d1f24;border-radius:8px;padding:14px 16px;color:#9a948f;font-size:12.5px;line-height:1.7}
+.cut b{display:block;color:#e9e4e1;margin-bottom:4px}
+
+.grid{display:grid;grid-template-columns:repeat(3,400px);gap:34px 36px;align-items:start}
+.wide{display:grid;grid-template-columns:820px 400px;gap:34px 36px;align-items:start;margin-top:40px}
+h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6f6a66;font-weight:500;margin-bottom:10px}
+.menu{margin:-4px 14px 12px 130px;background:#1c1e23;border:1px solid #30333a;border-radius:9px;padding:4px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12.5px}
+.menu .o{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;color:var(--fg)}
+.menu .o:hover,.menu .o.on{background:#2a2d33}
+.menu .o span{margin-left:auto;color:var(--mut);font-size:11.5px}
+.menu .o .ic{width:13px;height:13px;color:var(--orange-hi);stroke-width:2.4}
+.menu .o i.sp{width:13px}
+.menu hr{border:0;border-top:1px solid #2a2d33;margin:4px 0}
+.menu .k{padding:4px 8px 2px;font-size:10.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.07em}
+.empty{padding:34px 28px 30px;text-align:center}
+.empty .big{width:44px;height:44px;border-radius:12px;background:var(--hi);display:grid;place-items:center;margin:0 auto 14px;color:var(--mut)}
+.empty .big .ic{width:20px;height:20px}
+.empty h4{font-size:14px;font-weight:600;margin-bottom:4px}
+.empty p{color:var(--mut);font-size:12.5px;max-width:270px;margin:0 auto 16px}
+.empty .btn{display:inline-block;line-height:30px}
+.banner{display:flex;align-items:center;gap:10px;padding:10px 14px;background:hsl(44 60% 12%);border-bottom:1px solid hsl(44 40% 20%);font-size:12.5px;color:hsl(44 80% 78%)}
+.banner .btn{margin-left:auto;height:26px;padding:0 10px;font-size:12px}
+.dim .row{opacity:.45;pointer-events:none}
+.detail{padding:4px 14px 16px 138px;display:grid;grid-template-columns:1fr 250px;gap:22px;background:var(--hi);margin-top:-1px}
+.row.open{background:var(--hi)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:12px;align-content:start}
+.kv dt{color:var(--sub)}.kv dd{color:var(--fg)}
+.map{display:grid;grid-template-columns:repeat(32,1fr);gap:2px}
+.map i{aspect-ratio:1;border-radius:1.5px;background:#2a2d33}
+.map i.d{background:hsl(145 40% 36%)}.map i.a{background:var(--orange-hi)}.map i.f{background:var(--amber)}
+.cap{font-size:11px;color:var(--sub);margin-bottom:6px;display:flex;justify-content:space-between}
+.links{display:flex;gap:14px;margin-top:12px;font-size:12px;color:var(--mut)}
+.links button:hover{color:var(--fg)}.links .del{color:var(--red);margin-left:auto}
+.set{padding:6px 0}
+.set .s{display:flex;align-items:center;gap:12px;padding:11px 16px;border-top:1px solid var(--line)}
+.set .s:first-child{border-top:0}
+.set .s div{flex:1}.set .s b{display:block;font-weight:550;font-size:13px}.set .s small{color:var(--mut);font-size:12px}
+.val{height:28px;padding:0 10px;border:1px solid #30333a;border-radius:7px;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--fg)}
+.val .ic{width:11px;height:11px}
+.sw{width:34px;height:20px;border-radius:10px;background:var(--orange);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:16px;width:16px;height:16px;border-radius:50%;background:#fff}
+.sw.off{background:#33363c}.sw.off::after{left:2px}
+.adv{padding:11px 16px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px;display:flex;align-items:center;gap:6px}
+.adv .ic{width:12px;height:12px}
+</style></head><body>
+<div class="page">
+  <div class="page-head"><h1>Workbench, simplified — remaining states</h1><a href="main-screens.html">← main screens</a> </div>
+  <p class="pitch">Same rules as the simplified concept: one thumbnail, one title, one quiet line, one button. Everything extra lives in a menu, a banner, or an expandable detail. Static mock-ups with sample data.</p>
+
+  <div class="grid">
+    <div><h3>Popup · quality menu open</h3><div class="win ext"><div class="head"><img src="../../../logos/Just%20Logo.png" alt=""><span class="n">1 video on this page</span></div>
+      <div class="row " ><div class="thumb"><div class="fill t1 ghost"></div><div class="fill t1 live"></div><div class="edge"></div><span class="dur">2:20:06</span></div><div class="b"><div class="t">Cinejoy — Live at the Dome</div><div class="m"><button class="q">1080p<i data-i="down"></i></button><span>2.1 GB</span></div></div><button class="btn">Download</button></div>
+      <div class="menu">
+        <div class="o on"><i data-i="check"></i>1080p<span>2.1 GB</span></div>
+        <div class="o"><i class="sp"></i>720p<span>1.2 GB</span></div>
+        <div class="o"><i class="sp"></i>480p<span>640 MB</span></div>
+        <div class="o"><i class="sp"></i>Audio only<span>128 MB</span></div>
+        <hr><div class="k">Subtitles</div>
+        <div class="o on"><i data-i="check"></i>English</div>
+        <div class="o"><i class="sp"></i>None</div>
+      </div>
+      <div class="foot"><button class="act" aria-label="Settings"><i data-i="gear"></i></button><button class="act">No video?</button><span class="gap"></span><button class="act">Open VidSnag</button></div></div></div>
+
+    <div><h3>Popup · nothing found yet</h3><div class="win ext"><div class="head"><img src="../../../logos/Just%20Logo.png" alt=""><span class="n">No videos yet</span></div>
+      <div class="empty"><div class="big"><i data-i="play"></i></div><h4>Press play on the video</h4><p>VidSnag spots a video once it starts playing. Start it, then open this again.</p><button class="act lbl" style="display:inline-flex">Check again</button></div>
+      <div class="foot"><button class="act" aria-label="Settings"><i data-i="gear"></i></button><button class="act">No video?</button><span class="gap"></span><button class="act">Open VidSnag</button></div></div></div>
+
+    <div><h3>Popup · desktop app not running</h3><div class="win ext"><div class="head"><img src="../../../logos/Just%20Logo.png" alt=""><span class="n">2 videos on this page</span></div>
+      <div class="banner">VidSnag isn’t open, so downloads can’t start.<button class="btn">Open VidSnag</button></div>
+      <div class="dim"><div class="row " ><div class="thumb"><div class="fill t1 ghost"></div><div class="fill t1 live"></div><div class="edge"></div><span class="dur">2:20:06</span></div><div class="b"><div class="t">Cinejoy — Live at the Dome</div><div class="m">1080p · 2.1 GB</div></div><button class="btn">Download</button></div><div class="row " ><div class="thumb"><div class="fill t2 ghost"></div><div class="fill t2 live"></div><div class="edge"></div><span class="dur">12:06</span></div><div class="b"><div class="t">Canyon field notes — trailer</div><div class="m">720p · 182 MB</div></div><button class="btn">Download</button></div></div>
+      <div class="foot"><button class="act" aria-label="Settings"><i data-i="gear"></i></button><span class="gap"></span><button class="act">Don’t have the app? Get it</button></div></div></div>
+  </div>
+
+  <div class="wide">
+    <div><h3>Desktop · “⋯” details open on a row</h3><div class="win desk">
+      <div class="top"><div class="lights"><i></i><i></i><i></i></div><img src="../../../logos/Just%20Logo.png" alt=""><div class="paste"><i data-i="link"></i>Paste a video link</div><div class="tabs"><button class="on">All</button><button>Downloading</button><button>Saved</button></div><button class="act" aria-label="Search"><i data-i="search"></i></button></div>
+      <div class="row prog open" style="--p:34%"><div class="thumb"><div class="fill t1 ghost"></div><div class="fill t1 live"></div><div class="edge"></div><span class="dur">2:20:06</span></div><div class="b"><div class="t">Cinejoy — Live at the Dome</div><div class="m">34% · 5 min left</div></div><button class="act" style="background:#2a2d33;color:var(--fg)" aria-label="More"><i data-i="dots"></i></button><button class="act" aria-label="Pause"><i data-i="pause"></i></button></div>
+      <div class="detail">
+        <dl class="kv"><dt>Quality</dt><dd>1080p · English audio · English subtitles</dd><dt>Size</dt><dd>714 MB of about 2.1 GB · 4.1 MB/s</dd><dt>From</dt><dd>cinejoy.example</dd><dt>Saving to</dt><dd>~/Movies/VidSnag</dd>
+          <dd style="grid-column:1/-1"><div class="links"><button>Rename</button><button>Copy link</button><button>Open page</button><button class="del">Cancel download</button></div></dd></dl>
+        <div><div class="cap"><span>Pieces</span><span>412 of 1210 · 2 retrying</span></div><div class="map" id="map"></div></div>
+      </div>
+      <div class="row prog" style="--p:97%"><div class="thumb"><div class="fill t3 ghost"></div><div class="fill t3 live"></div><div class="edge"></div><span class="dur">58:32</span></div><div class="b"><div class="t">An hour by the water</div><div class="m">Finishing up…</div></div></div>
+      <div class="row " ><div class="thumb"><div class="fill t2 ghost"></div><div class="fill t2 live"></div><div class="edge"></div><span class="dur">12:06</span></div><div class="b"><div class="t">Canyon field notes — trailer</div><div class="m">Saved today · 182 MB</div></div><button class="act" aria-label="Play"><i data-i="play"></i></button></div>
+      <div class="bottom"><span>2 downloading · 7.3 MB/s</span><span class="gap"></span><button class="act" aria-label="Open save folder"><i data-i="folder"></i></button><button class="act" aria-label="Settings"><i data-i="gear"></i></button></div>
+    </div></div>
+
+    <div><h3>Settings (same sheet in popup and desktop)</h3><div class="win ext">
+      <div class="head"><span class="t">Settings</span><button class="act" style="margin-left:auto;height:24px" aria-label="Close"><i data-i="x"></i></button></div>
+      <div class="set">
+        <div class="s"><div><b>Save videos to</b><small>~/Movies/VidSnag</small></div><button class="val">Change</button></div>
+        <div class="s"><div><b>Preferred quality</b><small>Used when a video offers it</small></div><button class="val">Best<i data-i="down"></i></button></div>
+        <div class="s"><div><b>Subtitles</b><small>Included when available</small></div><button class="val">English<i data-i="down"></i></button></div>
+        <div class="s"><div><b>Tell me when a download finishes</b></div><span class="sw"></span></div>
+        <div class="s"><div><b>Start VidSnag when I log in</b></div><span class="sw off"></span></div>
+      </div>
+      <div class="adv"><i data-i="down"></i>Advanced — speed, file naming, TMDB &amp; subtitles accounts, diagnostics</div>
+    </div></div>
+  </div>
+
+  <div class="wide" style="grid-template-columns:820px">
+    <div><h3>Desktop · first launch, nothing downloaded</h3><div class="win desk">
+      <div class="top"><div class="lights"><i></i><i></i><i></i></div><img src="../../../logos/Just%20Logo.png" alt=""><div class="paste" style="border-color:var(--orange)"><i data-i="link"></i>Paste a video link</div><button class="act" aria-label="Search"><i data-i="search"></i></button></div>
+      <div class="empty" style="padding:64px 28px"><div class="big"><i data-i="queue"></i></div><h4>Download your first video</h4><p style="max-width:360px">Paste a link above, or play a video in Chrome and click the VidSnag icon in the toolbar.</p><button class="btn">Add VidSnag to Chrome</button></div>
+      <div class="bottom"><span>Saving to ~/Movies/VidSnag</span><span class="gap"></span><button class="act" aria-label="Open save folder"><i data-i="folder"></i></button><button class="act" aria-label="Settings"><i data-i="gear"></i></button></div>
+    </div></div>
+  </div>
+</div>
+<script src="shared.js"></script>
+<script>
+const map=document.getElementById('map');
+for(let i=0;i<192;i++){const c=i<64?'d':i<68?'a':'';map.insertAdjacentHTML('beforeend',`<i class="${i===37||i===52?'f':c}"></i>`)}
+</script></body></html>

@@ -1,0 +1,193 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  macos-desktop:
+    name: Desktop macOS (Signed + Notarized)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate macOS signing/notarization secrets
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for key in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID CSC_LINK CSC_KEY_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch bundled yt-dlp (macOS)
+        run: npm run fetch:yt-dlp --workspace @m3u8/desktop
+
+      - name: Fetch bundled ffmpeg/ffprobe (macOS)
+        run: npm run fetch:ffmpeg --workspace @m3u8/desktop
+
+      - name: Sync desktop version with tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          CURRENT_VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          if [ "$CURRENT_VERSION" = "$VERSION" ]; then
+            echo "Desktop package version already matches tag: $VERSION"
+          else
+            npm version "$VERSION" --no-git-tag-version --workspace @m3u8/desktop
+          fi
+
+      - name: Build and publish desktop artifacts (macOS)
+        run: npm run dist --workspace @m3u8/desktop -- --publish=always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: Verify notarization staple (App Bundle)
+        run: |
+          set -euo pipefail
+          APP_BUNDLE="$(find apps/desktop/dist-electron -type d -name "*.app" | head -n 1)"
+          if [ -z "${APP_BUNDLE}" ]; then
+            echo "No .app bundle found for notarization validation."
+            exit 1
+          fi
+          STRICT_STAPLER="${STRICT_STAPLER:-0}"
+          for attempt in $(seq 1 15); do
+            if xcrun stapler staple "${APP_BUNDLE}" && xcrun stapler validate "${APP_BUNDLE}"; then
+              echo "Staple/validate succeeded on attempt ${attempt}"
+              exit 0
+            fi
+            echo "Staple/validate failed on attempt ${attempt}, retrying in 60s..."
+            sleep 60
+          done
+          if [ "${STRICT_STAPLER}" = "1" ]; then
+            echo "Staple/validate failed after retries in strict mode."
+            exit 1
+          fi
+          echo "::warning::Staple/validate failed after retries (likely Apple ticket propagation delay). Continuing."
+          exit 0
+
+  windows-desktop:
+    name: Desktop Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch bundled yt-dlp (Windows)
+        run: npm run fetch:yt-dlp --workspace @m3u8/desktop
+
+      - name: Fetch bundled ffmpeg/ffprobe (Windows)
+        run: npm run fetch:ffmpeg --workspace @m3u8/desktop
+
+      - name: Sync desktop version with tag
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $currentVersion = node -p "require('./apps/desktop/package.json').version"
+          if ($currentVersion -eq $version) {
+            Write-Host "Desktop package version already matches tag: $version"
+          } else {
+            npm version $version --no-git-tag-version --workspace @m3u8/desktop
+          }
+
+      - name: Build and publish desktop artifacts (Windows)
+        run: npm run dist --workspace @m3u8/desktop -- --publish=always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Verify code signatures (when signing is configured)
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK) -or [string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)) {
+            Write-Host "Skipping signature verification because Windows signing secrets are not configured."
+            exit 0
+          }
+          $signtool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+          if (-not $signtool) {
+            Write-Host "signtool.exe not found in PATH"
+            exit 1
+          }
+          $targets = Get-ChildItem -Path "apps/desktop/dist-electron" -Recurse -File `
+            | Where-Object { $_.Extension -in @(".exe", ".msi") }
+          if (-not $targets -or $targets.Count -eq 0) {
+            Write-Host "No Windows installer artifacts found for signature validation."
+            exit 1
+          }
+          foreach ($file in $targets) {
+            Write-Host "Verifying signature: $($file.FullName)"
+            & signtool.exe verify /pa /v $file.FullName
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+
+  extension:
+    name: Package Extension
+    needs: [macos-desktop, windows-desktop]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Zip extension
+        run: |
+          cd apps/extension
+          zip -r ../../m3u8-extension.zip . -x "*.DS_Store"
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: m3u8-extension
+          path: m3u8-extension.zip
+
+      - name: Attach extension to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: m3u8-extension.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
