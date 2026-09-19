@@ -1,24 +1,21 @@
-# Extension (v1)
+# VidSnag for Chrome
 
-Chrome extension that:
+The free extension finds videos on the current page and sends them to the local VidSnag desktop app. Downloads continue when the popup closes. This is a prerelease; installation currently uses Chrome's **Load unpacked** workflow.
 
-- Detects media requests on the current page (HLS/DASH manifests, direct video files, and audio assets)
-- Shows detected media in popup
-- Sends selected media to desktop queue using `POST /v1/jobs`
-- Allows per-item removal from detected media list via icon button
+1. From the repository root, run `npm run build:extension:css`. This also copies the shared row/playlist contracts and the bundled Inter font into the extension.
+2. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `apps/extension`.
+3. Start VidSnag. In the app, open **Settings → Advanced → Connect Chrome** and get a connection code.
+4. Open the extension, choose **Connect**, and enter that six-digit code. The extension remembers the resulting private local-app credential.
+5. Play a video on a page, open VidSnag in the toolbar, and choose **Download**.
 
-## Media Detection Coverage
+The 400px popup shows one video per row. Its thumbnail fills with colour as the download progresses. Pause, resume, and play are the only actions shown when relevant; quality selection appears only for real discovered variants. Right-click for rename, hide, preview, subtitles, and **Show all detected streams**. Settings has the same five preferences as the desktop app; folder changes and Advanced settings open the app.
 
-- Streaming manifests: `.m3u8`, `.m3u`, `.mpd`, `.ism`, `.ismc`
-- Video/container formats: `.mp4`, `.m4v`, `.mov`, `.webm`, `.mkv`, `.avi`, `.flv`, `.f4v`, `.wmv`, `.asf`, `.ts`, `.m2ts`, `.mts`, `.m4s`, `.mpg`, `.mpeg`, `.3gp`, `.3g2`, `.ogv`, `.ogm`, `.mxf`
-- Audio formats: `.m4a`, `.aac`, `.mp3`, `.ogg`, `.oga`, `.wav`, `.flac`
-- Content-Type detection: `video/*`, `audio/*`, HLS (`application/x-mpegurl`, `application/vnd.apple.mpegurl`), DASH (`application/dash+xml`)
+Detection observes standard fetch/XHR responses, video elements, and Chrome's request events in every frame. HLS can be recognized by its filename, response type, or playlist body, including small and extensionless playlists. Raw video pieces are excluded. Master playlists collapse only explicitly referenced variants, or videos with identical known duration on the same page; filenames and timing alone never establish identity. Page navigation resets the list. YouTube watch-page metadata is sent as a page URL for the desktop's extractor.
 
-The popup keeps the main list concise and exposes deeper diagnostics behind a per-item **Show Details** toggle (title candidates from DOM/meta/JSON-LD/recent resource URLs, TV/movie guess, episode hints, detection signals, and request metadata).
+Thumbnails use video metadata, posters, page images, or a frame from a readable video. Frame data is bounded to a 20 KB JPEG data URL. A neutral striped thumbnail appears when no image can be read. Unsupported or protected formats can be detected without being downloadable.
 
-## Load Unpacked
+Media headers are retained only with the observed media URL in trusted `chrome.storage.session`; they are sent to the paired desktop only after a user starts a download. App credentials are stored in trusted `chrome.storage.local` and are never injected into pages. Navigation and tab closure clear page detections. The main page observer and isolated metadata collector have been rewritten around browser APIs; see the repository's provenance record for the inherited title helpers and bundled HLS player license.
 
-1. Open `chrome://extensions`
-2. Enable Developer mode
-3. Click `Load unpacked`
-4. Select `apps/extension`
+The queue is polled once per second while the popup is open; health is checked every two seconds. If the app is closed, **Open VidSnag** uses its protocol handler and changes to **Get the app** if it remains unavailable. An expired link offers **Open page**; after recapture, right-click **Continue previous download** when one failed job belongs to that exact source page. The engine validates the refreshed media before reusing downloaded pieces.
+
+Development previews render the real popup with credited open-film posters and isolated sample data: serve the repository over loopback HTTP, then open `apps/extension/popup.html?demo=default`. Other modes are `empty`, `offline`, `quality`, `settings`, `states`, `problem`, and `version`. Demo code never sends API writes. Unpacked fixture tests can choose a tab with `?tab=<id>` and a loopback API with `&apiBase=http://127.0.0.1:<port>`; remote API overrides are rejected.

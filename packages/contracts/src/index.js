@@ -16,11 +16,15 @@ const HEADER = {
 };
 
 const CLIENT = {
-  extension: 'fetchv-extension',
+  extension: 'vidsnag-extension',
 };
 
 module.exports = {
   API,
   HEADER,
   CLIENT,
+  ...require('./strings'),
+  ...require('./rows'),
+  ...require('./hls'),
+  ...require('./selection'),
 };

@@ -36,6 +36,10 @@ module.exports = [
     },
   },
   {
+    files: ['**/*.mjs'],
+    languageOptions: { sourceType: 'module' },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
       parser: tseslint.parser,

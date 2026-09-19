@@ -2,74 +2,64 @@ import type { QueueData, QueueSettings, QueueJob } from '@/types/queue';
 import type { HistoryItem } from '@/types/history';
 import { normalizeLocalApiBase } from '@/lib/network';
 
-async function request<T = unknown>(baseUrl: string, path: string, options: RequestInit = {}): Promise<T | null> {
-  const normalizedBaseUrl = normalizeLocalApiBase(baseUrl);
-  const res = await fetch(`${normalizedBaseUrl}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string> || {}),
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-
-  const contentType = res.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
-    return res.json();
-  }
-  return null;
+export interface LibraryPage { items: HistoryItem[]; total: number; nextCursor: string | null }
+export interface MediaSelection { variantUrl?: string; height?: number; audioLang?: string; subtitleLang?: string; audioOnly?: boolean }
+export interface MediaInspection {
+  mediaUrl?: string;
+  mediaType?: 'hls' | 'file';
+  isDrm?: boolean;
+  isLive?: boolean | null;
+  variants?: { url: string; height?: number; bandwidth?: number; estimatedSizeBytes?: number; sizeBytes?: number; audioGroupId?: string }[];
+  audio?: { language?: string; name?: string; url?: string }[];
+  subtitles?: { language?: string; name?: string; url?: string }[];
+  durationSeconds?: number;
 }
 
-export function createApiClient(baseUrl: string) {
-  const normalizedBaseUrl = normalizeLocalApiBase(baseUrl);
-  const req = <T = unknown>(path: string, options?: RequestInit) =>
-    request<T>(normalizedBaseUrl, path, options);
-
+export function createApiClient(baseUrl: string, authToken = '') {
+  const base = normalizeLocalApiBase(baseUrl);
+  async function request<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+    const headers = new Headers(options.headers);
+    headers.set('Content-Type', 'application/json');
+    headers.set('X-Client', 'vidsnag-desktop');
+    if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+    const response = await fetch(`${base}${path}`, { ...options, headers });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = typeof data?.error === 'string' ? data.error : data?.error?.message || data?.message;
+      throw new Error(message || `Request failed (${response.status})`);
+    }
+    return data as T;
+  }
+  const post = <T = unknown>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+  const id = encodeURIComponent;
   return {
-    // Queue
-    getQueue: () => req<QueueData>('/api/queue'),
-    startJob: (id: string) => req(`/api/queue/${id}/start`, { method: 'POST' }),
-    pauseJob: (id: string) => req(`/api/queue/${id}/pause`, { method: 'POST' }),
-    resumeJob: (id: string) => req(`/api/queue/${id}/resume`, { method: 'POST' }),
-    removeJob: (id: string) => req(`/api/queue/${id}`, { method: 'DELETE' }),
-    startAll: () => req('/api/queue/start-all', { method: 'POST' }),
-    pauseAll: () => req('/api/queue/pause-all', { method: 'POST' }),
-    clearCompleted: () => req('/api/queue/clear-completed', { method: 'POST' }),
-    updateQueueSettings: (settings: Partial<QueueSettings>) =>
-      req('/api/queue/settings', { method: 'POST', body: JSON.stringify(settings) }),
-
-    // Jobs
-    getJob: (id: string) => req<QueueJob>(`/api/jobs/${id}?full=1`),
-    cancelJob: (id: string) => req(`/api/jobs/${id}/cancel`, { method: 'POST' }),
-    retryJob: (id: string) => req(`/api/jobs/${id}/retry`, { method: 'POST' }),
-    retryOriginalHls: (id: string) => req(`/api/jobs/${id}/retry-original-hls`, { method: 'POST' }),
-
-    // History
-    getHistory: () => req<{ items: HistoryItem[] }>('/api/history'),
-    clearHistory: () => req('/api/history', { method: 'DELETE' }),
-    deleteHistoryItem: (historyId: string) =>
-      req(`/api/history/${encodeURIComponent(historyId)}`, { method: 'DELETE' }),
-    clearTempDownloads: () =>
-      req<{
-        ok: boolean;
-        tempDirectoriesRemoved: number;
-        transientFilesRemoved: number;
-        emptiedJobDirectoriesRemoved: number;
-      }>('/api/maintenance/clear-temp-downloads', { method: 'POST' }),
-
-    // Health
-    getHealth: () =>
-      fetch(`${normalizedBaseUrl}/v1/health`, {
-        headers: { 'X-Client': 'vidsnag-extension', 'X-Protocol-Version': '1' },
-      }).then((r) => r.json()),
-
-    // Raw request for custom calls
-    request: req,
-    baseUrl: normalizedBaseUrl,
+    baseUrl: base, authToken, request,
+    getQueue: () => request<QueueData>('/api/queue'),
+    getJob: (jobId: string) => request<QueueJob>(`/api/jobs/${id(jobId)}?full=1`),
+    getHistory: (query = '', cursor?: string | null) => {
+      const params = new URLSearchParams({ limit: '100', q: query });
+      if (cursor) params.set('cursor', cursor);
+      return request<LibraryPage>(`/api/history?${params}`);
+    },
+    createJob: (url: string, selection: MediaSelection, mediaType?: 'hls' | 'file') => post('/api/jobs', { queue: { url, selection, mediaType, sourcePageUrl: url } }),
+    inspectMedia: (url: string) => post<MediaInspection>('/v1/media/inspect', { mediaUrl: url }),
+    startJob: (jobId: string) => post(`/api/queue/${id(jobId)}/start`),
+    pauseJob: (jobId: string) => post(`/api/queue/${id(jobId)}/pause`),
+    resumeJob: (jobId: string) => post(`/api/queue/${id(jobId)}/resume`),
+    retryJob: (jobId: string) => post(`/api/jobs/${id(jobId)}/retry`),
+    cancelJob: (jobId: string) => post(`/api/jobs/${id(jobId)}/cancel`),
+    renameJob: (jobId: string, title: string) => post(`/api/queue/${id(jobId)}/rename`, { title }),
+    moveJob: (jobId: string, position: number) => post(`/api/queue/${id(jobId)}/move`, { position }),
+    removeJob: (jobId: string) => request(`/api/queue/${id(jobId)}`, { method: 'DELETE' }),
+    startAll: () => post('/api/queue/start-all'),
+    pauseAll: () => post('/api/queue/pause-all'),
+    updateQueueSettings: (settings: Partial<QueueSettings>) => post<{ settings: QueueSettings }>('/api/queue/settings', settings),
+    removeHistoryItem: (historyId: string, mode: 'list' | 'trash') => request(`/api/history/${id(historyId)}?mode=${mode}`, { method: 'DELETE' }),
+    locateHistoryItem: (historyId: string) => post<{ ok: boolean; cancelled?: boolean; error?: string }>(`/api/history/${id(historyId)}/locate`),
+    openHistoryItem: (historyId: string) => post<{ ok: boolean; error?: string }>(`/api/history/${id(historyId)}/open`),
+    refreshSource: (jobId: string, mediaUrl: string) => post(`/api/jobs/${id(jobId)}/refresh-source`, { mediaUrl }),
+    getDiagnostics: () => request<Record<string, unknown>>('/api/diagnostics'),
+    clearTempDownloads: () => post<{ tempDirectoriesRemoved?: number; transientFilesRemoved?: number; emptiedJobDirectoriesRemoved?: number }>('/api/maintenance/clear-temp-downloads'),
   };
 }
 

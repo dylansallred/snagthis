@@ -7,7 +7,9 @@ const { URL } = require('url');
 const { spawnSync } = require('child_process');
 const WebSocket = require('ws');
 const rateLimit = require('express-rate-limit');
-const { API, HEADER, CLIENT } = require('@m3u8/contracts');
+const { API, HEADER, CLIENT, validateSelection } = require('@m3u8/contracts');
+const { createBridgeSecurity, redact } = require('./utils/security');
+const { scopeMediaHeaders } = require('@m3u8/downloader-engine/src/core/MediaRequest');
 const {
   QueueManager,
   createJobProcessor,
@@ -178,12 +180,23 @@ function createApiServer(options = {}) {
     trustBinaryPaths = false,
     onFocus,
     ytDlpPath,
+    authToken,
+    allowedOrigins = ['null', 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    onTrashFile,
+    onOpenFile,
+    onLocateFile,
+    onExtensionConnected,
+    onGetSettings,
+    onSaveSettings,
+    onDownloadComplete,
   } = options;
 
   if (!dataDir) {
     throw new Error('createApiServer requires dataDir');
   }
 
+  if (!['127.0.0.1', '::1', 'localhost'].includes(host)) throw new Error('The desktop bridge must bind to loopback');
+  const security = createBridgeSecurity({ dataDir, authToken, allowedOrigins, onExtensionConnected });
   const resolvedDownloadDir = downloadDir || path.join(dataDir, 'downloads');
   fs.mkdirSync(resolvedDownloadDir, { recursive: true });
 
@@ -213,38 +226,45 @@ function createApiServer(options = {}) {
     next();
   });
 
+  app.disable('x-powered-by');
   app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    const allowed = !origin
-      || origin.startsWith('chrome-extension://')
-      || origin === 'null'
-      || origin.startsWith('file://')
-      || origin.startsWith('http://127.0.0.1')
-      || origin.startsWith('http://localhost');
-
-    if (!allowed) {
-      res.status(403).json({ error: 'Origin not allowed' });
-      return;
+    const origin = String(req.headers.origin || '');
+    const publicRequest = req.path === '/v1/health' || req.path === '/v1/pair/complete';
+    const expectedPort = server.address() && server.address().port;
+    const requestHost = String(req.headers.host || '');
+    const allowedHosts = new Set([`127.0.0.1:${expectedPort}`, `localhost:${expectedPort}`, `[::1]:${expectedPort}`]);
+    if (!allowedHosts.has(requestHost) || !security.originAllowed(origin, { pairingRequest: publicRequest })) {
+      return res.status(403).json({ error: 'Origin not allowed' });
     }
-
     if (origin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
     }
-
-    res.setHeader('Access-Control-Allow-Headers', `${HEADER.authorization},Content-Type,${HEADER.client},${HEADER.protocolVersion}`);
+    res.setHeader('Access-Control-Allow-Headers', `${HEADER.authorization},Content-Type,${HEADER.client},${HEADER.protocolVersion},X-Extension-Version`);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-
-    if (req.method === 'OPTIONS') {
-      res.status(204).end();
-      return;
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    if (!publicRequest && !security.authenticate(req) && !security.verifyAsset(req)) {
+      return res.status(401).json({ error: 'Connect this extension in VidSnag settings', code: 'PAIRING_REQUIRED' });
     }
-
+    if (security.authenticate(req)) security.markConnected(req);
+    const json = res.json.bind(res);
+    res.json = (payload) => json(security.publicPayload(payload));
     next();
   });
 
   app.use(express.json({ limit: '1mb' }));
-  app.use('/downloads', express.static(resolvedDownloadDir));
+  const mediaAssetExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.webm', '.mkv', '.mov', '.m4v', '.ts', '.avi', '.srt', '.vtt']);
+  app.get('/downloads/*asset', (req, res, next) => {
+    if (req.path.startsWith(EXTERNAL_DOWNLOAD_PREFIX)) return next();
+    const relative = Array.isArray(req.params.asset) ? req.params.asset.join('/') : String(req.params.asset || '');
+    const candidate = path.resolve(resolvedDownloadDir, relative);
+    if (!isInsideDirectory(path.resolve(resolvedDownloadDir), candidate) || !mediaAssetExtensions.has(path.extname(candidate).toLowerCase())) return res.sendStatus(404);
+    try {
+      if (!isInsideDirectory(fs.realpathSync(resolvedDownloadDir), fs.realpathSync(candidate))) return res.sendStatus(404);
+    } catch { return res.sendStatus(404); }
+    return res.sendFile(candidate);
+  });
 
   const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -334,8 +354,17 @@ function createApiServer(options = {}) {
   const runJob = (job) => { applyThreadSetting(job); return _runJob(job); };
   const runDirectJob = (job) => { applyThreadSetting(job); return _runDirectJob(job); };
 
+  const legacyQueueFile = path.join(resolvedDownloadDir, 'queue.json');
+  const privateQueueFile = path.join(dataDir, 'queue.json');
+  if (legacyQueueFile !== privateQueueFile && fs.existsSync(legacyQueueFile)) {
+    if (!fs.existsSync(privateQueueFile)) fs.copyFileSync(legacyQueueFile, privateQueueFile);
+    fs.chmodSync(privateQueueFile, 0o600);
+    fs.unlinkSync(legacyQueueFile);
+  }
+
   const queueManager = new QueueManager({
-    queueFilePath: path.join(resolvedDownloadDir, 'queue.json'),
+    queueFilePath: path.join(dataDir, 'queue.json'),
+    downloadDir: resolvedDownloadDir,
     fsPromises,
     jobs,
     runJob,
@@ -421,6 +450,7 @@ function createApiServer(options = {}) {
   let notifyHistoryChange = () => {};
   const historyIndex = new HistoryIndexService({
     downloadDir: resolvedDownloadDir,
+    indexDir: dataDir,
     fsPromises,
     jobs,
     onChange: (payload) => notifyHistoryChange(payload),
@@ -430,16 +460,7 @@ function createApiServer(options = {}) {
     if (typeof candidatePath !== 'string' || !candidatePath.trim()) return false;
     const resolvedCandidate = path.resolve(candidatePath);
 
-    if (isInsideDirectory(path.resolve(resolvedDownloadDir), resolvedCandidate)) {
-      return true;
-    }
-
-    const completedOutputDir = typeof getCompletedOutputDir === 'function'
-      ? String(getCompletedOutputDir() || '').trim()
-      : '';
-    if (completedOutputDir && isInsideDirectory(path.resolve(completedOutputDir), resolvedCandidate)) {
-      return true;
-    }
+    if (historyIndex.items.some((item) => item.absolutePath === resolvedCandidate || (item.thumbnailUrl && decodeExternalDownloadPath(item.thumbnailUrl.slice(EXTERNAL_DOWNLOAD_PREFIX.length)) === resolvedCandidate))) return true;
 
     for (const job of jobs.values()) {
       if (!job) continue;
@@ -464,7 +485,7 @@ function createApiServer(options = {}) {
 
   app.get(`${EXTERNAL_DOWNLOAD_PREFIX}:encodedPath`, (req, res, next) => {
     const resolvedAssetPath = decodeExternalDownloadPath(req.params.encodedPath);
-    if (!resolvedAssetPath || !isKnownManagedAssetPath(resolvedAssetPath)) {
+    if (!resolvedAssetPath || !mediaAssetExtensions.has(path.extname(resolvedAssetPath).toLowerCase()) || !isKnownManagedAssetPath(resolvedAssetPath)) {
       next();
       return;
     }
@@ -490,7 +511,7 @@ function createApiServer(options = {}) {
         : []);
 
     const remoteThumbs = Array.isArray(job.thumbnailUrls)
-      ? job.thumbnailUrls.filter((u) => typeof u === 'string' && u.startsWith('http'))
+      ? job.thumbnailUrls.filter((u) => typeof u === 'string' && (u.startsWith('http') || /^data:image\/(?:jpeg|png|webp);base64,/.test(u)))
       : [];
 
     return [...localThumbs, ...remoteThumbs];
@@ -526,6 +547,10 @@ function createApiServer(options = {}) {
       tmdbMetadata: job.tmdbMetadata || null,
       youtubeMetadata: job.youtubeMetadata || null,
       mediaHints: job.mediaHints || null,
+      errorCode: job.errorCode || null,
+      mediaType: job.mediaType || null,
+      selection: job.selection || null,
+      sourcePageUrl: job.sourcePageUrl || null,
     };
   }
 
@@ -540,7 +565,7 @@ function createApiServer(options = {}) {
       ? settings.fileNaming
       : 'title';
 
-    if (customName) {
+    if (customName && namingMode === 'custom') {
       baseName = customName;
     } else if (namingMode === 'resource') {
       baseName = queue.name || queue.title || 'video';
@@ -549,7 +574,7 @@ function createApiServer(options = {}) {
     }
 
     const fileNameBase = safeFilename(baseName);
-    const isHls = /\.m3u8(\?|$)/i.test(queue.url || '');
+    const isHls = queue.mediaType === 'hls' || /\.m3u8(\?|$)/i.test(queue.url || '');
     const requestedFallbackUrl = sanitizeString(
       (settings && settings.fallbackMediaUrl) || queue.fallbackUrl || '',
       4096,
@@ -595,8 +620,8 @@ function createApiServer(options = {}) {
       : null;
     const initialThumbnailUrls = [];
     const pushThumbnailUrl = (value) => {
-      const candidate = sanitizeString(value, 4096);
-      if (!candidate || !isValidHttpUrl(candidate)) return;
+      const candidate = sanitizeString(value, 350000);
+      if (!candidate || (!isValidHttpUrl(candidate) && !isValidThumbnailDataUrl(candidate))) return;
       if (initialThumbnailUrls.includes(candidate)) return;
       initialThumbnailUrls.push(candidate);
     };
@@ -680,7 +705,10 @@ function createApiServer(options = {}) {
       updatedAt: Date.now(),
       title: baseName || queue.title || queue.name || 'Download',
       url: queue.url,
-      headers: queue.headers || {},
+      headers: sanitizeHeaders(queue.headers),
+      headerOrigin: queue.headerOrigin || new URL(queue.url).origin,
+      selection: queue.selection || undefined,
+      mediaType: queue.mediaType || (isHls ? 'hls' : 'file'),
       sourcePageUrl: queue.sourcePageUrl || '',
       totalSegments: 0,
       completedSegments: 0,
@@ -1087,7 +1115,7 @@ function createApiServer(options = {}) {
     const compatibility = getCompatibilityInfo();
     const allowedClients = new Set([
       CLIENT.extension,
-      'fetchv-extension',
+      'vidsnag-desktop',
       'vidsnag-extension',
     ]);
 
@@ -1136,7 +1164,7 @@ function createApiServer(options = {}) {
 
     try {
       const parsed = new URL(value.trim());
-      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password;
     } catch {
       return false;
     }
@@ -1145,6 +1173,10 @@ function createApiServer(options = {}) {
   function sanitizeString(value, max = 255) {
     if (typeof value !== 'string') return '';
     return value.trim().slice(0, max);
+  }
+
+  function isValidThumbnailDataUrl(value) {
+    return typeof value === 'string' && value.length <= 350000 && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
   }
 
   function sanitizeHeaders(headers) {
@@ -1158,7 +1190,7 @@ function createApiServer(options = {}) {
         continue;
       }
       const normalizedKey = key.trim();
-      if (!normalizedKey || normalizedKey.length > 128) {
+      if (!/^(?:accept|accept-language|authorization|cookie|origin|referer|user-agent|range|x-[a-z0-9-]+)$/i.test(normalizedKey) || /[\r\n]/.test(value) || normalizedKey.length > 128) {
         continue;
       }
       output[normalizedKey] = value.slice(0, 4096);
@@ -1233,8 +1265,8 @@ function createApiServer(options = {}) {
   }
 
   function resolveIncomingThumbnailUrl(payload) {
-    const explicit = sanitizeString(payload && payload.thumbnailUrl, 4096);
-    if (isValidHttpUrl(explicit)) {
+    const explicit = sanitizeString(payload && payload.thumbnailUrl, 350000);
+    if (isValidHttpUrl(explicit) || isValidThumbnailDataUrl(explicit)) {
       return explicit;
     }
 
@@ -1254,12 +1286,24 @@ function createApiServer(options = {}) {
 
   function validateCreateJobRequest(body) {
     const payload = body && typeof body === 'object' ? body : {};
+    const selectionResult = validateSelection(payload.selection);
+    if (!selectionResult.ok) {
+      const err = new Error(selectionResult.errors.map((entry) => entry.message).join('; '));
+      err.statusCode = 400;
+      throw err;
+    }
     const mediaUrl = sanitizeString(payload.mediaUrl, 4096);
     const mediaType = sanitizeString(payload.mediaType, 16).toLowerCase();
     const fallbackMediaUrl = sanitizeString(payload.fallbackMediaUrl, 4096);
     const titleHints = sanitizeTitleHints(payload.titleHints);
     const youtubeMetadata = sanitizeYoutubeMetadata(payload.youtubeMetadata);
     const thumbnailUrl = resolveIncomingThumbnailUrl({ ...payload, mediaUrl, youtubeMetadata });
+
+    if (payload.thumbnailUrl && !isValidHttpUrl(payload.thumbnailUrl) && !isValidThumbnailDataUrl(payload.thumbnailUrl)) {
+      const err = new Error('thumbnailUrl must be an http/https image URL or a JPEG, PNG or WebP data URL under 350 KB');
+      err.statusCode = 400;
+      throw err;
+    }
 
     if (!isValidHttpUrl(mediaUrl)) {
       const err = new Error('mediaUrl must be a valid http/https URL');
@@ -1275,6 +1319,12 @@ function createApiServer(options = {}) {
 
     if (fallbackMediaUrl && !isValidHttpUrl(fallbackMediaUrl)) {
       const err = new Error('fallbackMediaUrl must be a valid http/https URL');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (payload.sourcePageUrl && !isValidHttpUrl(payload.sourcePageUrl)) {
+      const err = new Error('sourcePageUrl must be a valid http/https URL');
       err.statusCode = 400;
       throw err;
     }
@@ -1302,6 +1352,7 @@ function createApiServer(options = {}) {
 
     return {
       mediaUrl,
+      selection: selectionResult.value,
       mediaType: mediaType || (/\.m3u8(\?|$)/i.test(mediaUrl) ? 'hls' : 'file'),
       title: sanitizeString(payload.title, 255),
       resourceName: sanitizeString(payload.resourceName, 255),
@@ -1321,6 +1372,29 @@ function createApiServer(options = {}) {
     };
   }
 
+  async function applyRequestDefaults(payload) {
+    const preferences = typeof onGetSettings === 'function' ? await onGetSettings() : {};
+    const supplied = payload && typeof payload === 'object' ? payload : {};
+    let selection = supplied.selection;
+    if (selection === undefined) {
+      const height = Number(preferences.preferredQuality);
+      const subtitleLang = preferences.subtitleLanguage;
+      const defaults = {
+        ...(Number.isFinite(height) && height > 0 ? { height } : {}),
+        ...(subtitleLang && subtitleLang !== 'none' ? { subtitleLang } : {}),
+      };
+      if (Object.keys(defaults).length) selection = defaults;
+    }
+    return {
+      ...supplied, selection,
+      settings: {
+        fileNaming: preferences.fileNaming || 'title',
+        customName: preferences.fileNaming === 'custom' ? preferences.customFilename || '' : '',
+        ...(supplied.settings || {}),
+      },
+    };
+  }
+
   app.use('/v1', validateV1ClientHeaders);
 
   app.get('/v1/health', (req, res) => {
@@ -1332,22 +1406,22 @@ function createApiServer(options = {}) {
       protocolVersion: String(compatibility.protocolVersion),
       supportedProtocolVersions: compatibility.supportedProtocolVersions,
       minExtensionVersion: compatibility.minExtensionVersion,
-      pairingRequired: false,
+      pairingRequired: true,
       wsPath: '/ws',
     });
   });
 
-  app.post('/v1/pair/complete', (req, res) => {
-    // Pairing is deprecated; extension bridge works locally without auth.
-    res.status(410).json({
-      error: 'Pairing is no longer required. Update extension to latest version.',
-    });
+  const pairingLimiter = rateLimit({ windowMs: 5 * 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
+  app.post('/v1/pair/complete', pairingLimiter, (req, res) => {
+    const result = security.completePairing(req);
+    if (!result) return res.status(403).json({ error: 'That connection code is invalid or has expired' });
+    return res.json(result);
   });
 
-  app.post('/v1/jobs', (req, res) => {
+  app.post('/v1/jobs', async (req, res) => {
     let body;
     try {
-      body = validateCreateJobRequest(req.body || {});
+      body = validateCreateJobRequest(await applyRequestDefaults(req.body || {}));
     } catch (err) {
       res.status(err.statusCode || 400).json({ error: err.message || 'Invalid job request' });
       return;
@@ -1362,6 +1436,8 @@ function createApiServer(options = {}) {
 
     const queue = {
       url: body.mediaUrl,
+      mediaType: body.mediaType,
+      selection: body.selection,
       title: body.title || body.sourcePageTitle || body.resourceName || 'Download',
       name: body.resourceName || body.title || 'media',
       headers: body.headers || {},
@@ -1406,18 +1482,130 @@ function createApiServer(options = {}) {
     res.json({
       queue: queueManager.getQueue(),
       settings: queueManager.getSettings(),
+      ...security.getConnectionState(),
     });
   });
 
   app.post('/v1/app/focus', async (req, res) => {
     if (typeof onFocus === 'function') {
       try {
-        await Promise.resolve(onFocus());
+        await Promise.resolve(onFocus(req.body && req.body.view === 'settings' ? 'settings' : 'downloads'));
       } catch (err) {
         logger.warn('onFocus callback failed', { error: err.message });
       }
     }
     res.json({ ok: true });
+  });
+
+  app.get('/v1/connection', (req, res) => {
+    res.json({ ...security.getConnectionState(), apiVersion: API.apiVersion, wsPath: '/ws' });
+  });
+
+  app.get('/v1/settings', async (req, res) => {
+    const current = typeof onGetSettings === 'function' ? await onGetSettings() : {};
+    const { outputDirectory = '', preferredQuality = 'best', subtitleLanguage = 'none', notifyOnComplete = true, launchAtLogin = false } = current;
+    res.json({ outputDirectory, preferredQuality, subtitleLanguage, notifyOnComplete, launchAtLogin });
+  });
+
+  app.post('/v1/settings', async (req, res) => {
+    const input = req.body || {};
+    const permitted = new Set(['preferredQuality', 'subtitleLanguage', 'notifyOnComplete', 'launchAtLogin']);
+    if (Object.keys(input).some((key) => !permitted.has(key))
+      || (input.preferredQuality !== undefined && !['best', '1080', '720', '480'].includes(input.preferredQuality))
+      || (input.subtitleLanguage !== undefined && (typeof input.subtitleLanguage !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(input.subtitleLanguage)))
+      || ['notifyOnComplete', 'launchAtLogin'].some((key) => input[key] !== undefined && typeof input[key] !== 'boolean')) return res.status(400).json({ error: 'Invalid preference' });
+    if (typeof onSaveSettings !== 'function') return res.status(501).json({ error: 'Change preferences in the desktop app' });
+    await onSaveSettings(input);
+    res.json({ ok: true });
+  });
+
+  app.post(['/v1/media/inspect', '/api/media/inspect'], async (req, res) => {
+    const mediaUrl = String(req.body && req.body.mediaUrl || '');
+    if (!isValidHttpUrl(mediaUrl)) return res.status(400).json({ error: 'Provide a valid video URL' });
+    let target = mediaUrl;
+    const headers = sanitizeHeaders(req.body.headers);
+    try {
+      let response;
+      for (let redirects = 0; redirects <= 4; redirects += 1) {
+        response = await fetch(target, {
+          headers: scopeMediaHeaders(headers, target, { credentialOrigin: mediaUrl }),
+          redirect: 'manual', signal: AbortSignal.timeout(8000),
+        });
+        if (response.status < 300 || response.status >= 400 || !response.headers.get('location')) break;
+        const next = new URL(response.headers.get('location'), target);
+        await response.body?.cancel();
+        if (!['http:', 'https:'].includes(next.protocol) || (new URL(target).protocol === 'https:' && next.protocol !== 'https:')) throw new Error('This link redirects to an unsupported address');
+        target = next.href;
+      }
+      if (!response || !response.ok) throw new Error('This link could not be checked. Open the source page and try again.');
+      const contentType = String(response.headers.get('content-type') || '');
+      if (!/mpegurl|text\/plain/.test(contentType) && !/\.m3u8(?:[?#]|$)/i.test(target)) {
+        await response.body?.cancel();
+        return res.json({ url: target, mediaType: 'file', variants: [], audio: [], subtitles: [] });
+      }
+      const reader = response.body.getReader();
+      const chunks = [];
+      let size = 0;
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.length;
+        if (size > 1_000_000) { await reader.cancel(); throw new Error('The playlist is too large to inspect'); }
+        chunks.push(Buffer.from(chunk.value));
+      }
+      const { parseHlsManifest } = require('@m3u8/contracts');
+      const result = parseHlsManifest(Buffer.concat(chunks).toString('utf8'), target);
+      return res.json({ ...result, mediaType: 'hls' });
+    } catch (error) { return res.status(400).json({ error: redact(error.message) }); }
+  });
+
+  for (const action of ['pause', 'resume']) {
+    app.post([`/v1/jobs/:id/${action}`, `/v1/queue/:id/${action}`], (req, res) => {
+      const changed = action === 'pause' ? queueManager.pauseJob(req.params.id) : queueManager.resumeJob(req.params.id);
+      res.status(changed ? 200 : 409).json(changed ? { ok: true } : { error: `This download cannot ${action} now` });
+    });
+  }
+
+  app.post(['/v1/jobs/:id/open', '/v1/jobs/:id/open-file'], async (req, res) => {
+    const job = jobs.get(req.params.id);
+    if (!job || !['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) return res.status(409).json({ error: 'This download is not saved yet' });
+    const filePath = job.mp4Path && fs.existsSync(job.mp4Path) ? job.mp4Path : job.filePath;
+    if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: 'File moved or deleted', code: 'FILE_MISSING' });
+    if (typeof onOpenFile !== 'function') return res.status(501).json({ error: 'Open the file from the desktop app' });
+    try {
+      const error = await onOpenFile(filePath);
+      if (typeof error === 'string' && error) throw new Error(error);
+      return res.json({ ok: true });
+    } catch { return res.status(500).json({ error: 'The file could not be opened' }); }
+  });
+
+  app.post(['/v1/jobs/:id/refresh-source', '/api/jobs/:id/refresh-source'], async (req, res) => {
+    const source = req.body || {};
+    const selectionResult = validateSelection(source.selection);
+    if (!isValidHttpUrl(source.mediaUrl || source.url) || !selectionResult.ok || (source.sourcePageUrl && !isValidHttpUrl(source.sourcePageUrl))) return res.status(400).json({ error: 'Provide a valid refreshed video URL and selection' });
+    if (!jobs.has(req.params.id)) return res.status(404).json({ error: 'Download not found' });
+    try {
+      const result = await queueManager.refreshJobSource(req.params.id, {
+        url: source.mediaUrl || source.url,
+        headers: sanitizeHeaders(source.headers),
+        sourcePageUrl: sanitizeString(source.sourcePageUrl, 4096),
+        ...(selectionResult.value ? { selection: selectionResult.value } : {}),
+      });
+      return res.status(result.ok ? 200 : 409).json(result);
+    } catch (error) { return res.status(400).json({ error: redact(error.message) }); }
+  });
+
+  app.get(['/v1/diagnostics', '/api/diagnostics'], (req, res) => {
+    res.json(redact({
+      appVersion,
+      apiVersion: API.apiVersion,
+      generatedAt: new Date().toISOString(),
+      jobs: queueManager.getQueue().map((job) => ({
+        id: job.id, status: job.queueStatus || job.status, mediaType: job.mediaType,
+        source: job.sourcePageUrl, progress: job.progress,
+        error: job.error, totalSegments: job.totalSegments, completedSegments: job.completedSegments,
+      })),
+    }));
   });
 
   app.post('/api/jobs/:id/retry-original-hls', (req, res) => {
@@ -1434,6 +1622,9 @@ function createApiServer(options = {}) {
 
     const queue = {
       url: sourceJob.originalHlsUrl,
+      mediaType: 'hls',
+      selection: sourceJob.selection,
+      headerOrigin: sourceJob.credentialOrigin || sourceJob.headerOrigin,
       title: sourceJob.title || 'HLS Retry',
       name: sourceJob.title || 'HLS Retry',
       headers: sourceJob.headers || {},
@@ -1462,14 +1653,14 @@ function createApiServer(options = {}) {
     });
   });
 
-  app.post('/api/jobs/:id/retry', (req, res) => {
+  app.post(['/api/jobs/:id/retry', '/v1/jobs/:id/retry'], (req, res) => {
     const sourceJob = jobs.get(req.params.id);
     if (!sourceJob) {
       res.status(404).json({ error: 'Job not found' });
       return;
     }
 
-    if (sourceJob.status === 'downloading' || sourceJob.status === 'fetching-playlist') {
+    if (sourceJob.queueStatus === 'downloading' || sourceJob.status === 'downloading' || sourceJob.status === 'fetching-playlist') {
       res.status(400).json({ error: 'Cannot retry an active job' });
       return;
     }
@@ -1482,6 +1673,9 @@ function createApiServer(options = {}) {
 
     const queue = {
       url: retryUrl,
+      mediaType: sourceJob.mediaType,
+      selection: sourceJob.selection,
+      headerOrigin: sourceJob.credentialOrigin || sourceJob.headerOrigin,
       title: sourceJob.title || 'Retry Job',
       name: sourceJob.title || 'Retry Job',
       headers: sourceJob.headers || {},
@@ -1506,11 +1700,18 @@ function createApiServer(options = {}) {
     const result = enqueueLegacyRequest({ queue, threads, settings });
     res.json({
       ...result,
+      jobId: result.id,
       retryOf: sourceJob.id,
     });
   });
 
-  registerHistoryRoutes(app, historyIndex, fsPromises, resolvedDownloadDir);
+  registerHistoryRoutes(app, historyIndex, fsPromises, resolvedDownloadDir, {
+    onTrashFile, onOpenFile, onLocateFile,
+    onRemoveItem: (item) => {
+      const job = item.jobId && jobs.get(item.jobId);
+      if (job && ['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)) queueManager.removeJob(item.jobId, false);
+    },
+  });
   registerQueueRoutes(app, queueManager, {
     onRenameJob: async (jobId, title) => {
       const job = jobs.get(jobId);
@@ -1554,6 +1755,20 @@ function createApiServer(options = {}) {
       }
     },
   });
+  // Normalize both creation contracts before the legacy desktop route builds a job.
+  app.post('/api/jobs', async (req, res, next) => {
+    try {
+      const source = req.body && req.body.queue || {};
+      const normalized = validateCreateJobRequest(await applyRequestDefaults({
+        ...source, mediaUrl: source.url, resourceName: source.name,
+        selection: source.selection === undefined ? req.body && req.body.selection : source.selection, settings: req.body && req.body.settings,
+      }));
+      req.body.queue = { ...source, headers: normalized.headers, mediaType: normalized.mediaType, selection: normalized.selection, thumbnailUrl: normalized.thumbnailUrl };
+      req.body.settings = normalized.settings;
+      next();
+    } catch (error) { res.status(error.statusCode || 400).json({ error: error.message }); }
+  });
+
   registerJobRoutes(
     app,
     jobs,
@@ -1567,12 +1782,30 @@ function createApiServer(options = {}) {
     runDirectJob,
   );
 
-  const wss = new WebSocket.Server({ server, path: '/ws' });
+  app.use((error, req, res, next) => {
+    if (res.headersSent) return next(error);
+    const status = Number(error.statusCode || error.status) || 500;
+    return res.status(status >= 400 && status <= 599 ? status : 500).json({
+      error: status === 400 ? 'The request could not be read' : 'The request could not be completed',
+    });
+  });
+
+  const wss = new WebSocket.Server({
+    server, path: '/ws',
+    handleProtocols: (protocols) => protocols.has('vidsnag') ? 'vidsnag' : false,
+    verifyClient: ({ req }, done) => {
+      const allowedHosts = new Set([`127.0.0.1:${server.address()?.port}`, `localhost:${server.address()?.port}`, `[::1]:${server.address()?.port}`]);
+      const allowed = allowedHosts.has(String(req.headers.host || '')) && security.originAllowed(String(req.headers.origin || '')) && security.authenticate(req);
+      if (allowed) security.markConnected(req);
+      done(allowed, allowed ? 200 : 401, allowed ? 'OK' : 'Unauthorized');
+    },
+  });
   const jobSubscriptions = new Map();
   const channelSubscriptions = new Map();
   const clientSubscriptions = new Map();
   const lastSentTimestamps = new Map();
   let lastQueueSignature = '';
+  const notifiedCompletedJobs = new Set();
 
   const CHANNELS = new Set(['queue', 'history', 'compatibility']);
 
@@ -1642,7 +1875,7 @@ function createApiServer(options = {}) {
 
   function sendWsMessage(ws, type, payload) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type, data: payload }));
+    ws.send(JSON.stringify({ type, data: security.publicPayload(payload) }));
   }
 
   function sendChannelMessage(channel, type, payload) {
@@ -1682,6 +1915,11 @@ function createApiServer(options = {}) {
       return false;
     }
     lastQueueSignature = signature;
+    for (const job of payload.queue || []) {
+      if (!['completed', 'completed-with-errors'].includes(job.queueStatus || job.status) || notifiedCompletedJobs.has(job.id)) continue;
+      notifiedCompletedJobs.add(job.id);
+      if (typeof onDownloadComplete === 'function') Promise.resolve(onDownloadComplete(job)).catch(() => {});
+    }
     sendChannelMessage('queue', 'queue:update', payload);
     return true;
   }
@@ -1694,7 +1932,7 @@ function createApiServer(options = {}) {
       protocolVersion: compatibility.protocolVersion,
       supportedProtocolVersions: compatibility.supportedProtocolVersions,
       minExtensionVersion: compatibility.minExtensionVersion,
-      pairingRequired: false,
+      pairingRequired: true,
       wsPath: '/ws',
       updatedAt: Date.now(),
     };
@@ -1828,9 +2066,12 @@ function createApiServer(options = {}) {
   let historyRefreshTimer = null;
 
   async function start() {
-    if (started) return Promise.resolve({ host, port });
+    if (started) return Promise.resolve({ host, port: server.address()?.port || port });
 
     started = true;
+    await queueManager.ready;
+    await queueManager.saveQueue();
+    for (const job of jobs.values()) if (['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) notifiedCompletedJobs.add(job.id);
     await historyIndex.init();
     lastQueueSignature = '';
     broadcastQueueUpdate();
@@ -1841,7 +2082,8 @@ function createApiServer(options = {}) {
       downloadDir: resolvedDownloadDir,
       intervalMs: engineConfig.cleanupIntervalMs,
       tempMaxAgeHours: engineConfig.cleanupAgeHours,
-      downloadMaxAgeHours: engineConfig.downloadRetentionHours,
+      downloadMaxAgeHours: 0,
+      getProtectedJobIds: () => [...jobs.values()].filter((job) => !['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)).map((job) => job.id),
     });
     historyRefreshTimer = setInterval(() => {
       historyIndex.refreshFromDisk().catch((err) => {
@@ -1849,10 +2091,21 @@ function createApiServer(options = {}) {
       });
     }, 15_000);
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      const fail = (error) => {
+        started = false;
+        clearInterval(broadcastInterval);
+        clearInterval(cleanupTimer);
+        clearInterval(historyRefreshTimer);
+        cleanupTimer = null;
+        historyRefreshTimer = null;
+        reject(error);
+      };
+      server.once('error', fail);
       server.listen(port, host, () => {
+        server.off('error', fail);
         logger.info('Downloader API listening', { host, port });
-        resolve({ host, port });
+        resolve({ host, port: server.address().port });
       });
     });
   }
@@ -1872,6 +2125,7 @@ function createApiServer(options = {}) {
     }
 
     return new Promise((resolve, reject) => {
+      for (const client of wss.clients) client.terminate();
       wss.close(() => {
         server.close((err) => {
           if (err) {
@@ -1889,15 +2143,19 @@ function createApiServer(options = {}) {
     server,
     start,
     stop,
+    getAuthToken: () => security.token,
+    getPairingInfo: security.getPairingInfo,
+    getConnectionState: security.getConnectionState,
     getQueueSettings: () => queueManager.getSettings(),
     updateQueueSettings: (settings) => queueManager.updateSettings(settings || {}),
     applyLegacyQueueSettings: (legacy) => queueManager.applyLegacySettingsIfNeeded(legacy || {}),
     getState: () => ({
       queue: queueManager.getQueue(),
       settings: queueManager.getSettings(),
-      pairingRequired: false,
+      pairingRequired: true,
       appVersion,
       apiVersion: API.apiVersion,
+      ...security.getConnectionState(),
     }),
   };
 }

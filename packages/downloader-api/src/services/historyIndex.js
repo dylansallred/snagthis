@@ -104,7 +104,7 @@ function getHistoryItemLocator(item) {
     ? item.absolutePath.trim()
     : '';
   const safeRelativePath = normalizeRelativePath(item.relativePath || item.fileName);
-  return safeRelativePath || absolutePath || String(item.fileName || '').trim();
+  return absolutePath || safeRelativePath || String(item.fileName || '').trim();
 }
 
 function mergeHistoryItems(existingItem, incomingItem) {
@@ -147,16 +147,7 @@ function normalizeStoredItem(item) {
   };
   const storedId = typeof item.id === 'string' ? item.id.trim() : '';
   const decodedStoredId = storedId ? decodeHistoryItemId(storedId) : '';
-  const nextId = (
-    decodedStoredId
-    && (
-      decodedStoredId === normalized.relativePath
-      || decodedStoredId === normalized.absolutePath
-      || decodedStoredId === normalized.fileName
-    )
-  )
-    ? storedId
-    : encodeHistoryItemId(getHistoryItemLocator(normalized));
+  const nextId = decodedStoredId ? storedId : encodeHistoryItemId(getHistoryItemLocator(normalized));
   return {
     ...normalized,
     id: nextId,
@@ -167,6 +158,7 @@ class HistoryIndexService {
   constructor(options = {}) {
     const {
       downloadDir,
+      indexDir = downloadDir,
       fsPromises,
       jobs,
       onChange,
@@ -185,7 +177,9 @@ class HistoryIndexService {
     this.jobs = jobs || new Map();
     this.onChange = typeof onChange === 'function' ? onChange : null;
     this.minRefreshIntervalMs = Math.max(1_000, Number(minRefreshIntervalMs) || 5_000);
-    this.indexFilePath = path.join(downloadDir, 'history-index.json');
+    this.indexFilePath = path.join(indexDir, 'history-index.json');
+    this.legacyIndexFilePath = path.join(downloadDir, 'history-index.json');
+    this.removedPaths = new Set();
     this.items = [];
     this.lastRefreshAt = 0;
     this.lastSavedAt = 0;
@@ -194,6 +188,11 @@ class HistoryIndexService {
 
   async init() {
     await this.fsPromises.mkdir(this.downloadDir, { recursive: true });
+    await this.fsPromises.mkdir(path.dirname(this.indexFilePath), { recursive: true });
+    if (this.indexFilePath !== this.legacyIndexFilePath && fs.existsSync(this.legacyIndexFilePath)) {
+      if (!fs.existsSync(this.indexFilePath)) await this.fsPromises.copyFile(this.legacyIndexFilePath, this.indexFilePath);
+      await this.fsPromises.unlink(this.legacyIndexFilePath);
+    }
     await this.loadPersistedIndex();
     await this.refreshFromDisk({ force: true });
   }
@@ -202,6 +201,7 @@ class HistoryIndexService {
     try {
       const raw = await this.fsPromises.readFile(this.indexFilePath, 'utf8');
       const parsed = JSON.parse(raw);
+      this.removedPaths = new Set(Array.isArray(parsed.removedPaths) ? parsed.removedPaths : []);
       if (
         parsed
         && (parsed.version === INDEX_VERSION || parsed.version === 1)
@@ -224,9 +224,10 @@ class HistoryIndexService {
       version: INDEX_VERSION,
       updatedAt: Date.now(),
       items: this.items,
+      removedPaths: [...this.removedPaths],
     };
     const tempPath = `${this.indexFilePath}.tmp`;
-    await this.fsPromises.writeFile(tempPath, JSON.stringify(payload, null, 2), 'utf8');
+    await this.fsPromises.writeFile(tempPath, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 });
     await this.fsPromises.rename(tempPath, this.indexFilePath);
     this.lastSavedAt = Date.now();
   }
@@ -494,7 +495,7 @@ class HistoryIndexService {
     const validJobId = extractedJobId && isValidHistoryJobId(extractedJobId)
       ? extractedJobId
       : null;
-    const persistedItem = mediaFile.persistedItem || null;
+    const persistedItem = mediaFile.persistedItem || this.items.find((item) => item.absolutePath === mediaFile.fullPath) || null;
     const job = mediaFile.job
       || jobLookup.get(relativePath)
       || (validJobId ? this.jobs.get(validJobId) : null)
@@ -520,7 +521,7 @@ class HistoryIndexService {
     });
 
     return {
-      id: encodeHistoryItemId(mediaFile.absolutePath || relativePath),
+      id: (persistedItem && persistedItem.id) || encodeHistoryItemId(mediaFile.absolutePath || relativePath),
       fileName,
       relativePath,
       absolutePath: mediaFile.absolutePath || mediaFile.fullPath,
@@ -531,6 +532,9 @@ class HistoryIndexService {
       modifiedAt: Number(mediaFile.stat.mtimeMs || Date.now()),
       ext,
       thumbnailUrl,
+      missing: false,
+      sourcePageUrl: (job && job.sourcePageUrl) || (persistedItem && persistedItem.sourcePageUrl) || null,
+      selection: (job && job.selection) || (persistedItem && persistedItem.selection) || null,
       tmdbReleaseDate: (job && job.tmdbReleaseDate) || (persistedItem && persistedItem.tmdbReleaseDate) || null,
       tmdbMetadata: (job && job.tmdbMetadata) || (persistedItem && persistedItem.tmdbMetadata) || null,
       youtubeMetadata: (job && job.youtubeMetadata) || (persistedItem && persistedItem.youtubeMetadata) || null,
@@ -539,7 +543,7 @@ class HistoryIndexService {
 
   static buildSignature(items) {
     return items
-      .map((item) => `${item.absolutePath || item.relativePath || item.fileName}:${item.sizeBytes}:${item.modifiedAt}:${item.thumbnailUrl || ''}`)
+      .map((item) => `${item.absolutePath || item.relativePath || item.fileName}:${item.sizeBytes}:${item.modifiedAt}:${item.thumbnailUrl || ''}:${item.missing ? 1 : 0}`)
       .join('|');
   }
 
@@ -575,7 +579,7 @@ class HistoryIndexService {
       const nextItemsByLocator = new Map();
       for (const mediaFile of mediaFiles) {
         const item = this.buildItem(mediaFile, filesByDir, activeJobFiles, jobLookup);
-        if (!item) continue;
+        if (!item || this.removedPaths.has(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)))) continue;
 
         const locator = getHistoryItemLocator(item);
         if (!locator) continue;
@@ -584,6 +588,14 @@ class HistoryIndexService {
         nextItemsByLocator.set(locator, mergeHistoryItems(existing, item));
       }
 
+      // Keep records for moved/deleted files so the user can locate or remove them.
+      for (const previous of this.items) {
+        const absolute = path.resolve(previous.absolutePath || path.join(this.downloadDir, previous.relativePath));
+        const locator = getHistoryItemLocator(previous);
+        if (!this.removedPaths.has(absolute) && !nextItemsByLocator.has(locator)) {
+          nextItemsByLocator.set(locator, { ...previous, missing: !fs.existsSync(absolute) });
+        }
+      }
       const nextItems = Array.from(nextItemsByLocator.values());
 
       nextItems.sort((a, b) => Number(b.modifiedAt || 0) - Number(a.modifiedAt || 0));
@@ -625,12 +637,14 @@ class HistoryIndexService {
     const limit = safeParsePositiveInt(options.limit, DEFAULT_LIMIT, { min: 1, max: 1_000 });
     const offset = decodeCursor(options.cursor);
     const nextOffset = offset + limit;
-    const slice = this.items.slice(offset, nextOffset);
-    const nextCursor = nextOffset < this.items.length ? encodeCursor(nextOffset) : null;
+    const query = String(options.q || '').trim().toLocaleLowerCase();
+    const matchingItems = query ? this.items.filter((item) => [item.title, item.label, item.fileName, item.sourcePageUrl].some((value) => String(value || '').toLocaleLowerCase().includes(query))) : this.items;
+    const slice = matchingItems.slice(offset, nextOffset);
+    const nextCursor = nextOffset < matchingItems.length ? encodeCursor(nextOffset) : null;
 
     return {
       items: slice,
-      total: this.items.length,
+      total: matchingItems.length,
       nextCursor,
     };
   }
@@ -668,7 +682,7 @@ class HistoryIndexService {
   resolveFilePath(historyId) {
     const item = this.findById(historyId);
     if (!item) return null;
-    if (item.absolutePath && fs.existsSync(item.absolutePath)) {
+    if (item.absolutePath) {
       return item.absolutePath;
     }
     const safeRelative = normalizeRelativePath(item.relativePath || item.fileName);
@@ -683,6 +697,7 @@ class HistoryIndexService {
     const item = this.findById(historyId);
     if (!item) return false;
     const before = this.items.length;
+    this.removedPaths.add(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)));
     this.items = this.items.filter((candidate) => candidate.id !== item.id);
     if (this.items.length === before) return false;
     await this.persistIndex();
@@ -704,8 +719,27 @@ class HistoryIndexService {
     return removed;
   }
 
+  async locateById(historyId, selectedPath) {
+    const item = this.findById(historyId);
+    if (!item) return null;
+    const previousPath = item.absolutePath || path.join(this.downloadDir, item.relativePath);
+    this.removedPaths.add(path.resolve(previousPath));
+    this.removedPaths.delete(path.resolve(selectedPath));
+    const stat = await this.fsPromises.stat(selectedPath);
+    Object.assign(item, {
+      absolutePath: path.resolve(selectedPath),
+      relativePath: this.toRelativePath(selectedPath) || path.basename(selectedPath),
+      fileName: path.basename(selectedPath),
+      sizeBytes: stat.size, missing: false,
+    });
+    await this.persistIndex();
+    this.emitChange('locate');
+    return item;
+  }
+
   async clear() {
     if (this.items.length === 0) return;
+    for (const item of this.items) this.removedPaths.add(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)));
     this.items = [];
     await this.persistIndex();
     this.emitChange('clear');

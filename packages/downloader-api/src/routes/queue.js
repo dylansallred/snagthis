@@ -88,7 +88,8 @@ function registerQueueRoutes(app, queueManager, options = {}) {
   // DELETE /api/queue/:id - Remove job from queue
   app.delete('/api/queue/:id', jobIdValidation, (req, res) => {
     const jobId = req.params.id;
-    const deleteFiles = req.query.deleteFiles === 'true';
+    if (req.query.deleteFiles === 'true') return res.status(400).json({ error: 'Use Move file to Trash for saved files' });
+    const deleteFiles = false;
     const success = queueManager.removeJob(jobId, deleteFiles);
   
     if (success) {

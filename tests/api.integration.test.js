@@ -7,6 +7,7 @@ const http = require('node:http');
 const net = require('node:net');
 const { setTimeout: delay } = require('node:timers/promises');
 const WebSocket = require('ws');
+const { runTool } = require('./fixtures/server');
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'error';
@@ -20,6 +21,7 @@ if (process.env.TEST_VERBOSE !== '1') {
 }
 
 const { createApiServer } = require('../packages/downloader-api/src');
+const TEST_AUTH_TOKEN = 'test-installation-token-0123456789abcdef';
 const { inferMediaMetadata } = require('../packages/downloader-api/src/utils/mediaMetadata');
 const QueueManager = require('../packages/downloader-engine/src/core/QueueManager');
 
@@ -40,7 +42,49 @@ async function getFreePort() {
   });
 }
 
+// API lifecycle fixtures use real playable media so the production FFprobe
+// validator runs unchanged. Generate once for this test file, then reuse bytes
+// behind the original redirects, delays, and deliberate failure endpoints.
+let fixtureMediaPromise;
+async function getFixtureMedia() {
+  if (!fixtureMediaPromise) fixtureMediaPromise = (async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-api-media-'));
+    const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
+    const source = path.join(directory, 'sample.mp4');
+    try {
+      await runTool(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y',
+        '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=12',
+        '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000',
+        '-t', '10', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+        '-g', '12', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '64k',
+        '-movflags', '+faststart', source]);
+      const pieces = {};
+      for (const seconds of [2, 3]) {
+        const destination = path.join(directory, `pieces-${seconds}`);
+        fs.mkdirSync(destination);
+        await runTool(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y',
+          '-i', source, '-c', 'copy', '-hls_time', String(seconds), '-hls_playlist_type', 'vod',
+          '-hls_segment_filename', path.join(destination, 'piece-%02d.ts'), path.join(destination, 'index.m3u8')]);
+        pieces[seconds] = fs.readdirSync(destination).filter((name) => name.endsWith('.ts')).sort()
+          .map((name) => fs.readFileSync(path.join(destination, name)));
+      }
+      return { directory, mp4: fs.readFileSync(source), pieces };
+    } catch (error) {
+      fs.rmSync(directory, { recursive: true, force: true });
+      throw error;
+    }
+  })();
+  return fixtureMediaPromise;
+}
+
+test.after(async () => {
+  if (!fixtureMediaPromise) return;
+  const fixture = await fixtureMediaPromise.catch(() => null);
+  if (fixture) fs.rmSync(fixture.directory, { recursive: true, force: true });
+});
+
 async function startFixtureMediaServer() {
+  const media = await getFixtureMedia();
   const port = await getFreePort();
   let exclusiveTailActive = 0;
   let exclusiveTailCollision = false;
@@ -49,7 +93,7 @@ async function startFixtureMediaServer() {
     const pathname = new URL(req.url, `http://127.0.0.1:${port}`).pathname;
 
     if (pathname === '/sample.mp4') {
-      const body = Buffer.alloc(512 * 1024, 1);
+      const body = media.mp4;
       res.writeHead(200, {
         'Content-Type': 'video/mp4',
         'Content-Length': body.length,
@@ -220,7 +264,7 @@ async function startFixtureMediaServer() {
     }
 
     if (pathname === '/seg-1.ts' || pathname === '/seg-2.ts') {
-      const body = Buffer.alloc(64 * 1024, 2);
+      const body = media.pieces[3][pathname.endsWith('1.ts') ? 0 : 1];
       res.writeHead(200, {
         'Content-Type': 'video/mp2t',
         'Content-Length': body.length,
@@ -235,7 +279,7 @@ async function startFixtureMediaServer() {
         exclusiveTailCollision = true;
       }
 
-      const body = Buffer.alloc(64 * 1024, 4);
+      const body = media.pieces[3][2];
       setTimeout(() => {
         const collided = exclusiveTailCollision;
         exclusiveTailActive = Math.max(0, exclusiveTailActive - 1);
@@ -259,7 +303,8 @@ async function startFixtureMediaServer() {
     }
 
     if (/^\/slow-seg-\d+[.]ts$/.test(pathname)) {
-      const body = Buffer.alloc(96 * 1024, 3);
+      const index = Number(pathname.match(/slow-seg-(\d+)/)[1]) - 1;
+      const body = media.pieces[2][index % media.pieces[2].length];
       setTimeout(() => {
         res.writeHead(200, {
           'Content-Type': 'video/mp2t',
@@ -297,13 +342,13 @@ async function startFixtureMediaServer() {
 async function apiFetch(baseUrl, pathName, {
   method = 'GET',
   body,
-  token,
+  token = TEST_AUTH_TOKEN,
   includeV1Headers = true,
   extraHeaders = {},
 } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (includeV1Headers) {
-    headers['X-Client'] = 'fetchv-extension';
+    headers['X-Client'] = 'vidsnag-extension';
     headers['X-Protocol-Version'] = '1';
   }
   Object.assign(headers, extraHeaders || {});
@@ -383,6 +428,7 @@ async function startApi({ dataDir, port, ...options }) {
     port,
     host: '127.0.0.1',
     appVersion: 'test-version',
+    authToken: TEST_AUTH_TOKEN,
     downloadDir: path.join(dataDir, 'downloads'),
     ...options,
   });
@@ -484,7 +530,7 @@ test('v1 health, validation, queue lifecycle, and restart recovery', async () =>
   try {
     const healthRes = await apiFetch(baseUrl, '/v1/health');
     assert.equal(healthRes.status, 200);
-    assert.equal(healthRes.data.pairingRequired, false);
+    assert.equal(healthRes.data.pairingRequired, true);
     assert.equal(typeof healthRes.data.protocolVersion, 'string');
     assert.ok(healthRes.data.supportedProtocolVersions);
     assert.equal(typeof healthRes.data.minExtensionVersion, 'string');
@@ -494,8 +540,8 @@ test('v1 health, validation, queue lifecycle, and restart recovery', async () =>
     });
     assert.equal(badProtocolRes.status, 426);
 
-    const noAuthQueueRes = await apiFetch(baseUrl, '/v1/queue');
-    assert.equal(noAuthQueueRes.status, 200);
+    const noAuthQueueRes = await apiFetch(baseUrl, '/v1/queue', { token: null });
+    assert.equal(noAuthQueueRes.status, 401);
 
     const invalidPayloadRes = await apiFetch(baseUrl, '/v1/jobs', {
       method: 'POST',
@@ -626,7 +672,7 @@ test('v1 health, validation, queue lifecycle, and restart recovery', async () =>
     assert.ok(recoveryJobBefore);
     assert.equal(recoveryJobBefore.queueStatus, 'queued');
 
-    const queueFilePath = path.join(tmpRoot, 'downloads', 'queue.json');
+    const queueFilePath = path.join(tmpRoot, 'queue.json');
     await waitFor(() => {
       try {
         const raw = fs.readFileSync(queueFilePath, 'utf8');
@@ -791,7 +837,12 @@ test('pause then delete during active HLS download does not leave top-level .ts 
     assert.equal(pauseRes.status, 200);
     await waitForJobQueueState(baseUrl, jobId, 'paused', { timeoutMs: 8_000, intervalMs: 150 });
 
-    const deleteRes = await apiFetch(baseUrl, `/api/queue/${jobId}?deleteFiles=true`, {
+    const unsafeDeleteRes = await apiFetch(baseUrl, `/api/queue/${jobId}?deleteFiles=true`, {
+      method: 'DELETE',
+      includeV1Headers: false,
+    });
+    assert.equal(unsafeDeleteRes.status, 400, 'permanent file deletion is not a queue action');
+    const deleteRes = await apiFetch(baseUrl, `/api/queue/${jobId}`, {
       method: 'DELETE',
       includeV1Headers: false,
     });
@@ -849,7 +900,7 @@ test('hls job falls back to direct media URL when all segments fail', async () =
     assert.equal(jobRes.data.fallbackAttempted, true);
     assert.equal(jobRes.data.fallbackUsed, true);
 
-    const fileRes = await fetch(`${baseUrl}/api/jobs/${jobId}/file`);
+    const fileRes = await fetch(`${baseUrl}/api/jobs/${jobId}/file`, { headers: { Authorization: `Bearer ${TEST_AUTH_TOKEN}` } });
     assert.equal(fileRes.status, 200);
     const contentType = fileRes.headers.get('content-type') || '';
     assert.match(contentType, /^video\/(mp4|mp2t)/i);
@@ -915,7 +966,7 @@ test('hls job fails instead of emitting partial output when a required segment i
     assert.match(jobRes.data.error || '', /Incomplete HLS download/i);
     assert.equal(jobRes.data.progress < 100, true);
 
-    const fileRes = await fetch(`${baseUrl}/api/jobs/${jobId}/file`);
+    const fileRes = await fetch(`${baseUrl}/api/jobs/${jobId}/file`, { headers: { Authorization: `Bearer ${TEST_AUTH_TOKEN}` } });
     assert.equal(fileRes.status, 400);
 
     const downloadDir = path.join(tmpRoot, 'downloads');
@@ -1048,7 +1099,7 @@ test('completed downloads are stored under a per-job folder', async () => {
       return job && job.queueStatus === 'completed' ? true : false;
     }, { timeoutMs: 12_000, intervalMs: 200 });
 
-    const queueFilePath = path.join(downloadDir, 'queue.json');
+    const queueFilePath = path.join(tmpRoot, 'queue.json');
     const queuePayload = JSON.parse(fs.readFileSync(queueFilePath, 'utf8'));
     const persisted = (queuePayload.queue || []).find((entry) => entry.id === jobId);
     assert.ok(persisted);
@@ -1168,7 +1219,7 @@ test('external history items keep their thumbnail after clearing completed queue
     fs.mkdirSync(thumbDir, { recursive: true });
     fs.writeFileSync(thumbPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
 
-    const queueFilePath = path.join(downloadDir, 'queue.json');
+    const queueFilePath = path.join(tmpRoot, 'queue.json');
     const queuePayload = JSON.parse(fs.readFileSync(queueFilePath, 'utf8'));
     const persistedJob = (queuePayload.queue || []).find((entry) => entry.id === jobId);
     assert.ok(persistedJob);
@@ -1189,7 +1240,7 @@ test('external history items keep their thumbnail after clearing completed queue
     assert.equal(historyBeforeDelete.status, 200);
     const historyItemBeforeDelete = historyBeforeDelete.data.items.find((entry) => entry.jobId === jobId);
     assert.ok(historyItemBeforeDelete);
-    assert.equal(historyItemBeforeDelete.thumbnailUrl, `/downloads/${jobId}/${jobId}-thumb.jpg`);
+    assert.equal(new URL(historyItemBeforeDelete.thumbnailUrl, baseUrl).pathname, `/downloads/${jobId}/${jobId}-thumb.jpg`);
 
     const clearRes = await apiFetch(baseUrl, '/api/queue/clear-completed', {
       method: 'POST',
@@ -1207,7 +1258,7 @@ test('external history items keep their thumbnail after clearing completed queue
       (entry) => entry.absolutePath === historyItemBeforeDelete.absolutePath
     );
     assert.ok(historyItemAfterDelete);
-    assert.equal(historyItemAfterDelete.thumbnailUrl, `/downloads/${jobId}/${jobId}-thumb.jpg`);
+    assert.equal(new URL(historyItemAfterDelete.thumbnailUrl, baseUrl).pathname, `/downloads/${jobId}/${jobId}-thumb.jpg`);
   } finally {
     await apiServer.stop();
     await mediaServer.close();
@@ -1290,7 +1341,7 @@ test('history serves external thumbnail sidecars from the configured output dire
   fs.writeFileSync(mediaPath, Buffer.from('video'));
   fs.writeFileSync(thumbPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
 
-  const queueFilePath = path.join(downloadDir, 'queue.json');
+  const queueFilePath = path.join(tmpRoot, 'queue.json');
   fs.writeFileSync(queueFilePath, JSON.stringify({
     queue: [{
       id: jobId,
@@ -1339,7 +1390,7 @@ test('history serves external thumbnail sidecars from the configured output dire
   }
 });
 
-test('history delete removes external completed folder and thumbnail sidecar', async () => {
+test('history list removal preserves external completed media and sidecars', async () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'm3u8-tests-history-delete-external-'));
   const port = await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -1355,7 +1406,7 @@ test('history delete removes external completed folder and thumbnail sidecar', a
   fs.writeFileSync(mediaPath, Buffer.from('video'));
   fs.writeFileSync(thumbPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
 
-  const queueFilePath = path.join(downloadDir, 'queue.json');
+  const queueFilePath = path.join(tmpRoot, 'queue.json');
   fs.writeFileSync(queueFilePath, JSON.stringify({
     queue: [{
       id: jobId,
@@ -1400,9 +1451,9 @@ test('history delete removes external completed folder and thumbnail sidecar', a
     });
     assert.equal(deleteRes.status, 200);
 
-    assert.equal(fs.existsSync(mediaPath), false, 'expected external media file to be removed');
-    assert.equal(fs.existsSync(thumbPath), false, 'expected external thumbnail to be removed');
-    assert.equal(fs.existsSync(itemDir), false, 'expected external completed folder to be removed');
+    assert.equal(fs.existsSync(mediaPath), true, 'list removal preserves the video');
+    assert.equal(fs.existsSync(thumbPath), true, 'list removal preserves sidecars');
+    assert.equal(fs.existsSync(itemDir), true, 'list removal preserves the folder');
 
     const historyAfterDelete = await apiFetch(baseUrl, '/api/history', { includeV1Headers: false });
     assert.equal(historyAfterDelete.status, 200);
@@ -1476,7 +1527,7 @@ test('history items keep unique ids for duplicate basenames and delete resolves 
       includeV1Headers: false,
     });
     assert.equal(deleteRes.status, 200);
-    assert.equal(fs.existsSync(externalFile), false);
+    assert.equal(fs.existsSync(externalFile), true);
     assert.equal(fs.existsSync(nestedFile), true);
 
     const afterDeleteRes = await apiFetch(baseUrl, '/api/history', { includeV1Headers: false });
@@ -1503,7 +1554,7 @@ test('websocket channels publish compatibility and queue updates', async () => {
   const mediaServer = await startFixtureMediaServer();
   const apiServer = await startApi({ dataDir: tmpRoot, port });
 
-  const ws = new WebSocket(wsUrl);
+  const ws = new WebSocket(wsUrl, ['vidsnag', `vidsnag-auth.${TEST_AUTH_TOKEN}`]);
   await new Promise((resolve, reject) => {
     ws.once('open', resolve);
     ws.once('error', reject);
@@ -1613,7 +1664,7 @@ test('history endpoint supports cursor pagination with persisted index', async (
   }
 });
 
-test('history delete removes related sidecar files and temp directories for the same job', async () => {
+test('history list removal preserves related sidecars and unrelated videos', async () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'm3u8-tests-history-delete-artifacts-'));
   const port = await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -1656,7 +1707,7 @@ test('history delete removes related sidecar files and temp directories for the 
       const historyRes = await apiFetch(baseUrl, '/api/history', { includeV1Headers: false });
       const item = historyRes.data.items.find((entry) => entry.fileName === targetFile);
       if (!item) return false;
-      return item.thumbnailUrl === `/downloads/${jobId}/${jobId}-thumb.jpg` ? true : false;
+      return item.thumbnailUrl && new URL(item.thumbnailUrl, baseUrl).pathname === `/downloads/${jobId}/${jobId}-thumb.jpg`;
     }, { timeoutMs: 4000, intervalMs: 120 });
 
     const historyBeforeDelete = await apiFetch(baseUrl, '/api/history', { includeV1Headers: false });
@@ -1671,10 +1722,9 @@ test('history delete removes related sidecar files and temp directories for the 
     assert.equal(deleteRes.status, 200);
 
     relatedArtifacts.forEach((fileName) => {
-      assert.equal(fs.existsSync(path.join(jobDir, fileName)), false, `expected ${fileName} to be removed`);
+      assert.equal(fs.existsSync(path.join(jobDir, fileName)), true, `expected ${fileName} to remain`);
     });
-    assert.equal(fs.existsSync(jobDir), false, 'expected nested job folder to be removed');
-    assert.equal(fs.existsSync(tempDir), false, 'expected job temp directory to be removed');
+    assert.equal(fs.existsSync(jobDir), true, 'list removal preserves the folder');
     assert.equal(fs.existsSync(path.join(downloadDir, unrelatedFile)), true, 'expected unrelated file to remain');
     assert.equal(fs.existsSync(unrelatedJobFile), true, 'expected unrelated job file to remain');
 
@@ -1689,7 +1739,7 @@ test('history delete removes related sidecar files and temp directories for the 
   }
 });
 
-test('history clear removes stale managed artifacts including subtitles and partial files', async () => {
+test('history bulk deletion without explicit confirmation preserves every saved file', async () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'm3u8-tests-history-clear-artifacts-'));
   const port = await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -1734,24 +1784,21 @@ test('history clear removes stale managed artifacts including subtitles and part
       method: 'DELETE',
       includeV1Headers: false,
     });
-    assert.equal(clearRes.status, 200);
+    assert.equal(clearRes.status, 400);
 
     for (const group of managedGroups) {
       group.files.forEach((fileName) => {
-        assert.equal(fs.existsSync(path.join(group.dir, fileName)), false, `expected ${fileName} to be removed`);
+        assert.equal(fs.existsSync(path.join(group.dir, fileName)), true, `expected ${fileName} to remain`);
       });
-      assert.equal(fs.existsSync(group.dir), false, `expected ${path.basename(group.dir)} to be removed`);
+      assert.equal(fs.existsSync(group.dir), true, `expected ${path.basename(group.dir)} to remain`);
     }
-    assert.equal(fs.existsSync(legacyManaged), false, 'expected legacy managed file to be removed');
-    managedTempDirs.forEach((dirPath) => {
-      assert.equal(fs.existsSync(dirPath), false, `expected ${path.basename(dirPath)} to be removed`);
-    });
+    assert.equal(fs.existsSync(legacyManaged), true, 'unconfirmed deletion preserves partial files');
     assert.equal(fs.existsSync(path.join(downloadDir, keepFile)), true, 'expected unmanaged file to remain');
 
     const historyRes = await apiFetch(baseUrl, '/api/history', { includeV1Headers: false });
     assert.equal(historyRes.status, 200);
     assert.equal(Array.isArray(historyRes.data.items), true);
-    assert.equal(historyRes.data.items.length, 0);
+    assert.equal(historyRes.data.items.length, 2);
   } finally {
     await apiServer.stop();
   }

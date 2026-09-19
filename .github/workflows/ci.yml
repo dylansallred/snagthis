@@ -2,96 +2,48 @@ name: CI
 
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  test-and-build:
+  verify:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-
+        os: [ubuntu-latest, macos-15, windows-latest]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Fetch bundled yt-dlp
-        run: npm run fetch:yt-dlp --workspace @m3u8/desktop
-
-      - name: Fetch bundled ffmpeg/ffprobe
-        run: npm run fetch:ffmpeg --workspace @m3u8/desktop
-
-      - name: Verify bundled binaries (macOS/Linux)
-        if: matrix.os != 'windows-latest'
+      - run: npm ci
+      - name: Fetch portable media tools
         run: |
-          apps/desktop/bin/yt-dlp --version
-          apps/desktop/bin/ffmpeg -version | head -n 1
-          apps/desktop/bin/ffprobe -version | head -n 1
-
-      - name: Verify bundled binaries (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          ./apps/desktop/bin/yt-dlp.exe --version
-          ./apps/desktop/bin/ffmpeg.exe -version | Select-Object -First 1
-          ./apps/desktop/bin/ffprobe.exe -version | Select-Object -First 1
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck desktop
-        run: npm run typecheck:desktop
-
-      - name: Run tests
-        run: npm test
-
-      - name: Build desktop renderer
-        run: npm run build:desktop
-
-  e2e:
-    runs-on: ubuntu-latest
-    needs: test-and-build
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Chromium for Playwright
+          npm run fetch:ffmpeg --workspace @m3u8/desktop
+          npm run fetch:yt-dlp --workspace @m3u8/desktop
+      - name: Use the bundled tools for media fixtures
+        shell: bash
+        run: node -p "require('path').resolve('apps/desktop/bin')" >> "$GITHUB_PATH"
+      - name: Lint, types, unit and media fixtures, production builds, token parity
+        run: npm run verify
+      - name: Install browser and Electron display dependencies
+        if: runner.os == 'Linux'
         run: npx playwright install --with-deps chromium
-
-      - name: Run E2E suite
+      - name: Browser and desktop end-to-end checks
+        if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npm run test:e2e -- --project=chromium
-
-      - name: Upload Playwright artifacts
-        if: always()
+      - name: Keep failure evidence
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results
+          name: checks-${{ runner.os }}
           path: |
             playwright-report/
             test-results/

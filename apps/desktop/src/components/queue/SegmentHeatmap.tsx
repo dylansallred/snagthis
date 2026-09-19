@@ -46,15 +46,13 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     const dpr = window.devicePixelRatio || 1;
     const containerWidth = container.clientWidth;
 
-    // Fixed cell size with gap — always visible as individual cells
-    const cellSize = 4;
-    const gap = 1;
+    // A consistent 32-column pieces map, confined to the expanded details panel.
+    const gap = 2;
+    const cols = 32;
+    const cellSize = Math.max(1, (containerWidth - (cols - 1) * gap) / cols);
     const step = cellSize + gap;
-    const cols = Math.floor((containerWidth + gap) / step) || 1;
     const rows = Math.ceil(totalSegments / cols);
-    // Allow up to 80px of height so the grid is visually distinct
-    const maxRows = Math.max(3, Math.ceil(80 / step));
-    const visibleRows = Math.min(rows, maxRows);
+    const visibleRows = rows;
     const canvasHeight = visibleRows * step - gap;
 
     layoutRef.current = { cellW: cellSize, cellH: cellSize, cols, gap };
@@ -128,7 +126,7 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     const state = segmentStates?.[String(idx)];
     const status = state?.status || 'pending';
     const attempt = state?.attempt || 0;
-    const text = `Segment ${idx}: ${status}${attempt > 1 ? ` (attempt ${attempt})` : ''}`;
+    const text = `Piece ${idx + 1}: ${status}${attempt > 1 ? ` (attempt ${attempt})` : ''}`;
 
     const containerRect = containerRef.current?.getBoundingClientRect();
     const tooltipX = containerRect ? e.clientX - containerRect.left : x;
@@ -143,6 +141,8 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     <div ref={containerRef} className="relative w-full">
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label={`${totalSegments} download pieces; status is summarized above`}
         className="w-full cursor-crosshair"
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}

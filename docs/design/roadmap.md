@@ -1,7 +1,9 @@
 # VidSnag roadmap — new repo, "Workbench, simplified" UI, testing and site compatibility
 
 Written 2026-09-19. Design: [ui-design-spec.md](ui-design-spec.md) (section numbers below, e.g. §4, refer to it).
-Background: `work/project-review-2026-09-19/project-review.md` (defects referenced as "review P1/P2").
+Background: [project review](../review/project-review-2026-09-19.md) (defects referenced as "review P1/P2").
+
+Owner decision, 2026-09-19: **GPL-3.0-only**, so distributed derivatives remain open source under the license's terms. The license choice in R0.6 is resolved. This document remains the implementation plan; current evidence and remaining release prerequisites are recorded in [implementation-status.md](implementation-status.md).
 
 Contents: **1** start from scratch or reuse? · **2** R0 new repo · **3** gap analysis · **4** milestones M0–M4 (UI) · **5** testing strategy · **6** site compatibility programme C0–C3 · **7** order · **8** risks.
 

@@ -2,6 +2,7 @@ const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { redact } = require('./security');
 
 const isTest = process.env.NODE_ENV === 'test';
 const disableFileLogs = process.env.DISABLE_FILE_LOGS === '1' || isTest;
@@ -57,6 +58,7 @@ if (fileLoggingEnabled) {
 const logger = winston.createLogger({
   level: loggerLevel,
   format: winston.format.combine(
+    winston.format((info) => Object.assign(info, redact(info)))(),
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
     winston.format.json()

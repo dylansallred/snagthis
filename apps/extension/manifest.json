@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "VidSnag Bridge",
-  "description": "Detect media streams and send downloads to the local VidSnag app.",
+  "name": "VidSnag",
+  "description": "Save videos from Chrome with the free VidSnag desktop app.",
   "version": "1.0.0",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "VidSnag Bridge",
+    "default_title": "VidSnag",
     "default_icon": {
       "16": "img/icon-16.png",
       "48": "img/icon-48.png",
@@ -17,7 +17,9 @@
   },
   "permissions": [
     "storage",
-    "tabs"
+    "tabs",
+    "webRequest",
+    "webNavigation"
   ],
   "host_permissions": [
     "http://127.0.0.1:49732/*",
@@ -26,21 +28,35 @@
   ],
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["js/content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "js/media-detector.js"
+      ],
       "run_at": "document_start",
-      "all_frames": true
-    }
-  ],
-  "web_accessible_resources": [
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    },
     {
-      "resources": ["js/media-detector.js"],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "js/content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ],
   "icons": {
     "16": "img/icon-16.png",
     "48": "img/icon-48.png",
     "128": "img/icon-128.png"
-  }
+  },
+  "minimum_chrome_version": "111"
 }

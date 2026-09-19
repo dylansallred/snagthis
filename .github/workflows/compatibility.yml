@@ -1,0 +1,75 @@
+name: Site compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # Configure required reviewers for this environment before enabling external runs.
+    environment: compatibility-review
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Require an approved external-probe environment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          protected="$(gh api "repos/$GITHUB_REPOSITORY/environments/compatibility-review" --jq '.protection_rules | any(.type == "required_reviewers" and (.reviewers | length > 0))')"
+          [[ "$protected" == true ]] || { echo 'Configure required reviewers on compatibility-review before external probes can run.'; exit 1; }
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build:extension:css
+      - name: Probe approved external sites and update the matrix
+        run: xvfb-run --auto-servernum npm run compat -- --external
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compatibility-evidence
+          path: |
+            compat/results/
+            compat/COMPATIBILITY.md
+          if-no-files-found: warn
+      - name: Open a draft PR containing only the compatibility matrix
+        if: always() && !cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f compat/COMPATIBILITY.md ]] || git diff --quiet -- compat/COMPATIBILITY.md; then
+            echo 'No compatibility matrix changes to review.'
+            exit 0
+          fi
+          branch="compatibility/run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- compat/COMPATIBILITY.md
+          git commit -m 'Update site compatibility evidence'
+          git push origin "HEAD:refs/heads/$branch"
+          body_file="$RUNNER_TEMP/compatibility-pr.md"
+          cat > "$body_file" <<'BODY'
+          Updates the site compatibility matrix from the approved external probe run.
+
+          Review the stage failures and the attached workflow evidence before merging. This is observational site data; it does not change detection or download behavior.
+          BODY
+          printf '\nWorkflow evidence: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$body_file"
+          gh pr create --draft --base "$DEFAULT_BRANCH" --head "$branch" --title 'Update site compatibility matrix' --body-file "$body_file"

@@ -26,7 +26,7 @@ async function downloadSegment(segmentUrl, headers, stream, job) {
       res.on('error', reject);
       res.pipe(stream, { end: false });
     });
-  }, { timeoutMs: 10_000 });
+  }, { timeoutMs: 10_000, credentialOrigin: job && (job.credentialOrigin || job.url), sourcePageUrl: job && job.sourcePageUrl });
 }
 
 module.exports = {

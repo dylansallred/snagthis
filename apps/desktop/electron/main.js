@@ -1,6 +1,9 @@
 const { app, BrowserWindow, ipcMain, shell, session, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
+const preferences = require('./preferences');
+const diagnostics = require('./diagnostics');
 const { autoUpdater } = require('electron-updater');
 const { API } = require('@m3u8/contracts');
 
@@ -13,7 +16,16 @@ let updaterCheckTimeout = null;
 let updaterCheckPromise = null;
 let updaterInstallRequested = false;
 const apiHost = process.env.M3U8_API_HOST || API.host;
-const apiPort = Number(process.env.M3U8_API_PORT || API.port);
+let apiPort = Number(process.env.M3U8_API_PORT ?? API.port);
+let apiStartupState = 'starting';
+let apiStartupError = null;
+let requestedView = null;
+let settingsListenerReady = false;
+const explicitUserData = process.env.VID_SNAG_USER_DATA || process.env.E2E_USER_DATA_DIR || app.commandLine.getSwitchValue('user-data-dir');
+const userDataDirectory = explicitUserData ? path.resolve(explicitUserData) : path.join(app.getPath('appData'), app.isPackaged ? 'VidSnag' : 'VidSnag-development');
+fs.mkdirSync(userDataDirectory, { recursive: true });
+app.setPath('userData', userDataDirectory);
+app.setAppUserModelId('org.vidsnag.desktop');
 const UPDATER_CHECK_TIMEOUT_MS = 45_000;
 const UPDATER_STARTUP_CHECK_DELAY_MS = 3_000;
 const UPDATER_PERIODIC_CHECK_MS = 6 * 60 * 60 * 1000;
@@ -42,50 +54,107 @@ function getLogsDirPath() {
 }
 
 function readSettings() {
-  try {
-    const file = appSettingsPath();
-    if (!fs.existsSync(file)) {
-      return {
-        queueMaxConcurrent: 1,
-        queueAutoStart: true,
-        checkUpdatesOnStartup: true,
-        outputDirectory: '',
-        tmdbApiKey: '',
-        subdlApiKey: '',
-        downloadThreads: 8,
-      };
-    }
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return {
-      queueMaxConcurrent: parsed.queueMaxConcurrent ?? 1,
-      queueAutoStart: parsed.queueAutoStart ?? true,
-      checkUpdatesOnStartup: parsed.checkUpdatesOnStartup ?? true,
-      outputDirectory: parsed.outputDirectory ?? '',
-      tmdbApiKey: parsed.tmdbApiKey ?? '',
-      subdlApiKey: parsed.subdlApiKey ?? '',
-      downloadThreads: parsed.downloadThreads ?? 8,
-    };
-  } catch {
-    return {
-      queueMaxConcurrent: 1,
-      queueAutoStart: true,
-      checkUpdatesOnStartup: true,
-      outputDirectory: '',
-      tmdbApiKey: '',
-      subdlApiKey: '',
-      downloadThreads: 8,
-    };
-  }
+  return preferences.read(appSettingsPath());
 }
 
 function writeSettings(next) {
-  const merged = {
-    ...readSettings(),
-    ...next,
+  return preferences.write(appSettingsPath(), next);
+}
+
+function currentSettings() {
+  const saved = readSettings();
+  const queueSettings = apiServer?.getQueueSettings?.();
+  return queueSettings ? { ...saved, queueMaxConcurrent: Number(queueSettings.maxConcurrent) || 1, queueAutoStart: queueSettings.autoStart !== false } : saved;
+}
+
+function saveSettings(next) {
+  const input = preferences.validatePatch(next);
+  if ('launchAtLogin' in input && ['darwin', 'win32'].includes(process.platform)) {
+    app.setLoginItemSettings({ openAtLogin: input.launchAtLogin });
+  }
+  const merged = writeSettings(input);
+  const queuePatch = {};
+  if ('queueMaxConcurrent' in input) queuePatch.maxConcurrent = merged.queueMaxConcurrent;
+  if ('queueAutoStart' in input) queuePatch.autoStart = merged.queueAutoStart;
+  if (Object.keys(queuePatch).length) apiServer?.updateQueueSettings?.(queuePatch);
+  const apiConfig = require('@m3u8/downloader-api/src/config');
+  for (const key of ['tmdbApiKey', 'subdlApiKey', 'downloadThreads']) {
+    if (key in input) apiConfig[key] = merged[key];
+  }
+  return currentSettings();
+}
+
+function appInfo() {
+  return {
+    version: app.getVersion(), apiBaseUrl: `http://${apiHost}:${apiPort}`,
+    apiVersion: API.apiVersion, isPackaged: app.isPackaged,
+    apiAuthToken: apiStartupState === 'ready' ? (apiServer?.getAuthToken?.() || '') : '',
+    apiStartupState, apiStartupError,
+    extensionConnected: Boolean(apiServer?.getConnectionState?.().extensionConnected),
   };
-  fs.mkdirSync(path.dirname(appSettingsPath()), { recursive: true });
-  fs.writeFileSync(appSettingsPath(), JSON.stringify(merged, null, 2), 'utf8');
-  return merged;
+}
+
+function safeDiagnostics(payload) {
+  const settings = readSettings();
+  return diagnostics.redact(payload, [apiServer?.getAuthToken?.(), settings.tmdbApiKey, settings.subdlApiKey]);
+}
+
+function rendererUrl() {
+  return process.env.VITE_DEV_SERVER_URL || pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).href;
+}
+
+function apiAllowedOrigins() {
+  const origins = ['null'];
+  if (!app.isPackaged && process.env.VITE_DEV_SERVER_URL) {
+    const devUrl = new URL(process.env.VITE_DEV_SERVER_URL);
+    if (!['http:', 'https:'].includes(devUrl.protocol)
+      || !['localhost', '127.0.0.1', '[::1]'].includes(devUrl.hostname)
+      || devUrl.username || devUrl.password) {
+      throw new Error('The development renderer must use a loopback HTTP or HTTPS address');
+    }
+    origins.push(devUrl.origin);
+  }
+  return origins;
+}
+
+function sameRendererUrl(value) {
+  try {
+    const target = new URL(value);
+    const trusted = new URL(rendererUrl());
+    return target.protocol === trusted.protocol && target.host === trusted.host && target.pathname === trusted.pathname;
+  } catch { return false; }
+}
+
+function handleIpc(channel, callback) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+      || event.senderFrame !== mainWindow.webContents.mainFrame || !sameRendererUrl(event.senderFrame.url)) {
+      throw new Error('Untrusted desktop request');
+    }
+    return callback(event, ...args);
+  });
+}
+
+async function openExternal(url) {
+  const parsed = new URL(String(url));
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Only HTTP and HTTPS links can be opened');
+  await shell.openExternal(parsed.href);
+  return { ok: true };
+}
+
+async function historyRequest(historyId, action) {
+  if (apiStartupState !== 'ready' || !apiServer) return { ok: false, error: 'VidSnag is still starting' };
+  if (typeof historyId !== 'string' || !historyId.trim()) return { ok: false, error: 'Missing history item' };
+  try {
+    const route = `/api/history/${encodeURIComponent(historyId)}${action === 'trash' ? '?mode=trash' : `/${action}`}`;
+    const response = await fetch(`http://${apiHost}:${apiPort}${route}`, {
+      method: action === 'trash' ? 'DELETE' : 'POST',
+      headers: { Authorization: `Bearer ${apiServer.getAuthToken()}` },
+      signal: AbortSignal.timeout(action === 'locate' ? 300000 : 30000),
+    });
+    const result = await response.json();
+    return { ...result, ok: response.ok && result.ok !== false };
+  } catch (error) { return { ok: false, error: String(error.message || error) }; }
 }
 
 function readUpdaterInstallState() {
@@ -220,83 +289,24 @@ function getWindowIconPath() {
   return undefined;
 }
 
-function resolveHistoryFilePath(fileName) {
-  const historyId = String(fileName || '').trim();
-  if (!historyId) return null;
-
-  let decodedHistoryId = '';
+function resolveHistoryFilePath(historyId) {
+  if (typeof historyId !== 'string' || !historyId.trim()) return null;
   try {
-    const decodedCandidate = Buffer.from(historyId, 'base64url').toString('utf8');
-    decodedHistoryId = Buffer.from(decodedCandidate, 'utf8').toString('base64url') === historyId
-      ? decodedCandidate
-      : '';
-  } catch {
-    decodedHistoryId = '';
-  }
-
-  const safeName = path.basename(decodedHistoryId || historyId);
-  if (!safeName) return null;
-
-  const downloadDir = getDownloadDirPath();
-  const indexPath = path.join(downloadDir, 'history-index.json');
-  try {
-    const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-    const items = Array.isArray(parsed && parsed.items) ? parsed.items : [];
-    const match = items.find((item) => {
-      if (!item) return false;
-      if (item.id === historyId) return true;
-      if (typeof item.absolutePath === 'string' && item.absolutePath.trim() === decodedHistoryId) return true;
-      const relativePath = typeof item.relativePath === 'string'
-        ? item.relativePath.replace(/\\/g, '/').replace(/^\/+/, '')
-        : '';
-      if (relativePath && relativePath === decodedHistoryId) return true;
-      return item.fileName === safeName;
-    });
-    if (match && typeof match.absolutePath === 'string' && match.absolutePath.trim()) {
-      const absolutePath = String(match.absolutePath).trim();
-      if (fs.existsSync(absolutePath)) {
-        return absolutePath;
-      }
+    const downloadDir = getDownloadDirPath();
+    const index = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'data', 'history-index.json'), 'utf8'));
+    const items = Array.isArray(index.items) ? index.items : [];
+    const item = items.find((entry) => entry?.id === historyId)
+      || items.find((entry) => entry?.jobId === historyId);
+    if (!item) return null;
+    let filePath;
+    if (typeof item.absolutePath === 'string' && path.isAbsolute(item.absolutePath)) filePath = item.absolutePath;
+    else {
+      filePath = path.resolve(downloadDir, String(item.relativePath || item.fileName || ''));
+      const relative = path.relative(downloadDir, filePath);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
     }
-    if (match && typeof match.relativePath === 'string') {
-      const normalizedRelative = String(match.relativePath).replace(/\\/g, '/').replace(/^\/+/, '');
-      if (!normalizedRelative.includes('..') && !normalizedRelative.includes('\0')) {
-        const fullPath = path.join(downloadDir, normalizedRelative);
-        if (fs.existsSync(fullPath)) {
-          return fullPath;
-        }
-      }
-    }
-  } catch {
-    // Index read failures fall through to filesystem scan.
-  }
-
-  const directPath = path.join(downloadDir, safeName);
-  if (fs.existsSync(directPath)) {
-    return directPath;
-  }
-
-  const pending = [downloadDir];
-  while (pending.length > 0) {
-    const currentDir = pending.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(currentDir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(currentDir, entry.name);
-      if (entry.isFile() && entry.name === safeName) {
-        return fullPath;
-      }
-      if (entry.isDirectory()) {
-        pending.push(fullPath);
-      }
-    }
-  }
-
-  return null;
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile() ? filePath : null;
+  } catch { return null; }
 }
 
 function buildSupportBundleDirPath() {
@@ -320,18 +330,6 @@ function safeReadJson(filePath, fallback = null) {
   } catch {
     return fallback;
   }
-}
-
-function copyPathIfExists(sourcePath, destPath) {
-  if (!fs.existsSync(sourcePath)) return false;
-  const stat = fs.statSync(sourcePath);
-  if (stat.isDirectory()) {
-    fs.cpSync(sourcePath, destPath, { recursive: true });
-    return true;
-  }
-  fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  fs.copyFileSync(sourcePath, destPath);
-  return true;
 }
 
 function sendToRenderer(channel, payload) {
@@ -450,13 +448,19 @@ function normalizeReleaseNotes(updateInfo) {
   return [];
 }
 
-function focusMainWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+function focusMainWindow(view) {
+  if (view === 'settings') requestedView = 'settings';
+  if (!app.isReady()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow();
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
   mainWindow.show();
   mainWindow.focus();
+  if (requestedView === 'settings' && settingsListenerReady) {
+    sendToRenderer('app:open-settings');
+    requestedView = null;
+  }
 }
 
 function summarizeReleaseNote(updateInfo) {
@@ -767,6 +771,7 @@ async function startLocalApi() {
   apiServer = createApiServer({
     host: apiHost,
     port: apiPort,
+    allowedOrigins: apiAllowedOrigins(),
     appVersion: app.getVersion(),
     dataDir,
     downloadDir,
@@ -779,17 +784,36 @@ async function startLocalApi() {
       maxConcurrent: Number(savedSettings.queueMaxConcurrent) || 1,
       autoStart: savedSettings.queueAutoStart !== false,
     },
-    onFocus: () => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.show();
-      mainWindow.focus();
+    onFocus: (view) => focusMainWindow(view),
+    onTrashFile: async (filePath) => { await shell.trashItem(filePath); },
+    onOpenFile: async (filePath) => {
+      const error = await shell.openPath(filePath);
+      if (error) throw new Error(error);
+    },
+    onLocateFile: async (item) => {
+      focusMainWindow();
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Locate saved video', properties: ['openFile'],
+        defaultPath: item?.absolutePath || readSettings().outputDirectory || app.getPath('downloads'),
+        filters: [{ name: 'Videos', extensions: ['mp4', 'mkv', 'webm', 'mov', 'm4v', 'avi', 'ts'] }],
+      });
+      return result.canceled ? null : (result.filePaths[0] || null);
+    },
+    onExtensionConnected: () => sendToRenderer('app:info-update', appInfo()),
+    onGetSettings: currentSettings,
+    onSaveSettings: saveSettings,
+    onDownloadComplete: (job) => {
+      try {
+        if (!readSettings().notifyOnComplete || !Notification.isSupported()) return;
+        const notification = new Notification({ title: 'Video saved', body: String(job.title || job.filename || 'Your video is ready.') });
+        notification.on('click', () => focusMainWindow());
+        notification.show();
+      } catch { /* System notifications are best-effort. */ }
     },
   });
 
-  await apiServer.start();
+  const address = await apiServer.start();
+  apiPort = Number(address?.port || apiServer.server?.address()?.port || apiPort);
   if (apiServer && typeof apiServer.applyLegacyQueueSettings === 'function') {
     apiServer.applyLegacyQueueSettings({
       maxConcurrent: Number(savedSettings.queueMaxConcurrent) || 1,
@@ -799,27 +823,38 @@ async function startLocalApi() {
 }
 
 function createWindow() {
+  settingsListenerReady = false;
   mainWindow = new BrowserWindow({
-    width: 1320,
-    height: 880,
-    minWidth: 1024,
-    minHeight: 720,
+    width: 820,
+    height: 680,
+    minWidth: 640,
+    minHeight: 480,
     show: false,
     icon: getWindowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+  const window = mainWindow;
+  window.once('ready-to-show', () => window.show());
+  window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
+  window.webContents.on('did-finish-load', () => {
+    sendToRenderer('app:info-update', appInfo());
+    if (requestedView === 'settings' && settingsListenerReady) {
+      sendToRenderer('app:open-settings');
+      requestedView = null;
+    }
+  });
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!sameRendererUrl(url)) { event.preventDefault(); openExternal(url).catch(() => {}); }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
 
@@ -829,7 +864,11 @@ function createWindow() {
     `script-src 'self'${isDev ? " 'unsafe-eval' 'unsafe-inline'" : ''}`,
     `style-src 'self' 'unsafe-inline'`,
     `connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*`,
-    `img-src 'self' data: http://127.0.0.1:* https://image.tmdb.org https://i.ytimg.com https://*.ytimg.com`,
+    `img-src 'self' data: blob: http://127.0.0.1:* https:`,
+    `media-src 'self' blob: http://127.0.0.1:*`,
+    `object-src 'none'`,
+    `base-uri 'self'`,
+    `frame-src 'none'`,
     `font-src 'self' data:`,
   ];
   const csp = cspParts.join('; ');
@@ -852,71 +891,33 @@ function createWindow() {
 }
 
 function registerIpc() {
-  ipcMain.handle('app:get-info', async () => ({
-    version: app.getVersion(),
-    apiBaseUrl: `http://${apiHost}:${apiPort}`,
-    apiVersion: API.apiVersion,
-    isPackaged: app.isPackaged,
-  }));
-
-  ipcMain.handle('settings:get', async () => {
-    const saved = readSettings();
-    const queueSettings = apiServer && typeof apiServer.getQueueSettings === 'function'
-      ? apiServer.getQueueSettings()
-      : null;
-
-    if (queueSettings) {
-      return {
-        ...saved,
-        queueMaxConcurrent: Number(queueSettings.maxConcurrent) || 1,
-        queueAutoStart: queueSettings.autoStart !== false,
-      };
-    }
-
-    return saved;
+  handleIpc('app:get-info', async () => appInfo());
+  handleIpc('settings:get', async () => currentSettings());
+  handleIpc('settings:save', async (_event, next) => saveSettings(next));
+  handleIpc('app:get-pairing-info', async () => {
+    if (apiStartupState !== 'ready') throw new Error('VidSnag is still starting');
+    return apiServer.getPairingInfo();
   });
-
-  ipcMain.handle('settings:save', async (event, nextSettings) => {
-    const input = nextSettings || {};
-    const queuePatch = {};
-    if (typeof input.queueMaxConcurrent === 'number') {
-      queuePatch.maxConcurrent = Math.max(1, Math.min(16, Number(input.queueMaxConcurrent) || 1));
+  handleIpc('app:get-connection-state', async () => apiServer?.getConnectionState?.() || { extensionConnected: false, pairedExtensions: 0 });
+  handleIpc('app:open-settings', async () => { focusMainWindow('settings'); return { ok: true }; });
+  handleIpc('app:settings-listener-ready', async () => {
+    settingsListenerReady = true;
+    if (requestedView === 'settings') {
+      sendToRenderer('app:open-settings');
+      requestedView = null;
     }
-    if (typeof input.queueAutoStart === 'boolean') {
-      queuePatch.autoStart = input.queueAutoStart;
-    }
-    if (
-      Object.keys(queuePatch).length > 0
-      && apiServer
-      && typeof apiServer.updateQueueSettings === 'function'
-    ) {
-      apiServer.updateQueueSettings(queuePatch);
-    }
-
-    // Keep legacy queue keys readable for compatibility, but runtime canonical
-    // values come from queue settings in queue.json.
-    const merged = writeSettings(input);
-    const apiConfig = require('@m3u8/downloader-api/src/config');
-    if ('tmdbApiKey' in input) {
-      apiConfig.tmdbApiKey = merged.tmdbApiKey || '';
-    }
-    if ('subdlApiKey' in input) {
-      apiConfig.subdlApiKey = merged.subdlApiKey || '';
-    }
-    if ('downloadThreads' in input) {
-      apiConfig.downloadThreads = Number(merged.downloadThreads) || 0;
-    }
-    const queueSettings = apiServer && typeof apiServer.getQueueSettings === 'function'
-      ? apiServer.getQueueSettings()
-      : null;
-    return {
-      ...merged,
-      queueMaxConcurrent: Number(queueSettings?.maxConcurrent || merged.queueMaxConcurrent || 1),
-      queueAutoStart: (queueSettings?.autoStart ?? merged.queueAutoStart) !== false,
-    };
   });
+  handleIpc('app:open-external', async (_event, url) => openExternal(url));
+  handleIpc('app:open-save-folder', async () => {
+    const folderPath = readSettings().outputDirectory || getDownloadDirPath();
+    fs.mkdirSync(folderPath, { recursive: true });
+    const error = await shell.openPath(folderPath);
+    return error ? { ok: false, error } : { ok: true, folderPath };
+  });
+  handleIpc('app:trash-history-file', async (_event, id) => historyRequest(id, 'trash'));
+  handleIpc('app:locate-history-file', async (_event, id) => historyRequest(id, 'locate'));
 
-  ipcMain.handle('settings:choose-output-directory', async () => {
+  handleIpc('settings:choose-output-directory', async () => {
     try {
       const current = readSettings();
       const result = await dialog.showOpenDialog(mainWindow || undefined, {
@@ -932,17 +933,17 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('app:save-diagnostics-file', async (event, payload) => {
+  handleIpc('app:save-diagnostics-file', async (event, payload) => {
     try {
       const filePath = buildDiagnosticsFilePath();
-      fs.writeFileSync(filePath, JSON.stringify(payload || {}, null, 2), 'utf8');
+      fs.writeFileSync(filePath, JSON.stringify(safeDiagnostics(payload || {}), null, 2), { encoding: 'utf8', mode: 0o600 });
       return { ok: true, filePath };
     } catch (err) {
       return { ok: false, error: String(err.message || err) };
     }
   });
 
-  ipcMain.handle('app:open-diagnostics-folder', async () => {
+  handleIpc('app:open-diagnostics-folder', async () => {
     try {
       const folderPath = getDiagnosticsDirPath();
       const openResult = await shell.openPath(folderPath);
@@ -955,27 +956,9 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('app:open-history-file', async (event, historyId) => {
-    try {
-      const safeHistoryId = String(historyId || '').trim();
-      if (!safeHistoryId) {
-        return { ok: false, error: 'Missing file name' };
-      }
-      const filePath = resolveHistoryFilePath(safeHistoryId);
-      if (!filePath || !fs.existsSync(filePath)) {
-        return { ok: false, error: 'File not found' };
-      }
-      const openResult = await shell.openPath(filePath);
-      if (openResult) {
-        return { ok: false, error: openResult, filePath };
-      }
-      return { ok: true, filePath };
-    } catch (err) {
-      return { ok: false, error: String(err.message || err) };
-    }
-  });
+  handleIpc('app:open-history-file', async (_event, id) => historyRequest(id, 'open'));
 
-  ipcMain.handle('app:open-history-folder', async (event, historyId) => {
+  handleIpc('app:open-history-folder', async (event, historyId) => {
     try {
       const safeHistoryId = String(historyId || '').trim();
       if (!safeHistoryId) {
@@ -992,87 +975,27 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('app:export-support-bundle', async (event, payload) => {
+  handleIpc('app:export-support-bundle', async (_event, payload) => {
     try {
-      const userDataDir = app.getPath('userData');
-      const dataDir = path.join(userDataDir, 'data');
-      const downloadDir = path.join(dataDir, 'downloads');
-      const queueFile = path.join(downloadDir, 'queue.json');
-      const settingsFile = appSettingsPath();
-
       const bundleDir = buildSupportBundleDirPath();
-      const included = [];
-
-      const diagnosticsPath = path.join(bundleDir, 'diagnostics.json');
-      fs.writeFileSync(diagnosticsPath, JSON.stringify(payload || {}, null, 2), 'utf8');
-      included.push('diagnostics.json');
-
-      const settingsSnapshotPath = path.join(bundleDir, 'settings.snapshot.json');
-      fs.writeFileSync(settingsSnapshotPath, JSON.stringify(readSettings(), null, 2), 'utf8');
-      included.push('settings.snapshot.json');
-
-      const queueSnapshotPath = path.join(bundleDir, 'queue.snapshot.json');
-      fs.writeFileSync(
-        queueSnapshotPath,
-        JSON.stringify(safeReadJson(queueFile, { queue: [], settings: {} }), null, 2),
-        'utf8',
-      );
-      included.push('queue.snapshot.json');
-
-      const metaPath = path.join(bundleDir, 'bundle.meta.json');
-      fs.writeFileSync(metaPath, JSON.stringify({
-        exportedAt: new Date().toISOString(),
-        appVersion: app.getVersion(),
-        apiBaseUrl: `http://${apiHost}:${apiPort}`,
-        userDataDir,
-      }, null, 2), 'utf8');
-      included.push('bundle.meta.json');
-
-      const logsDirInBundle = path.join(bundleDir, 'logs');
-      const logCandidates = [
-        path.join(userDataDir, 'logs'),
-        path.join(dataDir, 'logs'),
-        path.join(downloadDir, 'logs'),
-        path.join(downloadDir, 'app.log'),
-        path.join(downloadDir, 'download.log'),
-        path.join(downloadDir, 'updater.log'),
-      ];
-
-      let copiedLogs = 0;
-      for (const candidate of logCandidates) {
-        const baseName = path.basename(candidate);
-        const target = path.join(logsDirInBundle, baseName);
-        try {
-          if (copyPathIfExists(candidate, target)) {
-            copiedLogs += 1;
-          }
-        } catch {
-          // Continue copying the rest of available logs.
-        }
-      }
-      if (copiedLogs > 0) {
-        included.push('logs/');
-      }
-
-      // Keep original raw files when available for easier support diffing.
-      if (copyPathIfExists(settingsFile, path.join(bundleDir, 'settings.raw.json'))) {
-        included.push('settings.raw.json');
-      }
-      if (copyPathIfExists(queueFile, path.join(bundleDir, 'queue.raw.json'))) {
-        included.push('queue.raw.json');
-      }
-
-      return { ok: true, bundlePath: bundleDir, included };
-    } catch (err) {
-      return { ok: false, error: String(err.message || err) };
-    }
+      const state = apiServer?.getState?.() || {};
+      const snapshot = safeDiagnostics({
+        exportedAt: new Date().toISOString(), appVersion: app.getVersion(),
+        platform: process.platform, arch: process.arch, apiStartupState,
+        settings: currentSettings(), queue: diagnostics.queueSummary(state.queue),
+        updater: { phase: updaterState.phase, error: updaterState.error },
+        diagnostics: payload || {},
+      });
+      fs.writeFileSync(path.join(bundleDir, 'summary.json'), JSON.stringify(snapshot, null, 2), { encoding: 'utf8', mode: 0o600 });
+      return { ok: true, bundlePath: bundleDir, included: ['summary.json'] };
+    } catch (error) { return { ok: false, error: String(error.message || error) }; }
   });
 
-  ipcMain.handle('updater:get-state', async () => ({ ...updaterState }));
+  handleIpc('updater:get-state', async () => ({ ...updaterState }));
 
-  ipcMain.handle('updater:check-now', async () => checkForUpdatesNow());
+  handleIpc('updater:check-now', async () => checkForUpdatesNow());
 
-  ipcMain.handle('updater:install-now', async () => {
+  handleIpc('updater:install-now', async () => {
     clearUpdaterReminderTimer();
     if (updaterState.phase !== 'downloaded') {
       return { ok: false, error: 'No downloaded update available' };
@@ -1142,7 +1065,7 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('updater:remind-later', async (event, minutes = 30) => {
+  handleIpc('updater:remind-later', async (event, minutes = 30) => {
     if (updaterState.phase !== 'downloaded') {
       return { ok: false, error: 'No downloaded update to defer' };
     }
@@ -1164,22 +1087,42 @@ async function bootstrap() {
     }
   }
 
-  app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-    mainWindow.show();
-    mainWindow.focus();
+  const handleProtocol = (url) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'vidsnag:' || parsed.hostname !== 'open') return;
+      focusMainWindow(parsed.pathname === '/settings' ? 'settings' : undefined);
+    } catch { /* Ignore unrelated launch arguments. */ }
+  };
+  app.on('second-instance', (_event, argv) => {
+    const url = argv.find((value) => value.startsWith('vidsnag://'));
+    if (url) handleProtocol(url);
+    else focusMainWindow();
   });
+  app.on('open-url', (event, url) => { event.preventDefault(); handleProtocol(url); });
+  const initialProtocol = process.argv.find((value) => value.startsWith('vidsnag://'));
+  if (initialProtocol) handleProtocol(initialProtocol);
 
   await app.whenReady();
+  if (app.isPackaged) app.setAsDefaultProtocolClient('vidsnag');
   reconcileUpdaterInstallState();
-
   registerIpc();
   configureAutoUpdater();
-  await startLocalApi();
   createWindow();
+  // Paint the usable window before synchronous binary discovery and API startup.
+  const firstWindow = mainWindow;
+  await new Promise((resolve) => firstWindow.webContents.once('did-finish-load', resolve));
+  try {
+    await startLocalApi();
+    apiStartupState = 'ready';
+  } catch (error) {
+    apiStartupState = 'failed';
+    apiStartupError = error?.code === 'EADDRINUSE'
+      ? 'Another app is using VidSnag’s connection port. Close the other copy and reopen VidSnag.'
+      : 'VidSnag could not start its download service. Reopen the app or export diagnostics from Settings.';
+    console.error('[desktop] Download service startup failed:', safeDiagnostics(String(error?.message || error)));
+  }
+  sendToRenderer('app:info-update', appInfo());
 
   const settings = readSettings();
   const updaterSupport = getUpdaterSupportState();

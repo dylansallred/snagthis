@@ -79,6 +79,7 @@ function buildRemuxArgs({ job, input, mp4Path, withSubs }) {
     '-movflags', '+faststart',
     '-max_interleave_delta', '0',
     ...metadataArgs,
+    '-f', 'mp4',
     mp4Path,
   );
 
@@ -135,6 +136,7 @@ function buildPlaybackCompatibilityArgs({ job, inputPath, outputPath, withSubs =
     '-movflags', '+faststart+use_metadata_tags',
     '-max_interleave_delta', '0',
     ...metadataArgs,
+    '-f', 'mp4',
     outputPath,
   );
 

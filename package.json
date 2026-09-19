@@ -1,5 +1,5 @@
 {
-  "name": "m3u8-downloader-workspace",
+  "name": "vidsnag",
   "private": true,
   "version": "2.0.0",
   "description": "Electron desktop app + Chrome extension for m3u8 downloading",
@@ -14,19 +14,25 @@
     "dist:desktop": "npm run dist --workspace @m3u8/desktop",
     "release:preflight": "./scripts/release-preflight.sh",
     "release:tag": "./scripts/release-tag.sh",
-    "build:extension:css": "npm run build:css --workspace @m3u8/extension",
+    "build:extension:css": "npm run sync:extension && npm run build:css --workspace @m3u8/extension",
     "dev:extension:css": "npm run dev:css --workspace @m3u8/extension",
-    "package:extension": "npm run build:extension:css && cd apps/extension && zip -r ../../m3u8-extension.zip . -x '*.DS_Store' -x 'node_modules/*' -x 'src/*'",
+    "package:extension": "npm run build:extension:css && cd apps/extension && zip -r ../../vidsnag-extension.zip . -x '*.DS_Store' -x 'node_modules/*' -x 'src/*'",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --cache --cache-location .eslintcache",
     "lint:fix": "npm run lint -- --fix",
     "typecheck:desktop": "tsc --noEmit --project apps/desktop/tsconfig.json",
-    "test": "node --test --test-force-exit tests/api.integration.test.js tests/extension-title-inference.test.js tests/extension-stream-player.test.js tests/hls-native-download.test.js tests/hls-remux-args.test.js tests/plex-metadata.test.js tests/queue-resume-segments.test.js",
-    "test:e2e": "playwright test"
+    "test": "node --test --test-force-exit tests/*.test.js",
+    "test:e2e": "playwright test",
+    "dev": "npm run dev:desktop",
+    "build": "npm run build:extension:css && npm run build:desktop",
+    "sync:extension": "node scripts/sync-extension-shared.cjs",
+    "test:media": "node --test tests/media-fixtures.test.js",
+    "check:tokens": "node scripts/check-tokens.cjs",
+    "compat": "node compat/run.js",
+    "verify": "npm run lint && npm run typecheck:desktop && npm test && npm run build && npm run check:tokens"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
-    "@playwright/test": "^1.55.1"
-    ,
+    "@playwright/test": "^1.55.1",
     "eslint": "^9.38.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.0",
@@ -34,6 +40,7 @@
     "typescript-eslint": "^8.46.2"
   },
   "engines": {
-    "node": ">=20"
-  }
+    "node": ">=22.12 <23"
+  },
+  "license": "GPL-3.0-only"
 }

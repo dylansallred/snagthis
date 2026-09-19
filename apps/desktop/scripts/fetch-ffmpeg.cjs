@@ -1,318 +1,125 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
+const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
-const platform = process.platform;
-const isWindows = platform === 'win32';
-const outputDir = path.resolve(process.cwd(), 'bin');
-const ffmpegName = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
-const ffprobeName = isWindows ? 'ffprobe.exe' : 'ffprobe';
-const ffmpegPath = path.join(outputDir, ffmpegName);
-const ffprobePath = path.join(outputDir, ffprobeName);
-const isDarwinArm64 = platform === 'darwin' && process.arch === 'arm64';
+const outputDir = path.resolve(__dirname, '../bin');
+const isWindows = process.platform === 'win32';
+const releaseBuild = process.env.VIDSNAG_RELEASE === '1';
 
-function resolveUrls() {
-  const ffmpegExplicit = String(process.env.FFMPEG_DOWNLOAD_URL || '').trim();
-  const ffprobeExplicit = String(process.env.FFPROBE_DOWNLOAD_URL || '').trim();
-
-  if (ffmpegExplicit && ffprobeExplicit) {
-    return { ffmpegUrl: ffmpegExplicit, ffprobeUrl: ffprobeExplicit };
+function resolveDownloads() {
+  const explicit = [process.env.FFMPEG_DOWNLOAD_URL, process.env.FFPROBE_DOWNLOAD_URL];
+  if (explicit.some(Boolean)) {
+    if (!explicit.every(Boolean) || !process.env.FFMPEG_SOURCE_URL) throw new Error('Custom tools require FFMPEG_DOWNLOAD_URL, FFPROBE_DOWNLOAD_URL and FFMPEG_SOURCE_URL');
+    return { urls: explicit, sourceUrl: process.env.FFMPEG_SOURCE_URL, buildSourceUrl: process.env.FFMPEG_BUILD_SOURCE_URL || process.env.FFMPEG_SOURCE_URL };
   }
-
-  if (platform === 'darwin') {
-    const isArm64 = process.arch === 'arm64';
+  if (!['x64', 'arm64'].includes(process.arch)) throw new Error(`Unsupported architecture: ${process.arch}. Supply explicit portable binaries and source URL.`);
+  if (process.platform === 'darwin') {
+    // This upstream fork actually publishes both native executables. No Homebrew fallback.
+    const release = 'https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/download/b6.1.2-rc.1';
     return {
-      // evermeet only publishes Intel macOS binaries; Apple Silicon uses GitHub-hosted native arm64 binaries.
-      ffmpegUrl: ffmpegExplicit || (
-        isArm64
-          ? 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64'
-          : 'https://evermeet.cx/ffmpeg/getrelease/ffmpeg'
-      ),
-      ffprobeUrl: ffprobeExplicit || (
-        isArm64
-          ? 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-darwin-arm64'
-          : 'https://evermeet.cx/ffmpeg/getrelease/ffprobe'
-      ),
+      urls: [`${release}/ffmpeg-darwin-${process.arch}`, `${release}/ffprobe-darwin-${process.arch}`],
+      sourceUrl: `https://ffmpeg.org/releases/ffmpeg-${process.arch === 'arm64' ? '6.1.1' : '7.1'}.tar.xz`,
+      buildSourceUrl: 'https://github.com/descriptinc/ffmpeg-ffprobe-static/tree/b6.1.2-rc.1/build',
+      licenseUrl: `${release}/darwin-${process.arch}.LICENSE`,
     };
   }
-
-  if (platform === 'linux') {
-    const arch = process.arch === 'arm64' ? 'linuxarm64' : 'linux64';
-    return {
-      ffmpegUrl: ffmpegExplicit
-        || `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${arch}-gpl.tar.xz`,
-      ffprobeUrl: ffprobeExplicit
-        || `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${arch}-gpl.tar.xz`,
-    };
-  }
-
-  if (platform === 'win32') {
-    const arch = process.arch === 'arm64' ? 'winarm64' : 'win64';
-    return {
-      ffmpegUrl: ffmpegExplicit
-        || `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${arch}-gpl.zip`,
-      ffprobeUrl: ffprobeExplicit
-        || `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${arch}-gpl.zip`,
-    };
-  }
-
-  throw new Error(
-    `No default ffmpeg download URLs for this platform (${platform}). Set FFMPEG_DOWNLOAD_URL and FFPROBE_DOWNLOAD_URL.`
-  );
+  if (!['linux', 'win32'].includes(process.platform)) throw new Error(`No portable FFmpeg build configured for ${process.platform}`);
+  const release = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-19-13-11';
+  const arch = process.platform === 'linux' ? (process.arch === 'arm64' ? 'linuxarm64' : 'linux64') : (process.arch === 'arm64' ? 'winarm64' : 'win64');
+  const file = `ffmpeg-n9.0.2-${arch}-gpl-9.0.${isWindows ? 'zip' : 'tar.xz'}`;
+  return {
+    urls: [`${release}/${file}`, `${release}/${file}`], checksumUrl: `${release}/checksums.sha256`,
+    sourceUrl: 'https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz',
+    buildSourceUrl: 'https://github.com/BtbN/FFmpeg-Builds/tree/autobuild-2026-09-19-13-11',
+  };
 }
 
-function downloadWithRedirects(url, destinationPath, redirectBudget = 5) {
+function download(url, destination, redirects = 5) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, {
-      headers: {
-        'User-Agent': 'M3U8-Downloader-Build/1.0',
-      },
-    }, (res) => {
-      const status = Number(res.statusCode || 0);
-      if (status >= 300 && status < 400 && res.headers.location && redirectBudget > 0) {
+    if (new URL(url).protocol !== 'https:') return reject(new Error('Tool downloads must use HTTPS'));
+    const req = https.get(url, { headers: { 'User-Agent': 'VidSnag-Build/1.0' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         res.resume();
-        const redirectedUrl = new URL(String(res.headers.location), url).toString();
-        downloadWithRedirects(redirectedUrl, destinationPath, redirectBudget - 1)
-          .then(resolve)
-          .catch(reject);
+        download(new URL(res.headers.location, url).href, destination, redirects - 1).then(resolve, reject);
         return;
       }
-
-      if (status < 200 || status >= 300) {
-        res.resume();
-        reject(new Error(`Download failed with HTTP ${status}`));
-        return;
-      }
-
-      const tempPath = `${destinationPath}.tmp`;
-      const out = fs.createWriteStream(tempPath);
-
-      out.on('error', (err) => {
-        try { fs.unlinkSync(tempPath); } catch {}
-        reject(err);
-      });
-
-      res.on('error', (err) => {
-        try { fs.unlinkSync(tempPath); } catch {}
-        reject(err);
-      });
-
-      out.on('finish', () => {
-        try {
-          fs.renameSync(tempPath, destinationPath);
-          resolve();
-        } catch (err) {
-          try { fs.unlinkSync(tempPath); } catch {}
-          reject(err);
-        }
-      });
-
+      if (res.statusCode !== 200) { res.resume(); reject(new Error(`Download returned HTTP ${res.statusCode}: ${url}`)); return; }
+      const out = fs.createWriteStream(destination);
+      out.on('error', reject);
+      res.on('error', reject);
+      out.on('finish', () => out.close(resolve));
       res.pipe(out);
     });
-
     req.on('error', reject);
-    req.setTimeout(60_000, () => {
-      req.destroy(new Error('Timed out downloading ffmpeg binary'));
-    });
+    req.setTimeout(60_000, () => req.destroy(new Error('Tool download timed out')));
   });
 }
 
-function canExecuteBinary(binaryPath) {
-  const probe = spawnSync(binaryPath, ['-version'], { stdio: 'ignore' });
-  return probe.status === 0;
+function run(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+  if (result.error || result.status !== 0) throw new Error(`${path.basename(command)} failed: ${result.error?.message || result.stderr || result.stdout}`);
+  return `${result.stdout || ''}${result.stderr || ''}`.trim();
+}
+function sha256(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
+function filesIn(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? filesIn(path.join(directory, entry.name)) : entry.isFile() ? [path.join(directory, entry.name)] : []);
 }
 
-function ensureExecutablePermissions(binaryPath) {
-  if (isWindows) return;
-  try {
-    if (binaryPath && fs.existsSync(binaryPath)) {
-      fs.chmodSync(binaryPath, 0o755);
-    }
-  } catch {
-  }
-}
-
-function findExecutableInPath(command) {
-  const probe = spawnSync('which', [command], {
-    stdio: ['ignore', 'pipe', 'ignore'],
-    encoding: 'utf8',
-  });
-  if (probe.status !== 0) {
-    return '';
-  }
-  const resolved = String(probe.stdout || '').trim();
-  return resolved && fs.existsSync(resolved) ? resolved : '';
-}
-
-function getHomebrewPrefix(formulaName) {
-  const probe = spawnSync('brew', ['--prefix', formulaName], {
-    stdio: ['ignore', 'pipe', 'ignore'],
-    encoding: 'utf8',
-  });
-  if (probe.status !== 0) {
-    return '';
-  }
-  return String(probe.stdout || '').trim();
-}
-
-function installHomebrewFfmpegIfNeeded() {
-  const brewPath = findExecutableInPath('brew');
-  if (!brewPath) {
-    return false;
-  }
-
-  const existingPrefix = getHomebrewPrefix('ffmpeg');
-  if (existingPrefix) {
-    return true;
-  }
-
-  console.log('[fetch-ffmpeg] Installing ffmpeg via Homebrew as macOS arm64 fallback');
-  const install = spawnSync(brewPath, ['install', 'ffmpeg'], {
-    stdio: 'inherit',
-  });
-  return install.status === 0;
-}
-
-function tryCopySystemBinary(targetPath, binaryName) {
-  const candidates = [];
-
-  const pathMatch = findExecutableInPath(binaryName);
-  if (pathMatch) {
-    candidates.push(pathMatch);
-  }
-
-  const brewPrefix = getHomebrewPrefix('ffmpeg');
-  if (brewPrefix) {
-    candidates.push(path.join(brewPrefix, 'bin', binaryName));
-  }
-
-  for (const candidate of candidates) {
-    if (!candidate || !fs.existsSync(candidate)) continue;
-    try {
-      fs.copyFileSync(candidate, targetPath);
-      if (!isWindows) {
-        fs.chmodSync(targetPath, 0o755);
-      }
-      if (canExecuteBinary(targetPath)) {
-        console.log(`[fetch-ffmpeg] Using system ${binaryName} from ${candidate}`);
-        return true;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return false;
-}
-
-function extractArchiveIfNeeded(binaryPath, expectedName) {
-  ensureExecutablePermissions(binaryPath);
-  if (canExecuteBinary(binaryPath)) {
-    return;
-  }
-
-  const extractDir = fs.mkdtempSync(path.join(outputDir, '.extract-'));
-  const extractResult = spawnSync('tar', ['-xf', binaryPath, '-C', extractDir], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    encoding: 'utf8',
-  });
-
-  if (extractResult.status !== 0) {
-    const stderr = String(extractResult.stderr || '').trim();
-    const stdout = String(extractResult.stdout || '').trim();
-    throw new Error(
-      `Failed to extract archive ${binaryPath}: ${stderr || stdout || `tar exited ${extractResult.status}`}`
-    );
-  }
-
-  const candidates = [];
-  const stack = [extractDir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      entries = [];
-    }
-
-    for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(fullPath);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      if (entry.name === expectedName) {
-        candidates.push(fullPath);
-      }
-    }
-  }
-
-  if (candidates.length === 0) {
-    throw new Error(`Archive ${binaryPath} did not contain expected binary: ${expectedName}`);
-  }
-
-  fs.copyFileSync(candidates[0], binaryPath);
-  fs.rmSync(extractDir, { recursive: true, force: true });
-  ensureExecutablePermissions(binaryPath);
-
-  if (!canExecuteBinary(binaryPath)) {
-    throw new Error(`Extracted binary still not executable: ${binaryPath}`);
-  }
-}
-
-async function run() {
+async function main() {
+  const config = resolveDownloads();
   fs.mkdirSync(outputDir, { recursive: true });
-
-  if (isDarwinArm64 && !process.env.FFMPEG_DOWNLOAD_URL && !process.env.FFPROBE_DOWNLOAD_URL) {
-    const { ffmpegUrl, ffprobeUrl } = resolveUrls();
-    try {
-      console.log(`[fetch-ffmpeg] Downloading ffmpeg from: ${ffmpegUrl}`);
-      await downloadWithRedirects(ffmpegUrl, ffmpegPath);
-      extractArchiveIfNeeded(ffmpegPath, ffmpegName);
-      console.log(`[fetch-ffmpeg] Downloading ffprobe from: ${ffprobeUrl}`);
-      await downloadWithRedirects(ffprobeUrl, ffprobePath);
-      extractArchiveIfNeeded(ffprobePath, ffprobeName);
-    } catch (downloadErr) {
-      console.warn(`[fetch-ffmpeg] Native macOS arm64 download failed, falling back to system tools: ${downloadErr && downloadErr.message ? downloadErr.message : downloadErr}`);
-      const copiedFromSystem = tryCopySystemBinary(ffmpegPath, ffmpegName)
-        && tryCopySystemBinary(ffprobePath, ffprobeName);
-      if (!copiedFromSystem) {
-        const installed = installHomebrewFfmpegIfNeeded();
-        const copiedAfterInstall = installed
-          && tryCopySystemBinary(ffmpegPath, ffmpegName)
-          && tryCopySystemBinary(ffprobePath, ffprobeName);
-        if (!copiedAfterInstall) {
-          throw new Error(
-            'Unable to obtain native macOS arm64 ffmpeg/ffprobe. Download failed and no usable system/Homebrew binaries were found.'
-          );
-        }
-      }
+  const temporary = fs.mkdtempSync(path.join(outputDir, '.download-'));
+  const manifest = { platform: process.platform, arch: process.arch, sourceUrl: config.sourceUrl, buildSourceUrl: config.buildSourceUrl, tools: {} };
+  try {
+    let checksums = '';
+    if (config.checksumUrl) {
+      const file = path.join(temporary, 'checksums.sha256');
+      await download(config.checksumUrl, file);
+      checksums = fs.readFileSync(file, 'utf8');
     }
-  } else {
-    const { ffmpegUrl, ffprobeUrl } = resolveUrls();
-    console.log(`[fetch-ffmpeg] Downloading ffmpeg from: ${ffmpegUrl}`);
-    await downloadWithRedirects(ffmpegUrl, ffmpegPath);
-    extractArchiveIfNeeded(ffmpegPath, ffmpegName);
-    console.log(`[fetch-ffmpeg] Downloading ffprobe from: ${ffprobeUrl}`);
-    await downloadWithRedirects(ffprobeUrl, ffprobePath);
-    extractArchiveIfNeeded(ffprobePath, ffprobeName);
-  }
-
-  if (!isWindows) {
-    ensureExecutablePermissions(ffmpegPath);
-    ensureExecutablePermissions(ffprobePath);
-  }
-
-  const ffmpegStat = fs.statSync(ffmpegPath);
-  const ffprobeStat = fs.statSync(ffprobePath);
-  console.log(`[fetch-ffmpeg] Saved ${ffmpegPath} (${ffmpegStat.size} bytes)`);
-  console.log(`[fetch-ffmpeg] Saved ${ffprobePath} (${ffprobeStat.size} bytes)`);
+    for (let index = 0; index < 2; index += 1) {
+      const name = index === 0 ? 'ffmpeg' : 'ffprobe';
+      const executable = name + (isWindows ? '.exe' : '');
+      const url = config.urls[index];
+      const reuseArchive = index === 1 && url === config.urls[0];
+      const downloaded = path.join(temporary, reuseArchive ? 'download-0' : `download-${index}`);
+      if (!reuseArchive) await download(url, downloaded);
+      const archiveHash = sha256(downloaded);
+      if (checksums) {
+        const filename = new URL(url).pathname.split('/').pop();
+        const expected = checksums.split(/\r?\n/).find(line => line.trim().split(/\s+/).pop()?.replace(/^\*/, '') === filename)?.split(/\s+/)[0];
+        if (!expected || expected.toLowerCase() !== archiveHash) throw new Error(`Checksum mismatch for ${filename}`);
+      }
+      const explicitHash = process.env[index === 0 ? 'FFMPEG_SHA256' : 'FFPROBE_SHA256'];
+      if (explicitHash && explicitHash.toLowerCase() !== archiveHash) throw new Error(`${name} did not match its configured SHA256`);
+      const destination = path.join(outputDir, executable);
+      if (/\.(zip|tar\.xz|tgz|tar\.gz)(?:\?|$)/.test(url)) {
+        const extracted = path.join(temporary, 'extracted');
+        if (!reuseArchive) { fs.mkdirSync(extracted, { recursive: true }); run('tar', ['-xf', downloaded, '-C', extracted]); }
+        const files = filesIn(extracted);
+        const binary = files.find(file => path.basename(file) === executable);
+        if (!binary) throw new Error(`Archive does not contain ${executable}`);
+        fs.copyFileSync(binary, destination);
+        const license = files.find(file => /^license(?:\.txt|\.md)?$/i.test(path.basename(file)));
+        if (license) fs.copyFileSync(license, path.join(outputDir, 'FFMPEG-LICENSE.txt'));
+      } else fs.copyFileSync(downloaded, destination);
+      if (!isWindows) fs.chmodSync(destination, 0o755);
+      const version = run(destination, ['-version']);
+      const configuration = run(destination, ['-buildconf']);
+      const license = run(destination, ['-L']);
+      if (/--enable-nonfree|nonfree and unredistributable/i.test(configuration + license)) throw new Error(`${name} is a nonfree build and cannot be distributed with VidSnag`);
+      if (releaseBuild && !/GNU (?:General|Lesser General) Public License/i.test(license)) throw new Error(`${name} did not report a recognized redistributable license`);
+      if (process.platform === 'darwin') {
+        const libraries = run('otool', ['-L', destination]).split('\n').slice(1).map(line => line.trim().split(' (')[0]).filter(Boolean);
+        if (libraries.some(library => !library.startsWith('/usr/lib/') && !library.startsWith('/System/Library/'))) throw new Error(`${name} depends on external libraries and is not portable: ${libraries.join(', ')}`);
+      }
+      manifest.tools[name] = { downloadUrl: url, downloadSha256: archiveHash, sha256: sha256(destination), version, configuration, license };
+    }
+    if (config.licenseUrl) await download(config.licenseUrl, path.join(outputDir, 'FFMPEG-LICENSE.txt'));
+    fs.writeFileSync(path.join(outputDir, 'ffmpeg-build.json'), JSON.stringify(manifest, null, 2) + '\n');
+    console.log(`Portable FFmpeg and ffprobe recorded in ${path.join(outputDir, 'ffmpeg-build.json')}`);
+  } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
 }
-
-run().catch((err) => {
-  console.error('[fetch-ffmpeg] Failed:', err && err.message ? err.message : err);
-  process.exitCode = 1;
-});
+main().catch(error => { console.error(`[fetch-ffmpeg] ${error.message}`); process.exitCode = 1; });

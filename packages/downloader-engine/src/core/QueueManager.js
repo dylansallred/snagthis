@@ -1,12 +1,14 @@
 const path = require('path');
 const fs = require('fs');
 const logger = require('../utils/logger');
+const { resolveHlsSelection } = require('./MediaSelection');
 const { buildPlexBaseName } = require('../utils/plexNaming');
 
 class QueueManager {
   constructor(options) {
     const {
       queueFilePath,
+      downloadDir,
       fsPromises,
       jobs,
       runJob,
@@ -39,7 +41,8 @@ class QueueManager {
     this.hasPersistedSettings = false;
     this.activeJobs = new Set(); // Set of currently downloading job IDs
     this.queueFilePath = queueFilePath;
-    this.downloadDir = path.dirname(queueFilePath);
+    this.downloadDir = downloadDir || path.dirname(queueFilePath);
+    this.persistence = Promise.resolve();
     this.maxPersistedJobs = maxPersistedJobs;
     this.completedRetentionMs = completedRetentionMs;
     this.fsPromises = fsPromises;
@@ -50,7 +53,7 @@ class QueueManager {
       ? getCompletedOutputDir
       : null;
 
-    this.loadQueue();
+    this.ready = this.loadQueue();
   }
 
   // Load queue from disk
@@ -94,9 +97,16 @@ class QueueManager {
           queuedJob.pauseRequested = false;
           queuedJob.resumeRequested = false;
           queuedJob.cancelled = false;
-          queuedJob.resumePartialSegments = false;
+          queuedJob.resumePartialSegments = !!queuedJob.playlistTopology;
           queuedJob.speedBps = 0;
           queuedJob.etaSeconds = null;
+        }
+        // Session credentials are deliberately absent after restart.
+        if (queuedJob.requiresSourceRefresh && !['completed', 'cancelled'].includes(queuedJob.queueStatus)) {
+          queuedJob.queueStatus = 'paused';
+          queuedJob.status = 'paused';
+          queuedJob.errorCode = 'SOURCE_EXPIRED';
+          queuedJob.error = 'Link expired. Reopen the page to continue.';
         }
         // Restore job to jobs Map if not already there
         if (!this.jobs.has(queuedJob.id)) {
@@ -325,7 +335,6 @@ class QueueManager {
           id,
           title,
           url,
-          headers,
           filePath,
           mp4Path,
           storageDir,
@@ -360,7 +369,6 @@ class QueueManager {
           id,
           title,
           url,
-          headers,
           filePath,
           mp4Path,
           storageDir,
@@ -412,6 +420,21 @@ class QueueManager {
           fallbackAttempted: !!job.fallbackAttempted,
           fallbackUsed: !!job.fallbackUsed,
           youtubeMetadata: job.youtubeMetadata || null,
+          // Request credentials exist only in memory. Reopening a source refreshes them.
+          sourcePageUrl: job.sourcePageUrl,
+          mediaType: job.mediaType,
+          selection: job.selection,
+          errorCode: job.errorCode,
+          durationSeconds: job.durationSeconds,
+          playlistTopology: job.playlistTopology,
+          segmentTempDir: job.segmentTempDir,
+          resumePartialSegments: !!job.resumePartialSegments,
+          requiresSourceRefresh: !!job.requiresSourceRefresh || Object.keys(job.headers || {}).some((key) => !['referer', 'origin', 'user-agent', 'accept', 'accept-language', 'cache-control', 'pragma'].includes(key.toLowerCase())),
+          headers: Object.fromEntries(
+            Object.entries(job.headers || {}).filter(([key]) =>
+              ['referer', 'origin', 'user-agent', 'accept', 'accept-language', 'cache-control', 'pragma'].includes(key.toLowerCase())
+            )
+          ),
         };
       });
 
@@ -420,7 +443,16 @@ class QueueManager {
         settings: this.settings,
         savedAt: Date.now(),
       };
-      await this.fsPromises.writeFile(this.queueFilePath, JSON.stringify(data, null, 2), 'utf8');
+      const snapshot = JSON.stringify(data, null, 2);
+      const persist = async () => {
+        const temporaryPath = `${this.queueFilePath}.tmp`;
+        await this.fsPromises.mkdir(path.dirname(this.queueFilePath), { recursive: true });
+        await this.fsPromises.writeFile(temporaryPath, snapshot, { encoding: 'utf8', mode: 0o600 });
+        await this.fsPromises.rename(temporaryPath, this.queueFilePath);
+      };
+      // Serialize writes so a slower old snapshot cannot replace newer queue state.
+      this.persistence = this.persistence.then(persist, persist);
+      await this.persistence;
     } catch (err) {
       logger.warn('Failed to save queue to disk', { error: err.message });
     }
@@ -468,6 +500,12 @@ class QueueManager {
       startedAt: job.startedAt,
       completedAt: job.completedAt,
       error: job.error,
+      sourcePageUrl: job.sourcePageUrl || null,
+      mediaType: job.mediaType || null,
+      selection: job.selection || null,
+      durationSeconds: job.durationSeconds || null,
+      errorCode: job.errorCode || null,
+      outputDirectory: job.outputDirectory || job.storageDir || null,
       originalHlsUrl: job.originalHlsUrl || null,
       fallbackAttempted: !!job.fallbackAttempted,
       fallbackUsed: !!job.fallbackUsed,
@@ -509,7 +547,7 @@ class QueueManager {
           : []);
 
     const remoteThumbs = Array.isArray(job.thumbnailUrls)
-      ? job.thumbnailUrls.filter(u => typeof u === 'string' && u.startsWith('http'))
+      ? job.thumbnailUrls.filter(u => typeof u === 'string' && (u.startsWith('http') || /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(u)))
       : [];
 
     return [...localThumbs, ...remoteThumbs];
@@ -543,12 +581,9 @@ class QueueManager {
     }
   }
 
-  // Count active jobs that are actually downloading/fetching
+  // A runner owns its slot until download AND finalization have settled.
   getActiveCount() {
-    return Array.from(this.activeJobs).filter((id) => {
-      const job = this.jobs.get(id);
-      return job && (job.status === 'downloading' || job.status === 'fetching-playlist');
-    }).length;
+    return this.activeJobs.size;
   }
 
   // Start a specific job
@@ -559,7 +594,7 @@ class QueueManager {
       return false;
     }
 
-    if (job.status === 'downloading' || job.status === 'fetching-playlist') {
+    if (this.activeJobs.has(jobId)) {
       logger.warn('Cannot start job - already active', { jobId, status: job.status });
       return false;
     }
@@ -583,15 +618,12 @@ class QueueManager {
     this.activeJobs.add(jobId);
     this.saveQueue();
 
-    // Detect whether this is an HLS playlist
-    const isHls = /\.m3u8(\?|$)/i.test(job.url || '');
-
-    // Start the download
-    if (isHls) {
-      this.runJob(job).then(() => this.onJobComplete(jobId));
-    } else {
-      this.runDirectJob(job).then(() => this.onJobComplete(jobId));
-    }
+    const runner = job.mediaType === 'hls' || /\.m3u8(\?|$)/i.test(job.url || '')
+      ? this.runJob : this.runDirectJob;
+    Promise.resolve().then(() => runner(job)).catch((error) => {
+      job.status = job.cancelled ? 'cancelled' : 'error';
+      job.error = error && error.message || 'Download failed';
+    }).finally(() => this.onJobComplete(jobId, job));
 
     return true;
   }
@@ -621,9 +653,13 @@ class QueueManager {
   }
 
   // Called when a job completes
-  onJobComplete(jobId) {
+  onJobComplete(jobId, runnerJob) {
     const job = this.jobs.get(jobId);
-    if (!job) return;
+    if (!job || (runnerJob && job !== runnerJob)) {
+      this.activeJobs.delete(jobId);
+      if (this.settings.autoStart) this.processQueue();
+      return;
+    }
 
     if (job.pauseRequested && job.status === 'cancelled') {
       // Pause is implemented as cooperative cancellation + resumable re-queue.
@@ -677,7 +713,6 @@ class QueueManager {
       job.cancelled = true;
       job.resumePartialSegments = true;
       job.queueStatus = 'paused';
-      this.activeJobs.delete(jobId);
       this.saveQueue();
       return true;
     }
@@ -690,7 +725,7 @@ class QueueManager {
     const job = this.jobs.get(jobId);
     if (!job) return false;
 
-    if (job.status === 'downloading' || job.status === 'fetching-playlist') {
+    if (this.activeJobs.has(jobId)) {
       if (job.queueStatus === 'paused') {
         // Accept resume intent while cooperative pause is still winding down.
         job.resumeRequested = true;
@@ -719,6 +754,40 @@ class QueueManager {
     return false;
   }
 
+  async refreshJobSource(jobId, { url, headers = {}, sourcePageUrl, selection } = {}) {
+    const job = this.jobs.get(jobId);
+    if (!job || this.activeJobs.has(jobId)) return { ok: false, resumable: false, reason: 'Download is still running' };
+    let parsed;
+    try { parsed = new URL(url); } catch { return { ok: false, resumable: false, reason: 'Invalid source URL' }; }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return { ok: false, resumable: false, reason: 'Unsupported source URL' };
+    const hasPartial = Number(job.completedSegments) > 0 || !!job.resumePartialSegments;
+    if (hasPartial) {
+      const candidate = { ...job, url, headers, sourcePageUrl: sourcePageUrl || job.sourcePageUrl, selection: selection || job.selection, credentialOrigin: parsed.origin };
+      const { playlistInfo: info } = await resolveHlsSelection(candidate);
+      if (info.unsupportedReason || !job.playlistTopology || info.topologyFingerprint !== job.playlistTopology) {
+        return { ok: false, resumable: false, reason: 'The refreshed video has changed. Start a new download to keep the existing pieces safe.' };
+      }
+    }
+    job.url = url;
+    job.headers = headers;
+    job.sourcePageUrl = sourcePageUrl || job.sourcePageUrl;
+    job.selection = selection || job.selection;
+    job.credentialOrigin = parsed.origin;
+    job.requiresSourceRefresh = false;
+    job.error = null;
+    job.errorCode = null;
+    job.resumePartialSegments = hasPartial;
+    job.cancelled = false;
+    job.pauseRequested = false;
+    job.resumeRequested = false;
+    job.status = 'pending';
+    job.queueStatus = 'queued';
+    job.updatedAt = Date.now();
+    await this.saveQueue();
+    if (this.settings.autoStart) this.processQueue();
+    return { ok: true, resumable: hasPartial };
+  }
+
   // Remove job from queue
   removeJob(jobId, deleteFiles = false) {
     const jobIndex = this.queue.findIndex(j => j.id === jobId);
@@ -727,14 +796,13 @@ class QueueManager {
     const job = this.queue[jobIndex];
 
     // Cancel if currently downloading
-    if (job.queueStatus === 'downloading') {
+    if (this.activeJobs.has(jobId)) {
       job.cancelled = true;
       // Ensure in-flight job processors cleanup partial artifacts before exiting.
       job.cleanupOnCancel = true;
-      this.activeJobs.delete(jobId);
     }
 
-    const isActiveDownload = job.queueStatus === 'downloading'
+    const isActiveDownload = this.activeJobs.has(jobId) || job.queueStatus === 'downloading'
       || job.status === 'downloading'
       || job.status === 'fetching-playlist';
     const deleteTransientOnly = !deleteFiles;
@@ -831,7 +899,7 @@ class QueueManager {
         }
 
         if (job.id) {
-          const queueDir = path.dirname(this.queueFilePath);
+          const queueDir = this.downloadDir;
           if (fs.existsSync(queueDir)) {
             const entries = fs.readdirSync(queueDir, { withFileTypes: true });
             entries

@@ -24,7 +24,6 @@
 
   let hls = null;
   let usingFallback = false;
-  let currentObjectUrl = '';
   const debugLines = [];
 
   const BLOCKED_HEADER_NAMES = new Set([
@@ -36,6 +35,19 @@
     'content-length',
     'connection',
   ]);
+  const CROSS_ORIGIN_HEADER_NAMES = new Set([
+    'accept', 'accept-language', 'cache-control', 'pragma', 'range', 'if-range',
+  ]);
+
+  function getHttpOrigin(url) {
+    try {
+      const parsed = new URL(url);
+      return ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password
+        ? parsed.origin : '';
+    } catch {
+      return '';
+    }
+  }
 
   function isHlsUrl(url) {
     return /\.m3u8(\?|$)/i.test(String(url || ''));
@@ -69,16 +81,6 @@
     }
   }
 
-  function revokeCurrentObjectUrl() {
-    if (!currentObjectUrl) return;
-    try {
-      URL.revokeObjectURL(currentObjectUrl);
-    } catch {
-      // ignore
-    }
-    currentObjectUrl = '';
-  }
-
   function destroyHls() {
     if (hls && typeof hls.destroy === 'function') {
       try {
@@ -99,7 +101,7 @@
     for (const [rawKey, rawValue] of entries) {
       const key = String(rawKey || '').trim();
       const value = String(rawValue || '').trim();
-      if (!key || !value) continue;
+      if (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/i.test(key) || !value || /[\r\n]/.test(value)) continue;
       const lower = key.toLowerCase();
       if (BLOCKED_HEADER_NAMES.has(lower)) continue;
       if (lower.startsWith('sec-')) continue;
@@ -111,50 +113,30 @@
     return output;
   }
 
-  function resolveReferrerUrl() {
-    const explicitReferrer = String(
-      requestHeaders.Referer
-      || requestHeaders.referer
-      || sourcePageUrl
-      || ''
-    ).trim();
-    if (!explicitReferrer) return '';
-    try {
-      return new URL(explicitReferrer).toString();
-    } catch {
-      return '';
+  function buildFetchOptions(targetUrl, extra = {}) {
+    const targetOrigin = getHttpOrigin(targetUrl);
+    if (!targetOrigin) throw new Error('Only HTTP and HTTPS preview sources are supported.');
+    const sameOrigin = targetOrigin === getHttpOrigin(primaryUrl);
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(normalizeRequestHeaders(requestHeaders))) {
+      if (sameOrigin || CROSS_ORIGIN_HEADER_NAMES.has(key.toLowerCase())) headers.set(key, value);
     }
-  }
-
-  function buildFetchOptions(extra = {}) {
-    const headers = normalizeRequestHeaders(requestHeaders);
-    const referrer = resolveReferrerUrl();
-    const options = {
-      credentials: 'include',
-      cache: 'no-store',
-      redirect: 'follow',
-      ...extra,
-      headers: {
-        ...(extra.headers || {}),
-        ...headers,
-      },
-    };
-    if (referrer) {
-      options.referrer = referrer;
-      options.referrerPolicy = 'strict-origin-when-cross-origin';
-    }
-    return options;
-  }
-
-  function applyRequestHeadersToXhr(xhr) {
-    const headers = normalizeRequestHeaders(requestHeaders);
-    Object.entries(headers).forEach(([key, value]) => {
-      try {
-        xhr.setRequestHeader(key, value);
-      } catch {
-        // ignore header assignment failures
-      }
+    // HLS.js supplies byte ranges per fragment. They must override the original
+    // media request's range, while credentials stay bound to its exact origin.
+    new Headers(extra.headers || {}).forEach((value, key) => {
+      if (sameOrigin || CROSS_ORIGIN_HEADER_NAMES.has(key.toLowerCase())) headers.set(key, value);
     });
+    return {
+      ...extra,
+      headers,
+      credentials: sameOrigin ? 'include' : 'omit',
+      cache: 'no-store',
+      // XHR cannot control redirect credential forwarding. Fetch rejects a
+      // redirect before captured site headers can reach another destination.
+      redirect: 'error',
+      referrer: '',
+      referrerPolicy: 'no-referrer',
+    };
   }
 
   async function tryPlay() {
@@ -167,24 +149,13 @@
 
   function useDirectVideoUrl(url) {
     destroyHls();
-    revokeCurrentObjectUrl();
-    videoEl.src = url;
-    videoEl.load();
-    void tryPlay();
-  }
-
-  async function useFetchedMediaUrl(url) {
-    destroyHls();
-    revokeCurrentObjectUrl();
-
-    const response = await fetch(url, buildFetchOptions({ method: 'GET' }));
-    if (!response.ok) {
-      throw new Error(`direct fetch failed with status ${response.status}`);
+    if (!getHttpOrigin(url)) {
+      setStatus('This preview source is unsupported. Open the page to play the video.', 'error');
+      return;
     }
-
-    const blob = await response.blob();
-    currentObjectUrl = URL.createObjectURL(blob);
-    videoEl.src = currentObjectUrl;
+    // Native playback streams/seeks the file without buffering an entire video
+    // in extension memory. It does not replay captured request headers.
+    videoEl.src = url;
     videoEl.load();
     void tryPlay();
   }
@@ -192,7 +163,7 @@
   function fallbackToDirectIfAvailable(reason) {
     if (!fallbackUrl || usingFallback) {
       appendDebug('No fallback available', { reason });
-      setStatus(reason, 'error');
+      setStatus('Preview unavailable. Open the page to play this video.', 'error');
       return false;
     }
     usingFallback = true;
@@ -222,17 +193,7 @@
     const hlsCandidate = declaredType === 'hls' || isHlsUrl(url);
     if (!hlsCandidate) {
       setStatus('Loading direct media source.', 'ok');
-      try {
-        await useFetchedMediaUrl(url);
-        appendDebug('Direct media fetched successfully');
-        setStatus('Playing direct media source with captured request context.', 'ok');
-      } catch (err) {
-        appendDebug('Direct fetch failed, falling back to plain video src', {
-          error: err && err.message ? err.message : String(err || 'Unknown error'),
-        });
-        setStatus('Direct fetch failed, retrying without captured request context.', 'warn');
-        useDirectVideoUrl(url);
-      }
+      useDirectVideoUrl(url);
       return;
     }
 
@@ -240,10 +201,11 @@
       appendDebug('Native HLS support detected, but forcing HLS.js to preserve request context');
     }
 
-    if (typeof window.Hls === 'undefined' || !window.Hls || !window.Hls.isSupported()) {
+    if (typeof window.Hls === 'undefined' || !window.Hls || !window.Hls.isSupported()
+      || !window.fetch || !window.AbortController || !window.ReadableStream || !window.Request) {
       const switched = fallbackToDirectIfAvailable('browser does not support HLS.js');
       if (!switched) {
-        setStatus('This browser cannot play HLS in this tab.', 'error');
+        setStatus('This browser cannot preview this video. Open the page to play it.', 'error');
       }
       return;
     }
@@ -251,18 +213,21 @@
     destroyHls();
     hls = new window.Hls({
       enableWorker: true,
+      // In the bundled HLS.js version this selects FetchLoader, which honours
+      // redirect:error for manifests, keys and all fragment requests.
+      progressive: true,
       lowLatencyMode: true,
       backBufferLength: 60,
       xhrSetup: (xhr) => {
-        xhr.withCredentials = true;
-        applyRequestHeadersToXhr(xhr);
+        xhr.abort();
+        throw new Error('Safe HLS preview requires the Fetch loader. Open the source page.');
       },
       fetchSetup: (context, initParams) => {
-        const request = new Request(context.url, buildFetchOptions(initParams || {}));
+        const request = new Request(context.url, buildFetchOptions(context.url, initParams || {}));
         appendDebug('Configured HLS fetch request', {
           url: context.url,
-          hasReferrer: !!resolveReferrerUrl(),
-          headerKeys: Object.keys(normalizeRequestHeaders(requestHeaders)),
+          sameOrigin: getHttpOrigin(context.url) === getHttpOrigin(primaryUrl),
+          headerKeys: [...request.headers.keys()],
         });
         return request;
       },
@@ -287,8 +252,8 @@
     });
 
     hls.on(window.Hls.Events.ERROR, (_event, data) => {
-      const reason = data.details || data.type || 'unknown HLS error';
-      const responseCode = Number(data.response && data.response.code || 0);
+      const reason = data && (data.details || data.type) || 'unknown HLS error';
+      const responseCode = Number(data && data.response && data.response.code || 0);
       appendDebug('HLS error', {
         fatal: !!(data && data.fatal),
         type: data && data.type,
@@ -299,10 +264,10 @@
       if (!data || !data.fatal) return;
       if (fallbackToDirectIfAvailable(reason)) return;
       if (responseCode === 403) {
-        setStatus('HLS playback blocked (403). This source likely requires page-bound referrer/origin/cookies.', 'error');
+        setStatus('This video needs its original page to play. Open the page to continue.', 'error');
         return;
       }
-      setStatus(`HLS playback failed: ${reason}`, 'error');
+      setStatus('Preview unavailable. Open the page to play this video.', 'error');
     });
 
     hls.attachMedia(videoEl);
@@ -378,7 +343,7 @@
       appendDebug('Video element emitted error');
       const switched = fallbackToDirectIfAvailable('video element error');
       if (!switched) {
-        setStatus('Video element failed to load this source.', 'error');
+        setStatus('Preview unavailable. Open the page to play this video.', 'error');
       }
     });
 
@@ -390,6 +355,5 @@
 
   window.addEventListener('beforeunload', () => {
     destroyHls();
-    revokeCurrentObjectUrl();
   });
 })();

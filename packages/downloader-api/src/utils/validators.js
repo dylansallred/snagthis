@@ -8,16 +8,6 @@ function isValidUrl(value) {
       throw new Error('Invalid protocol');
     }
 
-    const hostname = url.hostname;
-    if (
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname.startsWith('192.168.') ||
-      hostname.startsWith('10.') ||
-      hostname.endsWith('.local')
-    ) {
-      throw new Error('Private hosts not allowed');
-    }
     return true;
   } catch (err) {
     throw new Error(`Invalid URL: ${err.message}`);

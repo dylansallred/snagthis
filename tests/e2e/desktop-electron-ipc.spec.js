@@ -1,148 +1,57 @@
 const { test, expect } = require('@playwright/test');
-const { _electron: electron } = require('playwright');
-const { spawn } = require('node:child_process');
-const path = require('node:path');
-const net = require('node:net');
+const fs = require('node:fs');
+const { startRenderer, launchDesktop } = require('./helpers');
+const { startFixtureServer } = require('../fixtures/server');
+const { probeFile } = require('../fixtures/engine');
 
-async function getFreePort() {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address();
-      srv.close((err) => {
-        if (err) return reject(err);
-        resolve(addr.port);
-      });
-    });
-    srv.on('error', reject);
-  });
-}
-
-async function waitForServer(url, timeoutMs = 30_000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {
-      // keep polling
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`Timed out waiting for renderer server at ${url}`);
-}
-
-async function startDesktopRendererServer() {
-  const port = await getFreePort();
-  const workspaceRoot = path.resolve(__dirname, '../..');
-  const child = spawn(
-    'npm',
-    [
-      'run',
-      'dev:renderer',
-      '--workspace',
-      '@m3u8/desktop',
-      '--',
-      '--host',
-      '127.0.0.1',
-      '--port',
-      String(port),
-    ],
-    {
-      cwd: workspaceRoot,
-      env: { ...process.env, CI: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  );
-
-  let startupLog = '';
-  child.stdout.on('data', (chunk) => { startupLog += chunk.toString(); });
-  child.stderr.on('data', (chunk) => { startupLog += chunk.toString(); });
-
+test('real Electron: paste, pause/resume, save, persist, and remove from list safely', async () => {
+  test.setTimeout(150_000);
+  const fixture = await startFixtureServer();
+  fs.mkdirSync(fixture.directory + '/saved');
+  const renderer = await startRenderer();
+  let native;
   try {
-    await waitForServer(`http://127.0.0.1:${port}`);
-  } catch (err) {
-    child.kill('SIGTERM');
-    throw new Error(`${err.message}\n--- renderer logs ---\n${startupLog}`);
-  }
-
-  return {
-    baseUrl: `http://127.0.0.1:${port}`,
-    close: async () => {
-      if (child.killed) return;
-      child.kill('SIGTERM');
-      await new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          child.kill('SIGKILL');
-          resolve();
-        }, 5000);
-        child.once('exit', () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-    },
-  };
-}
-
-test('electron preload exposes real updater IPC bridge and updates view loads', async () => {
-  test.skip(
-    process.platform === 'win32' || (process.platform === 'linux' && !!process.env.CI),
-    'Electron launch automation is validated locally; hosted CI runners can fail to launch Electron reliably.',
-  );
-
-  const renderer = await startDesktopRendererServer();
-  const desktopAppPath = path.resolve(__dirname, '../../apps/desktop');
-  const apiPort = await getFreePort();
-  let electronApp;
-
-  try {
-    electronApp = await electron.launch({
-      args: [desktopAppPath],
-      env: {
-        ...process.env,
-        NODE_ENV: 'test',
-        E2E_ALLOW_MULTI_INSTANCE: '1',
-        M3U8_API_HOST: '127.0.0.1',
-        M3U8_API_PORT: String(apiPort),
-        VITE_DEV_SERVER_URL: renderer.baseUrl,
-      },
+    native = await launchDesktop(renderer.baseUrl);
+    let window = await native.app.firstWindow();
+    await expect(window.getByPlaceholder('Paste a video link')).toBeVisible();
+    await expect.poll(() => window.evaluate(async () => (await window.desktop.getAppInfo()).apiStartupState)).toBe('ready');
+    const ipc = await window.evaluate(async () => ({ info: await window.desktop.getAppInfo(), settings: await window.desktop.getSettings(), updater: await window.desktop.getUpdaterState() }));
+    expect(ipc.info.apiBaseUrl).toBe(native.baseUrl);
+    expect(typeof ipc.updater.phase).toBe('string');
+    expect(typeof ipc.settings.notifyOnComplete).toBe('boolean');
+    await window.evaluate(async (folder) => window.desktop.saveSettings({ outputDirectory: folder, notifyOnComplete: false }), fixture.directory + '/saved');
+    const paste = window.getByPlaceholder('Paste a video link');
+    await paste.fill(`${fixture.baseUrl}/cases/throttled/direct.mp4`);
+    await paste.press('Enter');
+    const row = window.locator('.video-row').first();
+    await expect(row.getByRole('button', { name: /^Pause:/ })).toBeVisible();
+    await row.getByRole('button', { name: /^Pause:/ }).click();
+    await expect(row).toContainText('Paused at');
+    await row.getByRole('button', { name: /^Resume:/ }).click();
+    await expect(row.getByRole('button', { name: /^Play:/ })).toBeVisible({ timeout: 60_000 });
+    await expect(row).toContainText('Saved');
+    const history = await window.evaluate(async () => {
+      const info = await window.desktop.getAppInfo();
+      const response = await fetch(info.apiBaseUrl + '/api/history', { headers: info.apiAuthToken ? { Authorization: `Bearer ${info.apiAuthToken}` } : {} });
+      return response.json();
     });
-
-    const window = await electronApp.firstWindow();
-    await window.waitForLoadState('domcontentloaded');
-
-    await expect(window.getByAltText('VidSnag')).toBeVisible();
-    await window.getByRole('button', { name: 'Settings' }).click();
-    await expect(window.getByText('Updates', { exact: true })).toBeVisible();
-
-    const updaterState = await window.evaluate(async () => {
-      if (!window.desktop) return { missingDesktop: true };
-      const state = await window.desktop.getUpdaterState();
-      const checkResult = await Promise.race([
-        window.desktop.checkForUpdates(),
-        new Promise((resolve) => setTimeout(() => resolve({ timeout: true }), 4000)),
-      ]);
-      return {
-        hasBridge: typeof window.desktop.getUpdaterState === 'function'
-          && typeof window.desktop.checkForUpdates === 'function',
-        state,
-        checkResult,
-      };
-    });
-
-    expect(updaterState.missingDesktop).not.toBeTruthy();
-    expect(updaterState.hasBridge).toBeTruthy();
-    expect(typeof updaterState.state.phase).toBe('string');
-    expect(typeof updaterState.state.message).toBe('string');
-    expect(
-      updaterState.checkResult.timeout === true
-      || typeof updaterState.checkResult.ok === 'boolean',
-    ).toBeTruthy();
-  } finally {
-    if (electronApp) {
-      await electronApp.close();
-    }
-    await renderer.close();
-  }
+    const item = history.items[0];
+    expect(item).toBeTruthy();
+    const filePath = item.absolutePath;
+    const metadata = await probeFile(filePath);
+    expect(metadata.height).toBe(1080);
+    expect(metadata.hasAudio).toBe(true);
+    expect(Math.abs(metadata.durationSeconds - 10)).toBeLessThanOrEqual(1);
+    const profile = native.profile;
+    await native.app.close();
+    native = await launchDesktop(renderer.baseUrl, { userDataDirectory: profile });
+    window = await native.app.firstWindow();
+    await expect(window.locator('.video-row')).toHaveCount(1);
+    await expect(window.locator('.video-row')).toContainText('Saved');
+    await window.locator('.video-row').click();
+    await window.getByRole('button', { name: 'Remove…', exact: true }).click();
+    await window.getByRole('button', { name: /^Remove from list/ }).click();
+    await expect(window.locator('.video-row')).toHaveCount(0);
+    expect(fs.existsSync(filePath)).toBe(true);
+  } finally { await native?.close(); await renderer.close(); await fixture.close(); }
 });

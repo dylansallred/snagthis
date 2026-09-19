@@ -14,6 +14,24 @@ contextBridge.exposeInMainWorld('desktop', {
   exportSupportBundle: (payload) => ipcRenderer.invoke('app:export-support-bundle', payload),
   openHistoryFile: (historyId) => ipcRenderer.invoke('app:open-history-file', historyId),
   openHistoryFolder: (historyId) => ipcRenderer.invoke('app:open-history-folder', historyId),
+  moveHistoryFileToTrash: (historyId) => ipcRenderer.invoke('app:trash-history-file', historyId),
+  locateHistoryFile: (historyId) => ipcRenderer.invoke('app:locate-history-file', historyId),
+  getPairingInfo: () => ipcRenderer.invoke('app:get-pairing-info'),
+  getConnectionState: () => ipcRenderer.invoke('app:get-connection-state'),
+  openSaveFolder: () => ipcRenderer.invoke('app:open-save-folder'),
+  openSettings: () => ipcRenderer.invoke('app:open-settings'),
+  openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
+  onAppInfoUpdate: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('app:info-update', handler);
+    return () => ipcRenderer.removeListener('app:info-update', handler);
+  },
+  onOpenSettings: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('app:open-settings', handler);
+    ipcRenderer.invoke('app:settings-listener-ready').catch(() => {});
+    return () => ipcRenderer.removeListener('app:open-settings', handler);
+  },
   onUpdaterEvent: (cb) => {
     const handler = (_event, payload) => cb(payload);
     ipcRenderer.on('updater:event', handler);

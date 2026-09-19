@@ -6,6 +6,23 @@ export interface AppInfo {
   apiBaseUrl: string;
   apiVersion: string;
   isPackaged: boolean;
+  apiAuthToken: string;
+  apiStartupState: 'starting' | 'ready' | 'failed';
+  apiStartupError: string | null;
+  extensionConnected: boolean;
+}
+
+export interface DesktopActionResult {
+  ok: boolean;
+  error?: string;
+  cancelled?: boolean;
+  filePath?: string;
+  folderPath?: string;
+}
+
+export interface ConnectionState {
+  extensionConnected: boolean;
+  pairedExtensions: number;
 }
 
 export interface DesktopBridge {
@@ -22,6 +39,15 @@ export interface DesktopBridge {
   exportSupportBundle(payload: unknown): Promise<{ ok: boolean; bundlePath?: string; error?: string }>;
   openHistoryFile(historyId: string): Promise<{ ok: boolean; error?: string }>;
   openHistoryFolder(historyId: string): Promise<{ ok: boolean; error?: string }>;
+  moveHistoryFileToTrash(historyId: string): Promise<DesktopActionResult>;
+  locateHistoryFile(historyId: string): Promise<DesktopActionResult>;
+  getPairingInfo(): Promise<{ code: string; expiresAt: number }>;
+  getConnectionState(): Promise<ConnectionState>;
+  openSaveFolder(): Promise<DesktopActionResult>;
+  openSettings(): Promise<DesktopActionResult>;
+  openExternal(url: string): Promise<DesktopActionResult>;
+  onAppInfoUpdate(cb: (info: AppInfo) => void): () => void;
+  onOpenSettings(cb: () => void): () => void;
   onUpdaterEvent(cb: (event: UpdaterState) => void): () => void;
 }
 

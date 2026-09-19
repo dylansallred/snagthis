@@ -181,7 +181,7 @@ function registerJobRoutes(
       ? settings.fileNaming
       : 'title';
 
-    if (customName) {
+    if (customName && namingMode === 'custom') {
       baseName = customName;
     } else if (namingMode === 'resource') {
       // Prefer resource-style name when requested.
@@ -194,7 +194,7 @@ function registerJobRoutes(
     const fileNameBase = safeFilename(baseName);
 
     // Detect whether this is an HLS playlist by URL extension.
-    const isHls = /\.m3u8(\?|$)/i.test(queue.url || '');
+    const isHls = queue.mediaType === 'hls' || /\.m3u8(\?|$)/i.test(queue.url || '');
 
     let filePath;
     let tsName;
@@ -255,6 +255,9 @@ function registerJobRoutes(
       title: baseName || queue.title || queue.name || 'Download',
       url: queue.url,
       headers: queue.headers || {},
+      headerOrigin: new URL(queue.url).origin,
+      selection: queue.selection || undefined,
+      mediaType: queue.mediaType || (isHls ? 'hls' : 'file'),
       sourcePageUrl: queue.sourcePageUrl || '',
       totalSegments: 0,
       completedSegments: 0,
@@ -267,7 +270,7 @@ function registerJobRoutes(
       mp4Path: null,
       thumbnailPath: null,
       thumbnailPaths: null,
-      thumbnailUrls: [],
+      thumbnailUrls: queue.thumbnailUrl ? [queue.thumbnailUrl] : [],
       skipThumbnailGeneration: false,
       tmdbMetadata: null,
       downloadNameMp4,

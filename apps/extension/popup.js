@@ -1,1773 +1,366 @@
-const DEFAULT_API_BASE = 'http://127.0.0.1:49732';
-let API_BASE = DEFAULT_API_BASE;
-const EXTENSION_PROTOCOL_VERSION = 1;
-
-function normalizeLocalApiBase(candidate) {
-  const value = String(candidate || '').trim();
-  if (!value) return null;
-
-  try {
-    const parsed = new URL(value);
-    const hostname = String(parsed.hostname || '').toLowerCase();
-    const isLoopback = hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1';
-    if (!isLoopback) return null;
-    if (!parsed.port) return null;
-
-    if (parsed.protocol === 'https:') {
-      parsed.protocol = 'http:';
-    } else if (parsed.protocol !== 'http:') {
-      return null;
-    }
-
-    parsed.username = '';
-    parsed.password = '';
-    parsed.pathname = '';
-    parsed.search = '';
-    parsed.hash = '';
-    return parsed.toString().replace(/\/$/, '');
-  } catch {
-    return null;
-  }
-}
-
-try {
-  const params = new URLSearchParams(window.location.search);
-  const candidate = normalizeLocalApiBase(params.get('apiBase'));
-  if (candidate) {
-    API_BASE = candidate;
-  }
-} catch {
-  // ignore malformed URL params and keep default API base
-}
-
-const connectionStatus = document.getElementById('connectionStatus');
-const mediaList = document.getElementById('mediaList');
-const emptyState = document.getElementById('emptyState');
-const refreshButton = document.getElementById('refreshButton');
-const clearButton = document.getElementById('clearButton');
-const statusDot = document.getElementById('statusDot');
-const toastRegion = document.getElementById('toastRegion');
-
-let activeTab = null;
-let health = null;
-let extensionInfo = null;
-let compatibilityIssue = null;
-const pendingSendKeys = new Set();
-const pendingStreamKeys = new Set();
-const customTitleOverrides = new Map();
-
-function showToast(message, variant = 'info', timeoutMs = 2600) {
-  const text = String(message || '').trim();
-  if (!text) return;
-  if (!toastRegion) return;
-
-  const palette = {
-    success: { bg: 'rgba(182, 60, 8, 0.2)', border: 'rgba(182, 60, 8, 0.5)', fg: '#fff4ef' },
-    error: { bg: 'rgba(239, 68, 68, 0.18)', border: 'rgba(239, 68, 68, 0.45)', fg: '#fee2e2' },
-    warning: { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', fg: '#fffbeb' },
-    info: { bg: 'rgba(190, 173, 165, 0.18)', border: 'rgba(190, 173, 165, 0.42)', fg: '#f8f3f0' },
+/* Workbench popup. Jobs belong to the worker/desktop, never to this window. */
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const isDemo = location.protocol !== 'chrome-extension:' && ['localhost', '127.0.0.1', ''].includes(location.hostname) && params.has('demo');
+  const model = VidSnagPopupModel;
+  const rows = VidSnagRows;
+  const titles = VidSnagTitles;
+  const runtimeVersion = isDemo ? '1.0.0' : chrome.runtime.getManifest().version;
+  const apiBase = (!isDemo && !chrome.runtime.getManifest().update_url && model.localApiBase(params.get('apiBase'))) || 'http://127.0.0.1:49732';
+  const RELEASES = 'https://github.com/dylansallred/vidsnag/releases';
+  const HELP = 'https://github.com/dylansallred/vidsnag/blob/main/README.md#troubleshooting';
+  const DEFAULT_PREFERENCES = { preferredQuality: 'best', subtitleLanguage: 'none', notifyOnComplete: true, launchAtLogin: false };
+  let preferences = { ...DEFAULT_PREFERENCES };
+  let appToken = ''; let activeTab = null; let mediaItems = []; let mappings = {}; let queue = []; let visit = '';
+  let reachable = false; let compatible = true; let getAppFallback = false; let refreshBusy = false; let healthBusy = false;
+  let menuTrigger = null; let selected = new Map(); let customTitles = {}; let pending = new Map(); let failures = new Map();
+  let noticeTimer; let openTimer; let queueTimer; let healthTimer;
+  const rowElements = new Map();
+  const icons = {
+    gear: '<path d="m10 2 1 2 2 .8 2-.6 1.8 3-1.4 1.6v2.4l1.4 1.6-1.8 3-2-.6-2 .8-1 2H6l-1-2-2-.8-2 .6-1.8-3L.6 11V8.6L-.8 7 1 4l2 .6L5 3.8 1 2Z" transform="translate(2 1) scale(.9)"/><circle cx="10" cy="10" r="3"/>',
+    play: '<path d="m7 4 9 6-9 6Z"/>', pause: '<path d="M7 4v12M13 4v12"/>',
+    close: '<path d="m5 5 10 10M15 5 5 15"/>', down: '<path d="m5 8 5 5 5-5"/>', check: '<path d="m4 10 4 4 8-8"/>',
   };
-  const style = palette[variant] || palette.info;
-
-  const toast = document.createElement('div');
-  toast.setAttribute('role', 'status');
-  toast.textContent = text;
-  toast.style.cssText = [
-    'padding: 8px 10px',
-    'border-radius: 10px',
-    'font-size: 12px',
-    'line-height: 1.3',
-    `background: ${style.bg}`,
-    `border: 1px solid ${style.border}`,
-    `color: ${style.fg}`,
-    'backdrop-filter: blur(8px)',
-    'box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2)',
-    'opacity: 0',
-    'transform: translateY(4px)',
-    'transition: opacity 140ms ease, transform 140ms ease',
-    'pointer-events: auto',
-  ].join(';');
-
-  toastRegion.appendChild(toast);
-  while (toastRegion.childElementCount > 4) {
-    toastRegion.firstElementChild?.remove();
+  function icon(name) { const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); node.setAttribute('viewBox', '0 0 20 20'); node.setAttribute('aria-hidden', 'true'); node.classList.add('icon'); node.innerHTML = icons[name] || icons.play; return node; }
+  function el(tag, className = '', text = '') { const node = document.createElement(tag); if (className) node.className = className; if (text) node.textContent = text; return node; }
+  function action(label, handler, style = '', iconName = '') {
+    const button = el('button', `action ${style}`); button.type = 'button'; button.setAttribute('aria-label', label);
+    if (iconName) button.append(icon(iconName)); if (style !== 'icon-only' || !iconName) button.append(document.createTextNode(label));
+    button.addEventListener('click', handler); return button;
   }
-
-  requestAnimationFrame(() => {
-    toast.style.opacity = '1';
-    toast.style.transform = 'translateY(0)';
-  });
-
-  window.setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateY(4px)';
-    window.setTimeout(() => toast.remove(), 180);
-  }, Math.max(1200, Number(timeoutMs) || 2600));
-}
-
-function getSendKey(item) {
-  if (item && item.id) return String(item.id);
-  return String(item && item.url || '');
-}
-
-function normalizeCustomTitleOverride(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
-}
-
-function getCustomTitleOverride(item) {
-  return customTitleOverrides.get(getSendKey(item)) || '';
-}
-
-function setCustomTitleOverride(item, value) {
-  const sendKey = getSendKey(item);
-  const normalized = normalizeCustomTitleOverride(value);
-  if (!normalized) {
-    customTitleOverrides.delete(sendKey);
-    return '';
-  }
-  customTitleOverrides.set(sendKey, normalized);
-  return normalized;
-}
-
-function setQueueButtonBusy(button, isBusy) {
-  if (!button) return;
-  if (isBusy) {
-    button.dataset.originalLabel = button.dataset.originalLabel || button.innerHTML;
-    button.disabled = true;
-    button.style.opacity = '0.8';
-    button.innerHTML = '<svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 4v4m0 8v4m8-8h-4M8 12H4m13.657-5.657l-2.828 2.828M9.172 14.828l-2.829 2.829m0-11.314l2.829 2.828m8.485 8.486l-2.828-2.829"/></svg> Sending...';
-    return;
-  }
-
-  button.disabled = false;
-  button.style.opacity = '';
-  if (button.dataset.originalLabel) {
-    button.innerHTML = button.dataset.originalLabel;
-  }
-}
-
-function getStreamUrl(item) {
-  if (!item) return '';
-  return String(item.url || '').trim();
-}
-
-function getStreamFallbackUrl(item) {
-  if (!item) return '';
-  return String(item.fallbackUrl || '').trim();
-}
-
-function isHlsLikeUrl(url) {
-  return /\.m3u8(\?|$)/i.test(String(url || ''));
-}
-
-function buildStreamPlayerUrl(item) {
-  const src = getStreamUrl(item);
-  const fallback = getStreamFallbackUrl(item);
-  if (!src && !fallback) return '';
-
-  const params = new URLSearchParams();
-  if (src) params.set('src', src);
-  if (fallback && fallback !== src) params.set('fallback', fallback);
-
-  const mediaType = String(item?.type || (isHlsLikeUrl(src) ? 'hls' : 'file')).toLowerCase();
-  params.set('type', mediaType);
-
-  const title = String(getDisplayTitle(item) || item?.filename || 'Stream Preview').trim();
-  if (title) params.set('title', title);
-
-  return `${chrome.runtime.getURL('player.html')}?${params.toString()}`;
-}
-
-async function buildStreamPlayerUrlWithSession(item) {
-  const fallbackUrl = buildStreamPlayerUrl(item);
-  if (!fallbackUrl) return '';
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      cmd: 'CREATE_STREAM_SESSION',
-      session: {
-        src: getStreamUrl(item),
-        fallback: getStreamFallbackUrl(item),
-        declaredType: String(item?.type || (isHlsLikeUrl(getStreamUrl(item)) ? 'hls' : 'file')).toLowerCase(),
-        title: String(getDisplayTitle(item) || item?.filename || 'Stream Preview').trim(),
-        sourcePageUrl: String(item?.sourcePageUrl || (activeTab && activeTab.url) || '').trim(),
-        requestHeaders: item?.requestHeaders || {},
-      },
-    });
-
-    if (response && response.ok && response.sessionId) {
-      const sessionParam = encodeURIComponent(String(response.sessionId));
-      return `${chrome.runtime.getURL('player.html')}?session=${sessionParam}`;
-    }
-  } catch {
-    // fallback to URL params mode
-  }
-
-  return fallbackUrl;
-}
-
-function setStreamButtonBusy(button, isBusy) {
-  if (!button) return;
-  if (isBusy) {
-    button.dataset.originalLabel = button.dataset.originalLabel || button.innerHTML;
-    button.disabled = true;
-    button.style.opacity = '0.8';
-    button.innerHTML = '<svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 4v4m0 8v4m8-8h-4M8 12H4m13.657-5.657l-2.828 2.828M9.172 14.828l-2.829 2.829m0-11.314l2.829 2.828m8.485 8.486l-2.828-2.829"/></svg>';
-    return;
-  }
-
-  button.disabled = false;
-  button.style.opacity = '';
-  if (button.dataset.originalLabel) {
-    button.innerHTML = button.dataset.originalLabel;
-  }
-}
-
-function setStatus(text, isError = false) {
-  connectionStatus.textContent = text;
-  connectionStatus.style.color = isError ? 'var(--color-danger)' : 'var(--color-fg-muted)';
-
-  statusDot.className = 'status-dot';
-  if (isError) {
-    statusDot.classList.add('disconnected');
-  } else if (text.startsWith('Checking') || text.startsWith('Desktop app not')) {
-    statusDot.classList.add('checking');
-  } else {
-    statusDot.classList.add('connected');
-  }
-}
-
-async function fetchHealth() {
-  try {
-    const res = await fetch(`${API_BASE}/v1/health`, {
-      headers: {
-        'X-Client': 'vidsnag-extension',
-        'X-Protocol-Version': String(EXTENSION_PROTOCOL_VERSION),
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    health = data;
+  function notice(message) { $('notice').textContent = String(message); $('notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 5000); }
+  function external(url) { if (isDemo) { notice('Preview only — no app or page was opened.'); return; } chrome.tabs.create({ url }).catch(() => notice('Open VidSnag from your Applications folder.')); }
+  async function request(path, options = {}) {
+    if (isDemo) throw new Error('Demo cannot access the desktop app.');
+    const headers = { 'X-Client': 'vidsnag-extension', 'X-Protocol-Version': '1', 'X-Extension-Version': runtimeVersion, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.public ? {} : { Authorization: `Bearer ${appToken}` }) };
+    const response = await fetch(`${apiBase}${path}`, { method: options.body ? 'POST' : 'GET', headers, ...(options.body ? { body: JSON.stringify(options.body) } : {}), signal: AbortSignal.timeout(5000) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { const error = new Error(data.error?.message || data.error || 'VidSnag could not finish that action.'); error.status = response.status; throw error; }
     return data;
-  } catch (err) {
-    health = null;
-    throw err;
   }
-}
-
-function parseVersionParts(input) {
-  return String(input || '')
-    .split(/[^0-9]+/)
-    .filter(Boolean)
-    .map((value) => Number.parseInt(value, 10))
-    .map((value) => (Number.isFinite(value) && value >= 0 ? value : 0));
-}
-
-function compareVersions(a, b) {
-  const av = parseVersionParts(a);
-  const bv = parseVersionParts(b);
-  const len = Math.max(av.length, bv.length);
-  for (let i = 0; i < len; i += 1) {
-    const left = av[i] || 0;
-    const right = bv[i] || 0;
-    if (left > right) return 1;
-    if (left < right) return -1;
-  }
-  return 0;
-}
-
-function updateCompatibilityState() {
-  compatibilityIssue = null;
-  if (!health) return;
-
-  const minProtocol = Number(health?.supportedProtocolVersions?.min ?? health?.protocolVersion ?? EXTENSION_PROTOCOL_VERSION);
-  const maxProtocol = Number(health?.supportedProtocolVersions?.max ?? health?.protocolVersion ?? EXTENSION_PROTOCOL_VERSION);
-
-  if (Number.isFinite(minProtocol) && Number.isFinite(maxProtocol)) {
-    if (EXTENSION_PROTOCOL_VERSION < minProtocol || EXTENSION_PROTOCOL_VERSION > maxProtocol) {
-      compatibilityIssue = `Protocol mismatch. Extension protocol ${EXTENSION_PROTOCOL_VERSION}, app supports ${minProtocol}-${maxProtocol}.`;
+  async function message(value) { return isDemo ? { ok: true } : chrome.runtime.sendMessage(value); }
+  function openDesktop(view) {
+    if (!reachable) {
+      if (getAppFallback) { external(RELEASES); return; }
+      external('vidsnag://open'); clearTimeout(openTimer);
+      openTimer = setTimeout(() => { if (!reachable) { getAppFallback = true; renderConnection(); } }, 3000);
       return;
     }
+    if (!appToken) { external('vidsnag://open'); return; }
+    request('/v1/app/focus', { body: view ? { view } : {} }).catch(error => notice(error.message));
   }
-
-  const minExtensionVersion = String(health?.minExtensionVersion || '').trim();
-  const currentExtensionVersion = String(extensionInfo?.version || '').trim();
-  if (minExtensionVersion && currentExtensionVersion) {
-    if (compareVersions(currentExtensionVersion, minExtensionVersion) < 0) {
-      compatibilityIssue = `Extension ${currentExtensionVersion} is too old. Update to ${minExtensionVersion}+`;
+  function renderConnection() {
+    const banner = $('connection-banner'); banner.replaceChildren();
+    const unavailable = !reachable || !compatible || !appToken;
+    $('video-list').classList.toggle('unavailable', unavailable);
+    $('video-list').inert = unavailable;
+    banner.hidden = !unavailable;
+    if (!reachable) {
+      banner.append(el('span', '', "VidSnag isn't open, so downloads can't start."), action(getAppFallback ? 'Get the app' : 'Open VidSnag', () => openDesktop(), 'primary'));
+    } else if (!compatible) {
+      banner.append(el('span', '', 'Update VidSnag to keep downloading.'), action('Update', () => external(RELEASES), 'primary'));
+    } else if (!appToken) {
+      banner.append(el('span', '', 'Connect VidSnag to start downloading.'), action('Connect', showPairing, 'primary'));
     }
+    $('help-button').hidden = !reachable;
+    const activeCount = queue.filter(job => ['downloading', 'queued'].includes(job.queueStatus)).length;
+    const openButton = $('open-app');
+    openButton.replaceChildren(document.createTextNode(!reachable ? "Don't have the app? Get it" : 'Open VidSnag'));
+    if (reachable && activeCount) openButton.append(el('span', 'count-badge', String(activeCount)));
   }
-}
-
-function applyCompatibilityUi() {
-  if (compatibilityIssue) {
-    setStatus('Desktop connected, but update required', true);
-  }
-}
-
-async function getTabMedia(tabId) {
-  const response = await chrome.runtime.sendMessage({
-    cmd: 'GET_TAB_MEDIA',
-    tabId,
-  });
-  return response && response.items ? response.items : [];
-}
-
-async function syncActiveTabUrlMedia() {
-  if (!activeTab || !activeTab.id) return;
-
-  try {
-    const latestTab = await chrome.tabs.get(activeTab.id);
-    if (latestTab) {
-      activeTab = latestTab;
+  function updateThumb(thumb, row) {
+    thumb.style.setProperty('--p', `${row.fill.percent}%`);
+    thumb.classList.toggle('dimmed', row.fill.dimmed);
+    const source = row.thumbnailUrl && row.thumbnailUrl !== thumb.dataset.failedSource ? row.thumbnailUrl : '';
+    if (thumb.dataset.source !== source) {
+      thumb.dataset.source = source; thumb.replaceChildren();
+      for (const layer of ['ghost', 'live']) {
+        const fill = source ? el('img', `fill ${layer}`) : el('div', `fill placeholder ${layer}`);
+        if (source) { fill.alt = ''; fill.src = source; fill.referrerPolicy = 'no-referrer'; fill.addEventListener('error', () => { if (thumb.dataset.source === source) { thumb.dataset.failedSource = source; delete thumb.dataset.source; updateThumb(thumb, { ...(thumb.closest('.video-row')?.current?.row || row), thumbnailUrl: null }); } }, { once: true }); }
+        thumb.append(fill);
+      }
+      thumb.append(el('div', 'edge'), el('span', 'duration'));
     }
-  } catch {
-    // Keep existing activeTab snapshot if live tab lookup fails.
+    thumb.querySelector('.edge').hidden = !row.fill.scanLine;
+    const duration = thumb.querySelector('.duration'); duration.textContent = row.durationLabel; duration.hidden = !row.durationLabel;
   }
-
-  const tabUrl = String(activeTab && activeTab.url || '').trim();
-  if (!tabUrl) return;
-
-  try {
-    await chrome.runtime.sendMessage({
-      cmd: 'SYNC_TAB_URL_MEDIA',
-      tabId: activeTab.id,
-      tabUrl,
-      tabTitle: String(activeTab.title || '').trim(),
-    });
-  } catch {
-    // Ignore sync failures so popup loading still works.
+  function rowModel(item) {
+    const choice = model.selectMedia(item, preferences, selected.get(item.id));
+    const jobId = model.mappingFor(item, mappings);
+    const job = queue.find(candidate => candidate.id === jobId || candidate.jobId === jobId);
+    const optimistic = pending.get(item.id)?.optimistic ? { queueStatus: 'downloading', progress: 0 } : null;
+    const failure = failures.get(item.id);
+    const title = customTitles[item.id] || titles.getDisplayTitle(item);
+    const source = { ...choice, ...(job || optimistic || (failure ? { queueStatus: 'failed', error: failure, progress: 0 } : {})), title: customTitles[item.id] || job?.title || title };
+    const firstWaiting = queue.find(candidate => candidate.queueStatus === 'queued')?.id;
+    const result = rows.toRowModel(source, { surface: 'popup', firstQueuedId: firstWaiting, folder: preferences.outputDirectory });
+    if (result && !job && !optimistic && !failure && choice.qualityLabel === 'Audio only') { result.qualityLabel = 'Audio only'; result.statusLine = 'Audio only'; }
+    return { row: result, choice, jobId };
   }
-}
-
-async function removeTabMediaItem(tabId, itemId) {
-  const response = await chrome.runtime.sendMessage({
-    cmd: 'REMOVE_TAB_MEDIA',
-    tabId,
-    itemId,
-  });
-  return response && response.ok;
-}
-
-function buildJobPayload(item, titleOverride = '') {
-  const mediaUrl = item.url;
-  const pageTitle = String(item.sourcePageTitle || (activeTab && activeTab.title) || '').trim();
-  const sourcePageUrl = String(item.sourcePageUrl || (activeTab && activeTab.url) || '').trim();
-  const overrideTitle = normalizeCustomTitleOverride(titleOverride);
-  const displayTitle = overrideTitle || getDisplayTitle(item);
-  const titleHints = pickJobTitleHints(inferTitleHints(item, pageTitle, displayTitle));
-  if (overrideTitle) {
-    titleHints.lookupTitle = overrideTitle;
-  }
-  const baseTitle = displayTitle || pageTitle || item.filename || 'Download';
-  const title = overrideTitle
-    ? overrideTitle
-    : appendEpisodeTagToTitle(baseTitle, titleHints);
-  const youtubeMetadata = item && item.youtubeMetadata && typeof item.youtubeMetadata === 'object'
-    ? item.youtubeMetadata
-    : null;
-  const thumbnailUrl = String(youtubeMetadata && youtubeMetadata.thumbnailUrl || '').trim();
-
-  return {
-    mediaUrl,
-    mediaType: item.type || (/\.m3u8(\?|$)/i.test(mediaUrl) ? 'hls' : 'file'),
-    title,
-    resourceName: overrideTitle || item.filename || title,
-    headers: item.requestHeaders || {},
-    sourcePageUrl,
-    sourcePageTitle: pageTitle || title,
-    fallbackMediaUrl: item.fallbackUrl || '',
-    titleHints,
-    youtubeMetadata,
-    thumbnailUrl,
-    settings: {
-      fileNaming: 'title',
-      maxSegmentAttempts: 'infinite',
-      threads: 8,
-    },
-  };
-}
-
-async function sendJob(item, queueButton = null) {
-  const sendKey = getSendKey(item);
-  if (pendingSendKeys.has(sendKey)) {
-    showToast('This item is already being sent.', 'warning');
-    return;
-  }
-
-  if (compatibilityIssue) {
-    showToast(`Update required before sending jobs: ${compatibilityIssue}`, 'warning', 3800);
-    return;
-  }
-
-  pendingSendKeys.add(sendKey);
-  setQueueButtonBusy(queueButton, true);
-
-  try {
-    const titleOverride = getCustomTitleOverride(item);
-    const res = await fetch(`${API_BASE}/v1/jobs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Client': 'vidsnag-extension',
-        'X-Protocol-Version': String(EXTENSION_PROTOCOL_VERSION),
-        'X-Extension-Version': String(extensionInfo?.version || ''),
-      },
-      body: JSON.stringify(buildJobPayload(item, titleOverride)),
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`);
+  function renderRows() {
+    $('page-count').textContent = mediaItems.length ? `${mediaItems.length} video${mediaItems.length === 1 ? '' : 's'} on this page` : 'No videos yet';
+    const list = $('video-list');
+    if (!mediaItems.length) {
+      rowElements.clear(); list.replaceChildren(emptyState()); renderConnection(); return;
     }
-
-    if (data.duplicate) {
-      showToast(`Already queued: ${data.jobId} (position ${data.queuePosition + 1})`, 'warning');
-      return;
-    }
-
-    showToast(`Queued: ${data.jobId} (position ${data.queuePosition + 1})`, 'success');
-  } catch (err) {
-    if (!health) {
-      showToast('Desktop app is not reachable. Open the VidSnag desktop app and retry.', 'error', 3600);
-      return;
-    }
-    const message = err && err.message ? err.message : String(err || 'Unknown error');
-    showToast(`Failed to queue download: ${message}`, 'error', 3600);
-  } finally {
-    pendingSendKeys.delete(sendKey);
-    setQueueButtonBusy(queueButton, false);
-  }
-}
-
-async function streamMedia(item, streamButton = null) {
-  const sendKey = getSendKey(item);
-  if (pendingStreamKeys.has(sendKey)) {
-    showToast('This item is already opening.', 'warning');
-    return;
-  }
-
-  const playerUrl = await buildStreamPlayerUrlWithSession(item);
-  if (!playerUrl) {
-    showToast('No stream URL found for this media item.', 'error');
-    return;
-  }
-
-  pendingStreamKeys.add(sendKey);
-  setStreamButtonBusy(streamButton, true);
-
-  try {
-    await chrome.tabs.create({
-      url: playerUrl,
-      active: true,
-    });
-    showToast('Opened stream player in a new tab.', 'success');
-  } catch (err) {
-    const message = err && err.message ? err.message : String(err || 'Unknown error');
-    showToast(`Failed to open stream: ${message}`, 'error', 3200);
-  } finally {
-    pendingStreamKeys.delete(sendKey);
-    setStreamButtonBusy(streamButton, false);
-  }
-}
-
-function tryDecodeBase64(str) {
-  try {
-    const cleaned = str.replace(/[~]/g, '/');
-    const decoded = atob(cleaned);
-    if (/^[\x20-\x7E]+$/.test(decoded)) return decoded;
-  } catch { /* not valid base64 */ }
-  return null;
-}
-
-function extractResolution(url) {
-  // Check for common resolution patterns in URL path
-  const plainMatch = url.match(/[\/_\-.](\d{3,4})[pP](?:[\/_\-.]|$)/);
-  if (plainMatch) return `${plainMatch[1]}p`;
-
-  // Try decoding base64 path segments that might contain resolution
-  try {
-    const pathSegments = new URL(url).pathname.split('/').filter(Boolean);
-    for (const seg of pathSegments) {
-      if (/^[A-Za-z0-9+/=]{2,8}$/.test(seg)) {
-        const decoded = tryDecodeBase64(seg);
-        if (decoded && /^\d{3,4}$/.test(decoded)) {
-          return `${decoded}p`;
+    list.querySelector('.empty-state')?.remove();
+    const valid = new Set();
+    for (const item of mediaItems) {
+      const { row, choice, jobId } = rowModel(item); if (!row) continue;
+      valid.add(item.id);
+      let node = rowElements.get(item.id);
+      if (!node) {
+        node = el('div', 'video-row'); node.dataset.rowKey = item.id;
+        const thumb = el('div', 'thumb'); const body = el('div', 'row-body'); body.append(el('div', 'row-title'), el('div', 'row-status'));
+        node.append(thumb, body); node.addEventListener('contextmenu', event => { event.preventDefault(); showContext(node.current.item, event); });
+        rowElements.set(item.id, node);
+      }
+      node.current = { item, row, choice, jobId };
+      node.dataset.state = row.state;
+      updateThumb(node.querySelector('.thumb'), row);
+      const title = node.querySelector('.row-title'); title.textContent = row.title; title.title = row.title;
+      const status = node.querySelector('.row-status'); status.className = `row-status tone-${row.tone}`; status.title = row.statusLine;
+      if (row.state === 'detected') {
+        status.removeAttribute('role'); status.removeAttribute('aria-valuenow'); status.removeAttribute('aria-valuetext');
+        const variants = item.variants || [];
+        const signature = `${choice.qualityLabel}|${row.sizeLabel}|${variants.length}`;
+        if (status.dataset.signature !== signature) {
+          status.dataset.signature = signature; status.replaceChildren(); status.classList.add('status-meta');
+          if (variants.length > 1) {
+            const quality = el('button', 'quality-button', choice.qualityLabel || 'Quality'); quality.type = 'button'; quality.append(icon('down')); quality.setAttribute('aria-haspopup', 'menu'); quality.setAttribute('aria-label', 'Choose quality');
+            quality.addEventListener('click', () => showQuality(node.current.item, quality)); status.append(quality);
+          } else if (choice.qualityLabel) status.append(el('span', '', choice.qualityLabel));
+          if (row.sizeLabel) status.append(el('span', '', row.sizeLabel));
+        } else status.classList.add('status-meta');
+      } else {
+        delete status.dataset.signature; status.textContent = row.statusLine;
+        if (['downloading', 'finishing', 'paused', 'problem'].includes(row.state)) {
+          status.setAttribute('role', 'progressbar'); status.setAttribute('aria-valuemin', '0'); status.setAttribute('aria-valuemax', '100'); status.setAttribute('aria-valuenow', String(row.percent)); status.setAttribute('aria-valuetext', row.statusLine);
+        } else { for (const attribute of ['role', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']) status.removeAttribute(attribute); }
+      }
+      const busy = pending.has(item.id) && !pending.get(item.id).optimistic;
+      const actionKey = busy ? 'sending' : row.action ? `${row.action.id}:${row.action.style}` : '';
+      if (node.dataset.actionKey !== actionKey) {
+        node.querySelector(':scope > .action')?.remove(); node.dataset.actionKey = actionKey;
+        if (busy) { const button = action('Starting download', () => {}, 'primary'); button.replaceChildren(el('span', 'spinner')); button.disabled = true; node.append(button); }
+        else if (row.action) {
+          const iconName = ['pause', 'resume', 'play'].includes(row.action.id) ? row.action.id === 'pause' ? 'pause' : 'play' : '';
+          const style = row.action.style === 'icon' ? 'icon-only' : row.action.style;
+          node.append(action(row.action.label, () => handleAction(node.current), style, iconName));
         }
       }
+      if (node.parentElement !== list) list.append(node);
     }
-  } catch { /* ignore */ }
-
-  return null;
-}
-
-function decodeFilenameCandidate(filename) {
-  const raw = String(filename || '').trim();
-  if (!raw) return '';
-  const nameWithoutExt = raw.replace(/\.[^.]+$/, '');
-  if (!/^[A-Za-z0-9+/=~]{8,}$/.test(nameWithoutExt)) return '';
-  return String(tryDecodeBase64(nameWithoutExt) || '').trim();
-}
-
-function isLikelySiteSlogan(value) {
-  const text = normalizeTitleText(value).toLowerCase();
-  if (!text) return false;
-  return /\bwatch free movies online\b/.test(text)
-    || /\bfree movies online\b/.test(text)
-    || /\bwatch movies online\b/.test(text)
-    || /\bfmovies\b/.test(text);
-}
-
-function extractSeriesTitleFromPageTitle(pageTitle) {
-  const raw = String(pageTitle || '').trim();
-  if (!raw) return '';
-
-  const patterns = [
-    /watch\s+(.+?)\s+s\d{1,2}\s*e\d{1,3}\b/i,
-    /^(.+?)\s+s\d{1,2}\s*e\d{1,3}\b/i,
-    /watch\s+(.+?)\s+season\s*\d{1,2}\s*(?:episode|ep)\s*\d{1,3}\b/i,
-    /^(.+?)\s+season\s*\d{1,2}\s*(?:episode|ep)\s*\d{1,3}\b/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = raw.match(pattern);
-    if (!match || !match[1]) continue;
-    const candidate = normalizeTitleText(match[1])
-      .replace(/^watch\s+/i, '')
-      .replace(/\s*\|\s*.*$/g, '')
-      .trim();
-    if (candidate && !isLikelySiteSlogan(candidate)) {
-      return candidate;
+    for (const [key, node] of rowElements) if (!valid.has(key)) { node.remove(); rowElements.delete(key); }
+    renderConnection();
+  }
+  function emptyState() {
+    const node = el('section', 'empty-state'); const tile = el('div', 'empty-icon'); tile.append(icon('play'));
+    node.append(tile, el('h2', '', 'Press play on the video'), el('p', '', 'VidSnag spots a video once it starts playing. Start it, then open this again.'), action('Check again', checkAgain, 'bordered')); return node;
+  }
+  async function checkAgain() { if (!isDemo && activeTab?.id) await chrome.tabs.sendMessage(activeTab.id, { cmd: 'SCAN_PAGE' }).catch(() => {}); await refresh(); }
+  async function handleAction(current) {
+    const { item, row, jobId } = current;
+    if (isDemo) { if (row.action.id === 'play') { showDemoVideo(item); return; } VidSnagDemo.act(item.id, row.action.id); queue = VidSnagDemo.state.queue; renderRows(); return; }
+    if (row.action.id === 'download' || (row.action.id === 'retry' && !jobId)) { await startDownload(item); return; }
+    if (row.action.id === 'open-page') { external(item.sourcePageUrl || activeTab?.url); return; }
+    if (['choose-folder', 'locate', 'details'].includes(row.action.id)) {
+      if (row.action.id === 'details') showProblem(row); else openDesktop(row.action.id === 'choose-folder' ? 'settings' : undefined); return;
     }
-  }
-
-  return '';
-}
-
-function extractQuotedEpisodeTitleFromPageTitle(pageTitle) {
-  const raw = String(pageTitle || '').trim();
-  if (!raw) return '';
-  const match = raw.match(/["“]([^"”]{2,140})["”]/);
-  if (!match || !match[1]) return '';
-  return normalizeTitleText(match[1]);
-}
-
-function isLikelyTitleNoise(value, source = '') {
-  const raw = String(value || '').trim();
-  const text = normalizeTitleText(raw);
-  const lower = text.toLowerCase();
-  const sourceLower = String(source || '').toLowerCase();
-
-  if (!text) return true;
-  if (text.length < 2 || text.length > 140) return true;
-  if (/^https?:\/\//i.test(raw)) return true;
-  if (/^\d+(?:\s+\d+)*$/.test(lower)) return true;
-  if (GENERIC_LOOKUP_TITLE_RE.test(text)) return true;
-  if (/^(go back|back|home|menu|close|play|pause|next|previous)$/i.test(lower)) return true;
-  if (/^season\s*\d{1,2}(?:\s*episode(?:\s*\d{1,3})?)?$/i.test(lower)) return true;
-
-  if (sourceLower.startsWith('resource.')) {
-    if (/\b(db|users)\s+videasy\s+net\b/.test(lower)) return true;
-    if (/\b(trending|popular|top rated|discover|collection)\b/.test(lower)) return true;
-  }
-
-  return false;
-}
-
-function scoreDisplayTitleCandidate(value, source, pageTitle, tvContextFromUrl) {
-  if (isLikelyTitleNoise(value, source)) return -1000;
-
-  const sourceLower = String(source || '').toLowerCase();
-  const text = normalizeTitleText(value);
-  let score = 0;
-
-  if (sourceLower.startsWith('jsonld.')) score += 120;
-  else if (sourceLower.includes('og:title') || sourceLower.includes('twitter:title') || sourceLower.includes('meta[name="title"]')) score += 95;
-  else if (sourceLower === 'player.text') score += 90;
-  else if (sourceLower === 'dom.data-title' || sourceLower === 'dom.data-name') score += 80;
-  else if (sourceLower === 'document.title') score += 45;
-  else if (sourceLower.startsWith('dom.')) score += 55;
-  else if (sourceLower.startsWith('resource.query.')) score += 35;
-  else if (sourceLower.startsWith('resource.')) score += 10;
-  else if (sourceLower === 'url.pathname') score += 5;
-
-  if (isLikelySiteSlogan(text)) score -= 140;
-  if (normalizeTitleText(text) === normalizeTitleText(pageTitle) && isLikelySiteSlogan(pageTitle)) score -= 100;
-  if (/\bseason\b|\bepisode\b/i.test(text) && !/[a-z]{3,}/i.test(stripTitleNoise(text))) score -= 70;
-
-  if (tvContextFromUrl) {
-    const quotedEpisodeTitle = extractQuotedEpisodeTitleFromPageTitle(pageTitle);
-    if (quotedEpisodeTitle && normalizeTitleText(text) === quotedEpisodeTitle) {
-      score -= 220;
+    if (row.action.id === 'retry') {
+      try { const result = await message({ cmd: 'RETRY_MEDIA', tabId: activeTab.id, mediaId: item.id, jobId, apiBase }); if (!result.ok) throw new Error(result.error || 'Could not retry the download.'); await refresh(); } catch (error) { notice(error.message); } return;
     }
-    if (sourceLower === 'player.text') score += 24;
-    if (sourceLower.startsWith('jsonld.')) score += 10;
+    const endpoint = { pause: 'pause', resume: 'resume', play: 'open' }[row.action.id];
+    if (!endpoint || !jobId) return;
+    try { await request(`/v1/jobs/${encodeURIComponent(jobId)}/${endpoint}`, { body: {} }); await refresh(); } catch (error) { notice(error.message); }
   }
-
-  if (text.length >= 4 && text.length <= 80) score += 8;
-  if (/[A-Za-z].*[:\-].*[A-Za-z]/.test(text)) score += 6;
-
-  return score;
-}
-
-function pickPreferredContentTitle(item, pageTitle, tvContextFromUrl) {
-  const candidates = Array.isArray(item && item.pageTitleCandidates) ? item.pageTitleCandidates : [];
-  let bestValue = '';
-  let bestScore = -Infinity;
-
-  for (const entry of candidates) {
-    if (!entry || typeof entry !== 'object') continue;
-    const source = String(entry.source || '').trim();
-    const value = String(entry.value || '').trim();
-    if (!value) continue;
-
-    const score = scoreDisplayTitleCandidate(value, source, pageTitle, tvContextFromUrl);
-    if (score > bestScore) {
-      bestScore = score;
-      bestValue = value;
+  async function startDownload(item) {
+    if (pending.has(item.id)) return;
+    failures.delete(item.id); pending.set(item.id, { optimistic: false }); renderRows();
+    const timer = setTimeout(() => { if (pending.has(item.id)) { pending.set(item.id, { optimistic: true }); renderRows(); } }, 300);
+    try {
+      const choice = model.selectMedia(item, preferences, selected.get(item.id));
+      const payload = model.buildDownloadPayload(choice, customTitles[item.id] || '');
+      const result = await message({ cmd: 'DOWNLOAD_MEDIA', tabId: activeTab.id, mediaId: item.id, payload, apiBase });
+      if (!result.ok || !result.jobId) throw new Error(result.error || 'Could not start the download.');
+      mappings[item.id] = result.jobId;
+      queue.push({ id: result.jobId, title: payload.title, queueStatus: result.status === 'queued' ? 'queued' : 'downloading', progress: 0 });
+      await refresh();
+    } catch (error) { failures.set(item.id, error.message); } finally { clearTimeout(timer); pending.delete(item.id); renderRows(); }
+  }
+  function closeMenu() { if (!$('sheet').open) $('popup').style.minHeight = ''; $('menu').hidden = true; $('menu').replaceChildren(); if (menuTrigger?.isConnected) menuTrigger.focus(); menuTrigger = null; }
+  function openMenu(trigger, point) {
+    const menu = $('menu'); menu.replaceChildren(); menu.hidden = false; menuTrigger = trigger?.focus ? trigger : null;
+    const bounds = trigger?.getBoundingClientRect();
+    menu.style.left = `${Math.max(6, Math.min(144, point?.clientX ?? bounds?.left ?? 130))}px`;
+    menu.style.top = `${Math.max(4, Math.min(window.innerHeight - 42, point?.clientY ?? bounds?.bottom ?? 60))}px`;
+    return menu;
+  }
+  function fitMenu(menu) {
+    const top = Number.parseFloat(menu.style.top);
+    const height = Math.min(560, Math.max($('popup').offsetHeight, top + menu.scrollHeight + 12));
+    $('popup').style.minHeight = `${height}px`;
+    menu.style.maxHeight = `${height - 12}px`;
+    menu.style.top = `${Math.max(4, Math.min(top, height - menu.offsetHeight - 6))}px`;
+    menu.querySelector('button')?.focus();
+  }
+  function menuItem(menu, label, handler, options = {}) {
+    const button = el('button', 'menu-item'); button.type = 'button'; button.setAttribute('role', options.radio ? 'menuitemradio' : 'menuitem');
+    if (options.radio) { button.setAttribute('aria-checked', String(Boolean(options.checked))); const check = el('span', 'menu-check'); if (options.checked) check.append(icon('check')); button.append(check); }
+    button.append(document.createTextNode(label)); if (options.value) button.append(el('span', 'menu-value', options.value));
+    button.addEventListener('click', () => { closeMenu(); handler(); }); menu.append(button); return button;
+  }
+  function showQuality(item, trigger) {
+    const menu = openMenu(trigger); const choice = model.selectMedia(item, preferences, selected.get(item.id));
+    const choose = update => { selected.set(item.id, { ...(selected.get(item.id) || {}), ...update }); renderRows(); };
+    for (const [index, variant] of (item.variants || []).entries()) {
+      menuItem(menu, variant.height ? `${variant.height}p` : `Quality ${index + 1}`, () => choose({ variantUrl: variant.url, audioOnly: false }), { radio: true, checked: !choice.selection.audioOnly && choice.selection.variantUrl === variant.url, value: rows.formatSize(variant.sizeBytes || VidSnagHls.estimateSizeBytes(variant.averageBandwidth || variant.bandwidth, item.durationSeconds)) });
     }
-  }
-
-  if (bestScore >= 30 && bestValue) return bestValue;
-  return '';
-}
-
-function getDisplayTitle(item) {
-  const pageTitle = String(item.sourcePageTitle || (activeTab && activeTab.title) || '').trim();
-  const youtubeTitle = cleanYoutubeTitleText(item && item.youtubeMetadata && item.youtubeMetadata.title);
-  if (youtubeTitle && !isLikelySiteSlogan(youtubeTitle)) {
-    return youtubeTitle;
-  }
-
-  if (isYoutubePageItem(item)) {
-    const cleanedPageTitle = cleanYoutubeTitleText(pageTitle);
-    if (cleanedPageTitle && !isLikelySiteSlogan(cleanedPageTitle)) {
-      return cleanedPageTitle;
+    if ((item.audio || []).some(audio => audio.url)) menuItem(menu, 'Audio only', () => choose({ audioOnly: true }), { radio: true, checked: choice.selection.audioOnly });
+    if ((item.subtitles || []).length) {
+      menu.append(el('hr'), el('div', 'menu-title', 'Subtitles'));
+      for (const subtitle of item.subtitles) { const language = subtitle.language || subtitle.name; menuItem(menu, subtitle.name || language, () => choose({ subtitleLang: language }), { radio: true, checked: choice.selection.subtitleLang === language }); }
+      menuItem(menu, 'None', () => choose({ subtitleLang: 'none' }), { radio: true, checked: choice.selection.subtitleLang === 'none' });
     }
+    fitMenu(menu);
   }
-
-  // Use stored source page title first so titles stay stable across navigation.
-  const sourcePageUrl = String(item.sourcePageUrl || (activeTab && activeTab.url) || '').trim();
-  const tvContextFromUrl = detectTvContextFromUrl(sourcePageUrl);
-  const seriesTitleFromPageTitle = tvContextFromUrl ? extractSeriesTitleFromPageTitle(pageTitle) : '';
-  const preferredContentTitle = pickPreferredContentTitle(item, pageTitle, tvContextFromUrl);
-
-  if (seriesTitleFromPageTitle) {
-    return seriesTitleFromPageTitle;
-  }
-
-  const filename = item.filename || '';
-  const decodedFilename = decodeFilenameCandidate(filename);
-  if (decodedFilename) {
-    // If decoded is generic (index, playlist, master), prefer page title
-    if (/^(index|playlist|master|chunklist|media)\b/i.test(decodedFilename)) {
-      if (preferredContentTitle) return preferredContentTitle;
-      if (pageTitle && !isLikelySiteSlogan(pageTitle)) return pageTitle;
-    }
-    return decodedFilename;
-  }
-
-  if (preferredContentTitle) {
-    return preferredContentTitle;
-  }
-
-  // If filename is generic, prefer page title
-  if (/^(index|playlist|master|media)\.(m3u8|mpd)$/i.test(filename) && pageTitle && !isLikelySiteSlogan(pageTitle)) {
-    return pageTitle;
-  }
-
-  if (pageTitle && !isLikelySiteSlogan(pageTitle)) {
-    return pageTitle;
-  }
-
-  return filename || pageTitle || 'Media';
-}
-
-const TITLE_SEASON_EPISODE_PATTERNS = [
-  { id: 'sxe', regex: /(?:^|[^a-z0-9])s(?:eason)?\s*0*(\d{1,2})\s*[-_. ]*e(?:pisode)?\s*0*(\d{1,3})(?:[^a-z0-9]|$)/i },
-  { id: 'x-format', regex: /(?:^|[^a-z0-9])(\d{1,2})\s*x\s*(\d{1,3})(?:[^a-z0-9]|$)/i },
-  { id: 'season-episode-words', regex: /(?:^|[^a-z0-9])season\s*0*(\d{1,2})\s*[-_. ]*(?:episode|ep)\s*0*(\d{1,3})(?:[^a-z0-9]|$)/i },
-];
-
-const TITLE_SEASON_ONLY_PATTERNS = [
-  { id: 'season-word', regex: /(?:^|[^a-z0-9])season\s*0*(\d{1,2})(?:[^a-z0-9]|$)/i },
-  { id: 's-word', regex: /(?:^|[^a-z0-9])s\s*0*(\d{1,2})(?:[^a-z0-9]|$)/i },
-];
-
-const TITLE_EPISODE_ONLY_PATTERNS = [
-  { id: 'episode-word', regex: /(?:^|[^a-z0-9])episode\s*0*(\d{1,3})(?:[^a-z0-9]|$)/i },
-  { id: 'ep-word', regex: /(?:^|[^a-z0-9])ep\s*0*(\d{1,3})(?:[^a-z0-9]|$)/i },
-  { id: 'e-word', regex: /(?:^|[^a-z0-9])e\s*0*(\d{1,3})(?:[^a-z0-9]|$)/i },
-];
-
-function parseBoundedInteger(value, min, max) {
-  const parsed = Number.parseInt(String(value || '').trim(), 10);
-  if (!Number.isFinite(parsed)) return null;
-  if (parsed < min || parsed > max) return null;
-  return parsed;
-}
-
-function normalizeTitleText(value) {
-  return String(value || '')
-    .replace(/[._]+/g, ' ')
-    .replace(/[-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-const GENERIC_LOOKUP_TITLE_RE = /^(index|playlist|master|chunklist|manifest|media|video|stream|subtitle|subtitles|caption|captions|closed captions|cc|audio|audio track|audio tracks|quality|qualities|server|servers|source|sources)$/i;
-
-function cleanYoutubeTitleText(value) {
-  return String(value || '')
-    .replace(/^\(\d+\)\s*/, '')
-    .replace(/^\[\d+\]\s*/, '')
-    .replace(/\s*[-|]\s*youtube\s*$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isYoutubePageItem(item) {
-  const mediaKind = String(item && item.mediaKind || '').toLowerCase();
-  if (mediaKind === 'youtube-page') return true;
-  return String(item && item.contentType || '').toLowerCase() === 'video/youtube';
-}
-
-function stripTitleNoise(value) {
-  const cleaned = normalizeTitleText(value)
-    .replace(/(?:^|[^a-z0-9])s(?:eason)?\s*0*\d{1,2}\s*[-_. ]*e(?:pisode)?\s*0*\d{1,3}(?:[^a-z0-9]|$)/gi, ' ')
-    .replace(/(?:^|[^a-z0-9])\d{1,2}\s*x\s*\d{1,3}(?:[^a-z0-9]|$)/gi, ' ')
-    .replace(/(?:^|[^a-z0-9])season\s*0*\d{1,2}(?:[^a-z0-9]|$)/gi, ' ')
-    .replace(/\b(2160p|1080p|720p|480p|4k|8k|x264|x265|h264|h265|hevc|webrip|web[-_. ]?dl|bluray)\b/gi, ' ')
-    .replace(/[()[\]{}]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return GENERIC_LOOKUP_TITLE_RE.test(cleaned) ? '' : cleaned;
-}
-
-function trimDebugText(value, max = 260) {
-  const text = String(value || '');
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 3)}...`;
-}
-
-function detectTvContextFromUrl(rawUrl) {
-  const value = String(rawUrl || '').trim();
-  if (!value) return false;
-  try {
-    const parsed = new URL(value);
-    const path = decodeURIComponent(parsed.pathname || '').toLowerCase();
-    const query = String(parsed.search || '').toLowerCase();
-    if (/(^|\/)(tv|series|show|shows|season|episode)(\/|$)/.test(path)) return true;
-    if (/[?&](type|media|mediatype)=tv(?:&|$)/.test(query)) return true;
-    if (/[?&](season|episode)=\d+/.test(query)) return true;
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-function inferHintFromSourcePageUrl(rawUrl) {
-  const value = String(rawUrl || '').trim();
-  if (!value) return null;
-
-  try {
-    const parsed = new URL(value);
-    const decodedPath = decodeURIComponent(parsed.pathname || '');
-    const pathParts = decodedPath.split('/').filter(Boolean);
-
-    let seasonNumber = parseBoundedInteger(
-      parsed.searchParams.get('season')
-      || parsed.searchParams.get('seasonNumber')
-      || parsed.searchParams.get('s'),
-      1,
-      60
-    );
-    let episodeNumber = parseBoundedInteger(
-      parsed.searchParams.get('episode')
-      || parsed.searchParams.get('episodeNumber')
-      || parsed.searchParams.get('ep')
-      || parsed.searchParams.get('e'),
-      1,
-      999
-    );
-
-    if (!(seasonNumber && episodeNumber)) {
-      const tvRoots = new Set(['tv', 'series', 'show', 'shows']);
-      for (let i = 0; i < pathParts.length - 3; i += 1) {
-        const root = String(pathParts[i] || '').toLowerCase();
-        if (!tvRoots.has(root)) continue;
-        const seasonCandidate = parseBoundedInteger(pathParts[i + 2], 1, 60);
-        const episodeCandidate = parseBoundedInteger(pathParts[i + 3], 1, 999);
-        if (seasonCandidate && episodeCandidate) {
-          seasonNumber = seasonCandidate;
-          episodeNumber = episodeCandidate;
-          break;
-        }
-      }
-    }
-
-    if (!(seasonNumber && episodeNumber)) {
-      return null;
-    }
-
-    return {
-      seasonNumber,
-      episodeNumber,
-      matchedPattern: 'source-url-route',
-      matchedField: 'sourcePageUrl.route',
-      matchedText: value,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function inferHintFromText(text, field) {
-  const normalized = normalizeTitleText(text);
-  if (!normalized) return null;
-
-  for (const pattern of TITLE_SEASON_EPISODE_PATTERNS) {
-    const match = normalized.match(pattern.regex);
-    if (!match) continue;
-    const seasonNumber = parseBoundedInteger(match[1], 1, 60);
-    const episodeNumber = parseBoundedInteger(match[2], 1, 999);
-    if (!seasonNumber || !episodeNumber) continue;
-    return {
-      seasonNumber,
-      episodeNumber,
-      matchedPattern: pattern.id,
-      matchedField: field,
-    };
-  }
-
-  let seasonOnly = null;
-  for (const pattern of TITLE_SEASON_ONLY_PATTERNS) {
-    const match = normalized.match(pattern.regex);
-    if (!match) continue;
-    const seasonNumber = parseBoundedInteger(match[1], 1, 60);
-    if (!seasonNumber) continue;
-    seasonOnly = {
-      seasonNumber,
-      episodeNumber: null,
-      matchedPattern: pattern.id,
-      matchedField: field,
-    };
-    break;
-  }
-
-  for (const pattern of TITLE_EPISODE_ONLY_PATTERNS) {
-    const match = normalized.match(pattern.regex);
-    if (!match) continue;
-    const episodeNumber = parseBoundedInteger(match[1], 1, 999);
-    if (!episodeNumber) continue;
-    return {
-      seasonNumber: seasonOnly ? seasonOnly.seasonNumber : null,
-      episodeNumber,
-      matchedPattern: seasonOnly ? `${seasonOnly.matchedPattern}+${pattern.id}` : pattern.id,
-      matchedField: field,
-    };
-  }
-
-  return seasonOnly;
-}
-
-function scoreEpisodeHint(hint) {
-  const seasonNumber = parseBoundedInteger(hint && hint.seasonNumber, 1, 60);
-  const episodeNumber = parseBoundedInteger(hint && hint.episodeNumber, 1, 999);
-  if (!seasonNumber && !episodeNumber) return -1;
-
-  let score = 0;
-  if (seasonNumber) score += 100;
-  if (episodeNumber) score += 220;
-  if (seasonNumber && episodeNumber) score += 120;
-
-  const pattern = String(hint && hint.matchedPattern || '').toLowerCase();
-  if (pattern.includes('sxe') || pattern.includes('season-episode') || pattern.includes('x-format')) {
-    score += 15;
-  }
-
-  const field = String(hint && hint.matchedField || '').toLowerCase();
-  if (field.includes('sourcepageurl.route') || field.includes('pageepisodehint.url-route')) {
-    score += 1000;
-  }
-
-  return score;
-}
-
-function pickPreferredEpisodeHint(currentHint, nextHint) {
-  const currentScore = scoreEpisodeHint(currentHint);
-  const nextScore = scoreEpisodeHint(nextHint);
-  if (nextScore < 0) return currentHint;
-  if (currentScore < 0 || nextScore > currentScore) return nextHint;
-
-  if (nextScore === currentScore) {
-    const currentEpisode = parseBoundedInteger(currentHint && currentHint.episodeNumber, 1, 999);
-    const nextEpisode = parseBoundedInteger(nextHint && nextHint.episodeNumber, 1, 999);
-    if (nextEpisode && !currentEpisode) return nextHint;
-    if (nextEpisode && currentEpisode) return nextHint;
-  }
-
-  return currentHint;
-}
-
-function inferTitleHints(item, pageTitle, displayTitle) {
-  const isYoutubePageDetection = isYoutubePageItem(item);
-  const sourcePageUrl = String(item && item.sourcePageUrl || (activeTab && activeTab.url) || '').trim();
-  const sourceUrlHint = isYoutubePageDetection ? null : inferHintFromSourcePageUrl(sourcePageUrl);
-  const tvContextFromUrl = detectTvContextFromUrl(sourcePageUrl);
-  const preferredContentTitle = isYoutubePageDetection
-    ? ''
-    : pickPreferredContentTitle(item, pageTitle, tvContextFromUrl);
-  const decodedFilename = decodeFilenameCandidate(item && item.filename);
-  const pageCandidates = Array.isArray(item && item.pageTitleCandidates)
-    ? item.pageTitleCandidates
-      .filter((entry) => entry && typeof entry === 'object')
-      .map((entry, index) => ({
-        field: `pageCandidate.${index}`,
-        label: `Page Candidate (${String(entry.source || 'unknown')})`,
-        source: String(entry.source || '').trim().toLowerCase(),
-        value: String(entry.value || '').trim(),
-      }))
-      .filter((entry) => entry.value)
-    : [];
-
-  const selectedPageCandidates = isYoutubePageDetection
-    ? pageCandidates.filter((entry) => {
-      const source = String(entry.source || '').trim();
-      return source === 'youtube.title'
-        || source === 'youtube.channel'
-        || source === 'youtube.dom.title'
-        || source === 'youtube.dom.channel'
-        || source === 'document.title'
-        || source.startsWith('meta[');
-    })
-    : pageCandidates;
-
-  const youtubeMetadata = item && item.youtubeMetadata && typeof item.youtubeMetadata === 'object'
-    ? item.youtubeMetadata
-    : null;
-  const youtubeCandidates = youtubeMetadata
-    ? [
-      { field: 'youtube.title', label: 'YouTube Title', value: cleanYoutubeTitleText(String(youtubeMetadata.title || '').trim()) },
-      { field: 'youtube.channel', label: 'YouTube Channel', value: String(youtubeMetadata.channelName || '').trim() },
-    ].filter((entry) => entry.value)
-    : [];
-
-  const resourceSignalCandidates = isYoutubePageDetection
-    ? []
-    : Array.isArray(item && item.resourceSignals)
-    ? item.resourceSignals
-      .filter((entry) => entry && typeof entry === 'object')
-      .flatMap((entry, index) => {
-        const output = [];
-        const source = String(entry.source || 'resource').trim() || 'resource';
-        const urlValue = String(entry.url || '').trim();
-        if (urlValue) {
-          output.push({
-            field: `resourceSignal.${index}.url`,
-            label: `Resource Signal URL (${source})`,
-            value: urlValue,
-          });
-        }
-
-        const seasonNumber = parseBoundedInteger(entry.seasonNumber, 1, 60);
-        const episodeNumber = parseBoundedInteger(entry.episodeNumber, 1, 999);
-        if (seasonNumber || episodeNumber) {
-          output.push({
-            field: `resourceSignal.${index}.episodeHint`,
-            label: `Resource Episode Hint (${source})`,
-            value: `season ${seasonNumber || ''} episode ${episodeNumber || ''}`.trim(),
-          });
-        }
-
-        const patternValue = String(entry.matchedPattern || '').trim();
-        if (patternValue) {
-          output.push({
-            field: `resourceSignal.${index}.pattern`,
-            label: `Resource Pattern (${source})`,
-            value: patternValue,
-          });
-        }
-
-        return output;
-      })
-      .filter((entry) => entry.value)
-    : [];
-
-  const candidates = [
-    { field: 'displayTitle', label: 'Display Title', value: displayTitle },
-    { field: 'pageTitle', label: 'Page Title', value: pageTitle },
-    ...youtubeCandidates,
-    ...selectedPageCandidates,
-    ...resourceSignalCandidates,
-    { field: 'filename', label: 'Filename', value: item && item.filename },
-    { field: 'filenameDecoded', label: 'Decoded Filename', value: decodedFilename },
-    { field: 'url', label: 'Request URL', value: item && item.url },
-  ].filter((candidate) => String(candidate.value || '').trim());
-
-  if (isYoutubePageDetection) {
-    const lookupTitle = [
-      cleanYoutubeTitleText((youtubeMetadata && youtubeMetadata.title) || ''),
-      cleanYoutubeTitleText(displayTitle),
-      cleanYoutubeTitleText(pageTitle),
-      item && item.filename,
-    ]
-      .map((candidate) => stripTitleNoise(candidate))
-      .find(Boolean) || '';
-    const candidateTitles = candidates.map((candidate) => ({
-      field: candidate.field,
-      label: candidate.label,
-      value: trimDebugText(candidate.value),
-      normalized: trimDebugText(normalizeTitleText(candidate.value)),
-      lookupCandidate: trimDebugText(stripTitleNoise(candidate.value)),
-      matchedPattern: null,
-      seasonNumber: null,
-      episodeNumber: null,
-    }));
-
-    return {
-      lookupTitle,
-      seasonNumber: null,
-      episodeNumber: null,
-      isTvCandidate: false,
-      matchedPattern: null,
-      matchedField: null,
-      mediaGuess: lookupTitle ? 'movie_or_unknown' : 'unknown',
-      candidateTitles,
-      tvContextFromUrl: false,
-      pageIsTvContext: false,
-    };
-  }
-
-  const pageEpisodeHint = item && item.pageEpisodeHint && typeof item.pageEpisodeHint === 'object'
-    ? item.pageEpisodeHint
-    : null;
-
-  let matched = null;
-  if (sourceUrlHint) {
-    matched = pickPreferredEpisodeHint(matched, sourceUrlHint);
-  }
-
-  let pageEpisodeHintMatch = null;
-  if (pageEpisodeHint) {
-    const seasonNumber = parseBoundedInteger(pageEpisodeHint.seasonNumber, 1, 60);
-    const episodeNumber = parseBoundedInteger(pageEpisodeHint.episodeNumber, 1, 999);
-    if (seasonNumber || episodeNumber) {
-      pageEpisodeHintMatch = {
-        seasonNumber: seasonNumber || null,
-        episodeNumber: episodeNumber || null,
-        matchedPattern: String(pageEpisodeHint.matchedPattern || 'page-episode-hint').trim(),
-        matchedField: `pageEpisodeHint.${String(pageEpisodeHint.source || 'unknown').trim() || 'unknown'}`,
-      };
-      matched = pickPreferredEpisodeHint(matched, pageEpisodeHintMatch);
-    }
-  }
-
-  const candidateTitles = [];
-  for (const candidate of candidates) {
-    const normalized = normalizeTitleText(candidate.value);
-    const candidateMatch = inferHintFromText(candidate.value, candidate.field);
-    if (candidateMatch) {
-      matched = pickPreferredEpisodeHint(matched, candidateMatch);
-    }
-
-    candidateTitles.push({
-      field: candidate.field,
-      label: candidate.label,
-      value: trimDebugText(candidate.value),
-      normalized: trimDebugText(normalized),
-      lookupCandidate: trimDebugText(stripTitleNoise(candidate.value)),
-      matchedPattern: candidateMatch ? candidateMatch.matchedPattern : null,
-      seasonNumber: candidateMatch ? candidateMatch.seasonNumber : null,
-      episodeNumber: candidateMatch ? candidateMatch.episodeNumber : null,
-    });
-  }
-
-  if (pageEpisodeHint) {
-    candidateTitles.unshift({
-      field: `pageEpisodeHint.${String(pageEpisodeHint.source || 'unknown').trim() || 'unknown'}`,
-      label: 'Page Episode Hint',
-      value: String(pageEpisodeHint.matchedText || '').trim() || '(from structured page context)',
-      normalized: String(pageEpisodeHint.matchedText || '').trim() || '(from structured page context)',
-      lookupCandidate: '',
-      matchedPattern: String(pageEpisodeHint.matchedPattern || 'page-episode-hint').trim(),
-      seasonNumber: pageEpisodeHintMatch ? pageEpisodeHintMatch.seasonNumber : null,
-      episodeNumber: pageEpisodeHintMatch ? pageEpisodeHintMatch.episodeNumber : null,
-    });
-  }
-
-  if (sourceUrlHint) {
-    candidateTitles.unshift({
-      field: 'sourcePageUrl.route',
-      label: 'Source URL Episode Hint',
-      value: String(sourceUrlHint.matchedText || sourcePageUrl).trim(),
-      normalized: String(sourceUrlHint.matchedText || sourcePageUrl).trim(),
-      lookupCandidate: '',
-      matchedPattern: sourceUrlHint.matchedPattern,
-      seasonNumber: sourceUrlHint.seasonNumber,
-      episodeNumber: sourceUrlHint.episodeNumber,
-    });
-  }
-
-  const matchedSource = matched
-    ? String(candidates.find((candidate) => candidate.field === matched.matchedField)?.value || '').trim()
-    : '';
-  const matchedLookup = stripTitleNoise(matchedSource);
-  const lookupTitle = matchedLookup || [
-    preferredContentTitle,
-    pageTitle,
-    displayTitle,
-    item && item.filename,
-  ]
-    .map((candidate) => stripTitleNoise(candidate))
-    .find(Boolean) || '';
-  const pageIsTvContext = Boolean(item && item.pageIsTvContext);
-  const hasEpisodeSignal = Boolean(
-    matched
-    && (Number.isFinite(matched.episodeNumber) || Number.isFinite(matched.seasonNumber))
-  );
-  const isTvCandidate = Boolean(hasEpisodeSignal || pageIsTvContext || tvContextFromUrl);
-
-  return {
-    lookupTitle,
-    seasonNumber: matched && Number.isFinite(matched.seasonNumber) ? matched.seasonNumber : null,
-    episodeNumber: matched && Number.isFinite(matched.episodeNumber) ? matched.episodeNumber : null,
-    isTvCandidate,
-    matchedPattern: matched ? matched.matchedPattern : null,
-    matchedField: matched ? matched.matchedField : null,
-    mediaGuess: isTvCandidate ? 'tv' : (lookupTitle ? 'movie_or_unknown' : 'unknown'),
-    candidateTitles,
-    tvContextFromUrl,
-    pageIsTvContext,
-  };
-}
-
-function pickJobTitleHints(hints) {
-  return {
-    lookupTitle: String(hints && hints.lookupTitle ? hints.lookupTitle : '').trim(),
-    seasonNumber: Number.isFinite(hints && hints.seasonNumber) ? hints.seasonNumber : null,
-    episodeNumber: Number.isFinite(hints && hints.episodeNumber) ? hints.episodeNumber : null,
-    isTvCandidate: Boolean(hints && hints.isTvCandidate),
-    matchedPattern: String(hints && hints.matchedPattern ? hints.matchedPattern : '').trim(),
-    matchedField: String(hints && hints.matchedField ? hints.matchedField : '').trim(),
-  };
-}
-
-function formatEpisodeTag(seasonNumber, episodeNumber) {
-  if (!seasonNumber && !episodeNumber) return '';
-  const seasonPart = Number.isFinite(seasonNumber) ? `S${String(seasonNumber).padStart(2, '0')}` : 'S??';
-  const episodePart = Number.isFinite(episodeNumber) ? `E${String(episodeNumber).padStart(2, '0')}` : 'E??';
-  return `${seasonPart}${episodePart}`;
-}
-
-function appendEpisodeTagToTitle(titleValue, titleHints) {
-  const title = String(titleValue || '').trim();
-  if (!title) return title;
-
-  const seasonNumber = parseBoundedInteger(titleHints && titleHints.seasonNumber, 1, 60);
-  const episodeNumber = parseBoundedInteger(titleHints && titleHints.episodeNumber, 1, 999);
-  if (!seasonNumber || !episodeNumber) return title;
-
-  const seasonText = String(seasonNumber);
-  const episodeText = String(episodeNumber);
-  if (
-    new RegExp(`\\bs\\s*0*${seasonText}\\s*e\\s*0*${episodeText}\\b`, 'i').test(title)
-    || new RegExp(`\\b${seasonText}\\s*x\\s*0*${episodeText}\\b`, 'i').test(title)
-    || new RegExp(`\\bseason\\s*0*${seasonText}\\s*(?:-|\\s)*(?:episode|ep)\\s*0*${episodeText}\\b`, 'i').test(title)
-  ) {
-    return title;
-  }
-
-  const tag = formatEpisodeTag(seasonNumber, episodeNumber);
-  return tag ? `${title} ${tag}` : title;
-}
-
-function appendDisplayEpisodeTagToTitle(titleValue, titleHints) {
-  const title = String(titleValue || '').trim();
-  if (!title) return title;
-
-  const tag = formatEpisodeTag(
-    titleHints && titleHints.seasonNumber,
-    titleHints && titleHints.episodeNumber
-  );
-  if (!tag) return title;
-
-  const normalizedTitle = title.toUpperCase().replace(/\s+/g, '');
-  if (normalizedTitle.includes(tag.toUpperCase())) {
-    return title;
-  }
-
-  return `${title} ${tag}`;
-}
-
-function formatMediaGuess(titleHints) {
-  if (titleHints && titleHints.isTvCandidate) {
-    const tag = formatEpisodeTag(titleHints.seasonNumber, titleHints.episodeNumber);
-    return tag ? `TV Show (${tag})` : 'TV Show';
-  }
-  if (titleHints && titleHints.lookupTitle) return 'Movie / Unknown';
-  return 'Unknown';
-}
-
-function buildDebugPayload(item, pageTitle, displayTitle, titleHints, resolution, friendlyType) {
-  return {
-    classification: {
-      guess: formatMediaGuess(titleHints),
-      lookupTitle: titleHints && titleHints.lookupTitle ? titleHints.lookupTitle : '',
-      isTvCandidate: Boolean(titleHints && titleHints.isTvCandidate),
-      seasonNumber: titleHints && titleHints.seasonNumber ? titleHints.seasonNumber : null,
-      episodeNumber: titleHints && titleHints.episodeNumber ? titleHints.episodeNumber : null,
-      matchedPattern: titleHints && titleHints.matchedPattern ? titleHints.matchedPattern : null,
-      matchedField: titleHints && titleHints.matchedField ? titleHints.matchedField : null,
-      tvContextFromUrl: Boolean(titleHints && titleHints.tvContextFromUrl),
-      pageIsTvContext: Boolean(titleHints && titleHints.pageIsTvContext),
-      resourceSignalCount: Array.isArray(item && item.resourceSignals) ? item.resourceSignals.length : 0,
-    },
-    titleCandidates: Array.isArray(titleHints && titleHints.candidateTitles)
-      ? titleHints.candidateTitles
-      : [],
-    detection: {
-      mediaType: item.type || null,
-      streamType: item.streamType || null,
-      mediaKind: item.mediaKind || null,
-      requestMethod: item.method ? String(item.method).toUpperCase() : null,
-      matchedBy: Array.isArray(item.matchedBy) ? item.matchedBy : [],
-      statusCode: Number.isFinite(item.statusCode) ? item.statusCode : null,
-      contentType: item.contentType || null,
-      friendlyContentType: friendlyType || null,
-      contentDisposition: item.contentDisposition || null,
-      contentLength: Number(item.contentLength || 0) || null,
-      resolution: resolution || null,
-      fallbackUrl: item.fallbackUrl || null,
-      detectedAt: item.detectedAt ? new Date(item.detectedAt).toISOString() : null,
-      pageContextCollectedAt: item.pageContextCollectedAt ? new Date(item.pageContextCollectedAt).toISOString() : null,
-    },
-    pageContext: {
-      sourcePageTitle: pageTitle || null,
-      sourcePageUrl: String(item.sourcePageUrl || (activeTab && activeTab.url) || '').trim() || null,
-      displayTitle: displayTitle || null,
-      filename: item.filename || null,
-      url: item.url || null,
-      youtubeMetadata: item.youtubeMetadata || null,
-      pageEpisodeHint: item.pageEpisodeHint || null,
-      resourceSignals: Array.isArray(item.resourceSignals) ? item.resourceSignals : [],
-    },
-  };
-}
-
-function formatTimeAgo(timestamp) {
-  if (!timestamp) return '';
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 5) return 'just now';
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-}
-
-function formatContentType(contentType) {
-  if (!contentType) return null;
-  const ct = contentType.split(';')[0].trim();
-  const friendly = {
-    'video/youtube': 'YouTube Page',
-    'application/x-mpegurl': 'HLS Playlist',
-    'application/vnd.apple.mpegurl': 'HLS Playlist',
-    'application/dash+xml': 'DASH Manifest',
-    'video/mp4': 'MP4 Video',
-    'video/webm': 'WebM Video',
-    'video/mp2t': 'MPEG-TS',
-    'audio/mpeg': 'MP3 Audio',
-    'audio/mp4': 'M4A Audio',
-  };
-  return friendly[ct.toLowerCase()] || ct;
-}
-
-function formatSize(bytes) {
-  if (!bytes) return null;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function getHostname(url) {
-  try { return new URL(url).hostname; } catch { return ''; }
-}
-
-function makeDot() {
-  const dot = document.createElement('span');
-  dot.className = 'text-fg-subtle text-[0.625rem]';
-  dot.textContent = '\u00B7';
-  return dot;
-}
-
-function renderMedia(items) {
-  mediaList.innerHTML = '';
-  emptyState.style.display = items.length ? 'none' : 'flex';
-
-  for (const item of items) {
-    const pageTitle = String(item.sourcePageTitle || (activeTab && activeTab.title) || '').trim();
-    const customTitle = getCustomTitleOverride(item);
-    const displayTitle = customTitle || getDisplayTitle(item);
-    const titleHints = inferTitleHints(item, pageTitle, displayTitle);
-    const displayTitleWithEpisode = appendDisplayEpisodeTagToTitle(displayTitle, titleHints);
-    const visibleTitle = customTitle ? displayTitle : displayTitleWithEpisode;
-    const defaultDisplayTitle = getDisplayTitle(item);
-    const defaultTitleHints = inferTitleHints(item, pageTitle, defaultDisplayTitle);
-    const defaultDisplayTitleWithEpisode = appendDisplayEpisodeTagToTitle(defaultDisplayTitle, defaultTitleHints);
-    let isEditingTitle = false;
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'media-item glass-subtle glass-glow p-3 animate-slide-up';
-
-    // Row 1: title + pills
-    const titleRow = document.createElement('div');
-    titleRow.className = 'flex items-start justify-between gap-2';
-
-    const titleWrap = document.createElement('div');
-    titleWrap.className = 'title-wrap';
-
-    const title = document.createElement('h3');
-    title.className = 'text-[0.8125rem] font-medium text-fg truncate flex-1';
-    title.textContent = visibleTitle;
-
-    const titleEditControls = document.createElement('div');
-    titleEditControls.className = 'title-edit-controls';
-
-    const titleInput = document.createElement('input');
-    titleInput.className = 'input title-inline-input';
-    titleInput.type = 'text';
-    titleInput.value = customTitle || displayTitleWithEpisode;
-    titleInput.placeholder = 'Rename before sending to app';
-    titleInput.setAttribute('aria-label', 'Rename before sending to app');
-    titleInput.style.display = 'none';
-
-    const editBtn = document.createElement('button');
-    editBtn.className = 'btn-icon-subtle';
-    editBtn.type = 'button';
-    editBtn.title = 'Edit title';
-    editBtn.setAttribute('aria-label', 'Edit title');
-    editBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
-
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'btn-icon-subtle';
-    saveBtn.type = 'button';
-    saveBtn.title = 'Save title';
-    saveBtn.setAttribute('aria-label', 'Save title');
-    saveBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
-    saveBtn.style.display = 'none';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn-icon-subtle';
-    cancelBtn.type = 'button';
-    cancelBtn.title = 'Cancel editing';
-    cancelBtn.setAttribute('aria-label', 'Cancel editing');
-    cancelBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>';
-    cancelBtn.style.display = 'none';
-
-    const resetBtn = document.createElement('button');
-    resetBtn.className = 'btn-icon-subtle';
-    resetBtn.type = 'button';
-    resetBtn.title = 'Reset title';
-    resetBtn.setAttribute('aria-label', 'Reset title');
-    resetBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 10V4h6"/><path d="M3.5 15a8.5 8.5 0 101.8-9.2L3 8"/></svg>';
-    resetBtn.style.display = customTitle ? '' : 'none';
-
-    const pillGroup = document.createElement('div');
-    pillGroup.className = 'flex items-center gap-1 flex-shrink-0';
-
-    const resolution = extractResolution(item.url);
-    if (resolution) {
-      const resPill = document.createElement('span');
-      resPill.className = 'pill pill-muted';
-      resPill.textContent = resolution;
-      pillGroup.appendChild(resPill);
-    }
-
-    const typePill = document.createElement('span');
-    typePill.className = 'pill pill-accent';
-    const isYoutubePageDetection = String(item.mediaKind || '').toLowerCase() === 'youtube-page';
-    typePill.textContent = isYoutubePageDetection
-      ? 'YT'
-      : (item.type || 'file').toUpperCase();
-    pillGroup.appendChild(typePill);
-
-    titleEditControls.appendChild(editBtn);
-    titleEditControls.appendChild(saveBtn);
-    titleEditControls.appendChild(cancelBtn);
-    titleEditControls.appendChild(resetBtn);
-    titleWrap.appendChild(title);
-    titleWrap.appendChild(titleInput);
-    titleRow.appendChild(titleWrap);
-    titleRow.appendChild(titleEditControls);
-    titleRow.appendChild(pillGroup);
-
-    // Row 2: domain + content type
-    const infoRow = document.createElement('div');
-    infoRow.className = 'flex items-center gap-1.5 mt-1.5 flex-wrap text-[0.6875rem] text-fg-muted';
-
-    const hostname = getHostname(item.url);
-    if (hostname) {
-      const domainEl = document.createElement('span');
-      domainEl.textContent = hostname;
-      infoRow.appendChild(domainEl);
-    }
-
-    const friendlyType = formatContentType(item.contentType);
-    if (friendlyType) {
-      if (hostname) infoRow.appendChild(makeDot());
-      const typeEl = document.createElement('span');
-      typeEl.textContent = friendlyType;
-      infoRow.appendChild(typeEl);
-    }
-
-    const youtubeChannel = String(item && item.youtubeMetadata && item.youtubeMetadata.channelName || '').trim();
-    if (youtubeChannel) {
-      if (hostname || friendlyType) infoRow.appendChild(makeDot());
-      const channelEl = document.createElement('span');
-      channelEl.textContent = `Channel: ${youtubeChannel}`;
-      infoRow.appendChild(channelEl);
-    }
-
-    if (titleHints.lookupTitle && normalizeTitleText(titleHints.lookupTitle) !== normalizeTitleText(displayTitle)) {
-      if (hostname || friendlyType) infoRow.appendChild(makeDot());
-      const lookupEl = document.createElement('span');
-      lookupEl.textContent = `Lookup: ${titleHints.lookupTitle}`;
-      lookupEl.title = 'Title sent for TMDB lookup';
-      infoRow.appendChild(lookupEl);
-    }
-
-    // Row 3: size + time + fallback
-    const metaRow = document.createElement('div');
-    metaRow.className = 'flex items-center gap-1.5 mt-1 flex-wrap text-[0.6875rem] text-fg-subtle';
-
-    const sizeText = formatSize(item.contentLength);
-    if (sizeText) {
-      const sizeEl = document.createElement('span');
-      sizeEl.textContent = sizeText;
-      metaRow.appendChild(sizeEl);
-    }
-
-    const timeText = formatTimeAgo(item.detectedAt);
-    if (timeText) {
-      if (sizeText) metaRow.appendChild(makeDot());
-      const timeEl = document.createElement('span');
-      timeEl.textContent = timeText;
-      metaRow.appendChild(timeEl);
-    }
-
-    if (item.type === 'hls' && item.fallbackUrl) {
-      const fallbackHost = getHostname(item.fallbackUrl);
-      if (sizeText || timeText) metaRow.appendChild(makeDot());
-      const fallback = document.createElement('span');
-      fallback.className = 'pill pill-accent text-[0.625rem]';
-      fallback.textContent = fallbackHost
-        ? `Fallback: ${fallbackHost}`
-        : 'Fallback available';
-      fallback.title = item.fallbackUrl;
-      metaRow.appendChild(fallback);
-    }
-
-    // Row 4: URL + copy button
-    const urlRow = document.createElement('div');
-    urlRow.className = 'url-row';
-
-    const url = document.createElement('p');
-    url.className = 'url-text';
-    url.textContent = item.url;
-
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'btn-copy';
-    copyBtn.title = 'Copy URL';
-    copyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(item.url).then(() => {
-        copyBtn.classList.add('copied');
-        copyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
-        setTimeout(() => {
-          copyBtn.classList.remove('copied');
-          copyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
-        }, 1500);
+  function showContext(item, event) {
+    const menu = openMenu(null, event); const jobId = model.mappingFor(item, mappings);
+    menuItem(menu, 'Rename', () => showRename(item));
+    menuItem(menu, 'Hide', async () => { const ids = (item.detectedStreams || [item]).map(value => value.id); if (isDemo) mediaItems = mediaItems.filter(value => value.id !== item.id); else await message({ cmd: 'HIDE_MEDIA', tabId: activeTab.id, mediaIds: ids }); renderRows(); await refresh(); });
+    menuItem(menu, 'Preview', () => preview(item));
+    if (!jobId) {
+      const expired = queue.filter(job => job.queueStatus === 'failed' && job.sourcePageUrl === item.sourcePageUrl && rows.classifyProblem(job.error).code === 'expired');
+      if (expired.length === 1) menuItem(menu, 'Continue previous download', async () => {
+        if (isDemo) return;
+        try { const choice = model.selectMedia(item, preferences, selected.get(item.id)); const result = await message({ cmd: 'REFRESH_MEDIA_SOURCE', tabId: activeTab.id, mediaId: item.id, jobId: expired[0].id, payload: model.buildDownloadPayload(choice, customTitles[item.id] || ''), apiBase }); if (!result.ok) throw new Error(result.error || 'This video could not be matched to the previous download.'); await refresh(); } catch (error) { notice(error.message); }
       });
-    });
-
-    urlRow.appendChild(url);
-    urlRow.appendChild(copyBtn);
-
-    const debugPayload = buildDebugPayload(
-      item,
-      pageTitle,
-      displayTitle,
-      titleHints,
-      resolution,
-      friendlyType,
-    );
-
-    // Row 5: Action buttons
-    const actionRow = document.createElement('div');
-    actionRow.className = 'flex items-center justify-between mt-2.5 gap-2';
-
-    const updateTitlePreview = () => {
-      const override = normalizeCustomTitleOverride(titleInput.value);
-      const nextDisplayTitle = override || getDisplayTitle(item);
-      const nextTitleHints = inferTitleHints(item, pageTitle, nextDisplayTitle);
-      const nextDisplayTitleWithEpisode = appendDisplayEpisodeTagToTitle(nextDisplayTitle, nextTitleHints);
-      title.textContent = override ? nextDisplayTitle : nextDisplayTitleWithEpisode;
-      detailsSummary.textContent = `Guess: ${formatMediaGuess(nextTitleHints)}${nextTitleHints.lookupTitle ? ` · Lookup: ${nextTitleHints.lookupTitle}` : ''}`;
-
-      const nextDebugPayload = buildDebugPayload(
-        item,
-        pageTitle,
-        nextDisplayTitle,
-        nextTitleHints,
-        resolution,
-        friendlyType,
-      );
-      detailsJson.textContent = JSON.stringify(nextDebugPayload, null, 2);
-      resetBtn.style.display = override ? '' : 'none';
-    };
-
-    function setEditingTitle(nextEditing) {
-      isEditingTitle = !!nextEditing;
-      title.style.display = isEditingTitle ? 'none' : '';
-      titleInput.style.display = isEditingTitle ? '' : 'none';
-      editBtn.style.display = isEditingTitle ? 'none' : '';
-      saveBtn.style.display = isEditingTitle ? '' : 'none';
-      cancelBtn.style.display = isEditingTitle ? '' : 'none';
-      resetBtn.style.display = !isEditingTitle && getCustomTitleOverride(item) ? '' : 'none';
-      if (isEditingTitle) {
-        titleInput.value = getCustomTitleOverride(item) || defaultDisplayTitleWithEpisode;
-        setTimeout(() => {
-          titleInput.focus();
-          titleInput.select();
-        }, 0);
-      }
     }
-
-    function applyEditedTitle() {
-      const typedValue = normalizeCustomTitleOverride(titleInput.value);
-      const defaultTitle = normalizeCustomTitleOverride(defaultDisplayTitleWithEpisode);
-      const valueToStore = typedValue === defaultTitle ? '' : typedValue;
-      setCustomTitleOverride(item, valueToStore);
-      updateTitlePreview();
-      setEditingTitle(false);
-    }
-
-    editBtn.addEventListener('click', () => {
-      setEditingTitle(true);
-    });
-
-    saveBtn.addEventListener('click', () => {
-      applyEditedTitle();
-    });
-
-    cancelBtn.addEventListener('click', () => {
-      titleInput.value = getCustomTitleOverride(item) || defaultDisplayTitleWithEpisode;
-      setEditingTitle(false);
-    });
-
-    titleInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        applyEditedTitle();
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        titleInput.value = getCustomTitleOverride(item) || defaultDisplayTitleWithEpisode;
-        setEditingTitle(false);
-      }
-    });
-
-    resetBtn.addEventListener('click', () => {
-      customTitleOverrides.delete(getSendKey(item));
-      titleInput.value = defaultDisplayTitleWithEpisode;
-      updateTitlePreview();
-      setEditingTitle(false);
-    });
-
-    const detailsBtn = document.createElement('button');
-    detailsBtn.className = 'btn btn-subtle text-xs px-2 py-1';
-    detailsBtn.textContent = 'Show Details';
-    detailsBtn.setAttribute('aria-expanded', 'false');
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'btn-icon-danger';
-    removeBtn.title = 'Remove this detected media';
-    removeBtn.setAttribute('aria-label', 'Remove detected media');
-    removeBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/><path d="M4 7h16"/></svg>';
-    removeBtn.addEventListener('click', async () => {
-      if (!activeTab || !item || !item.id) return;
-      removeBtn.disabled = true;
-      const removed = await removeTabMediaItem(activeTab.id, item.id);
-      if (!removed) {
-        removeBtn.disabled = false;
-        return;
-      }
-      await refreshMedia();
-    });
-
-    const queueBtn = document.createElement('button');
-    queueBtn.className = 'btn btn-primary text-xs';
-    queueBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Send to App';
-    queueBtn.addEventListener('click', () => sendJob(item, queueBtn));
-
-    const streamBtn = document.createElement('button');
-    streamBtn.className = 'btn-icon-accent';
-    streamBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
-    streamBtn.title = 'Open stream player';
-    streamBtn.setAttribute('aria-label', 'Open stream player');
-    if (!buildStreamPlayerUrl(item) || isYoutubePageDetection) {
-      streamBtn.disabled = true;
-      if (isYoutubePageDetection) {
-        streamBtn.title = 'Stream player is unavailable for YouTube page detections';
-      }
-    }
-    streamBtn.addEventListener('click', () => streamMedia(item, streamBtn));
-
-    const detailsPanel = document.createElement('div');
-    detailsPanel.className = 'details-panel';
-    detailsPanel.style.display = 'none';
-
-    const detailsHeader = document.createElement('div');
-    detailsHeader.className = 'details-header';
-
-    const detailsSummary = document.createElement('p');
-    detailsSummary.className = 'details-summary';
-    detailsSummary.textContent = `Guess: ${formatMediaGuess(titleHints)}${titleHints.lookupTitle ? ` · Lookup: ${titleHints.lookupTitle}` : ''}`;
-
-    const detailsJson = document.createElement('pre');
-    detailsJson.className = 'details-json';
-    detailsJson.textContent = JSON.stringify(debugPayload, null, 2);
-
-    const detailsJsonWrap = document.createElement('div');
-    detailsJsonWrap.className = 'details-json-wrap';
-
-    const detailsCopyBtn = document.createElement('button');
-    detailsCopyBtn.className = 'btn-copy details-json-copy';
-    detailsCopyBtn.title = 'Copy details JSON';
-    detailsCopyBtn.setAttribute('aria-label', 'Copy details JSON');
-    detailsCopyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
-    detailsCopyBtn.addEventListener('click', async () => {
-      const payload = detailsJson.textContent || '';
-      if (!payload) return;
-      try {
-        await navigator.clipboard.writeText(payload);
-        detailsCopyBtn.classList.add('copied');
-        detailsCopyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
-        setTimeout(() => {
-          detailsCopyBtn.classList.remove('copied');
-          detailsCopyBtn.innerHTML = '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
-        }, 1500);
-      } catch {
-        // Ignore clipboard failures to avoid interrupting popup interactions.
-      }
-    });
-
-    detailsHeader.appendChild(detailsSummary);
-    detailsPanel.appendChild(detailsHeader);
-    detailsJsonWrap.appendChild(detailsJson);
-    detailsJsonWrap.appendChild(detailsCopyBtn);
-    detailsPanel.appendChild(detailsJsonWrap);
-
-    detailsBtn.addEventListener('click', () => {
-      const isOpen = detailsPanel.style.display !== 'none';
-      detailsPanel.style.display = isOpen ? 'none' : 'block';
-      detailsBtn.textContent = isOpen ? 'Show Details' : 'Hide Details';
-      detailsBtn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
-    });
-
-    const leftActions = document.createElement('div');
-    leftActions.className = 'flex items-center gap-2';
-    leftActions.appendChild(detailsBtn);
-    leftActions.appendChild(removeBtn);
-
-    const rightActions = document.createElement('div');
-    rightActions.className = 'flex items-center gap-2';
-    rightActions.appendChild(streamBtn);
-    rightActions.appendChild(queueBtn);
-
-    actionRow.appendChild(leftActions);
-    actionRow.appendChild(rightActions);
-    wrapper.appendChild(titleRow);
-    wrapper.appendChild(infoRow);
-    wrapper.appendChild(metaRow);
-    wrapper.appendChild(urlRow);
-    wrapper.appendChild(actionRow);
-    wrapper.appendChild(detailsPanel);
-    mediaList.appendChild(wrapper);
+    if (!jobId && ((item.audio || []).length || (item.subtitles || []).length)) menuItem(menu, 'Quality and subtitles', () => showQuality(item, rowElements.get(item.id)?.querySelector('.row-status')));
+    menu.append(el('hr'));
+    menuItem(menu, 'Show all detected streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); });
+    if (jobId) menuItem(menu, 'Open in VidSnag', () => openDesktop());
+    fitMenu(menu);
   }
-}
-
-async function refreshMedia() {
-  if (!activeTab) return;
-  await syncActiveTabUrlMedia();
-  const items = await getTabMedia(activeTab.id);
-  renderMedia(items);
-}
-
-async function refreshConnection() {
-  statusDot.className = 'status-dot checking';
-  try {
-    const data = await fetchHealth();
-    updateCompatibilityState();
-    if (compatibilityIssue) {
-      applyCompatibilityUi();
-    } else {
-      setStatus(`App connected (${data.appVersion})`);
-    }
-  } catch (err) {
-    compatibilityIssue = null;
-    const apiTarget = API_BASE.replace(/^https?:\/\//i, '');
-    setStatus(`Desktop app not running at ${apiTarget}`, true);
+  async function preview(item) {
+    if (item.mediaKind === 'youtube-page') { external(item.sourcePageUrl || item.url); return; }
+    if (isDemo) { showDemoVideo(item); return; }
+    const result = await message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: item.url, sourcePageUrl: item.sourcePageUrl, title: customTitles[item.id] || titles.getDisplayTitle(item), declaredType: item.type, requestHeaders: item.requestHeaders } });
+    if (result.ok) external(chrome.runtime.getURL(`player.html?session=${encodeURIComponent(result.sessionId)}`)); else notice(result.error || 'Preview is unavailable.');
   }
-}
-
-async function initialize() {
-  const params = new URLSearchParams(window.location.search);
-  const forcedTabId = Number(params.get('tabId'));
-  const forcedTabUrl = String(params.get('tabUrl') || '').trim();
-
-  if (Number.isFinite(forcedTabId) && forcedTabId > 0) {
+  function showDemoVideo(item) {
+    if (!isDemo) return;
+    const filename = { sintel: 'sintel', bunny: 'big-buck-bunny', steel: 'tears-of-steel' }[item.id];
+    if (!filename) return;
+    $('sheet-content').querySelector('video')?.pause();
+    const content = openSheet(customTitles[item.id] || titles.getDisplayTitle(item));
+    const pad = el('div', 'sheet-pad');
+    const video = el('video');
+    video.controls = true; video.playsInline = true; video.preload = 'metadata';
+    video.poster = `popup/media/${filename}.jpg`;
+    video.src = `popup/media/${filename}.mp4`;
+    video.style.width = '100%'; video.style.display = 'block'; video.style.borderRadius = '6px';
+    video.setAttribute('aria-label', `Play ${titles.getDisplayTitle(item)}`);
+    pad.append(video); content.append(pad);
+    $('sheet').addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); }, { once: true });
+    video.play().catch(() => {});
+  }
+  function openSheet(title) { closeMenu(); $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); $('popup').style.minHeight = '430px'; if (!$('sheet').open) $('sheet').showModal(); return $('sheet-content'); }
+  function showProblem(row) { const content = openSheet('Video details'); const pad = el('div', 'sheet-pad'); pad.append(el('p', '', row.statusLine), el('p', '', row.problem?.raw || 'Open the source page and try again.')); pad.append(action('Open page', () => external(row.source.sourcePageUrl), 'bordered')); content.append(pad); }
+  function showRename(item) {
+    const content = openSheet('Rename video'); const form = el('form', 'sheet-pad'); const input = el('input', 'text-input'); input.id = 'video-title'; input.value = customTitles[item.id] || titles.getDisplayTitle(item); input.maxLength = 255; input.required = true;
+    const label = el('label', '', 'Video title'); label.htmlFor = input.id;
+    const save = action('Save', () => form.requestSubmit(), 'primary'); form.append(label, input, el('div', 'sheet-actions')); form.lastChild.append(save); content.append(form);
+    form.addEventListener('submit', async event => { event.preventDefault(); const title = input.value.trim(); if (!title) return; customTitles[item.id] = title; titles.setCustomTitleOverride(item, title); await message({ cmd: 'RENAME_MEDIA', tabId: activeTab?.id, mediaId: item.id, title }); $('sheet').close(); renderRows(); }); input.focus(); input.select();
+  }
+  function showHelp() { const content = openSheet('No video?'); content.append(emptyState()); const pad = el('div', 'sheet-pad'); pad.append(el('p', '', 'Start playback, then check again. Some protected videos cannot be saved. During this prerelease, installation instructions are in the project README.'), action('Troubleshooting', () => external(HELP), 'bordered')); content.append(pad); }
+  function showPairing() {
+    const content = openSheet('Connect VidSnag'); const form = el('form', 'sheet-pad');
+    form.append(el('p', '', 'Open VidSnag, then Settings → Advanced → Connect Chrome. Enter the six-digit code shown there. You only need to do this once.'));
+    const label = el('label', '', 'Connection code'); label.htmlFor = 'pairing-code'; const input = el('input', 'text-input'); input.id = 'pairing-code'; input.inputMode = 'numeric'; input.autocomplete = 'one-time-code'; input.pattern = '[0-9]{6}'; input.maxLength = 6; input.required = true; input.placeholder = '000000';
+    const errorText = el('p', 'sheet-error'); errorText.setAttribute('role', 'alert'); const actions = el('div', 'sheet-actions');
+    actions.append(action('Connect', () => form.requestSubmit(), 'primary'), action('Open VidSnag', () => openDesktop(), 'bordered'));
+    form.append(label, input, actions, errorText); content.append(form);
+    form.addEventListener('submit', async event => { event.preventDefault(); if (!form.reportValidity() || isDemo) return; const submit = actions.firstElementChild; submit.disabled = true; errorText.textContent = '';
+      try { const result = await request('/v1/pair/complete', { body: { code: input.value.trim() }, public: true }); if (!result.token) throw new Error('Enter the code currently shown in VidSnag.'); appToken = result.token; await chrome.storage.local.set({ appToken }); $('sheet').close(); await loadPreferences(); await refresh(); renderConnection(); }
+      catch (error) { errorText.textContent = error.status === 401 || error.status === 400 ? 'That code did not work. Check the code in VidSnag and try again.' : error.message; }
+      finally { submit.disabled = false; }
+    }); input.focus();
+  }
+  async function savePreference(key, value) {
+    const previous = preferences[key]; preferences[key] = value;
+    try { if (!isDemo) { if (reachable && appToken) await request('/v1/settings', { body: { [key]: value } }); await chrome.storage.local.set({ preferences }); } renderRows(); }
+    catch (error) { preferences[key] = previous; notice(error.message); showSettings(); }
+  }
+  function showSettings() {
+    const content = openSheet('Settings');
+    function setting(label, note, control) { const row = el('div', 'setting-row'); const description = el('div', 'setting-description'); const labelNode = el('label', '', label); if (control.id) labelNode.htmlFor = control.id; description.append(labelNode); if (note) description.append(el('small', '', note)); row.append(description, control); content.append(row); }
+    function select(key, values) { const control = el('select', 'setting-control'); control.disabled = !reachable || !appToken; control.id = `setting-${key}`; for (const [value, label] of values) { const option = el('option', '', label); option.value = value; control.append(option); } control.value = preferences[key]; control.addEventListener('change', () => savePreference(key, control.value)); return control; }
+    function toggle(key) { const control = el('input', 'switch'); control.disabled = !reachable || !appToken; control.type = 'checkbox'; control.id = `setting-${key}`; control.setAttribute('role', 'switch'); control.checked = Boolean(preferences[key]); control.addEventListener('change', () => savePreference(key, control.checked)); return control; }
+    setting('Save videos to', preferences.outputDirectory || 'Choose in VidSnag', action('Change', () => openDesktop('settings'), 'bordered'));
+    setting('Preferred quality', 'Used when a video offers it', select('preferredQuality', [['best', 'Best'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']]));
+    setting('Subtitles', 'Included when available', select('subtitleLanguage', [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']]));
+    setting('Tell me when a download finishes', '', toggle('notifyOnComplete'));
+    setting('Start VidSnag when I log in', '', toggle('launchAtLogin'));
+    const advanced = el('details', 'advanced'); const summary = el('summary', '', 'Advanced'); const body = el('div', 'advanced-body');
+    body.append(el('p', '', 'Speed, file naming, metadata and subtitle accounts, updates, and diagnostics are managed in VidSnag.'), action('Open Advanced settings', () => openDesktop('settings'), 'bordered'));
+    if (!appToken) body.append(action('Connect Chrome', showPairing, 'bordered'));
+    advanced.append(summary, body); content.append(advanced);
+  }
+  async function loadPreferences() {
+    if (!appToken || !reachable || isDemo) return;
+    try { const data = await request('/v1/settings'); preferences = { ...preferences, ...(data.settings || data) }; await chrome.storage.local.set({ preferences }); } catch { /* Existing local preferences remain usable while the app starts. */ }
+  }
+  async function checkHealth() {
+    if (healthBusy || isDemo) return; healthBusy = true;
+    const wasReachable = reachable;
+    try { const health = await request('/v1/health', { public: true }); reachable = health.status === 'ok'; compatible = model.compatible(health, runtimeVersion); if (reachable) getAppFallback = false; }
+    catch { reachable = false; }
+    finally { healthBusy = false; renderConnection(); }
+    if (reachable && !wasReachable) { await loadPreferences(); await refresh(); }
+  }
+  async function refresh() {
+    if (refreshBusy || isDemo) return; refreshBusy = true;
     try {
-      activeTab = await chrome.tabs.get(forcedTabId);
-    } catch {
-      activeTab = null;
+      const tasks = [activeTab?.id ? message({ cmd: 'GET_TAB_MEDIA', tabId: activeTab.id }) : Promise.resolve(null), reachable && compatible && appToken ? request('/v1/queue') : Promise.resolve(null)];
+      const results = await Promise.allSettled(tasks);
+      const media = results[0].status === 'fulfilled' ? results[0].value : null;
+      if (media?.ok) {
+        if (visit && media.visit !== visit) { selected.clear(); pending.clear(); failures.clear(); customTitles = {}; }
+        visit = media.visit; mediaItems = media.items || []; mappings = media.mappings || {}; customTitles = media.titles || customTitles;
+      }
+      if (results[1].status === 'fulfilled' && results[1].value) queue = results[1].value.queue || [];
+      if (results[1].status === 'rejected' && results[1].reason?.status === 401) { appToken = ''; await chrome.storage.local.remove('appToken'); }
+      if (results[1].status === 'rejected' && results[1].reason?.status === 426) compatible = false;
+      renderRows();
+    } finally { refreshBusy = false; }
+  }
+  async function initialize() {
+    $('sheet').addEventListener('close', () => { $('popup').style.minHeight = ''; });
+    $('settings-button').append(icon('gear')); $('close-sheet').append(icon('close'));
+    $('settings-button').addEventListener('click', showSettings); $('close-sheet').addEventListener('click', () => $('sheet').close()); $('help-button').addEventListener('click', showHelp);
+    $('open-app').addEventListener('click', () => !reachable ? external(RELEASES) : !appToken ? showPairing() : openDesktop());
+    document.addEventListener('pointerdown', event => { if (!$('menu').hidden && !$('menu').contains(event.target) && event.target !== menuTrigger) closeMenu(); });
+    $('menu').addEventListener('keydown', event => {
+      if (event.key === 'Escape') { event.preventDefault(); closeMenu(); return; }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault(); const buttons = Array.from($('menu').querySelectorAll('button')); const index = buttons.indexOf(document.activeElement);
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length; buttons[next]?.focus();
+    });
+    if (isDemo) {
+      const data = VidSnagDemo.init(params.get('demo')); activeTab = data.tab; mediaItems = data.items; mappings = data.mappings; queue = data.queue; preferences = { ...preferences, ...data.preferences }; reachable = data.reachable; appToken = params.get('demo') === 'pairing' ? '' : 'demo-only'; compatible = data.compatible; titles.setActiveTab(activeTab); renderRows();
+      if (params.get('demo') === 'pairing') showPairing(); if (params.get('demo') === 'settings') showSettings(); if (params.get('demo') === 'quality') showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
+      return;
     }
+    const stored = await chrome.storage.local.get(['appToken', 'preferences']); appToken = stored.appToken || ''; preferences = { ...preferences, ...(stored.preferences || {}) };
+    const tabId = Number(params.get('tab'));
+    activeTab = tabId > 0 ? await chrome.tabs.get(tabId).catch(() => null) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0] || null;
+    titles.setActiveTab(activeTab); await refresh(); await checkHealth(); await checkAgain();
+    queueTimer = setInterval(refresh, 1000); healthTimer = setInterval(checkHealth, 2000);
+    chrome.storage.onChanged.addListener((changes, area) => { if (area === 'session' && activeTab?.id && changes[`vidsnag:tab:${activeTab.id}`]) refresh(); });
   }
-
-  if (!activeTab && forcedTabUrl) {
-    try {
-      const tabs = await chrome.tabs.query({ currentWindow: true });
-      activeTab = tabs.find((tab) => (tab.url || '').startsWith(forcedTabUrl)) || null;
-    } catch {
-      activeTab = null;
-    }
-  }
-
-  if (!activeTab) {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    activeTab = tabs[0] || null;
-  }
-
-  extensionInfo = await chrome.runtime.sendMessage({ cmd: 'GET_EXTENSION_INFO' });
-
-  refreshButton.addEventListener('click', async () => {
-    await refreshConnection();
-    await refreshMedia();
-  });
-
-  clearButton.addEventListener('click', async () => {
-    if (!activeTab) return;
-    await chrome.runtime.sendMessage({ cmd: 'CLEAR_TAB_MEDIA', tabId: activeTab.id });
-    await refreshMedia();
-  });
-
-  await refreshConnection();
-  await refreshMedia();
-}
-
-initialize();
+  window.addEventListener('pagehide', () => { clearInterval(queueTimer); clearInterval(healthTimer); clearTimeout(openTimer); });
+  initialize().catch(error => notice(error.message));
+})();
