@@ -1803,6 +1803,11 @@ function createApiServer(options = {}) {
       done(allowed, allowed ? 200 : 401, allowed ? 'OK' : 'Unauthorized');
     },
   });
+  // ws forwards HTTP server errors before start()'s listener receives them.
+  // Handle that forwarded event so a bind failure can reject start() normally.
+  wss.on('error', (error) => {
+    logger.warn('Downloader WebSocket server error', { code: error.code, error: error.message });
+  });
   const jobSubscriptions = new Map();
   const channelSubscriptions = new Map();
   const clientSubscriptions = new Map();
