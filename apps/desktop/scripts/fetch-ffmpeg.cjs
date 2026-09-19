@@ -16,13 +16,21 @@ function resolveDownloads() {
   }
   if (!['x64', 'arm64'].includes(process.arch)) throw new Error(`Unsupported architecture: ${process.arch}. Supply explicit portable binaries and source URL.`);
   if (process.platform === 'darwin') {
-    // This upstream fork actually publishes both native executables. No Homebrew fallback.
-    const release = 'https://github.com/descriptinc/ffmpeg-ffprobe-static/releases/download/b6.1.2-rc.1';
+    // These pinned macOS releases enable GPLv3 without the nonfree build flag.
+    // Checksums are the publisher's per-archive .sha256 values, verified 2026-09-19.
+    const arm64 = process.arch === 'arm64';
+    const release = arm64
+      ? 'https://ffmpeg.martin-riedl.de/download/macos/arm64/1787073674_9.0.1'
+      : 'https://ffmpeg.martin-riedl.de/download/macos/amd64/1787081194_9.0.1';
     return {
-      urls: [`${release}/ffmpeg-darwin-${process.arch}`, `${release}/ffprobe-darwin-${process.arch}`],
-      sourceUrl: `https://ffmpeg.org/releases/ffmpeg-${process.arch === 'arm64' ? '6.1.1' : '7.1'}.tar.xz`,
-      buildSourceUrl: 'https://github.com/descriptinc/ffmpeg-ffprobe-static/tree/b6.1.2-rc.1/build',
-      licenseUrl: `${release}/darwin-${process.arch}.LICENSE`,
+      urls: [`${release}/ffmpeg.zip`, `${release}/ffprobe.zip`],
+      sha256: arm64
+        ? ['8287a1b2229e05eb41859f073e18e6c52c60a778f2f5e6881070fe51b79407fe', '102a26b8940a053298d9929bfaae71e4b6ef65ba5f19a99a88c433108560741a']
+        : ['5bdead62ff504ab9b447cc72b212c4fb481e3f7de5877d427a51bee8136dda40', '34511bbcf1988ad2886023bf5ace4f44cf62e6defeb3d194d6f7619e5b061f7f'],
+      sourceUrl: 'https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz',
+      buildSourceUrl: 'https://git.martin-riedl.de/ffmpeg/build-script/src/commit/f63b8aab8f5ce1a067da86ba69e34a36a7e217e5',
+      versionsUrl: `${release}/versions.txt`,
+      licenseUrl: 'https://raw.githubusercontent.com/FFmpeg/FFmpeg/n9.0.1/COPYING.GPLv3',
     };
   }
   if (!['linux', 'win32'].includes(process.platform)) throw new Error(`No portable FFmpeg build configured for ${process.platform}`);
@@ -92,7 +100,7 @@ async function main() {
         const expected = checksums.split(/\r?\n/).find(line => line.trim().split(/\s+/).pop()?.replace(/^\*/, '') === filename)?.split(/\s+/)[0];
         if (!expected || expected.toLowerCase() !== archiveHash) throw new Error(`Checksum mismatch for ${filename}`);
       }
-      const explicitHash = process.env[index === 0 ? 'FFMPEG_SHA256' : 'FFPROBE_SHA256'];
+      const explicitHash = process.env[index === 0 ? 'FFMPEG_SHA256' : 'FFPROBE_SHA256'] || config.sha256?.[index];
       if (explicitHash && explicitHash.toLowerCase() !== archiveHash) throw new Error(`${name} did not match its configured SHA256`);
       const destination = path.join(outputDir, executable);
       if (/\.(zip|tar\.xz|tgz|tar\.gz)(?:\?|$)/.test(url)) {
@@ -118,6 +126,12 @@ async function main() {
       manifest.tools[name] = { downloadUrl: url, downloadSha256: archiveHash, sha256: sha256(destination), version, configuration, license };
     }
     if (config.licenseUrl) await download(config.licenseUrl, path.join(outputDir, 'FFMPEG-LICENSE.txt'));
+    if (config.versionsUrl) {
+      const versionsPath = path.join(outputDir, 'ffmpeg-upstream-versions.txt');
+      await download(config.versionsUrl, versionsPath);
+      manifest.upstreamVersionsUrl = config.versionsUrl;
+      manifest.upstreamVersions = fs.readFileSync(versionsPath, 'utf8');
+    }
     fs.writeFileSync(path.join(outputDir, 'ffmpeg-build.json'), JSON.stringify(manifest, null, 2) + '\n');
     console.log(`Portable FFmpeg and ffprobe recorded in ${path.join(outputDir, 'ffmpeg-build.json')}`);
   } finally { fs.rmSync(temporary, { recursive: true, force: true }); }

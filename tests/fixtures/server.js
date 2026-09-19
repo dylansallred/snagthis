@@ -4,9 +4,9 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 
-function runTool(executable, args, { timeout = 90_000 } = {}) {
+function runTool(executable, args, { timeout = 90_000, cwd } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(executable, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     const timer = setTimeout(() => child.kill('SIGKILL'), timeout);
@@ -35,10 +35,16 @@ async function generateMedia(directory, ffmpegPath) {
   await ffmpeg('-i', direct, '-frames:v', '1', '-vf', 'scale=224:126', path.join(media, 'poster.jpg'));
   await ffmpeg('-i', direct, '-t', '6', '-c', 'copy', '-movflags', '+faststart', path.join(media, 'second.mp4'));
   for (const type of ['ts', 'fmp4']) {
+    const renditionDirectory = path.join(media, type);
     const args = ['-i', direct, '-c', 'copy', '-hls_time', '1', '-hls_playlist_type', 'vod'];
     if (type === 'fmp4') args.push('-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4');
-    args.push('-hls_segment_filename', path.join(media, type, type === 'ts' ? 'segment-%02d.ts' : 'segment-%02d.m4s'), path.join(media, type, 'index.m3u8'));
-    await ffmpeg(...args);
+    // Keep filesystem path separators out of generated HLS URIs. In particular,
+    // the relative fMP4 init file must be written beside the playlist on Windows.
+    args.push('-hls_segment_filename', type === 'ts' ? 'segment-%02d.ts' : 'segment-%02d.m4s', 'index.m3u8');
+    await runTool(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-y', ...args], { cwd: renditionDirectory });
+    if (type === 'fmp4' && !fs.existsSync(path.join(renditionDirectory, 'init.mp4'))) {
+      throw new Error('FFmpeg did not generate the fMP4 fixture init file beside its playlist');
+    }
   }
   for (const height of [480, 720, 1080]) {
     await ffmpeg('-i', direct, '-an', '-vf', `scale=-2:${height}`, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30', '-g', '12',

@@ -59,7 +59,10 @@ test('private bridge pairing, whole-library search, safe removal, missing-file l
     assert.equal((await request('/downloads/poster.jpg', { auth: false })).status, 401);
     assert.equal((await request(signedPoster.replace('poster.jpg', 'sample-000.mp4'), { auth: false })).status, 401, 'an asset signature cannot authorize another file');
     await assert.rejects(fs.access(path.join(downloadDir, 'queue.json')));
-    assert.equal((await fs.stat(path.join(dataDir, 'bridge-auth.json'))).mode & 0o777, 0o600);
+    // Windows uses filesystem ACLs; Node's POSIX mode bits do not report them.
+    if (process.platform !== 'win32') {
+      assert.equal((await fs.stat(path.join(dataDir, 'bridge-auth.json'))).mode & 0o777, 0o600);
+    }
 
     const pairing = api.getPairingInfo();
     const paired = await request('/v1/pair/complete', { auth: false, method: 'POST', headers: { Origin: extensionOrigin }, body: { code: pairing.code } });

@@ -654,6 +654,16 @@ function createJobProcessor({
 
   }
 
+  async function closeWriteStream(stream) {
+    if (!stream || stream.closed) return;
+    // Windows cannot rename or remove a file until the write handle is closed.
+    // Destroying also releases unfinished writes after a cancelled HTTP request.
+    await new Promise((resolve) => {
+      stream.once('close', resolve);
+      stream.destroy();
+    });
+  }
+
   async function unlinkIfExists(filePath, context = {}) {
     if (!filePath) return;
     try {
@@ -691,7 +701,7 @@ function createJobProcessor({
               .map((fileName) => unlinkIfExists(path.join(jobTempDir, fileName), context))
           );
         } else {
-          await fsPromises.rm(jobTempDir, { recursive: true, force: true });
+          await fsPromises.rm(jobTempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
         }
       }
     } catch (err) {
@@ -736,7 +746,7 @@ function createJobProcessor({
       && path.basename(jobStorageDir) === String(job.id)
     ) {
       try {
-        await fsPromises.rm(jobStorageDir, { recursive: true, force: true });
+        await fsPromises.rm(jobStorageDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
       } catch (err) {
         logger.warn('Failed to remove job storage directory during cancellation cleanup', {
           ...context,
@@ -791,7 +801,7 @@ function createJobProcessor({
       && path.basename(jobStorageDir) === String(job.id)
     ) {
       try {
-        await fsPromises.rm(jobStorageDir, { recursive: true, force: true });
+        await fsPromises.rm(jobStorageDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
       } catch (err) {
         logger.warn('Failed to remove direct job storage directory during cancellation cleanup', {
           ...context,
@@ -1161,6 +1171,7 @@ function createJobProcessor({
 
       // Direct retries write to temp + rename to avoid exposing partial files.
       for (let attempt = 1; attempt <= DIRECT_MAX_ATTEMPTS && !job.cancelled; attempt += 1) {
+        let directWriteStream = null;
         try {
           job.bytesDownloaded = 0;
           job.totalBytes = 0;
@@ -1187,6 +1198,7 @@ function createJobProcessor({
               }
 
               const outStream = fs.createWriteStream(tempFilePath);
+              directWriteStream = outStream;
               outStream.on('error', (err) => {
                 console.error('Direct job file stream error', {
                   jobId: job.id,
@@ -1214,11 +1226,13 @@ function createJobProcessor({
             });
           }, { timeoutMs: 30_000, credentialOrigin: job.credentialOrigin || job.url, sourcePageUrl: job.sourcePageUrl });
 
+          await closeWriteStream(directWriteStream);
           if (job._earlyThumbnailPromise) await job._earlyThumbnailPromise;
           await fsPromises.rename(tempFilePath, job.filePath);
           downloaded = true;
           break;
         } catch (err) {
+          await closeWriteStream(directWriteStream);
           lastErr = err;
           if (job.cancelled || attempt >= DIRECT_MAX_ATTEMPTS) {
             break;
@@ -1236,6 +1250,8 @@ function createJobProcessor({
         }
       }
 
+      // A preview reader can also hold the partial file open on Windows.
+      if (job._earlyThumbnailPromise) await job._earlyThumbnailPromise;
       if (!downloaded && job.cancelled) {
         await unlinkIfExists(tempFilePath, { jobId: job && job.id, reason: 'direct-cancelled' });
         if (job.cleanupOnCancel) {
@@ -1422,7 +1438,7 @@ function createJobProcessor({
       const shouldResumePartialSegments = job.resumePartialSegments === true && !!previousTopology;
       if (!shouldResumePartialSegments) {
         try {
-          await fsPromises.rm(jobTempDir, { recursive: true, force: true });
+          await fsPromises.rm(jobTempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
         } catch (err) {
           logger.warn('Failed to reset stale HLS temp directory before download', {
             jobId: job.id,
@@ -1605,6 +1621,7 @@ function createJobProcessor({
           let success = false;
           const canonicalSegmentPath = path.join(jobTempDir, `seg-${i}.ts`);
           let attemptTempPath = null;
+          let segmentStream = null;
 
           // Check if segment already exists from previous download
           if (existingSegments.has(i)) {
@@ -1701,7 +1718,7 @@ function createJobProcessor({
               jobTempDir,
               `seg-${i}-w${workerId}-a${attempt}-${Date.now()}.tmp`
             );
-            const segmentStream = fs.createWriteStream(attemptTempPath);
+            segmentStream = fs.createWriteStream(attemptTempPath);
             segmentStream.on('error', (err) => {
               console.error('Segment file stream error during download', {
                 jobId: job.id,
@@ -1720,6 +1737,7 @@ function createJobProcessor({
               segmentStream.once('error', reject);
               segmentStream.end();
             });
+            await closeWriteStream(segmentStream);
 
             // Check again if another thread completed this segment while we were downloading
             const stateAfterDownload = job.segmentStates[i];
@@ -1822,6 +1840,7 @@ function createJobProcessor({
               }
             }
           } catch (err) {
+            await closeWriteStream(segmentStream);
             if (attemptTempPath) {
               try {
                 await fsPromises.unlink(attemptTempPath);

@@ -1707,9 +1707,12 @@ function createApiServer(options = {}) {
 
   registerHistoryRoutes(app, historyIndex, fsPromises, resolvedDownloadDir, {
     onTrashFile, onOpenFile, onLocateFile,
-    onRemoveItem: (item) => {
+    onRemoveItem: async (item) => {
       const job = item.jobId && jobs.get(item.jobId);
-      if (job && ['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)) queueManager.removeJob(item.jobId, false);
+      if (job && ['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)) {
+        queueManager.removeJob(item.jobId, false);
+        await queueManager.waitForJobIdle(item.jobId);
+      }
     },
   });
   registerQueueRoutes(app, queueManager, {

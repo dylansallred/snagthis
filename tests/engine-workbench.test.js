@@ -41,8 +41,9 @@ test('a finalizing or pausing runner retains its slot until it exits', async () 
     assert.equal(manager.resumeJob('first'), true);
     assert.equal(manager.startJob('first'), false);
     assert.equal(runs, 1);
+    const idle = manager.waitForJobIdle('first');
     release();
-    await turn();
+    await idle;
     assert.equal(manager.getActiveCount(), 0);
     assert.equal(manager.jobs.get('first').queueStatus, 'queued');
   } finally { await fixture.close(); }
@@ -63,7 +64,8 @@ test('queue snapshots are atomic, retain latest state, and never persist request
     assert.equal(snapshot.queue[0].headers.Referer, 'https://page.test/watch');
     assert.doesNotMatch(text, /secret-cookie|secret-auth|secret-token/);
     assert.equal(fs.existsSync(`${fixture.manager.queueFilePath}.tmp`), false);
-    assert.equal(fs.statSync(fixture.manager.queueFilePath).mode & 0o777, 0o600);
+    // Windows exposes synthetic mode bits; its ACL controls access instead.
+    if (process.platform !== 'win32') assert.equal(fs.statSync(fixture.manager.queueFilePath).mode & 0o777, 0o600);
   } finally { await fixture.close(); }
 });
 

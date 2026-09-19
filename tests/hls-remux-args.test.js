@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 
 const { __test } = require('../packages/downloader-engine/src/core/VideoConverter');
 const {
@@ -25,7 +26,7 @@ test('remux prefers original HLS segment boundaries when available', () => {
   assert.deepEqual(input, {
     mode: 'concat',
     entries: job.segmentFiles,
-    concatListPath: '/downloads/ts-segments-job-123.txt',
+    concatListPath: path.join('/downloads', 'ts-segments-job-123.txt'),
   });
 });
 
@@ -43,7 +44,7 @@ test('remux falls back to merged TS parts when original segment files are unavai
   assert.deepEqual(input, {
     mode: 'concat',
     entries: job.tsParts,
-    concatListPath: '/downloads/ts-parts-job-456.txt',
+    concatListPath: path.join('/downloads', 'ts-parts-job-456.txt'),
   });
 });
 

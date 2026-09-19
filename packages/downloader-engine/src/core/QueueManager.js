@@ -39,6 +39,7 @@ class QueueManager {
       ...(initialSettings || {}),
     };
     this.hasPersistedSettings = false;
+    this.runners = new Map();
     this.activeJobs = new Set(); // Set of currently downloading job IDs
     this.queueFilePath = queueFilePath;
     this.downloadDir = downloadDir || path.dirname(queueFilePath);
@@ -620,12 +621,20 @@ class QueueManager {
 
     const runner = job.mediaType === 'hls' || /\.m3u8(\?|$)/i.test(job.url || '')
       ? this.runJob : this.runDirectJob;
-    Promise.resolve().then(() => runner(job)).catch((error) => {
+    const completion = Promise.resolve().then(() => runner(job)).catch((error) => {
       job.status = job.cancelled ? 'cancelled' : 'error';
       job.error = error && error.message || 'Download failed';
-    }).finally(() => this.onJobComplete(jobId, job));
+    }).finally(() => {
+      this.runners.delete(jobId);
+      this.onJobComplete(jobId, job);
+    });
+    this.runners.set(jobId, completion);
 
     return true;
+  }
+
+  waitForJobIdle(jobId) {
+    return this.runners.get(jobId) || Promise.resolve();
   }
 
   // Rename a job's title/download name
