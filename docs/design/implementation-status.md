@@ -26,6 +26,8 @@ Checks were coordinated locally using Node 22.23.2. Concrete failures were corre
 | Public compatibility seeds | 15/15 selected public test streams passed through S7 |
 | Actual preview media | Local eight-second Blender film clips load in both development previews |
 
+The [implementation PR](https://github.com/dylansallred/vidsnag/pull/1) requires the Linux, macOS and Windows `verify` checks. Each runs the unit/integration/media suite and production builds; Linux also runs all seven browser/Electron scenarios. The PR shows the current result for its exact commit.
+
 See [the compatibility matrix](../../compat/COMPATIBILITY.md). These are selected Mux and Apple test streams, not fifteen independent consumer websites. Direct-stream seeds run in a local player. This evidence does not establish universal site compatibility, full-length download reliability or successful DRM downloads. S8 full downloads were not requested by the compatibility run.
 
 ## Try the implementation
@@ -43,6 +45,7 @@ Serve `apps/extension` locally and open `popup.html?demo=default`. Other demo va
 
 - **M4:** three to five actual people must complete the [field check](field-check.md). No participant observations or approval of the final look have been fabricated. The conditional thumbnail-line/quality-border fallbacks remain pending that evidence.
 - **Recovery:** refreshed links can be attached through “Continue previous download” or desktop Details. The implementation does not automatically attach a new detection merely because a page reopened; ambiguous matches require user choice and the engine checks playlist compatibility before reusing pieces.
+- **Direct-file resume:** pausing is supported, but resuming a direct file currently restarts its transfer. HLS resume retains compatible downloaded segments. Byte-range continuation for direct files remains follow-up work.
 - **Site reports:** the prefilled issue form contains redacted aggregate diagnostics. S1–S7 prompts are explicitly “not checked” unless supplied by a compatibility run; the app does not yet retain measured per-site stage traces.
 - **Test tooling:** component behavior is tested in the actual Playwright gallery with shared-model unit coverage, rather than introducing an additional Vitest/Testing Library stack. Screenshots were reviewed locally; cross-machine pixel-diff baselines are not established.
 - **Release artifacts:** signed/notarized macOS and signed Windows installers, bundled-tool checks and installed-artifact smoke tests must pass release CI. Local Electron success does not substitute for them. Signing credentials and a reviewed corresponding-source archive for bundled GPL tools must be provided before publication.

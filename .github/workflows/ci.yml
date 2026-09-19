@@ -36,8 +36,21 @@ jobs:
       - name: Install browser and Electron display dependencies
         if: runner.os == 'Linux'
         run: npx playwright install --with-deps chromium
+      - name: Enable Electron's Linux sandbox helper
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # Materialize Electron before capturing its path: the first require can log a download.
+          node -e "require('electron')"
+          sandbox_helper="$(node -p "require('path').join(require('path').dirname(require('electron')), 'chrome-sandbox')")"
+          test -f "$sandbox_helper"
+          sudo chown root:root "$sandbox_helper"
+          sudo chmod 4755 "$sandbox_helper"
+          stat -c '%U:%G %a %n' "$sandbox_helper"
       - name: Browser and desktop end-to-end checks
         if: runner.os == 'Linux'
+        env:
+          DEBUG: pw:browser
         run: xvfb-run --auto-servernum npm run test:e2e -- --project=chromium
       - name: Keep failure evidence
         if: failure()
