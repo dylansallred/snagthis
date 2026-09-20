@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      verify_macos_signing:
+        description: 'Only build and verify a signed, notarized Apple Silicon installer (no release)'
+        type: boolean
+        default: false
   workflow_call:
 
 permissions:
@@ -12,6 +17,7 @@ permissions:
 
 jobs:
   verify:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.verify_macos_signing }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -70,3 +76,70 @@ jobs:
             playwright-report/
             test-results/
           if-no-files-found: ignore
+
+  verify-macos-signing:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_macos_signing }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      VIDSNAG_RELEASE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Require Apple signing credentials
+        # This check runs on a branch, without creating a release tag.
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: env -u GITHUB_REF_NAME bash scripts/release-preflight.sh --target mac
+      - run: npm ci
+      - name: Fetch portable tools with license and source metadata
+        run: |
+          npm run fetch:ffmpeg --workspace @m3u8/desktop
+          npm run fetch:yt-dlp --workspace @m3u8/desktop
+      - name: Include project notices in the installed app
+        run: |
+          cp LICENSE apps/desktop/bin/VIDSNAG-LICENSE.txt
+          cp THIRD_PARTY_NOTICES.md apps/desktop/bin/THIRD_PARTY_NOTICES.md
+      - name: Build signed and notarized installers without publishing
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: npm run dist --workspace @m3u8/desktop -- --mac --arm64 --publish=never -c.forceCodeSigning=true -c.mac.notarize=true
+      - name: Notarize and staple the exact DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for dmg in apps/desktop/dist-electron/*.dmg; do
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --output-format json > notarization.json
+            node -e "if(require('./notarization.json').status!=='Accepted')process.exit(1)"
+            xcrun stapler staple "$dmg"
+          done
+      - name: Verify signatures, Gatekeeper acceptance and real packaged downloads
+        run: env -u GITHUB_REF_NAME node scripts/verify-release.cjs
+      - name: Keep verified private test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-signing-check-arm64
+          path: |
+            apps/desktop/dist-electron/*.dmg
+            apps/desktop/dist-electron/*.zip
+            apps/desktop/dist-electron/*.zip.blockmap
+            apps/desktop/dist-electron/release-verification-*.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summarize verification
+        run: |
+          printf '## Apple signing verified\n\nThe Apple Silicon app, DMG, and update ZIP passed signature, notarization, Gatekeeper, and real packaged download checks. Test artifacts are retained for 7 days. No tag or release was created. Intel, Windows, and a real installed N → N+1 update still require their release checks.\n' >> "$GITHUB_STEP_SUMMARY"

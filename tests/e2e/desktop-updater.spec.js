@@ -159,10 +159,15 @@ test('approved Workbench component gallery: clean thumbnails, motion previews, a
     await expect(removeAction).toHaveAttribute('title', 'Remove…');
     await expect(removeAction).toHaveText('Remove…');
     await expect(removeAction.locator('svg')).toHaveCount(1);
-    const firstActionBounds = await savedDetails.getByRole('button', { name: 'Copy link', exact: true }).boundingBox();
-    const removeBounds = await removeAction.boundingBox();
-    expect(removeBounds.y).toBe(firstActionBounds.y);
-    expect(removeBounds.x - firstActionBounds.x).toBeGreaterThan(300);
+    // Read both positions in one browser task: another drawer may still be
+    // collapsing above this one, moving both buttons between separate calls.
+    const actionSpacing = await savedDetails.evaluate(element => {
+      const copy = element.querySelector('.detail-links .copy-action').getBoundingClientRect();
+      const remove = element.querySelector('.detail-links .destructive-text').getBoundingClientRect();
+      return { vertical: remove.y - copy.y, horizontal: remove.x - copy.x };
+    });
+    expect(actionSpacing.vertical).toBe(0);
+    expect(actionSpacing.horizontal).toBeGreaterThan(300);
     await savedDetails.screenshot({ path: test.info().outputPath('saved-details-aligned.png') });
     await savedRow.press('Space');
     const expiredRow = page.locator('[data-row-key="problem-expired"]');

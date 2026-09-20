@@ -6,7 +6,7 @@ Desktop and Chrome have separate update channels and version numbers. A desktop 
 
 The repository stays private during testing and will become public for launch. Source, installers, extension ZIPs, source packets, and update metadata all stay together in `dylansallred/vidsnag`; no separate distribution repository is needed. Authorized collaborators can download private test artifacts through GitHub. Installed apps cannot anonymously read the private feed or drafts. Before public launch, make this repository public and publish a reviewed desktop release. Do not put a GitHub access token in the installed app. Neither workflow changes repository visibility or publishes a draft automatically.
 
-The owner already has an Apple Developer account. Its signing and notarization credentials have not yet been configured or verified for this release workflow. These are external setup requirements, not checks that have passed locally.
+The owner has an Apple Developer account and has configured the five Apple repository secrets below. Secret presence alone does not prove that the certificate, password, or notarization credentials work; use the signing check below before preparing a release.
 
 The maintainer's final **Publish release** action is the publication approval. Draft preparation does not require GitHub Enterprise or a protected environment in the private repository. Repository secrets must be available to the desktop build job:
 
@@ -23,6 +23,16 @@ The maintainer's final **Publish release** action is the publication approval. D
 The current Windows path expects a usable signing certificate file. A hardware-only certificate or cloud signing service needs its own signing integration before this workflow can use it. Do not disable forced code signing to work around missing credentials. Keep a consistent signing identity across updates; macOS updates require signed applications, and the updater uses the ZIP alongside the installer. See [electron-builder's updater requirements](https://www.electron.build/docs/features/auto-update/) and [Electron code signing](https://www.electronjs.org/docs/latest/tutorial/code-signing).
 
 Set the `CORRESPONDING_SOURCE_RUN_ID` repository variable to a successful **Prepare corresponding source** run for the exact release. This is required even if the source repository itself is public: bundled FFmpeg/ffprobe and yt-dlp builds need the reviewed source and build information identified below.
+
+## Verify Apple signing before a release
+
+Run **CI** manually on the branch to test, selecting **Only build and verify a signed, notarized Apple Silicon installer (no release)**. From the CLI:
+
+```sh
+gh workflow run ci.yml --ref workbench -f verify_macos_signing=true
+```
+
+This mode uses the repository's Apple secrets to sign and notarize the app, DMG, and update ZIP, then checks Gatekeeper acceptance and runs real packaged downloads. It retains verified private test artifacts for seven days without creating a tag or release. It runs only the signing job; ordinary PR CI still runs the full validation matrix. Intel, Windows, and a real installed version-to-version upgrade need their separate release checks. GitHub's manual dispatch must be available for the workflow before it can be started.
 
 ## Prepare a release PR
 
