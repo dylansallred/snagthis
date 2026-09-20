@@ -1,9 +1,9 @@
 # VidSnag roadmap — new repo, "Workbench, simplified" UI, testing and site compatibility
 
 Written 2026-09-19. Design: [ui-design-spec.md](ui-design-spec.md) (section numbers below, e.g. §4, refer to it).
-Background: [project review](../review/project-review-2026-09-19.md) (defects referenced as "review P1/P2").
+Background: the predecessor project review from 2026-09-19 (defects referenced as "review P1/P2"). The original report is a local archive; the relevant decisions are recorded below.
 
-Owner decision, 2026-09-19: **GPL-3.0-only**, so distributed derivatives remain open source under the license's terms. The license choice in R0.6 is resolved. This document remains the implementation plan; current evidence and remaining release prerequisites are recorded in [implementation-status.md](implementation-status.md).
+Owner decision, 2026-09-19: **GPL-3.0-only**, so distributed derivatives remain open source under the license's terms. The license choice in R0.6 is resolved. This document remains the implementation plan; current evidence and remaining release prerequisites are recorded in [release readiness](../release-readiness.md).
 
 Contents: **1** start from scratch or reuse? · **2** R0 new repo · **3** gap analysis · **4** milestones M0–M4 (UI) · **5** testing strategy · **6** site compatibility programme C0–C3 · **7** order · **8** risks.
 
@@ -89,7 +89,7 @@ Pure front-end restructure on existing APIs. Thumbnails that don't exist yet use
 | # | Task | Where | Done when |
 |---|---|---|---|
 | 1.1 | `FillThumb` | `apps/desktop/src/components/list/FillThumb.tsx` | Renders all four rows of the §4 state table; honours reduced motion; placeholder → image swap keeps `--p`. |
-| 1.2 | `VideoRow` using `RowModel`; one visible action; hover/focus-within extras; right-click menu via existing `dropdown-menu`. | `components/list/VideoRow.tsx` | Visual match to `mockups/main-screens.html` at 820px; no status badges, no bar. |
+| 1.2 | `VideoRow` using `RowModel`; one visible action; hover/focus-within extras; right-click menu via existing `dropdown-menu`. | `components/list/VideoRow.tsx` | Visual match to the current `ui-design-spec.md` at 820px, including the approved progress lane. |
 | 1.3 | `VideoList`: merge `useQueue` + `useHistory` → ordered `RowModel[]` (§6 ordering); completed queue jobs are de-duplicated against history by `jobId`. Drag-reorder for waiting rows. | `components/list/VideoList.tsx`, hooks | A job moving queued → downloading → saved never duplicates or flickers between positions. |
 | 1.4 | `TopBar`: paste field (uses existing `POST /api/jobs`), tabs, search. ⌘V handling. Multi-URL paste. | `components/layout/TopBar.tsx`; delete `Navbar`, `QueueToolbar`, `QueueSummaryBar`, `HistoryToolbar` | Pasting a URL creates a row without leaving the list. |
 | 1.5 | Server-side search + pagination for saved items (review P2: 200 cap). Infinite scroll in `Saved`/`All`. | `packages/downloader-api/src/services/historyIndex.js`, `routes/history.js`, `lib/api.ts`, `useHistory.ts` | Library fixture of 500 files: search finds item #450. |
@@ -109,7 +109,7 @@ Pure front-end restructure on existing APIs. Thumbnails that don't exist yet use
 | 2.2 | Live state: persist `mediaItemId → jobId` in `chrome.storage.session`; poll `GET /v1/queue` every 1s while open; map job → row state; Pause/Resume/Play from the popup. Needs `/v1` equivalents of pause/resume (today only `/api/queue/:id/pause` exists) and a `/v1/jobs/:id/open`. | `popup/state.js`, `createApiServer.js` | Start a download, close and reopen the popup: the row shows current progress. |
 | 2.3 | Thumbnails at detection time (§5.3): poster → og:image → canvas frame → none. Pass the chosen URL/data-URL in the job payload as `thumbnailUrl` so the desktop row shows the same image immediately. | `js/content.js`, `service-worker.js`, `buildJobPayload()`, `routes/jobs.js` | On a page with `<video poster>`, popup and desktop show the poster before any bytes download. |
 | 2.4 | Offline / not-installed / version-mismatch banner (§5.4). Register `vidsnag://` protocol in the desktop app (`app.setAsDefaultProtocolClient`, `protocols` in electron-builder config) so **Open VidSnag** can launch a closed app. | `popup/`, `apps/desktop/electron/main.js`, `apps/desktop/package.json` | With the app quit, clicking Open VidSnag launches it and the banner clears within ~3s. |
-| 2.5 | Empty state, "No video?" help, footer badge, settings sheet (popup subset; **Change** deep-links to the app). | `popup/` | Matches `mockups/states.html`. |
+| 2.5 | Empty state, "No video?" help, footer badge, settings sheet (popup subset; **Change** deep-links to the app). | `popup/` | Matches the current popup states in `ui-design-spec.md`. |
 | 2.6 | Reset detections on navigation; per-row Hide; remove "Clear Media". Include the review's detection fixes that change what rows appear: small-manifest rule (review P1), relative URL resolution. | `js/media-detector.js`, `service-worker.js` | A 40 KB `.m3u8` is detected; navigating away clears the list. |
 | 2.7 | Popup Playwright test against a local fixture page + stub API. | `tests/` | Detected → Downloading → Saved asserted on row text and `--p`. |
 
@@ -266,7 +266,7 @@ Each has a fixture (§5.1–5.2) so it can be built and regression-tested withou
 | Player inside cross-origin iframe(s) | partial | inject detector in all frames; attribute detections to the top tab; thumbnail/title from the top page |
 | `Referer` / `Origin`-gated manifests and segments | partial (request context captured in uncommitted work) | reliable capture per request; pass to engine; engine sends on every segment request |
 | Cookie / session-bound streams | unknown | optional cookie hand-off for the media host only; never stored in `queue.json` in clear (review P1) |
-| Short-lived signed URLs | fails late | classify 403/410 → "Link expired"; **refresh flow**: reopening the page re-detects the same video and re-attaches the new URL to the paused job, reusing finished pieces when segment count/durations match |
+| Short-lived signed URLs | explicit recovery implemented | classify 403/410 → "Link expired"; **refresh flow**: reopen the page, re-detect the video, then choose **Continue previous download**. The engine validates compatibility before reusing finished pieces; recovery does not attach automatically. |
 | Manifest without `.m3u8`, tiny manifests, base64 or JS-assembled URLs | fails (review P1/P2) | detect by content-type and body sniff (`#EXTM3U`), not extension or size |
 | Segments disguised as `.jpg/.png/.html` or with junk prefixes | unknown | sniff TS sync byte / fMP4 box; strip prefixes before concat |
 | Separate audio rendition, multiple languages | native path only | M3 selection |

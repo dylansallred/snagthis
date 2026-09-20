@@ -8,4 +8,8 @@ Run `npm run verify` once for a completed change, plus the relevant browser/Elec
 
 Use a branch and a pull request. Explain the user-visible change, relevant limitations and validation. Do not commit generated videos, downloaded content, secrets, credentials, build artifacts or `node_modules`.
 
+Keep approved design references, release guides and reusable technical decisions in `docs/`. Put superseded design experiments in `work/design/`, scratch research in `work/research/`, and one-off review reports in `work/reviews/`; `work/` is ignored by Git. Keep assets and fixtures required by the application, README or tests tracked.
+
+For desktop UI previews, run `npm run dev:desktop` and open `http://127.0.0.1:5173/?gallery=1`; use `?gallery=states` or `?gallery=empty` for other states, and add `&details=1` or `&sheet=settings` for panels. For Chrome UI previews, serve the repository over loopback HTTP and open `apps/extension/popup.html?demo=default`; available modes are listed in [the extension guide](apps/extension/README.md). These previews use credited sample media without starting downloads or changing preferences.
+
 Contributions must be compatible with GPL-3.0-only. Record third-party source and license information before adding code or assets.

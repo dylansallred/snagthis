@@ -15,7 +15,6 @@ module.exports = [
       '**/.cache/**',
       '**/*.min.js',
       'apps/extension/popup.css',
-      'm3u8-extension.zip',
     ],
   },
   {

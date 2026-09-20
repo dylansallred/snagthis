@@ -4,11 +4,11 @@ Status: approved direction, updated by the owner on 2026-09-19: clean hover/focu
 Later the same day the owner selected **A · Refined** from the [UI refresh studies](prototypes/ui-refresh/index.html): a 128 × 72 popup thumbnail with a two-line title and dot-separated metadata; a plain green check instead of a filled Saved badge, followed by quality; one Pieces palette for the row lane and the details map; a slim edge joining an open row to its (still distinct) details surface, grey at rest and orange while active; `~` for the home folder with the final folder emphasised; and a ⌘V hint in the empty paste field. After three rounds of [hover options](prototypes/ui-refresh/hover.html) the owner chose **Focus mono** for row hover and keyboard focus on both surfaces; it replaces the warm wash and glowing edge. From the [surface study](prototypes/ui-refresh/surface.html) the owner then chose **Lines** (one flat list surface with visible dividers), the **Steel** palette (hue 215, 22% saturation), first at Dark and then revised by the owner to **Very dark** (8% row lightness) and **Orange line** bars: darker header and footer without drop shadows, an orange-to-grey fading line under the header and a plain divider above the footer. These supersede the earlier charcoal values and the "soft inward shadows" wording below.
 On 2026-09-20 the owner selected **Solid badge**, **Inset tiles**, and **Quality first** from the [text and quality study](prototypes/ui-refresh/metadata.html). Quality uses a small silver tier badge with dark text beside the exact resolution (SD / 480p, HD / 720p, FHD / 1080p, 4K / 2160p); absent or unrecognised quality never receives an inferred tier. Desktop detail facts sit in individual dark inset tiles. Saved metadata leads with quality, then size, then the green check and saved date/status; the popup keeps duration outside the thumbnail in the metadata area. These choices supersede the plain quality text, flat facts, and saved-first ordering below.
 Later on 2026-09-20 the owner selected **Three dots** and **Flush full height** from the [thumbnail study](prototypes/ui-refresh/thumbnails.html). Both surfaces use a 128px-wide thumbnail flush with the row's left, top, and bottom edges. It spans the full row height, including the area beside active progress; the progress lane sits under the text and actions only. A neutral three-dot placeholder replaces the still stripes when no image is available. These choices supersede the inset thumbnail dimensions and full-width lane below.
-Companion: [roadmap.md](roadmap.md). Interactive mock-ups: [mockups/main-screens.html](mockups/main-screens.html), [mockups/states.html](mockups/states.html) (open in a browser; sample data, nothing is downloaded).
+Companion: [roadmap.md](roadmap.md). Interactive references: [UI refresh studies](prototypes/ui-refresh/index.html) and [controls](prototypes/ui-refresh/controls.html) (sample data; nothing is downloaded). Pre-refresh mock-ups and screenshots are archived locally under `work/design/`.
 
 | Popup | Desktop |
 |---|---|
-| ![popup](img/popup.png) | ![desktop](img/desktop.png) |
+| ![Chrome extension](../images/chrome-extension.png) | ![Desktop app](../images/desktop.png) |
 
 ## 1. Principles
 
@@ -53,8 +53,6 @@ Radii: thumbnail 0px (flush with the row), buttons 7px, menus 9px, window 10px. 
 Status colours `--color-status-queued/downloading/failed/cancelled` and all `--color-segment-*` remain defined but are only used inside the details panel.
 
 ## 3. The row
-
-![row](img/row-downloading.png)
 
 ```
 ┌──────────┐  Title, one line, ellipsis                         [⋯ hover] [ action ]
@@ -136,8 +134,8 @@ The owner replaced the original colour-fill thumbnail on 2026-09-19. Earlier scr
 - For seekable sources, choose a scene around 35% of the full duration; prefer alternatives at 50% and 25% before looking farther afield when frames are black. Do not cap long-video sampling at the opening minute. For short files, prefer a shorter useful excerpt over forcing the scene to time zero just to reserve ten seconds.
 - A YouTube popup preview may capture the already-playing page video locally. Keep the supplied YouTube artwork; do not seek, play or pause the user's page to prepare a hover preview. Paused or uncapturable page video keeps its poster. No desktop job or new sign-in is required for this local capture.
 - Drive row progress from actual `job.progress`, with the existing status sentence and accessible progress value. Pause motion while paused or waiting. Motion may indicate activity, but must never invent progress.
-- Both surfaces use the selected **Pieces** treatment: 40 aggregate progress cells in a 7px-high lane beneath the text and actions only. The full-height thumbnail occupies the left column beside this lane, with no progress drawn beneath or over the image. Completed cells settle in muted green (`#80bfa6`). The owner-selected **Spark** motion: the current cell fills amber (`#f4c38a`) from the left with real progress while pulsing gently (1.9 seconds), and each cell finished while the row is on screen flashes white with a short burst of light (520ms). Opening a list or popup never replays sparks for earlier cells. The lane represents overall progress, not the actual number of media chunks. Paused/problem and reduced-motion states are still; detected, waiting and saved rows have no lane. Desktop uses an 8px gap above the lane to remain compact. The [four extension studies](prototypes/extension-motion/index.html) record the original motion direction; the thumbnail study supersedes their full-width lane geometry.
-- The [earlier A+B motion comparison](prototypes/download-motion/index.html) remains a historical study. Its warm background fill, glowing edge and sweep are superseded on both surfaces; they are not current production requirements. The detailed desktop Pieces map continues to show actual segment telemetry separately.
+- Both surfaces use the selected **Pieces** treatment: 40 aggregate progress cells in a 7px-high lane beneath the text and actions only. The full-height thumbnail occupies the left column beside this lane, with no progress drawn beneath or over the image. Completed cells settle in muted green (`#80bfa6`). The owner-selected **Spark** motion: the current cell fills amber (`#f4c38a`) from the left with real progress while pulsing gently (1.9 seconds), and each cell finished while the row is on screen flashes white with a short burst of light (520ms). Opening a list or popup never replays sparks for earlier cells. The lane represents overall progress, not the actual number of media chunks. Paused/problem and reduced-motion states are still; detected, waiting and saved rows have no lane. Desktop uses an 8px gap above the lane to remain compact. The earlier extension studies are archived locally; the thumbnail study supersedes their full-width lane geometry.
+- The earlier A+B motion comparison is archived locally. Its warm background fill, glowing edge and sweep are superseded on both surfaces; they are not current production requirements. The detailed desktop Pieces map continues to show actual segment telemetry separately.
 - Do not put “Preview,” clip-length labels or other hover text over the video. Accessible labels may describe the preview without occupying video space.
 - Saved desktop rows retain a small checkmark badge by their status, while their background remains quiet.
 - Prefer a representative, nonblack frame from downloaded media over a page screenshot or generic site poster. Preserve YouTube's supplied artwork. Repair old saved-video posters when preparing their local previews. Poster updates must not reset download progress.
@@ -175,8 +173,6 @@ Closing the popup never affects the download.
 
 ### 5.2 Quality menu
 
-![quality](img/state-quality-menu.png)
-
 - Trigger: a compact borderless dark button in the status line (`1080p ⌄`), with brighter text, an orange chevron, and distinct hover/open feedback. Rotate the chevron and expose `aria-expanded` while open. Keep its width stable so size and duration do not shift. Shown only when more than one real variant was discovered; otherwise plain text (`720p`) or nothing.
 - Default selection: user's Preferred quality setting (default "Best"), falling back to the highest available.
 - Items: one per discovered variant, highest first: label `{height}p`, right-aligned size. Dropdown items use resolution text only (such as `1080p` or `720p`), without tier badges; keep the main-row quality badge. Label bitrate × duration ÷ 8 estimates with `about`; show `N/A` in the row and menu when neither a total nor an estimate is available. Playlist response bytes are never the video size. `Audio only` last, only if an audio rendition exists.
@@ -199,8 +195,8 @@ On opening, use one short content fade with a 4px settle; Chrome owns the outer 
 
 | State | Spec |
 |---|---|
-| Nothing found ![empty](img/state-empty.png) | Icon tile, `Press play on the video`, `VidSnag spots a video once it starts playing. Start it, then open this again.`, bordered **Check again**. |
-| Desktop app unreachable ![offline](img/state-offline.png) | Amber banner under the header: `VidSnag isn't open, so downloads can't start.` + primary **Open VidSnag** (new `vidsnag://open` protocol handler — does not exist yet, roadmap M2; if the health check still fails after 3s, swap the button to `Get the app`). Rows at 45% opacity, not clickable. Footer right becomes `Don't have the app? Get it`. Poll `/v1/health` every 2s; on success remove the banner without reload. |
+| Nothing found | Icon tile, `Press play on the video`, `VidSnag spots a video once it starts playing. Start it, then open this again.`, bordered **Check again**. |
+| Desktop app unreachable | Amber banner under the header: `VidSnag isn't open, so downloads can't start.` + primary **Open VidSnag** (new `vidsnag://open` protocol handler — does not exist yet, roadmap M2; if the health check still fails after 3s, swap the button to `Get the app`). Rows at 45% opacity, not clickable. Footer right becomes `Don't have the app? Get it`. Poll `/v1/health` every 2s; on success remove the banner without reload. |
 | Extension/app version mismatch | Same banner pattern: `Update VidSnag to keep downloading.` + **Update**. |
 
 ## 6. Desktop (`apps/desktop`)
@@ -231,13 +227,9 @@ Owner-selected desktop startup: **Arrow leads**, **Center → header**, **Natura
 
 ### 6.1 First launch
 
-![first](img/state-first-launch.png)
-
 Paste field gets a primary-colour border. Centre: icon tile, `Download your first video`, `Paste a link above, or play a video in Chrome and click the VidSnag icon in the toolbar.`, primary **Add VidSnag to Chrome** (hidden once the extension has connected at least once). An empty `Downloading` or `Saved` tab shows one muted line only (`Nothing downloading` / `No saved videos yet`).
 
 ## 7. Details panel (desktop)
-
-![details](img/state-details.png)
 
 Owner-selected **Drawer** motion: the details slide out from under their row over about 0.34s while the rows below move down, and slide back the same way when closed or when another row opens; reduced motion opens and closes instantly. Opens in place under the row (row and panel share `background-hover`); one open at a time; toggled by row click, "⋯" → Details, or Space/Enter on a focused row.
 
@@ -262,8 +254,6 @@ Use the approved Streamlined layout: compact facts across the top with a dark gr
 Desktop context menus use a compact dark surface and soft shadow without an outer border. Destructive actions remain separated and labelled clearly.
 
 ## 8. Settings sheet
-
-![settings](img/state-settings.png)
 
 Same content and layout in both surfaces: a sheet over the popup; a 400px right-side sheet in the desktop. Five rows, then one collapsed `Advanced` line.
 

@@ -4,9 +4,11 @@ Reviewed 2026-09-20. This records code preparation and remaining release require
 
 ## What belongs in the PR
 
-Keep the product source, shared contracts and generated extension copies, tests, lockfile, notices, and design studies. The studies are working references for the accepted interface, including the startup animation. Include the new runtime modules and assets alongside their callers; they are not disposable files just because Git currently lists them as untracked.
+Keep the product source, shared contracts and generated extension copies, tests, lockfile, notices, approved design references, and studies still used as references or test fixtures, including the startup animation. Superseded download/extension motion studies and old review reports are local archives under ignored `work/`. Include the new runtime modules and assets alongside their callers; they are not disposable files just because Git currently lists them as untracked.
 
 The cleanup removes 16 unreferenced scaffold/legacy source files and three unused dependency declarations (`next-themes`, `cross-env`, and the engine's duplicate `unzipper` dependency). The API's actively used subtitle services and its `unzipper` dependency remain. Original logo assets and credited sample media stay available to development previews. Production desktop builds substitute an empty gallery module so those sample movies and posters do not ship.
+
+The follow-up cleanup also removes unused desktop helpers and UI wrappers, six unused contracts adapters, a duplicate build icon, and unused `class-variance-authority`, `eslint-plugin-react`, and direct `@eslint/js` dependency declarations. Historical implementation notes, superseded mock-ups/screenshots, and rejected logo variations are preserved locally under ignored `work/`. The original artwork, selected design references, and media required by tests remain tracked.
 
 Do not commit generated installers, extension ZIPs, build directories, downloaded media, dependency directories, local verification output, notarization output, release staging, credentials, or signing material. `.gitignore` includes the concrete generated paths used by this repository. The extension package is built from an explicit runtime file list, rather than whatever happens to be in its working directory.
 
@@ -20,6 +22,8 @@ Before committing, review `git diff` and the untracked list together. Keep `pack
 - **Extension-only GitHub releases:** use an `extension-vX.Y.Z` tag when only Chrome changes. The workflow prepares a separate extension ZIP draft with its source commit and checksums; GitHub provides tagged source archives. This runs CI without producing desktop installers or publishing to the Chrome Web Store. Keep it marked prerelease and not latest so desktop update discovery remains on a desktop release.
 - **Chrome:** [Chrome Web Store is the primary distribution path](extension-release.md). Users receive Chrome-managed extension updates after approval/publication. A GitHub ZIP or a future landing page is the fallback; an unpacked installation needs manual updating and must not be advertised as automatically updating.
 - **Browser-only downloads:** this PR includes native Chrome downloads for detected standalone MP4/WebM files, without desktop pairing. Chrome owns the transfer and saved file; the popup provides progress, pause/resume, retry and Show in folder. Streams, separate tracks and processing continue through desktop. See [the research and remaining phases](research/chrome-only-downloads.md).
+
+Desktop direct-file resume currently restarts the transfer; segmented downloads retain compatible pieces. Recovery from an expired link requires choosing **Continue previous download** after recapturing the source, followed by engine compatibility checks. Chrome's native download resume is separate from the desktop path.
 
 ## External requirements still open
 

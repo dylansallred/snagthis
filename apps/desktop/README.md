@@ -40,4 +40,4 @@ To bundle `ffmpeg` and `ffprobe` inside the desktop app:
 
 At runtime, Electron sets `FFMPEG_PATH` and `FFPROBE_PATH` to bundled binaries when present, so users do not need to install ffmpeg manually.
 
-Note: default download URLs are only provided for macOS. For Linux/Windows, set `FFMPEG_DOWNLOAD_URL` and `FFPROBE_DOWNLOAD_URL` before running the fetch script.
+The fetch script provides pinned portable builds for macOS, Windows, and Linux on x64 and arm64. Custom builds require `FFMPEG_DOWNLOAD_URL`, `FFPROBE_DOWNLOAD_URL`, and `FFMPEG_SOURCE_URL`.

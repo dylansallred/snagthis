@@ -22,7 +22,6 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@m3u8/contracts": "1.0.0",
     "@m3u8/downloader-api": "1.0.0",
-    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "electron-updater": "^6.3.9",
     "lucide-react": "^0.575.0",

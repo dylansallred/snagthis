@@ -79,18 +79,3 @@ export interface QueueData {
   queue: QueueJob[];
   settings: QueueSettings;
 }
-
-export interface QueueSummary {
-  total: number;
-  queued: number;
-  downloading: number;
-  paused: number;
-  completed: number;
-  failed: number;
-  cancelled: number;
-}
-
-export interface ActiveMetrics {
-  speedBps: number;
-  etaSeconds: number | null;
-}
