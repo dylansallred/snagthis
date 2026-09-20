@@ -581,10 +581,32 @@ test('master variants collapse, unrelated videos remain separate, SPA clears det
   } finally { await master.popup.close(); await master.page.close(); }
   const two = await openFixture('two');
   try { await expect(two.popup.locator('.video-row')).toHaveCount(2); } finally { await two.popup.close(); await two.page.close(); }
+  const embedded = await openFixture('nested');
+  try {
+    await expect(embedded.popup.locator('.video-row')).toHaveCount(1);
+    // A child frame's captured URL differs from its tab URL. Its actual
+    // manifest body must still reach the worker through the content script.
+    await expect.poll(async () => (await embedded.popup.evaluate((tabId) => chrome.runtime.sendMessage({ cmd: 'GET_TAB_MEDIA', tabId }), embedded.tabId)).items[0]?.manifest?.durationSeconds || 0).toBeGreaterThan(0);
+  } finally { await embedded.popup.close(); await embedded.page.close(); }
   const spa = await openFixture('spa');
   try {
     await expect(spa.popup.locator('.video-row')).toHaveCount(1);
+    const sourcePageUrl = spa.page.url();
+    const previous = await spa.popup.evaluate((tabId) => chrome.runtime.sendMessage({ cmd: 'GET_TAB_MEDIA', tabId }), spa.tabId);
     await spa.page.locator('#navigate').click();
+    await expect(spa.page).toHaveURL(`${sourcePageUrl}?next=1`);
+    // Deterministically deliver an observation captured before pushState after
+    // Chrome has updated the tab URL. Document ID and sender.url stay unchanged.
+    const late = await worker.evaluate(async ({ tabId, sourcePageUrl, url }) => {
+      const tab = await chrome.tabs.get(tabId);
+      const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+      const sender = { id: chrome.runtime.id, tab, frameId: 0, documentId: frame.documentId, url: sourcePageUrl };
+      return globalThis.handleMessage({ cmd: 'STORE_DETECTED_MEDIA', media: { url, sourcePageUrl, contentType: 'video/mp4' } }, sender);
+    }, { tabId: spa.tabId, sourcePageUrl, url: previous.items[0].url });
+    expect(late).toMatchObject({ ok: true, ignored: true });
     await expect.poll(async () => (await spa.popup.evaluate((tabId) => chrome.runtime.sendMessage({ cmd: 'GET_TAB_MEDIA', tabId }), spa.tabId)).items.length).toBe(0);
+    const nextMediaUrl = `${fixture.baseUrl}/media/second.mp4`;
+    await spa.page.locator('video').evaluate((video, url) => { video.src = url; video.play().catch(() => {}); }, nextMediaUrl);
+    await expect.poll(async () => (await spa.popup.evaluate((tabId) => chrome.runtime.sendMessage({ cmd: 'GET_TAB_MEDIA', tabId }), spa.tabId)).items.map(item => item.mediaSourceUrl)).toEqual([nextMediaUrl]);
   } finally { await spa.popup.close(); await spa.page.close(); }
 });

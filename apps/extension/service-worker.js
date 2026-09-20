@@ -194,6 +194,14 @@ function trustedPage(sender) { return sender.id === chrome.runtime.id && String(
 registerPreviewOriginSessions({ readPage, trustedPage });
 async function handleMessage(message, sender) {
   const tabId = sender.tab?.id;
+  if (['STORE_DETECTED_MEDIA', 'PAGE_CONTEXT'].includes(message.cmd) && Number.isInteger(tabId) && sender.frameId === 0) {
+    const sourcePageUrl = D.httpUrl((message.media || message.context)?.sourcePageUrl);
+    // A queued observation can outlive a same-document navigation. Compare
+    // top-frame observations with the current tab URL: sender.url retains the
+    // original document URL after pushState. Child frames have their own URLs
+    // and continue through the frame/document validation below.
+    if (sourcePageUrl && sender.tab.url && sourcePageUrl !== D.httpUrl(sender.tab.url)) return { ok: true, ignored: true };
+  }
   if (message.cmd === 'STORE_DETECTED_MEDIA' && Number.isInteger(tabId)) return storeMedia(tabId, message.media || {}, sender.frameId || 0, sender.tab.url, { documentId: sender.documentId, fromContent: true });
   if (message.cmd === 'PAGE_NAVIGATED' && Number.isInteger(tabId) && sender.frameId === 0) {
     const current = await chrome.tabs.get(tabId);
