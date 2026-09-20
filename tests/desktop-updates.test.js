@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
 
 const sourcePath = path.resolve(__dirname, '../apps/desktop/electron/main.js');
-const source = fs.readFileSync(sourcePath, 'utf8');
+const source = fs.readFileSync(sourcePath, 'utf8').replace(/\r\n/g, '\n');
 
 function fixture() {
   const handlers = new Map();

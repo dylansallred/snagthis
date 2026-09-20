@@ -13,7 +13,9 @@ test('source previews cancel failed response bodies and capture cover-cropped re
   let server;
   let failureTimer;
   let failureBytes = 0;
-  let failureClosed = false;
+  const failureBodySize = 2 * 1024 * 1024;
+  let reportFailureClosed;
+  const failureClosed = new Promise(resolve => { reportFailureClosed = resolve; });
   try {
     const mediaPath = path.join(directory, 'wide-source.mp4');
     await runTool(process.env.FFMPEG_PATH || 'ffmpeg', [
@@ -30,13 +32,16 @@ test('source previews cancel failed response bodies and capture cover-cropped re
         res.setHeader('Content-Type', 'video/mp4'); res.setHeader('Content-Length', media.length); res.end(media); return;
       }
       if (req.url === '/error.mp4') {
-        res.writeHead(503, { 'Content-Type': 'video/mp4', 'Content-Length': 2 * 1024 * 1024 });
+        res.writeHead(503, { 'Content-Type': 'video/mp4', 'Content-Length': failureBodySize });
         res.flushHeaders();
         failureTimer = setInterval(() => {
           const chunk = Buffer.alloc(16 * 1024); failureBytes += chunk.length; res.write(chunk);
-          if (failureBytes >= 2 * 1024 * 1024) { clearInterval(failureTimer); res.end(); }
+          if (failureBytes >= failureBodySize) { clearInterval(failureTimer); res.end(); }
         }, 5);
-        res.on('close', () => { failureClosed = true; clearInterval(failureTimer); });
+        res.once('close', () => {
+          clearInterval(failureTimer);
+          reportFailureClosed({ bytes: failureBytes, finished: res.writableFinished });
+        });
         return;
       }
       res.setHeader('Content-Type', 'text/html');
@@ -51,10 +56,18 @@ test('source previews cancel failed response bodies and capture cover-cropped re
       const video = document.createElement('video'); document.body.append(video);
       VidSnagSourcePreview.create({ item: { url: `${location.origin}/error.mp4`, type: 'file' }, video, onError: resolve });
     }));
-    const bytesAtFailure = failureBytes;
-    await page.waitForTimeout(250);
-    assert.equal(failureClosed, true, 'the failed preview closes its streaming HTTP error response');
-    assert.ok(failureBytes <= bytesAtFailure + 65536, 'at most an already-in-flight chunk arrives after failure');
+    // Browser onError and the server observing TCP cancellation run in separate
+    // processes. Measure the actual closed response, not chunks written during
+    // an assumed scheduling interval between those two events.
+    let closeDeadline;
+    let closedResponse;
+    try {
+      closedResponse = await Promise.race([failureClosed, new Promise((_resolve, reject) => {
+        closeDeadline = setTimeout(() => reject(new Error('The failed preview left its HTTP error response open')), 2500);
+      })]);
+    } finally { clearTimeout(closeDeadline); }
+    assert.equal(closedResponse.finished, false, 'cancellation must close the response before its body finishes normally');
+    assert.ok(closedResponse.bytes < failureBodySize, 'the failed preview must stop transfer before downloading the complete error body');
 
     const aspect = await page.evaluate(async () => {
       const video = document.createElement('video'); document.body.append(video);

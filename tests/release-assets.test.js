@@ -29,7 +29,7 @@ function fixture() {
   for (const component of components) component.path = 'sources';
   fs.mkdirSync(path.join(sourceDirectory, 'sources'));
   fs.writeFileSync(path.join(sourceDirectory, 'sources/source.c'), 'fixture source');
-  const archived = spawnSync('tar', ['-cJf', archive, '-C', sourceDirectory, '.'], { encoding: 'utf8' });
+  const archived = spawnSync('tar', ['-cJf', 'release-source/vidsnag-corresponding-source.tar.xz', '-C', 'source-content', '.'], { cwd: base, encoding: 'utf8' });
   assert.equal(archived.status, 0, archived.stderr);
   const builds = [];
   for (const [platform, arch] of [['darwin', 'arm64'], ['darwin', 'x64'], ['win32', 'x64']]) {

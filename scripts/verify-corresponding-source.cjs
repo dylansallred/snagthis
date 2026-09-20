@@ -13,7 +13,9 @@ function verifySourcePacket(base, releaseTag) {
   if (!/^[a-f0-9]{40}$/.test(manifest.sourceCommit || '')) throw new Error('Corresponding source must identify the exact VidSnag Git commit');
   const sha256 = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
   if (manifest.archiveSha256 !== sha256) throw new Error('Corresponding-source archive SHA256 does not match its reviewed manifest');
-  const listed = spawnSync('tar', ['-tJf', archive], { encoding: 'utf8', timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
+  // GNU tar treats a Windows drive prefix in -f as a remote host. Using cwd
+  // and a basename also works with the BSD tar shipped on macOS.
+  const listed = spawnSync('tar', ['-tJf', path.basename(archive)], { cwd: directory, encoding: 'utf8', timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
   if (listed.error || listed.status !== 0) throw new Error('Cannot read the corresponding-source tar.xz archive');
   const entries = new Set(listed.stdout.split(/\r?\n/).filter(Boolean).map(name => name.replace(/^\.\//, '')));
   if ([...entries].some(name => name.startsWith('/') || name.split('/').includes('..'))) throw new Error('Source archive contains unsafe paths');
