@@ -1,10 +1,10 @@
 # VidSnag UI design spec — "Workbench, simplified"
 
-Status: approved direction, updated by the owner on 2026-09-19: clean hover/focus video thumbnails and **Pieces: downloading squares** beneath active rows in both the Chrome popup (`apps/extension`) and desktop (`apps/desktop`). Duration sits beside the desktop title and alongside quality/size in the narrower Chrome popup. Pieces supersedes the earlier **A+B: Leading edge + Soft sweep** treatment on both surfaces.
-Later the same day the owner selected **A · Refined** from the [UI refresh studies](prototypes/ui-refresh/index.html): a 128 × 72 popup thumbnail with a two-line title and dot-separated metadata; a plain green check instead of a filled Saved badge, followed by quality; one Pieces palette for the row lane and the details map; a slim edge joining an open row to its (still distinct) details surface, grey at rest and orange while active; `~` for the home folder with the final folder emphasised; and a ⌘V hint in the empty paste field. After three rounds of [hover options](prototypes/ui-refresh/hover.html) the owner chose **Focus mono** for row hover and keyboard focus on both surfaces; it replaces the warm wash and glowing edge. From the [surface study](prototypes/ui-refresh/surface.html) the owner then chose **Lines** (one flat list surface with visible dividers), the **Steel** palette (hue 215, 22% saturation), first at Dark and then revised by the owner to **Very dark** (8% row lightness) and **Orange line** bars: darker header and footer without drop shadows, an orange-to-grey fading line under the header and a plain divider above the footer. These supersede the earlier charcoal values and the "soft inward shadows" wording below.
-On 2026-09-20 the owner selected **Solid badge**, **Inset tiles**, and **Quality first** from the [text and quality study](prototypes/ui-refresh/metadata.html). Quality uses a small silver tier badge with dark text beside the exact resolution (SD / 480p, HD / 720p, FHD / 1080p, 4K / 2160p); absent or unrecognised quality never receives an inferred tier. Desktop detail facts sit in individual dark inset tiles. Saved metadata leads with quality, then size, then the green check and saved date/status; the popup keeps duration outside the thumbnail in the metadata area. These choices supersede the plain quality text, flat facts, and saved-first ordering below.
-Later on 2026-09-20 the owner selected **Three dots** and **Flush full height** from the [thumbnail study](prototypes/ui-refresh/thumbnails.html). Both surfaces use a 128px-wide thumbnail flush with the row's left, top, and bottom edges. It spans the full row height, including the area beside active progress; the progress lane sits under the text and actions only. A neutral three-dot placeholder replaces the still stripes when no image is available. These choices supersede the inset thumbnail dimensions and full-width lane below.
-Companion: [roadmap.md](roadmap.md). Interactive references: [UI refresh studies](prototypes/ui-refresh/index.html) and [controls](prototypes/ui-refresh/controls.html) (sample data; nothing is downloaded). Pre-refresh mock-ups and screenshots are archived locally under `work/design/`.
+Status: **current approved interface**, reconciled with the owner's selections and implemented desktop/extension behavior on 2026-09-20. The current rules below take precedence over older alternatives in the prototype studies.
+
+The baseline is **Workbench, simplified / A · Refined**, with **Focus mono** hover, **Lines**, the **Steel · Very dark** palette, and **Orange line** header/footer treatment. Metadata uses **Solid badge**, **Inset tiles**, and **Quality first**. Thumbnails use **Three dots** and **Flush full height**. Settings use **Grouped cards**, and desktop details use the **inspector card** described in §7.
+
+Interactive references: [UI refresh studies](prototypes/ui-refresh/index.html), [controls](prototypes/ui-refresh/controls.html), [metadata](prototypes/ui-refresh/metadata.html), and [thumbnails](prototypes/ui-refresh/thumbnails.html). They use sample data without starting downloads. The [roadmap](roadmap.md) records the historical migration plan; current release work is in [release readiness](../release-readiness.md). Superseded mock-ups are archived locally under `work/design/`.
 
 | Popup | Desktop |
 |---|---|
@@ -15,7 +15,7 @@ Companion: [roadmap.md](roadmap.md). Interactive references: [UI refresh studies
 1. **One row, four things.** Every video is a row of: thumbnail, title, one quiet status line, one visible action. Nothing else is visible at rest.
 2. **Keep the video clear.** Progress belongs in a compact lane beneath the text and actions, beside the full-height thumbnail. The thumbnail shows a full-colour poster or a silent loop on hover/focus; duration stays outside the image.
 3. **Same row everywhere.** The popup and the desktop render the same row component with the same states and copy.
-4. **Extras are one step away, never zero.** Quality/subtitles live in a menu; rename, remove, copy link, technical detail live in "⋯" / right-click; settings beyond five rows live under Advanced.
+4. **Extras are one step away, never zero.** Quality/subtitles live in a menu; rename, remove, copy link, technical detail live in "⋯" / right-click; settings use named cards; desktop-only technical settings live under Advanced.
 5. **Plain words.** No HLS / M3U8 / MP4 / thread / port in the default UI. The owner later chose **Segments** as the visible word for the download map (it replaces "Pieces" in all user-facing copy; older passages and class names that say Pieces refer to the same thing), and it appears only inside details.
 6. **Silence when healthy.** Connection state, errors and counts only appear when they need the user. Problems are one amber sentence + one labelled button.
 7. **Orange means interaction.** Primary actions, keyboard focus, and the owner's warm row-hover accent use orange. Actual download progress uses the selected Pieces colors.
@@ -46,7 +46,7 @@ Reuse the existing tokens in `apps/desktop/src/globals.css`; the extension's `sr
 | Success | `--color-status-completed` | `hsl(145 62% 46%)` | "Saved" in popup after finishing |
 | Destructive | `--color-destructive` | `hsl(0 72% 56%)` | "Cancel download", "Move to Trash" text only |
 
-Typography: Inter. Title 13.5px / 570 weight, single line, ellipsis. Status line 12px muted. Buttons 12.5px / 600. Duration chip 10.5px mono on `rgba(0,0,0,.72)`. No other mono text in default UI.
+Typography: Inter. Title 13.5px / 570 weight, with ellipsis or the popup's two-line title treatment. Status line 12px muted. Buttons 12.5px / 600. Duration is secondary text beside the desktop title or in popup metadata; never place it in a thumbnail chip.
 
 Radii: thumbnail 0px (flush with the row), buttons 7px, menus 9px, window 10px. Spacing unit 2px; no left, top, or bottom inset around the thumbnail. Keep a 12px gap to text, 14px at the row's right edge, and vertical padding on text/actions (desktop 10px; popup 12px).
 
@@ -71,7 +71,7 @@ Status colours `--color-status-queued/downloading/failed/cancelled` and all `--c
 
 Rules:
 - Exactly **one** visible action per row. If a state has no sensible action (e.g. "Finishing up…", "Waiting"), show none.
-- Rows use `surface-row` against darker `surface-chrome` header/footer bars with soft inward shadows. Hover or keyboard interaction uses **Focus mono**: the active row changes to `surface-row-hover` and shows a solid 3px `primary-hover` left edge, while every other row (and any other open details panel) fades to 45% opacity in greyscale over 300ms. The edge uses the owner-selected **Grow** motion: it scales out from its middle in 300ms and eases away over 380ms. On desktop there is one edge per item, spanning the row and its open details: an open item shows it in neutral grey (**Grey when open**) and it turns orange while that row is active, so two edges never stack. See the [edge and animation study](prototypes/ui-refresh/edge.html). A desktop row whose ⋯ menu is open counts as active. Both apps use identical values and timing. Nothing is drawn over thumbnails, titles or controls, and they never move. The treatment fades away on leave and does not represent download progress. Desktop keyboard focus keeps its inset orange accent. Reduced motion disables its transitions.
+- Rows use `surface-row` against darker `surface-chrome` header/footer bars, with an orange-to-grey divider under the header and a plain divider above the footer. Hover or keyboard interaction uses **Focus mono**: the active row changes to `surface-row-hover` and shows a solid 3px `primary-hover` left edge, while every other row (and any other open details panel) fades to 45% opacity in greyscale over 300ms. The edge uses the owner-selected **Grow** motion: it scales out from its middle in 300ms and eases away over 380ms. On desktop there is one edge per item, spanning the row and its open details: an open item shows it in neutral grey (**Grey when open**) and it turns orange while that row is active, so two edges never stack. See the [edge and animation study](prototypes/ui-refresh/edge.html). A desktop row whose ⋯ menu is open counts as active. Both apps use identical values and timing. Nothing is drawn over thumbnails, titles or controls, and they never move. The treatment fades away on leave and does not represent download progress. Desktop keyboard focus keeps its inset orange accent. Reduced motion disables its transitions.
 - Whole row is a click target on desktop: click toggles the details panel (§7). In the popup rows are not clickable.
 - Right-click anywhere on a row opens the same menu as "⋯".
 
@@ -87,13 +87,16 @@ Rules:
 | Finishing | downloading and `status` indicates remux/convert/verify | `Finishing up…` | full-colour poster/preview | none | ⋯ |
 | Paused by user | `queueStatus = paused` | `Paused at {pct}%` | full-colour poster/preview | Resume (play icon) | ⋯ |
 | Needs the user | `failed` with recoverable cause | amber sentence (§3.3) | full-colour poster/preview | labelled button (bordered) | ⋯ |
-| Saved | history item / `completed` | `Saved {when} · {size}` | full colour | Play (icon) | folder, ⋯ |
+| Saved | desktop history item / `completed` | `[quality] · {size} · ✓ Saved {when}` (omit unavailable quality) | full colour | Play (icon) | folder, ⋯ |
 | Saved, file missing | file not on disk | amber `File was moved or deleted` | full colour | **Locate** (bordered) | ⋯: Remove from list |
-| Popup, just finished | job completed while popup open | green `Saved` | full colour | **Play** (bordered) | — |
+| Popup, desktop download finished | desktop job completed | green `Saved` | full colour | **Play** | — |
+| Popup, Chrome download finished | browser job completed | `Saved in Chrome` | full colour | **Show in folder** | Chrome download details |
 
 `cancelled` jobs are removed from the list immediately (toast: "Download cancelled · Undo" for 5 s). They never render as rows.
 
 ### 3.2 Formatting
+
+Quality uses the selected **Solid badge**: a silver tier label with dark text beside the exact resolution (SD / 480p, HD / 720p, FHD / 1080p, 4K / 2160p). Unknown or unrecognised resolutions never receive an inferred tier. Keep the badge on the main row; quality-dropdown items use resolution text only.
 
 | Value | Rule | Examples |
 |---|---|---|
@@ -101,7 +104,7 @@ Rules:
 | `{eta}` | from `etaSeconds`. `<60` → `under a minute left`; `<3600` → `{m} min left`; else `{h} hr {m} min left`; `null`/unknown → omit the ` · {eta}` part entirely | `5 min left` |
 | `{size}` | 1 decimal for GB, integer for MB; unknown → `N/A`; estimates are prefixed `about` only inside menus/details | `182 MB`, `2.1 GB`, `N/A` |
 | `{when}` | `today`, `yesterday`, weekday within 7 days, else `12 Sep` | `Saved today · 182 MB` |
-| Duration chip | `m:ss` or `h:mm:ss`; hidden when unknown | `2:20:06` |
+| Duration | `m:ss` or `h:mm:ss`; hidden when unknown | `2:20:06` |
 | Speed | never in rows. Total speed in desktop footer; per-job speed in details | `7.3 MB/s` |
 
 ### 3.3 Problem sentences
@@ -147,29 +150,29 @@ Width 480px, per owner revision: quality, size, and feature-length duration fit 
 
 ```
 ┌ header ─ logo · "{n} videos on this page"                         ┐
-│ [banner — only when the desktop app is unreachable]               │
+│ [banner — desktop connection or compatibility guidance, if needed] │
 │ rows…                                                             │
 └ footer ─ ⚙ · "No video?"                     "Open VidSnag" (n)  ┘
 ```
 
 | Element | Spec |
 |---|---|
-| Brand and surfaces | Use the existing full VidSnag logo artwork, 112×22px, instead of a mark with separately typeset text. The popup count sits independently at right. Header and footer use `surface-chrome` with soft inward shadows to separate them from lighter video rows; no outer borders. Desktop matches the same treatment. |
+| Brand and surfaces | Use the existing full VidSnag logo artwork, 112×22px, instead of a mark with separately typeset text. The popup count sits independently at right. Header and footer use `surface-chrome`, an orange-to-grey line under the header, and a plain footer divider. Desktop matches the same treatment. |
 | Header text | `No videos yet` / `1 video on this page` / `{n} videos on this page`. No connection indicator when healthy. |
 | Row order | Longest known duration first, shorter videos below; unknown durations last. Equal durations keep their discovery order. |
 | Footer left | Settings (gear icon, opens the settings sheet §8), `No video?` (opens help: the empty-state text + link to troubleshooting). |
-| Footer right | `Open VidSnag` → `POST /v1/app/focus`. Orange count badge = jobs currently downloading or waiting (from `GET /v1/queue`). Hidden when 0. |
+| Footer right | `Open VidSnag` focuses the connected desktop app; when unpaired it opens connection setup, and when the app is unreachable it becomes `Don't have the app? Get it`. The orange count badge counts desktop downloading/waiting jobs only and is hidden at 0. |
 | Removed from today's popup | "Bridge" pill, "Detected Media" heading, refresh icon (auto-refresh on open), "Clear Media" button (replaced by per-row Hide in right-click; list resets on navigation), API host:port text, type/resolution pills, hostname + content-type row, Stream button (moved to right-click → "Preview"). |
 
 ### 5.1 Download flow
 
-1. Click **Download** → button shows a spinner for the POST (`/v1/jobs`), max 300ms before optimistic switch.
-2. Row switches to Downloading: status `0%`, row progress begins while the thumbnail stays clear. No toast.
-3. Popup keeps the mapping `mediaItemId → jobId` in `chrome.storage.session` so reopening the popup shows the same row in its live state.
-4. Progress comes from polling `GET /v1/queue` every 1s while the popup is open (WebSocket is unnecessary for a short-lived popup).
-5. On completion: green `Saved` + **Play** (opens the file via the desktop app). On reopen after completion the row returns to Detected only if the page is reloaded.
+1. Click **Download**. Supported standalone MP4/WebM files use Chrome's native downloader without desktop pairing. Streams, separate tracks, processing, and an explicit **Download with desktop** choice use the desktop app.
+2. Show a starting state while submission is pending, then reflect the accepted download's real progress. Keep the thumbnail clear. If a source needs desktop and it is unavailable or unpaired, show **Use desktop app** guidance rather than starting a browser download.
+3. The extension worker owns browser-download state and desktop job mappings, so closing and reopening the popup preserves the appropriate row. Refresh browser state from the worker and desktop state from `GET /v1/queue` while open; do not make browser state depend on desktop health.
+4. Chrome completion shows **Saved in Chrome** with **Show in folder**. Chrome controls its save location, safety prompts, and resume support; these files are separate from the desktop library. Desktop completion shows **Saved** with **Play** through the app.
+5. Show progress, pause/resume, retry, and errors according to the selected backend. When Chrome has no total size, show its downloading state without inventing a percentage.
 
-Closing the popup never affects the download.
+Closing the popup never cancels either kind of download. Desktop downloads still require the desktop app to keep running.
 
 ### 5.2 Quality menu
 
@@ -196,8 +199,9 @@ On opening, use one short content fade with a 4px settle; Chrome owns the outer 
 | State | Spec |
 |---|---|
 | Nothing found | Icon tile, `Press play on the video`, `VidSnag spots a video once it starts playing. Start it, then open this again.`, bordered **Check again**. |
-| Desktop app unreachable | Amber banner under the header: `VidSnag isn't open, so downloads can't start.` + primary **Open VidSnag** (new `vidsnag://open` protocol handler — does not exist yet, roadmap M2; if the health check still fails after 3s, swap the button to `Get the app`). Rows at 45% opacity, not clickable. Footer right becomes `Don't have the app? Get it`. Poll `/v1/health` every 2s; on success remove the banner without reload. |
-| Extension/app version mismatch | Same banner pattern: `Update VidSnag to keep downloading.` + **Update**. |
+| Desktop app unreachable | Banner: `Save supported files in Chrome. Open VidSnag for streams and more.` with **Open VidSnag**, using the implemented `vidsnag://open` handler; if unreachable after 3s, offer **Get the app**. Continue checking health every 2s. Direct Chrome downloads remain available. Only actions needing an existing desktop job are disabled; detected streams can open **Use desktop app** guidance. |
+| Desktop app reachable, not paired | Banner: `Save supported files in Chrome. Connect VidSnag for streams and more.` with **Connect**. Native Chrome downloads remain available. |
+| Extension/app version mismatch | Identify the component needing an update: `Update the Chrome extension to use desktop downloads.` with **Update Chrome extension**, or `Update VidSnag to use desktop downloads.` with **Update**. Keep native Chrome downloads available. |
 
 ## 6. Desktop (`apps/desktop`)
 
@@ -236,37 +240,37 @@ Owner-selected **Drawer** motion: the details slide out from under their row ove
 | Fact | Example |
 |---|---|
 | Quality | `1080p · English audio · English subtitles` |
-| Size | `714 MB / ~2.1 GB · 4.1 MB/s`; use an exact total when known, otherwise mark the estimate; show Total unknown until enough data is available |
+| Size | `714 MB / ~2.1 GB`; use an exact total when known, otherwise mark the estimate; show Total unknown until enough data is available. Active speed has its own readout. |
 | Connections (unsaved downloads) | `6 of 16 active`. Show measured active requests, not the configured limit as a claimed count. If the external downloader does not report the count, say so and show its limit. |
 | From | hostname |
-| Saving to / Saved in | full directory path, wrapping as needed; the whole section opens that folder on click or keyboard activation, with clear hover feedback |
+| Saving to / Saved in | clickable card header; use `~` for the home folder and emphasise the final folder name. Keep the full path in the accessible title when visually truncated. |
 
-Arrange the main facts horizontally with responsive wrapping on a distinct dark surface. Show the full directory path directly in the clickable location section. There is no **Technical details** accordion; actual failure diagnostics appear inline only when present. Keep the **Pieces** map visible by default below the main details, spanning the panel width. Use the existing `SegmentHeatmap` with colours from `--color-segment-*`, a compact state legend and a caption such as `412 of 1210 · 2 retrying`. Hide the map for direct downloads and saved items; explain unavailable piece telemetry rather than showing all pieces as pending.
+Use the owner-selected **inspector card** from the [details studies](prototypes/ui-refresh/studies.html): one inset rounded card with a clickable folder header, a facts/chart body, and a footer of labelled actions. Align its contents to the panel inset without a thumbnail-width gutter. The earlier Streamlined layout is superseded.
 
-**Owner revision (inspector card):** after the [details studies](prototypes/ui-refresh/studies.html) the owner replaced Streamlined with an inset rounded card inside the details panel. Its header is the clickable folder location (`Saving to` / `Saved in` and the path on one line). Its body shows the facts and the Pieces map; while a download reports speed, the body leads with the current speed and the owner-selected **Connection dots** (one dot per allowed connection, active ones lit orange, above the `6 of 16 active` text; no peak speed), drops speed from the Size fact, and draws a decorative live speed chart behind the lower 60% of the body (orange line with a filled area and a live dot, no axis, numbers or grid; **Ceiling + halo**: the chart never rises into the facts row, and text over it carries a dark halo, with the Pieces count moved beside its label). The speed history is an in-memory renderer sample only; saved, waiting, paused and problem rows show the card without a chart. The footer holds labelled text actions (Copy link, Open page, Rename/Locate when relevant) with Cancel download or Remove set apart at the right. The Streamlined description below is retained as history.
+- **Header:** `Saving to` / `Saved in` plus the location. The entire header opens the known folder.
+- **Facts:** Quality, Size, and From occupy dark inset tiles, wrapping responsively. While downloading, lead with the current speed and **Connection dots**: active measured requests light orange above `6 of 16 active`; never substitute the configured limit for a measured count. Show unavailable telemetry honestly. No peak-speed readout.
+- **Graph:** draw the live filled speed chart behind the lower body, beneath the facts (**Ceiling + halo**), with no axes, numbers, or grid. Text over the chart has a dark halo. History is an in-memory renderer sample; saved, waiting, paused, and problem rows show no chart. The selected fill, line, and cell opacity values below are authoritative.
+- **Segments:** show the real `SegmentHeatmap` below the facts, with a compact legend and count such as `412 of 1210 · 2 retrying`. Hide it for direct downloads and saved items; explain unavailable segment telemetry rather than representing every segment as pending. Failure diagnostics appear inline when present, without a Technical details accordion.
+- **Footer:** labelled **Copy link** and **Open page** actions, with **Rename** for waiting/paused items or **Locate** for missing files. Separate **Cancel download** or **Remove** at the right. The folder header already provides the folder action. Preserve accessible labels and existing removal confirmations.
 
 **Folder hover revision (2026-09-20):** the owner selected **Soft reveal** for the whole location bar and **Open + settle** for its folder icon from the [folder and copy study](prototypes/ui-refresh/folder.html). Hover or keyboard focus reveals a quiet warm gradient from the left while the folder opens, turns warm yellow, and briefly lifts and settles. The arrow nudges right. Leaving the bar restores its rest state even when a mouse click retains focus. Reduced motion keeps the static hover feedback without the sweep or bounce. Folder clicks keep their existing open-folder behavior. For copy feedback the owner selected **Sheets snap**: the link changes to overlapping paper outlines, the front sheet slides into place, and the green “Copied” label confirms the action without a checkmark. The button keeps its width, repeated clicks replay the animation and restart the confirmation period, and reduced motion shows the final stack without movement.
 
 **Retry marker revision (2026-09-20):** the owner selected **Outlined retries** from the [transfer study](prototypes/ui-refresh/transfer.html), keeping the current mint completed, amber downloading, yellow retrying, and grey pending colors. Retrying segments and their legend marker use a yellow outline with a dark centre so the state is distinct from filled downloading cells. The owner then selected the filled graph in its existing position with **#FA5D0E fill at 85% peak opacity**, fading vertically to transparent, and **#FF7566 line at 100% opacity**. The line glow and live dot follow that coral line color. Detailed segment cells use **25% opacity for pending**, **75% for outlined retries**, and **100% for downloading and completed**. The dark retry interior has the same opacity as its border, so the graph shows through the entire cell evenly. The legend stays fully visible. These values apply to the desktop details map; the aggregate row progress lane keeps its existing treatment.
 
-Use the approved Streamlined layout: compact facts across the top with a dark group of action icons beside them, followed by the full-width folder band and Pieces grid. Align facts and location to the panel’s left inset, without a thumbnail-width gutter. At narrower widths, facts wrap into two columns. The location section itself opens the known folder for active and saved downloads. Keep Copy link, Open page and Cancel download (active) or Remove (saved) as compact icon buttons grouped beside the facts; do not duplicate Open folder as another icon. Every icon has an accessible label and tooltip; keep existing removal confirmations. Rename remains available for waiting/paused items.
-
 Desktop context menus use a compact dark surface and soft shadow without an outer border. Destructive actions remain separated and labelled clearly.
 
 ## 8. Settings sheet
 
-Same content and layout in both surfaces: a sheet over the popup; a 400px right-side sheet in the desktop. Five rows, then one collapsed `Advanced` line.
+Use the owner-selected **Grouped cards** treatment from the [controls study](prototypes/ui-refresh/controls.html): named groups, rounded dark cards, quiet row dividers, and icons beside settings. Desktop uses a 400px right-side sheet; Chrome uses its popup sheet with the smaller browser-relevant set.
 
-| Row | Control | Backing setting |
-|---|---|---|
-| Save videos to | path + **Change** | `DesktopSettings.outputDirectory` |
-| Preferred quality | select: Best / 1080p / 720p / 480p | new `preferredQuality` |
-| Subtitles | select: language list / None | new `subtitleLanguage` |
-| Tell me when a download finishes | switch | new `notifyOnComplete` |
-| Start VidSnag when I log in | switch | new `launchAtLogin` |
-| **Advanced** (collapsed) | downloads at once (`queueMaxConcurrent`), connections per download (`downloadThreads`), start automatically (`queueAutoStart`), file naming, TMDB / SubDL keys, check for updates, diagnostics export | existing |
+| Desktop group | Contents |
+|---|---|
+| Chrome extension | Visible pairing status and explicit connection-code controls; never hidden under Advanced. |
+| Downloads | Save videos to + **Change**, Preferred quality (Best / 1080p / 720p / 480p), and Subtitles. |
+| App | Completion notifications and Start VidSnag when I log in. |
+| More | A collapsed **Advanced** card for downloads at once, connections, automatic start, file naming, TMDB/SubDL credentials, update controls, and diagnostics. |
 
-In the popup, rows that need the desktop app (folder picker) deep-link: **Change** → focuses the app with its settings sheet open.
+Chrome has one **This browser** card containing Preferred quality, Subtitles, and Tell me when desktop downloads finish. These preference controls require a reachable, paired desktop app. A separate **Desktop folder, speed and more in VidSnag** link opens desktop Settings; do not add an empty Advanced accordion or a browser-side folder picker. Offer **Connect Chrome** when unpaired. Direct Chrome downloads still use Chrome's own download preferences.
 
 **First connection clarity (2026-09-20):** keep **Chrome extension** visible at the top of desktop Settings, outside Advanced. Explain the three steps: show/copy a code in the desktop, open Chrome's Extensions → VidSnag → Connect, then paste and connect. **Show connection code** is explicit; never generate one merely by opening Settings. Display its actual remaining lifetime, **Copy code**, and **Get a new code** after expiry. Confirm successful connection on both surfaces. First launch has a separate **Already installed? Connect Chrome** path alongside installation; the unconnected footer opens this setup. The popup uses the same names and a direct **Open app settings** action, with clear incorrect/expired, offline, and retry guidance. Keep authentication and five-minute expiry unchanged.
 
@@ -277,8 +281,8 @@ New download folders use the resolved video/file name with readable spaces and s
 The unified list makes "remove" ambiguous, so it is explicit:
 
 - Active/waiting row → `Cancel download` — confirms only if > 50% done.
-- Saved row → `Remove…` opens a two-choice dialog: **Remove from list** (file stays) / **Move file to Trash** (Electron `shell.trashItem`, not `unlink`; new IPC, roadmap M0). Default focus on "Remove from list".
-- There is no bulk "clear" in v1. `DELETE /api/history` (deletes all files today) must not be reachable from this UI.
+- Saved row → `Remove…` opens the owner-selected **Popover** confirmation with two choices: **Remove from list** (file stays) / **Move file to Trash** (Electron `shell.trashItem`, not `unlink`). Default focus on "Remove from list".
+- There is no bulk "clear" in v1. Bulk history deletion must not be exposed as an ambiguous file-removal action.
 
 ## 10. Accessibility and input
 
@@ -291,14 +295,14 @@ The unified list makes "remove" ambiguous, so it is explicit:
 
 ## 11. Component map
 
-| New | Replaces | Notes |
+| Current component | Replaced legacy component | Notes |
 |---|---|---|
 | `VideoRow` (`components/list/VideoRow.tsx`) | `ActiveDownloadCard`, `QueueJobCard`, `HistoryItemCard` | props below |
 | `FillThumb` | thumbnail markup in all three | §4 |
-| `VideoList` | `QueueView`, `HistoryView` | merges `useQueue` + `useHistory` into one ordered array of `RowModel` |
+| `VideoList` | `QueueView`, `HistoryView` | uses `useLibrary` and shared row models for the unified list |
 | `RowDetails` | segment section of `ActiveDownloadCard` | wraps existing `SegmentHeatmap` |
 | `TopBar` | `Navbar`, `QueueToolbar`, `HistoryToolbar` | paste field, tabs, search |
-| `SettingsSheet` | `SettingsView`, `QueueSettingsBar`, `DesktopSettingsCard` | `UpdaterCard` moves under Advanced |
+| `SettingsSheet` | `SettingsView`, `QueueSettingsBar`, `DesktopSettingsCard` | Grouped cards; desktop update controls live under Advanced |
 | popup `renderRow()` | the ~400-line body of `renderMedia()` in `popup.js` | title inference helpers stay untouched |
 
 ```ts
@@ -325,4 +329,4 @@ Light theme; tray/menu-bar mode; collections/folders in the library; multi-selec
 
 ### Expanded-row design studies
 
-Three interactive alternatives are in [expanded-details](prototypes/expanded-details/index.html): Streamlined, Grouped, and Pieces first. They preserve the dark Workbench style, real video previews, full-width Pieces, full visible folder path and icon actions. The owner selected A · Streamlined, now implemented in the desktop. Grouped and Pieces first remain comparison studies. Hover indicates folder clickability; it does not launch Finder.
+The [expanded-details](prototypes/expanded-details/index.html) alternatives—Streamlined, Grouped, and Pieces first—are historical comparison studies and retained test fixtures. The initial Streamlined choice was superseded by the inspector card in §7. Use that current section for product changes; these earlier previews do not override it.

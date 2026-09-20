@@ -1,8 +1,8 @@
 # Release and PR readiness
 
-Reviewed 2026-09-20. This records code preparation and remaining release requirements; it is not a claim that a public release or Store approval has happened.
+Reviewed 2026-09-20. Application-code verification covers cleanup commit `d0012d1`; this documentation update does not change application behavior. Completed preparation is separate from the launch requirements below. No public release or Store approval is claimed.
 
-## What belongs in the PR
+## Completed code and repository preparation
 
 Keep the product source, shared contracts and generated extension copies, tests, lockfile, notices, approved design references, and studies still used as references or test fixtures, including the startup animation. Superseded download/extension motion studies and old review reports are local archives under ignored `work/`. Include the new runtime modules and assets alongside their callers; they are not disposable files just because Git currently lists them as untracked.
 
@@ -25,7 +25,29 @@ Before committing, review `git diff` and the untracked list together. Keep `pack
 
 Desktop direct-file resume currently restarts the transfer; segmented downloads retain compatible pieces. Recovery from an expired link requires choosing **Continue previous download** after recapturing the source, followed by engine compatibility checks. Chrome's native download resume is separate from the desktop path.
 
-## External requirements still open
+## Completed verification
+
+The latest coordinated application-code check ran with Node **22.23.2**: `npm run verify` passed **207/207 tests**, ESLint, desktop TypeScript, both production builds, and desktop/extension token parity. This is the cleanup verification for `d0012d1`, recorded locally in ignored `work/verification/cleanup-verify.log`. These documentation edits do not imply a new application test run.
+
+| Check | Completed evidence |
+| --- | --- |
+| ESLint and desktop TypeScript | Passed in the latest coordinated check. |
+| Unit/integration/media suite | **207/207 passed**, with no failures or skips; includes the history-scan and preview-response shutdown regressions. |
+| Production builds and token parity | Passed. Desktop production builds exclude development sample movies/posters. |
+| README and documentation assets | Animated desktop/extension previews visually reviewed; the cleanup's documentation-link and ignore-rule check passed. |
+
+### Earlier validation retained as evidence
+
+These checks were performed during implementation and release preparation; they were not rerun for this documentation pass.
+
+- Browser/Electron lifecycle checks covered actual pairing, selected HLS quality through a playable saved file, previews, popup states, extension-update guidance, and native Chrome downloads. Earlier selected runs passed 16 cases across the initial pass and focused corrections; the subsequent Linux CI run at `99a31e7` passed all 24 browser/Electron cases.
+- A real Chrome download passed with desktop offline, including pause/resume, continued bytes through worker stop/restart, restored state, 403/retry handling, safe persisted metadata, and HLS desktop guidance. FFprobe and the source SHA256 verified the saved MP4.
+- Extension packaging produced 31 runtime/license files (305,499 bytes at that preparation run), with a verified SHA256. Packaging tests cover contents, determinism, and excluded development/local files.
+- Workflow YAML and release shell syntax checks passed during workflow preparation. CI installs Chromium before renderer tests on every OS and prepares Linux display/sandbox dependencies before verification.
+
+Earlier local evidence is under ignored `work/verification/release-readiness/`, `work/verification/browser-downloads/`, and `work/verification/pr-ready/`. Historical counts and archive sizes describe those runs, not a newly built release.
+
+## Remaining launch requirements
 
 Read-only GitHub inspection found `dylansallred/vidsnag` is private, with no published releases. Access to repository variables and branch-protection details was denied to the current token, so those settings were not verified or changed. Draft preparation now ends before publication; a private-repository required-reviewer environment is no longer a prerequisite.
 
@@ -35,25 +57,10 @@ The owner clarified that this repository is private **during testing** and will 
 2. Configure and verify the existing Apple account's signing/notarization credentials and Windows signing credentials. Signed installer builds remain blocked without the required credentials. Review and publish completed drafts manually.
 3. Prepare and review the exact corresponding-source packet for bundled tools, including the required version/commit and source metadata. License notices alone do not replace this step.
 4. Create the Chrome Web Store listing and complete its privacy/permission disclosures and review. Store approval is not guaranteed. Publish a ZIP with clear manual-install/update instructions if using the fallback.
-5. Test an actual signed upgrade from the previous public desktop version to the new version on each supported platform. Confirm the new version launches, settings/queue remain, the extension reconnects, and active downloads are protected. A mocked updater test or fresh installer smoke test cannot establish all of this.
+5. Test an actual signed upgrade on each supported platform. For the initial release, establish a signed baseline build and upgrade it to the release candidate; for later releases, start from the previous public version. Confirm the new version launches, settings/queue remain, the extension reconnects, and active downloads are protected. A mocked updater test or fresh installer smoke test cannot establish all of this.
 
 No tag, release, Store upload, repository-visibility change, signing credential, or user installation was created or modified by this preparation.
 
-## Verification scope
+## Validation limits
 
-Local verification used Node **22.23.2**. After the final workflow changes, one coordinated `npm run verify` pass succeeded with **206/206 tests**, lint, TypeScript, both production builds, and token parity. Workflow YAML and release shell syntax also passed. The extension-only packaging command produced a ZIP with a verified SHA256 in ignored `release-assets/extension-only/`. These are local preparation artifacts, not a tagged or published release.
-
-| Check | Result |
-| --- | --- |
-| ESLint and desktop TypeScript | Passed; changed JavaScript/test files also passed focused lint after fixes. |
-| Unit/media suite | Final PR preparation pass: 206/206. Earlier verification exposed the history-scan shutdown race described above; its regression is included in the passing suite. |
-| Production builds and token parity | Passed. The desktop build excludes development sample movies/posters. |
-| Selected browser/Electron checks | All 16 selected cases passed across the initial pass and focused corrections. Includes actual pairing → selected HLS quality → playable desktop file, previews, popup states, extension-update guidance and native Chrome downloads. |
-| Real Chrome download | Passed with desktop offline: pause/resume, continued bytes through an actual worker stop/restart, restored row, real 403/retry, safe persistent metadata and HLS desktop guidance. Saved MP4 verified with FFprobe and a matching source SHA256. |
-| Extension archive | Built successfully: 31 runtime/license files, 305,499 bytes. Packaging tests verify archive contents, determinism and excluded development/local files. |
-
-PR CI exposed an additional shutdown deadlock after successful download assertions: Electron waited for API shutdown while a preview response waited for its window to close. An authenticated partial-response regression reproduced the failure. After the fix, all three progress-pipeline regressions and both affected browser/Electron cases (real pairing/download and onboarding) passed, along with focused lint. The onboarding test now expects the approved Chrome-only download guidance.
-
-The initial Chrome test found the unknown-MIME detection bug; its corrected native lifecycle fixture uses actual Chrome worker events rather than Playwright handle identity. Earlier browser evidence is in ignored `work/verification/release-readiness/` and `work/verification/browser-downloads/`; final local PR verification is in `work/verification/pr-ready/verify.log`. CI installs Chromium before renderer tests on every OS and prepares Linux display/sandbox dependencies before verification.
-
-The focused updater checks exercise production state transitions without installing an update. Release checks validate metadata/artifact contracts; the release workflow still owns actual signatures and installed-artifact checks. Native Chrome redirect/authentication coverage, full browser restart and Store-update behavior were not established by the local download test. The external requirements above remain open.
+Updater tests exercise production state transitions without installing a signed update. Release tests validate metadata/artifact contracts; actual signatures and installed-artifact checks belong to the release workflow. Native Chrome redirect/authentication coverage, a full browser restart, and Store-update behavior were not established by the local download test. Passing development checks does not complete the launch requirements above.

@@ -1,6 +1,6 @@
 # VidSnag contributor instructions
 
-Implement the requested scope and follow `docs/design/ui-design-spec.md` and `docs/design/roadmap.md`. The approved direction is **Workbench, simplified**; rejected explorations are not a design source.
+Implement the requested scope and follow `docs/design/ui-design-spec.md`. The approved direction is **Workbench, simplified**; rejected explorations are not a design source. `docs/design/roadmap.md` is historical migration context, not the current backlog. Remaining release requirements are in `docs/release-readiness.md`.
 
 - Desktop: `apps/desktop/src` (React/TypeScript), `apps/desktop/electron` (main/preload).
 - Chrome extension: `apps/extension`, with generated shared modules copied by `npm run sync:extension`.

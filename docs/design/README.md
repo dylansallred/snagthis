@@ -3,7 +3,7 @@
 | File | What it is |
 |---|---|
 | [ui-design-spec.md](ui-design-spec.md) | The approved design ("Workbench, simplified"): principles, tokens, row anatomy, unobscured thumbnails, progress lanes, popup/desktop/settings states, accessibility, and component map. |
-| [roadmap.md](roadmap.md) | The whole plan: scratch-vs-reuse decision per module, new-repo setup (R0), UI milestones M0–M4 with files and acceptance checks, testing strategy (fixture server, fixture pages, 9 test layers), site-compatibility programme (C0–C3), ordering, risks. |
+| [roadmap.md](roadmap.md) | Historical migration plan: original reuse decisions, milestones, proposed checks, and predecessor limitations. Current requirements are in the design spec and release readiness. |
 | [Release readiness](../release-readiness.md) | Current verification evidence and remaining release prerequisites. |
 | [field-check.md](field-check.md) | The 3–5 person usability check; observations and fallback decisions remain pending real sessions. |
 | [Current screenshots](../images/) | Desktop and extension screenshots used in the README. |

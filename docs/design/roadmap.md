@@ -1,21 +1,25 @@
-# VidSnag roadmap — new repo, "Workbench, simplified" UI, testing and site compatibility
+# VidSnag historical migration plan — 2026-09-19
 
-Written 2026-09-19. Design: [ui-design-spec.md](ui-design-spec.md) (section numbers below, e.g. §4, refer to it).
+This document preserves the original migration plan and its rationale. The new repository and product implementation now exist; these milestones are **not the current backlog or a current status report**. Use the [current design spec](ui-design-spec.md) for approved interface behavior and [release readiness](../release-readiness.md) for current verification evidence and remaining release requirements.
+
+Unless explicitly identified as a later owner decision, measurements, gaps, estimates, proposed tools, and words such as “today,” “currently,” or “unsupported” below describe the predecessor at planning time. For example, the missing `/v1` controls, unsupported AES-128, proposed Vitest stack, and broken Electron harness are historical observations or proposals, not claims about the current implementation. Milestone completion is not maintained here. Provenance decisions are recorded in [PROVENANCE.md](../PROVENANCE.md).
+
+Written 2026-09-19. Design section references below, such as §4, refer to the spec as it existed when this plan was written; its structure and requirements have since evolved.
 Background: the predecessor project review from 2026-09-19 (defects referenced as "review P1/P2"). The original report is a local archive; the relevant decisions are recorded below.
 
-Owner decision, 2026-09-19: **GPL-3.0-only**, so distributed derivatives remain open source under the license's terms. The license choice in R0.6 is resolved. This document remains the implementation plan; current evidence and remaining release prerequisites are recorded in [release readiness](../release-readiness.md).
+Owner decision, 2026-09-19: **GPL-3.0-only**, so distributed derivatives remain open source under the license's terms. The license choice in R0.6 is resolved.
 
 Contents: **1** start from scratch or reuse? · **2** R0 new repo · **3** gap analysis · **4** milestones M0–M4 (UI) · **5** testing strategy · **6** site compatibility programme C0–C3 · **7** order · **8** risks.
 
-No dates: milestones are ordered by dependency, each ends in something shippable, and each has a check you can run. Sizes are relative (S ≈ a day or two, M ≈ several days, L ≈ a week or more) and assume one developer.
+The original milestones were ordered by dependency rather than assigned dates. Their relative estimates (S ≈ a day or two, M ≈ several days, L ≈ a week or more) assumed one developer and are retained as planning history.
 
 ## 1. Start from scratch or reuse?
 
-**Recommendation: new repository with clean history, and port the code module by module. Do not rewrite the engine; do rewrite the visible UI.** A from-scratch rewrite would spend weeks re-learning HLS edge cases the current engine already handles (segment retry, resume, fMP4, remux, yt-dlp path) and none of that is what is wrong with the product. What is wrong is the UI, a handful of known defects, and the repository itself.
+**Original recommendation: create a new repository with clean history and port the code module by module. Preserve the engine and rewrite the visible UI.** A from-scratch rewrite would have spent weeks re-learning HLS edge cases the predecessor engine already handled (segment retry, resume, fMP4, remux, yt-dlp path). The proposed work addressed its UI, known defects, and repository hygiene.
 
-Why a new repo rather than cleaning this one: `.git` is 2.4 GB, 604 `node_modules` paths and 24 `.DS_Store` files are tracked, there is no licence, README/AGENTS/CLAUDE describe directories that no longer exist (`FetchTVPlugin/`, `local-downloader/`), and the project name/history still says "M3u8-Downloader-chrome-plugin". A history rewrite would cost more than a fresh start and the old repo stays available, archived, for archaeology.
+The predecessor review recorded a 2.4 GB `.git` directory, 604 tracked `node_modules` paths, 24 tracked `.DS_Store` files, and no licence. Its README/AGENTS/CLAUDE described missing directories (`FetchTVPlugin/`, `local-downloader/`), and its project name/history still said "M3u8-Downloader-chrome-plugin". These measurements motivated a fresh repository; they do not describe this VidSnag checkout. Preserving the predecessor was part of the plan, not authorization to archive or change it now.
 
-Measured on `main` @ `268fbd8`:
+Predecessor measurements on `main` @ `268fbd8`, with the original port decisions:
 
 | Module | Size | Decision | What happens to it |
 |---|---|---|---|
@@ -35,7 +39,7 @@ Measured on `main` @ `268fbd8`:
 
 **Provenance check (do this before choosing a licence).** The project appears to have begun from the FetchV extension (the old docs call the extension "FetchV" / `FetchTVPlugin/`) and identifiers such as `fetchv-page-detector` remain in `media-detector.js` / `content.js`. No open-source licence for FetchV has been established — confirm before relying on any inherited file. For each ported extension file, decide: written for this project → port; inherited → rewrite from the behaviour spec rather than copy (the detector and content script together are ~1.3k lines, so a clean rewrite is a few days, not weeks). Record the outcome in `docs/PROVENANCE.md`. Same check for anything in `vendor/` (hls.js is Apache-2.0: fine, keep its licence file).
 
-## 2. R0 — Create the new repository (M)
+## 2. R0 — Original repository creation plan (M)
 
 | # | Task | Done when |
 |---|---|---|
@@ -51,7 +55,7 @@ Measured on `main` @ `268fbd8`:
 
 **Exit:** new repo builds, all ported tests pass, P1 defects fixed, nothing visible has changed yet. M0 starts here.
 
-## 3. Where we are today vs. the design
+## 3. Predecessor gaps at planning time
 
 | Design needs | Today | Gap |
 |---|---|---|
@@ -64,7 +68,7 @@ Measured on `main` @ `268fbd8`:
 | Whole-library search | History loads first 200 items | Server-side search/pagination (M1) |
 | Five-row settings + Advanced | Three settings cards + queue settings bar; no `preferredQuality`, `subtitleLanguage`, `notifyOnComplete`, `launchAtLogin` | Settings sheet (M1), new settings (M1/M3) |
 
-## 4. UI milestones
+## 4. Original UI milestones
 
 File paths are identical in the old and new repo (R0.3).
 
@@ -148,7 +152,7 @@ The only milestone that changes the download engine. Until it ships, the quality
 | 4.3 | Move new strings into `_locales` / a desktop strings module. | No hard-coded UI strings in row/format code |
 | 4.4 | Update README / AGENTS.md / CLAUDE.md (they still describe `FetchTVPlugin/` and `local-downloader/`). | Docs match the repo |
 
-## 5. Testing strategy
+## 5. Original testing strategy
 
 Principle from the project review: **assert on real media, not on argument strings.** A test that produces a file and checks it with `ffprobe` is worth ten that check what was passed to ffmpeg.
 
@@ -191,7 +195,7 @@ One HTML page per **embedding technique**, all backed by the fixture server, use
 
 `<video src>` direct · `<video>` + hls.js · player inside a **cross-origin iframe** · iframe inside an iframe · manifest requested only after a click on a custom play button · manifest URL assembled from base64 at runtime · blob:/MSE playback with manifest fetched via `fetch` vs. `XMLHttpRequest` · page with `<video poster>` / `og:image` / neither (thumbnail order, spec §5.3) · page that loads a master and then its variants (must collapse to one row) · page with two unrelated videos (must stay two rows) · SPA route change without reload (detections must reset).
 
-### 5.3 Definition of done for any PR
+### 5.3 Proposed definition of done at planning time
 
 L1–L6 green; if it touches the engine, a fixture that failed before and passes after; if it touches UI, the gallery screenshots reviewed; no new string outside the strings module.
 
@@ -303,7 +307,7 @@ R0 new repo ─► C0 fixtures ─► M0 safety ─┬─► M1 desktop ─┐
 
 Light theme, tray/menu-bar mode, collections, bulk actions, browsers other than Chrome, cloud sync, live-stream recording, DRM. The project review's engine/API defects are no longer "elsewhere": they are R0.4/R0.8 (fixed during the port) and C2.
 
-## 8. Risks
+## 8. Risks identified during planning
 
 | Risk | Mitigation |
 |---|---|
