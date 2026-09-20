@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const http = require('node:http');
 const WebSocket = require('ws');
 const { build } = require('esbuild');
 const { chromium } = require('playwright');
@@ -19,6 +20,49 @@ async function waitFor(condition, message) {
   while (!condition() && Date.now() < deadline) await sleep(25);
   assert.ok(condition(), message);
 }
+
+test('API shutdown disconnects an unfinished preview response after saving local state', { timeout: 5000 }, async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-shutdown-stream-'));
+  const api = createApiServer({ dataDir: directory, port: 0,
+    ffmpegPath: process.execPath, ffprobePath: process.execPath, ytDlpPath: process.execPath,
+    trustBinaryPaths: true, initialQueueSettings: { autoStart: false } });
+  let request;
+  let response;
+  let stopPromise;
+  t.after(async () => {
+    request?.destroy();
+    api.server.closeAllConnections();
+    await (stopPromise || api.stop());
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+  // A renderer can hold a range response open while the Electron quit handler
+  // waits for the API. It must not need to close its window to finish shutdown.
+  api.app.get('/api/fixture-preview', (_request, stream) => {
+    stream.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': 1024 * 1024 });
+    stream.write(Buffer.alloc(1024));
+  });
+  const address = await api.start();
+  let disconnected = false;
+  await new Promise((resolve, reject) => {
+    request = http.get(`http://127.0.0.1:${address.port}/api/fixture-preview`, {
+      headers: { Authorization: `Bearer ${api.getAuthToken()}` },
+    }, incoming => {
+      response = incoming;
+      incoming.on('error', () => {});
+      incoming.once('close', () => { disconnected = true; });
+      incoming.once('data', () => { incoming.pause(); resolve(); });
+    });
+    request.once('error', reject);
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.complete, false, 'the client still owns an unfinished media response');
+  let stopped = false;
+  stopPromise = api.stop().then(() => { stopped = true; });
+  await Promise.race([stopPromise, sleep(1000)]);
+  assert.equal(stopped, true, 'shutdown must not wait for the renderer to close its preview');
+  await waitFor(() => disconnected, 'the preview socket closes during shutdown');
+  assert.ok(JSON.parse(await fs.readFile(path.join(directory, 'queue.json'), 'utf8')));
+});
 
 test('queue broadcasts include metadata and rate changes without scanning history for transfer progress', { timeout: 15000 }, async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-progress-'));

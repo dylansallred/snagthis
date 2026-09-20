@@ -10,7 +10,7 @@ The cleanup removes 16 unreferenced scaffold/legacy source files and three unuse
 
 Do not commit generated installers, extension ZIPs, build directories, downloaded media, dependency directories, local verification output, notarization output, release staging, credentials, or signing material. `.gitignore` includes the concrete generated paths used by this repository. The extension package is built from an explicit runtime file list, rather than whatever happens to be in its working directory.
 
-Updater fixes preserve downloaded updates, handle background download failures, and protect active downloads before installation. Shutdown also waits for an in-flight library scan and its final write. Direct-file detection preserves an observed video MIME type when a page scan can only report an unknown type.
+Updater fixes preserve downloaded updates, handle background download failures, and protect active downloads before installation. Shutdown also waits for an in-flight library scan and its final write, then closes incoming preview responses so an open video socket cannot prevent the app from quitting. Direct-file detection preserves an observed video MIME type when a page scan can only report an unknown type.
 
 Before committing, review `git diff` and the untracked list together. Keep `package-lock.json` with dependency changes. Do not use an indiscriminate cleanup/reset command on a workspace that also contains local downloads or verification evidence.
 
@@ -47,6 +47,8 @@ Local verification used Node **22.23.2**. After the final workflow changes, one 
 | Selected browser/Electron checks | All 16 selected cases passed across the initial pass and focused corrections. Includes actual pairing → selected HLS quality → playable desktop file, previews, popup states, extension-update guidance and native Chrome downloads. |
 | Real Chrome download | Passed with desktop offline: pause/resume, continued bytes through an actual worker stop/restart, restored row, real 403/retry, safe persistent metadata and HLS desktop guidance. Saved MP4 verified with FFprobe and a matching source SHA256. |
 | Extension archive | Built successfully: 31 runtime/license files, 305,499 bytes. Packaging tests verify archive contents, determinism and excluded development/local files. |
+
+PR CI exposed an additional shutdown deadlock after successful download assertions: Electron waited for API shutdown while a preview response waited for its window to close. An authenticated partial-response regression reproduced the failure. After the fix, all three progress-pipeline regressions and both affected browser/Electron cases (real pairing/download and onboarding) passed, along with focused lint. The onboarding test now expects the approved Chrome-only download guidance.
 
 The initial Chrome test found the unknown-MIME detection bug; its corrected native lifecycle fixture uses actual Chrome worker events rather than Playwright handle identity. Earlier browser evidence is in ignored `work/verification/release-readiness/` and `work/verification/browser-downloads/`; final local PR verification is in `work/verification/pr-ready/verify.log`. CI installs Chromium before renderer tests on every OS and prepares Linux display/sandbox dependencies before verification.
 

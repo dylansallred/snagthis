@@ -42,7 +42,7 @@ test('first-run connection explains setup, rejects expired codes, and remembers 
     // or modifying any authentication checks.
     await popup.route(`${native.baseUrl}/**`, route => route.abort('connectionrefused'));
     await popup.goto(popupUrl);
-    await expect(popup.locator('#connection-banner')).toContainText("VidSnag isn't open");
+    await expect(popup.locator('#connection-banner')).toContainText('Save supported files in Chrome. Open VidSnag for streams and more.');
     await expect(popup.locator('#connection-banner').getByRole('button', { name: 'Open VidSnag', exact: true })).toBeVisible();
     await popup.screenshot({ path: path.join(evidence, 'extension-offline.png') });
     await popup.unroute(`${native.baseUrl}/**`);

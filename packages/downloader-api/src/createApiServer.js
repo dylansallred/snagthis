@@ -2296,6 +2296,11 @@ function createApiServer(options = {}) {
           }
           resolve();
         });
+        // Electron keeps its windows alive until this finishes. A paused
+        // preview response can otherwise keep HTTP shutdown waiting forever
+        // for that same window to close. Persist state first, then disconnect
+        // incoming clients after the server has stopped accepting connections.
+        server.closeAllConnections();
       });
     });
   }
