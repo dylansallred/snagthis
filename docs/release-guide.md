@@ -26,13 +26,14 @@ Set the `CORRESPONDING_SOURCE_RUN_ID` repository variable to a successful **Prep
 
 ## Verify Apple signing before a release
 
-Run **CI** manually on the branch to test, selecting **Only build and verify a signed, notarized Apple Silicon installer (no release)**. From the CLI:
+Run **CI** manually on the branch to test, selecting **Only build and verify a signed, notarized macOS installer (no release)**. Choose `arm64` for Apple Silicon or `x64` for Intel. Both use the same Apple certificate and notarization credentials. From the CLI:
 
 ```sh
-gh workflow run ci.yml --ref workbench -f verify_macos_signing=true
+gh workflow run ci.yml --ref workbench -f verify_macos_signing=true -f macos_arch=arm64
+gh workflow run ci.yml --ref workbench -f verify_macos_signing=true -f macos_arch=x64
 ```
 
-This mode uses the repository's Apple secrets to sign and notarize the app, DMG, and update ZIP, then checks Gatekeeper acceptance and runs real packaged downloads. It retains verified private test artifacts for seven days without creating a tag or release. It runs only the signing job; ordinary PR CI still runs the full validation matrix. Intel, Windows, and a real installed version-to-version upgrade need their separate release checks. GitHub's manual dispatch must be available for the workflow before it can be started.
+This mode uses the repository's Apple secrets to sign and notarize the app, DMG, and update ZIP on a native runner for the selected architecture, then checks Gatekeeper acceptance and runs real packaged downloads. It retains verified private test artifacts for seven days without creating a tag or release. It runs only the signing job; ordinary PR CI still runs the full validation matrix. The desktop release workflow always builds both Mac architectures. Windows signing and a real installed version-to-version upgrade need their separate release checks. GitHub's manual dispatch must be available for the workflow before it can be started.
 
 ## Prepare a release PR
 

@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       verify_macos_signing:
-        description: 'Only build and verify a signed, notarized Apple Silicon installer (no release)'
+        description: 'Only build and verify a signed, notarized macOS installer (no release)'
         type: boolean
         default: false
+      macos_arch:
+        description: 'Mac architecture to verify: arm64 = Apple Silicon, x64 = Intel'
+        type: choice
+        options: [arm64, x64]
+        default: arm64
   workflow_call:
 
 permissions:
@@ -79,7 +84,7 @@ jobs:
 
   verify-macos-signing:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_macos_signing }}
-    runs-on: macos-15
+    runs-on: ${{ inputs.macos_arch == 'x64' && 'macos-15-intel' || 'macos-15' }}
     timeout-minutes: 60
     env:
       VIDSNAG_RELEASE: '1'
@@ -114,7 +119,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        run: npm run dist --workspace @m3u8/desktop -- --mac --arm64 --publish=never -c.forceCodeSigning=true -c.mac.notarize=true
+        run: npm run dist --workspace @m3u8/desktop -- --mac --${{ inputs.macos_arch }} --publish=never -c.forceCodeSigning=true -c.mac.notarize=true
       - name: Notarize and staple the exact DMG
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -132,7 +137,7 @@ jobs:
       - name: Keep verified private test artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-signing-check-arm64
+          name: macos-signing-check-${{ inputs.macos_arch }}
           path: |
             apps/desktop/dist-electron/*.dmg
             apps/desktop/dist-electron/*.zip
@@ -141,5 +146,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Summarize verification
+        env:
+          VERIFIED_ARCH: ${{ inputs.macos_arch }}
         run: |
-          printf '## Apple signing verified\n\nThe Apple Silicon app, DMG, and update ZIP passed signature, notarization, Gatekeeper, and real packaged download checks. Test artifacts are retained for 7 days. No tag or release was created. Intel, Windows, and a real installed N → N+1 update still require their release checks.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## Apple signing verified (%s)\n\nThe app, DMG, and update ZIP passed signature, notarization, Gatekeeper, and real packaged download checks for this architecture. Test artifacts are retained for 7 days. No tag or release was created. Windows signing and a real installed N → N+1 update still require their release checks.\n' "$VERIFIED_ARCH" >> "$GITHUB_STEP_SUMMARY"
