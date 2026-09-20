@@ -9,6 +9,7 @@ const { probeFile } = require('../tests/fixtures/engine');
 async function packagedSmoke(executablePath, resourcesPath) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-package-smoke-'));
   const bin = path.join(resourcesPath, 'bin');
+  const realBin = fs.realpathSync(bin);
   const binary = name => path.join(bin, name + (process.platform === 'win32' ? '.exe' : ''));
   for (const name of ['ffmpeg', 'ffprobe', 'yt-dlp']) assert.ok(fs.existsSync(binary(name)), `Packaged ${name} is missing`);
   let fixture;
@@ -35,7 +36,9 @@ async function packagedSmoke(executablePath, resourcesPath) {
     }));
     assert.equal(runtime.protocolRegistered, true, 'The installed app did not register vidsnag://');
     for (const key of ['ffmpeg', 'ffprobe', 'ytdlp']) {
-      assert.ok(runtime[key] && path.resolve(runtime[key]).startsWith(path.resolve(bin) + path.sep), `${key} escaped the packaged resources`);
+      // Electron resolves macOS /var aliases to /private/var when launching a temp-installed app.
+      // Resolve symlinks on both sides so aliases pass while actual escapes still fail.
+      assert.ok(runtime[key] && fs.realpathSync(runtime[key]).startsWith(realBin + path.sep), `${key} escaped the packaged resources`);
     }
     const headers = { Authorization: `Bearer ${info.apiAuthToken}`, 'Content-Type': 'application/json', 'X-Client': 'vidsnag-extension', 'X-Protocol-Version': '1' };
     const response = await fetch(`${info.apiBaseUrl}/v1/jobs`, { method: 'POST', headers, body: JSON.stringify({ mediaUrl: `${fixture.baseUrl}/media/ts/index.m3u8`, mediaType: 'hls', title: 'VidSnag packaged fixture', settings: { threads: 2 } }) });
@@ -51,8 +54,8 @@ async function packagedSmoke(executablePath, resourcesPath) {
       const job = queue.find(item => item.id === jobId);
       if (job?.queueStatus === 'failed') throw new Error(`Packaged fixture failed: ${job.error}`);
       if (job?.queueStatus === 'completed') {
-        const historyResponse = await fetch(`${info.apiBaseUrl}/api/history`, { headers });
-        assert.equal(historyResponse.ok, true);
+        const historyResponse = await fetch(`${info.apiBaseUrl}/api/history`, { headers: { ...headers, 'X-Client': 'vidsnag-desktop' } });
+        assert.equal(historyResponse.ok, true, `Desktop history was rejected (${historyResponse.status})`);
         const { items } = await historyResponse.json();
         output = items.find(item => item.jobId === jobId)?.absolutePath;
         if (output) break;
