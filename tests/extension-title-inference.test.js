@@ -209,3 +209,37 @@ test('brand-only YouTube metadata falls back to the real page title without over
     helpers.setActiveTab(null);
   }
 });
+
+test('a page title that already names the episode as S4:E9 does not gain a second S04E09 tag', () => {
+  const { buildJobPayload } = loadPopupJobPayloadHelpers();
+  const { getDisplayTitle } = loadPopupTitleHelpers();
+  const item = {
+    id: 'media-colon-episode',
+    type: 'hls',
+    url: 'https://cdn.example.com/stream/index.m3u8',
+    filename: 'index.m3u8',
+    sourcePageTitle: 'Star Trek: Strange New Worlds S4:E9',
+    sourcePageUrl: 'https://example.com/tv/12345/4/9',
+    requestHeaders: {},
+    fallbackUrl: '',
+    youtubeMetadata: null,
+    pageTitleCandidates: [],
+    resourceSignals: [],
+    pageEpisodeHint: { seasonNumber: 4, episodeNumber: 9 },
+    pageIsTvContext: true,
+    mediaKind: 'hls-manifest',
+    contentType: 'application/vnd.apple.mpegurl',
+  };
+  const payload = buildJobPayload(item);
+  assert.equal(payload.titleHints.seasonNumber, 4);
+  assert.equal(payload.titleHints.episodeNumber, 9);
+  assert.doesNotMatch(payload.title, /S04E09/);
+  assert.match(payload.title, /S4:E9$/);
+  assert.doesNotMatch(getDisplayTitle(item), /S04E09/);
+  for (const written of ['Show S4 · E9', 'Show S04.E09', 'Show Season 4 Episode 9', 'Show 4x09']) {
+    const title = buildJobPayload({ ...item, id: written, sourcePageTitle: written }).title;
+    assert.equal((title.match(/\b(?:s\s*0*4\W*e\s*0*9|4x0*9)\b/gi) || []).length, 1, `${written} → ${title} names the episode exactly once`);
+  }
+  // A different episode in the title still receives the real tag.
+  assert.match(buildJobPayload({ ...item, id: 'other', sourcePageTitle: 'Show S4:E8 recap' }).title, /S04E09$/);
+});

@@ -4,6 +4,7 @@ const model = require('../apps/extension/popup/model');
 const detection = require('../apps/extension/js/detection');
 const hls = require('../packages/contracts/src/hls');
 const rows = require('../packages/contracts/src/rows');
+const sourcePreview = require('../apps/extension/popup/source-preview');
 
 const manifestUrl = 'https://media.example/movie/master';
 const manifest = hls.parseHlsManifest(`#EXTM3U
@@ -15,6 +16,38 @@ const manifest = hls.parseHlsManifest(`#EXTM3U
 720.m3u8
 `, manifestUrl, { durationSeconds: 60 });
 const item = { id: 'master', url: manifestUrl, type: 'hls', sourcePageTitle: 'A short film', sourcePageUrl: 'https://example.com/watch', manifest, durationSeconds: 60, requestHeadersOrigin: 'https://media.example', requestHeaders: { authorization: 'Bearer media-only' } };
+
+test('compatibility guidance identifies the product that needs updating', () => {
+  const health = { protocolVersion: 1, supportedProtocolVersions: { min: 1, max: 1 }, minExtensionVersion: '1.0.0' };
+  assert.equal(model.compatibilityIssue(health, '1.0.0'), null);
+  assert.equal(model.compatible(health, '1.0.0'), true);
+  assert.equal(model.compatibilityIssue({ ...health, minExtensionVersion: '1.1.0' }, '1.0.0'), 'extension');
+  assert.equal(model.compatibilityIssue({ ...health, supportedProtocolVersions: { min: 2, max: 2 } }, '1.0.0'), 'extension');
+  assert.equal(model.compatibilityIssue({ ...health, supportedProtocolVersions: { min: 0, max: 0 } }, '1.0.0'), 'desktop');
+  assert.equal(model.compatibilityIssue({ protocolVersion: '2' }, '1.0.0'), 'extension');
+  assert.equal(model.compatibilityIssue({ ...health, minExtensionVersion: '1.0.1' }, '1.0.10'), null);
+  assert.equal(model.compatible({ ...health, minExtensionVersion: '1.1.0' }, '1.0.0'), false);
+});
+
+test('Chrome download rows keep browser actions and never route native errors to desktop controls', () => {
+  const toRow = changes => {
+    const job = { id: 'browser:42', backend: 'browser', queueStatus: 'downloading', progress: 34, totalBytes: 1000, ...changes };
+    return model.browserRow(rows.toRowModel(job, { surface: 'popup' }), job);
+  };
+  assert.equal(toRow({}).action.id, 'pause');
+  assert.equal(toRow({ totalBytes: null }).statusLine, 'Downloading in Chrome');
+  assert.equal(toRow({ queueStatus: 'paused', canResume: true }).action.id, 'resume');
+  const saved = toRow({ queueStatus: 'completed', progress: 100, fileExists: true });
+  assert.equal(saved.statusLine, 'Saved in Chrome');
+  assert.equal(saved.action.id, 'show');
+  assert.equal(toRow({ queueStatus: 'completed', fileExists: false }).action.id, 'chrome-details');
+  assert.equal(toRow({ queueStatus: 'failed', error: 'NETWORK_FAILED', canResume: true }).action.id, 'resume');
+  assert.equal(toRow({ queueStatus: 'failed', error: 'NETWORK_FAILED', canResume: false }).action.id, 'retry');
+  assert.equal(toRow({ queueStatus: 'failed', status: 'blocked', canResume: true }).action.id, 'chrome-details');
+  assert.equal(toRow({ queueStatus: 'failed', status: 'invalid-media' }).action.id, 'chrome-details');
+  const desktop = rows.toRowModel({ queueStatus: 'completed' }, { surface: 'popup' });
+  assert.equal(model.browserRow(desktop, { backend: 'desktop' }), desktop);
+});
 
 test('popup chooses discovered preferred quality and sends that selection to the downloader', () => {
   const group = hls.collapseDetections([item])[0];
@@ -47,6 +80,36 @@ test('master and explicitly referenced variant share one row and retain an exist
   assert.equal(groups[0].url, manifestUrl);
   assert.equal(model.mappingFor(groups[0], { variant: 'running-job' }), 'running-job');
   assert.equal(rows.toRowModel({ ...groups[0], id: 'running-job', queueStatus: 'paused', progress: 34 }, { surface: 'popup' }).statusLine, 'Paused at 34%');
+});
+
+test('grouped mirrors use the selected variant owner and retain the working download', () => {
+  const mirrorUrl = 'https://mirror.example/master.m3u8';
+  const mirror = { ...item, id: 'mirror', url: mirrorUrl, requestHeadersOrigin: 'https://mirror.example', requestHeaders: { authorization: 'Bearer mirror-only' },
+    manifest: hls.parseHlsManifest('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\nvideo.m3u8\n', mirrorUrl) };
+  const group = hls.collapseDetections([item, mirror])[0];
+  const selected = model.selectMedia(group, {}, { variantUrl: 'https://mirror.example/video.m3u8' });
+  const payload = model.buildDownloadPayload(selected);
+  assert.equal(payload.mediaUrl, mirrorUrl);
+  assert.deepEqual(payload.headers, { authorization: 'Bearer mirror-only' });
+  assert.equal(payload.selection.variantUrl, 'https://mirror.example/video.m3u8');
+  const failed = { id: 'old-attempt', queueStatus: 'failed', status: 'error' };
+  const working = { id: 'working-copy', queueStatus: 'downloading', status: 'downloading' };
+  assert.equal(model.jobFor(group, { master: failed.id, mirror: working.id }, [failed, working]), working);
+});
+
+test('cancelled or removed mappings keep the detection downloadable and do not hide a valid grouped job', () => {
+  const group = { ...item, detectedStreams: [{ id: 'variant' }] };
+  const cancelled = { id: 'old-job', queueStatus: 'cancelled', status: 'cancelled', progress: 48 };
+  const saved = { id: 'saved-job', queueStatus: 'completed', progress: 100 };
+  const mappings = { master: cancelled.id, variant: saved.id };
+  assert.equal(model.jobFor(group, mappings, [cancelled, saved]), saved);
+  assert.equal(model.jobFor(group, mappings, [cancelled]), null);
+  assert.equal(model.jobFor(group, mappings, []), null);
+  const detected = rows.toRowModel({ ...model.selectMedia(group), ...model.jobFor(group, mappings, [cancelled]) }, { surface: 'popup' });
+  assert.equal(detected.state, 'detected');
+  assert.equal(detected.action.id, 'download');
+  assert.equal(model.jobFor(item, { master: saved.id }, [saved]), saved);
+  assert.equal(model.jobFor(group, mappings, [{ ...saved, id: 'unrelated', sourcePageUrl: item.sourcePageUrl, title: item.sourcePageTitle }]), null, 'same page or title must never create a mapping');
 });
 
 test('nearby filenames or detection times alone never merge unrelated videos or add fallbacks', () => {
@@ -127,4 +190,37 @@ test('thumbnail clips accept only signed preview assets from the connected local
   for (const candidate of [asset.split('?')[0], '/downloads/entire-movie.mp4' + asset.slice(asset.indexOf('?')), `https://external.example${asset}`, `http://127.0.0.1:9999${asset}`, `http://user:secret@127.0.0.1:49732${asset}`, 'blob:fake-video']) {
     assert.equal(model.previewClipUrl(candidate, base), '', candidate);
   }
+});
+
+test('a generated job poster replaces page artwork and resolves against the local app', () => {
+  const base = 'http://127.0.0.1:49732';
+  const localPoster = `/downloads/job/video-frame.jpg?expires=9999999999999&signature=${'a'.repeat(64)}`;
+  const row = rows.toRowModel({ id: 'active', queueStatus: 'downloading', progress: 34, thumbnailUrl: 'https://page.example/screenshot.jpg', thumbnailUrls: [localPoster] }, { surface: 'popup' });
+  assert.equal(row.thumbnailUrl, localPoster);
+  assert.equal(model.resolveThumbnailUrl(row.thumbnailUrl, base), base + localPoster);
+  assert.equal(model.resolveThumbnailUrl('https://page.example/poster.jpg', base), 'https://page.example/poster.jpg');
+  assert.equal(model.resolveThumbnailUrl('data:image/jpeg;base64,AAAA', base), 'data:image/jpeg;base64,AAAA');
+  assert.equal(model.resolveThumbnailUrl('/downloads/unsigned.jpg', base), '');
+});
+
+test('standalone preview uses real low quality, scopes captured headers and rejects black poster frames', () => {
+  const group = hls.collapseDetections([item])[0];
+  const source = sourcePreview.sourceFor(group);
+  assert.equal(source.url, 'https://media.example/movie/720.m3u8');
+  const same = sourcePreview.fetchOptions(source, source.url, { Range: 'bytes=0-99' });
+  assert.equal(same.redirect, 'error');
+  assert.equal(same.credentials, 'include');
+  assert.equal(same.headers.get('authorization'), 'Bearer media-only');
+  const other = sourcePreview.fetchOptions(source, 'https://other.example/piece.ts', { Range: 'bytes=0-99', Authorization: 'never-forward' });
+  assert.equal(other.credentials, 'omit');
+  assert.equal(other.headers.get('authorization'), null);
+  assert.equal(other.headers.get('range'), 'bytes=0-99');
+  assert.equal(sourcePreview.sourceFor({ ...item, mediaKind: 'youtube-page' }), null);
+  assert.equal(sourcePreview.nonblack(new Uint8ClampedArray(32 * 18 * 4)), false);
+  const frame = new Uint8ClampedArray(32 * 18 * 4);
+  for (let index = 0; index < frame.length; index += 4) { frame[index] = index % 255; frame[index + 1] = 90; frame[index + 2] = 120; frame[index + 3] = 255; }
+  assert.equal(sourcePreview.nonblack(frame), true);
+  assert.equal(sourcePreview.sceneStart(6000), 2100, 'long videos start at 35%, not a capped intro offset');
+  assert.deepEqual(sourcePreview.sceneCandidates(40), [14, 20, 10, 26, 32]);
+  assert.deepEqual(sourcePreview.sceneCandidates(8), [2.8, 4, 2, 5.2, 6.4], 'short videos select later scenes and shorten the excerpt');
 });

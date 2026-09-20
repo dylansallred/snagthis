@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { isCurrentPreviewClipPath } = require('@m3u8/downloader-engine/src/core/PreviewClip');
 const {
   buildDownloadAssetUrl,
   decodeExternalDownloadPath,
@@ -26,6 +27,12 @@ const TERMINAL_STATUSES = new Set(['completed', 'completed-with-errors', 'failed
 function isVideoHistoryFile(fileName) {
   const ext = path.extname(fileName).toLowerCase();
   return HISTORY_MEDIA_EXTENSIONS.has(ext);
+}
+
+// Both preview collectors use mkdtemp('local-preview-'), whose six-character
+// suffix distinguishes their scratch folders from ordinary movie folders.
+function isLocalPreviewDirectory(name) {
+  return /^local-preview-[A-Za-z0-9]{6}$/.test(name);
 }
 
 function isValidHistoryJobId(jobIdPrefix) {
@@ -245,6 +252,11 @@ class HistoryIndexService {
     return toPosixPath(rel);
   }
 
+  isInternalPreviewFile(absolutePath) {
+    const relative = this.toRelativePath(absolutePath);
+    return Boolean(relative && relative.split('/').slice(0, -1).some(isLocalPreviewDirectory));
+  }
+
   buildActiveJobFiles() {
     const activeFiles = new Set();
     if (!this.jobs || typeof this.jobs.values !== 'function') {
@@ -308,7 +320,8 @@ class HistoryIndexService {
       const fullPath = path.join(currentDir, entry.name);
 
       if (entry.isDirectory()) {
-        if (!relativeDir && (entry.name.startsWith('temp-') || entry.name === '__previews')) {
+        if (isLocalPreviewDirectory(entry.name)
+          || (!relativeDir && (entry.name.startsWith('temp-') || entry.name === '__previews'))) {
           continue;
         }
         const nested = await this.walkMediaFiles(fullPath, childRelative);
@@ -410,27 +423,8 @@ class HistoryIndexService {
   }
 
   findThumbnailUrl({ validJobId, dirAbsolute, dirRelative, job, persistedItem }) {
-    const localThumbCandidates = [];
-    if (validJobId) {
-      localThumbCandidates.push(`${validJobId}-thumb.jpg`);
-    }
-    if (job && typeof job.thumbnailPath === 'string' && job.thumbnailPath.trim()) {
-      localThumbCandidates.push(path.basename(job.thumbnailPath));
-    }
-
-    for (const thumbName of localThumbCandidates) {
-      const sameDirPath = path.join(dirAbsolute, thumbName);
-      if (fs.existsSync(sameDirPath)) {
-        const url = buildDownloadAssetUrl(this.downloadDir, sameDirPath);
-        if (url) return url;
-      }
-
-      const legacyPath = path.join(this.downloadDir, thumbName);
-      if (fs.existsSync(legacyPath)) {
-        return `/downloads/${thumbName}`;
-      }
-    }
-
+    // Explicit selected artwork must survive refreshes even when an older
+    // opening-frame or page thumbnail still exists beside the saved video.
     if (job && typeof job.thumbnailPath === 'string' && job.thumbnailPath.trim() && fs.existsSync(job.thumbnailPath)) {
       const url = buildDownloadAssetUrl(this.downloadDir, job.thumbnailPath);
       if (url) return url;
@@ -469,6 +463,21 @@ class HistoryIndexService {
           return value;
         }
       }
+    }
+
+    const localThumbCandidates = [];
+    if (validJobId) localThumbCandidates.push(`${validJobId}-thumb.jpg`);
+    if (job && typeof job.thumbnailPath === 'string' && job.thumbnailPath.trim()) {
+      localThumbCandidates.push(path.basename(job.thumbnailPath));
+    }
+    for (const thumbName of localThumbCandidates) {
+      const sameDirPath = path.join(dirAbsolute, thumbName);
+      if (fs.existsSync(sameDirPath)) {
+        const url = buildDownloadAssetUrl(this.downloadDir, sameDirPath);
+        if (url) return url;
+      }
+      const legacyPath = path.join(this.downloadDir, thumbName);
+      if (fs.existsSync(legacyPath)) return `/downloads/${thumbName}`;
     }
 
     if (
@@ -526,7 +535,7 @@ class HistoryIndexService {
       persistedItem,
     });
     const previewClipPath = (job && job.previewClipPath) || (persistedItem && persistedItem.previewClipPath) || null;
-    const previewClipUrl = previewClipPath && fs.existsSync(previewClipPath)
+    const previewClipUrl = isCurrentPreviewClipPath(previewClipPath) && fs.existsSync(previewClipPath)
       ? buildDownloadAssetUrl(this.downloadDir, previewClipPath) : null;
 
     return {
@@ -603,6 +612,10 @@ class HistoryIndexService {
       // Keep records for moved/deleted files so the user can locate or remove them.
       for (const previous of this.items) {
         const absolute = path.resolve(previous.absolutePath || path.join(this.downloadDir, previous.relativePath));
+        // Old versions indexed copied init fragments as saved videos. Remove
+        // those records, including already-cleaned scratch files, without
+        // deleting files or weakening missing-file recovery for user media.
+        if (this.isInternalPreviewFile(absolute)) continue;
         const locator = getHistoryItemLocator(previous);
         if (!this.removedPaths.has(absolute) && !nextItemsByLocator.has(locator)) {
           nextItemsByLocator.set(locator, { ...previous, missing: !fs.existsSync(absolute) });

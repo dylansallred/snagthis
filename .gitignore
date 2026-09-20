@@ -15,3 +15,11 @@ work/
 .env.*
 !.env.example
 apps/extension/popup.css
+
+# Release outputs created by package:extension and the release workflow.
+/vidsnag-extension.zip
+/release-assets/
+/notarization.json
+# Canonical notices are copied here only for extension packaging.
+/apps/extension/LICENSE
+/apps/extension/THIRD_PARTY_NOTICES.md

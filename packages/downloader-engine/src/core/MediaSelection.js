@@ -54,12 +54,13 @@ function selectedRendition(items, groupId, language) {
 
 async function resolveHlsSelection(job) {
   const headers = buildHlsRequestHeaders(job.headers || {}, { sourcePageUrl: job.sourcePageUrl });
-  const options = { credentialOrigin: job.credentialOrigin || job.url, sourcePageUrl: job.sourcePageUrl };
+  const options = { credentialOrigin: job.credentialOrigin || job.url, sourcePageUrl: job.sourcePageUrl, signal: job._downloadAbort?.signal };
   const selection = job.selection || {};
   let currentUrl = job.url;
   let audioUrl;
   let subtitleUrl;
   let selectedHeight;
+  let variantSelectionPending = Boolean(selection.variantUrl);
   const seen = new Set();
   for (let depth = 0; depth < 5; depth += 1) {
     if (job.cancelled) throw mediaError('Job cancelled', 'ABORT_ERR');
@@ -75,8 +76,18 @@ async function resolveHlsSelection(job) {
       return { playlistUrl: fetched.finalUrl, playlistText: fetched.text, playlistInfo: info, headers, audioUrl, subtitleUrl, selectedHeight };
     }
     const variants = [...(parsed.variants || [])].sort((a, b) => (b.height || 0) - (a.height || 0) || (b.bandwidth || 0) - (a.bandwidth || 0));
-    let chosen = selection.variantUrl ? variants.find((item) => item.url === selection.variantUrl || item.variantUrl === selection.variantUrl) : null;
-    if (selection.variantUrl && !chosen) throw mediaError('The selected video quality is no longer available', 'SELECTION_UNAVAILABLE');
+    let chosen = variantSelectionPending ? variants.find((item) => item.url === selection.variantUrl || item.variantUrl === selection.variantUrl) : null;
+    if (variantSelectionPending && !chosen && Number(selection.height) > 0) {
+      // Proxy playlists can issue a different signed child URL on every read.
+      // Recover only an unambiguous exact resolution from this same master;
+      // never silently choose a lower quality or one of several equal heights.
+      const matchingHeight = variants.filter((item) => item.height === Number(selection.height));
+      if (matchingHeight.length === 1) chosen = matchingHeight[0];
+    }
+    if (variantSelectionPending && !chosen) throw mediaError('The selected video quality is no longer available', 'SELECTION_UNAVAILABLE');
+    // The selected URL names a child of this master. If that child is another
+    // master, it must not be required to contain its own URL as a rendition.
+    variantSelectionPending = false;
     if (!chosen && Number(selection.height) > 0) chosen = variants.find((item) => item.height && item.height <= Number(selection.height));
     if (!chosen && Number(selection.height) > 0 && variants.some((item) => item.height)) throw mediaError('The requested quality is unavailable', 'SELECTION_UNAVAILABLE');
     chosen ||= variants[0];

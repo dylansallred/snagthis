@@ -1,80 +1,98 @@
-# VidSnag
+<p align="center">
+  <img src="apps/extension/img/vidsnag-app-icon.png" alt="VidSnag" width="112">
+</p>
 
-A free, open-source Chrome extension and desktop app for saving supported web videos. The extension finds a video; the desktop app downloads it and keeps your files available after the popup closes.
+<h1 align="center">VidSnag</h1>
 
-The interface follows [Workbench, simplified](docs/design/ui-design-spec.md): a thumbnail, title, quiet status line and one action. The thumbnail fills with colour as the video downloads. Extra controls live in Details and Settings.
+<p align="center"><strong>Save supported web videos to your computer.</strong></p>
 
-This repository is the clean successor to M3u8-Downloader-chrome-plugin. It is under active development; it is not a published Chrome Web Store or signed desktop release yet.
+VidSnag is a free, open-source way to save supported web videos. Find a video in Chrome, choose the quality you want, and download it. Ordinary MP4 and WebM files can save through Chrome alone; the desktop app handles streams and extra video processing. Downloads keep going after you close the popup.
+
+**Currently in development.** There is no public desktop installer or Chrome Web Store listing yet. You can [try it locally](#run-locally) today.
+
+<table>
+  <tr>
+    <th width="65%">Your downloads, together</th>
+    <th width="35%">A few clicks in Chrome</th>
+  </tr>
+  <tr>
+    <td valign="top"><a href="docs/images/desktop.png"><img src="docs/images/desktop.png" alt="VidSnag desktop showing active downloads, a waiting video, and a saved video"></a></td>
+    <td valign="top"><a href="docs/images/chrome-extension.png"><img src="docs/images/chrome-extension.png" alt="VidSnag Chrome popup showing detected videos, download progress, and quality details"></a></td>
+  </tr>
+</table>
+
+Actual interfaces with sample download states. Films by the Blender Foundation; [media credits and licenses](apps/desktop/src/dev/media/CREDITS.md). Click either image for a closer look.
+
+## From playing to saved
+
+1. **Play a video** on a supported website, then open VidSnag in Chrome.
+2. **Choose a quality** when the source offers alternatives. Available audio and subtitle choices appear with it.
+3. **Choose Download.** Supported direct MP4 and WebM files go to **Chrome Downloads**, without pairing or opening the desktop app. Videos that need the desktop app appear in its **Saved** library when finished.
+
+You can also paste a video link directly into the desktop app.
+
+- **Clear progress:** see what is downloading, waiting, or ready to watch.
+- **Download controls:** pause, resume, or retry when available.
+- **Files you keep:** Chrome uses your usual download settings; the desktop app has its own save folder and library.
+- **Simple cleanup:** in the desktop library, removing a video from the list keeps its file. Moving the file to Trash is a separate choice.
+
+### When do I need the desktop app?
+
+Chrome can save supported direct MP4 and WebM files on its own, whether or not you've paired the extension. These downloads stay in **Chrome Downloads** and are not added to the desktop library. To put a direct file in that library instead, right-click its row before downloading and choose **Download with desktop**.
+
+HLS and DASH streams, YouTube page links, separate audio or subtitle tracks, and downloads that need video processing still use the desktop app. Keep it open for those downloads. Browser-only stream downloading is not available yet.
+
+Use VidSnag for videos you own or have permission to save. Protected DRM videos and live recording are not supported. See the [compatibility notes](compat/COMPATIBILITY.md) for tested formats and sites.
+
+## Connect Chrome to the desktop app
+
+For downloads that use the desktop app, connect the two once after installing or [starting locally](#run-locally). Direct Chrome downloads do not need this step.
+
+1. In the desktop app, open **Settings → Chrome extension → Show connection code**.
+2. Choose **Copy code**, then open **Extensions → VidSnag** in Chrome and choose **Connect**.
+3. Paste the six-digit code and choose **Connect**. You're ready to download.
+
+Codes expire after five minutes. If yours expires, choose **Get a new code** in the desktop app. The connection stays saved on your device.
+
+## Installation plans
+
+The **Chrome Web Store** is the preferred release channel, alongside a desktop installer from this repository's GitHub Releases. Neither is published yet.
+
+If a Web Store release is not available, the fallback is a GitHub release ZIP that you load into Chrome yourself. That method requires manual updates. See the [extension installation and release guide](docs/extension-release.md) for the process and current status.
+
+## Your files stay yours
+
+Downloads and video processing happen on your computer. VidSnag has no required account, telemetry service, paid tier, or artificial download quota.
+
+The extension needs access to websites to find their videos and Chrome's downloads permission to save direct files. Downloads contact the source website directly; optional services and update checks have their own connections. Read the [privacy details](PRIVACY.md) for what the app observes and stores.
 
 ## Run locally
 
-Use the Node version in `.nvmrc` and npm. FFmpeg and FFprobe are required for video processing; yt-dlp adds supported page-URL downloading.
+This is the current way to try the prerelease. You'll need Git, Node.js, and npm. Use the Node version pinned in `.nvmrc`.
+
+From a checkout of this repository:
 
 ```sh
 nvm install
 nvm use
 npm ci
 npm run build:extension:css
-npm run dev
 ```
 
-For local development, multimedia tools may be installed on your PATH or supplied through `FFMPEG_PATH`, `FFPROBE_PATH` and `YTDLP_PATH`. Release bundles use the dedicated fetch scripts and must pass artifact validation; a developer's Homebrew binaries are not a portable distribution.
+Then open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select the repository's `apps/extension` folder. You can now try direct MP4 and WebM downloads in Chrome.
 
-Load the extension:
-
-1. Open `chrome://extensions` and enable Developer mode.
-2. Choose **Load unpacked** and select `apps/extension`.
-3. Open VidSnag's Settings → Advanced to get a pairing code.
-4. Enter that code in the extension when prompted. Pairing stays on your device.
-
-Play a video on a page, open the extension, then choose **Download**. You can also paste one or more links into the desktop app. A quality menu appears only when actual alternatives have been discovered.
-
-The default local connection uses port 49732. If an older copy of VidSnag is already running, quit that copy before starting this one. Development uses a separate profile from the installed legacy app.
-
-## What is supported
-
-- Direct video files and finite HLS videos, including master playlists, separate renditions and standard AES-128 streams where supported by the media tools.
-- Requested quality, audio and subtitles when available from the source.
-- Queue management, pause/resume, saved-file history and source-specific recovery messages.
-- Safe removal: **Remove from list** keeps the file; **Move file to Trash** uses the operating system Trash.
-
-Protected DRM streams and live recording are outside the project scope. Real-site compatibility changes over time; the [compatibility matrix](compat/COMPATIBILITY.md) distinguishes verified evidence from untested entries.
-
-## Development
-
-```sh
-npm run verify             # lint, types, unit/integration/media tests, builds, token parity
-npm run test:e2e           # browser and isolated Electron checks
-npm run compat            # staged compatibility report; remote sites require opt-in
-```
-
-The desktop development gallery uses the actual UI components at `http://localhost:5173/?gallery`. Sample states are demonstrations; they do not create real downloads. Refer to the gallery's media credits for the open-film excerpts.
-
-```
-apps/desktop/              React renderer and Electron integration
-apps/extension/            Chrome popup, service worker and page detector
-packages/contracts/       Shared row formatting, strings, HLS parsing and validation
-packages/downloader-api/  Authenticated local HTTP/WebSocket bridge and history
-packages/downloader-engine/ Download, retry, remux and verification
-tests/fixtures/           Generated media and local test pages
-compat/                  Staged site checks and evidence
-docs/design/             Approved design, roadmap and implementation status
-```
-
-See [CONTRIBUTING](CONTRIBUTING.md), [PRIVACY](PRIVACY.md), [SECURITY](SECURITY.md), [provenance](docs/PROVENANCE.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+To use the desktop app too, install FFmpeg/FFprobe for video processing and optional yt-dlp for supported page-link downloads. Run `npm run dev`, then follow the [connection steps](#connect-chrome-to-the-desktop-app) above. For local development, make those tools available on your PATH, or set `FFMPEG_PATH`, `FFPROBE_PATH`, and `YTDLP_PATH`.
 
 ## Troubleshooting
 
-- **No video found:** press play on the page, then open VidSnag again. Use **No video?** for the detection checklist.
-- **App not open:** start the desktop app. If prompted, enter a fresh code from Settings → Advanced in the extension.
-- **Link expired:** reopen the source page so the site can issue a fresh link. VidSnag reuses completed pieces only when the refreshed playlist is compatible.
-- **YouTube asks you to sign in:** first check that the video plays while signed into Chrome. On the failed desktop row, open **Details → Use Chrome sign-in** and confirm access for that download attempt. Your system may ask for access to Chrome's saved sign-in. This uses your existing account access; it cannot grant access your account does not have.
-- **Not enough space:** choose a different save folder or free space, then retry.
-- **File was moved or deleted:** use **Locate** to reconnect its list entry with the file.
-- **App cannot start its local connection:** check that another VidSnag copy is not already using the local port.
+- **No video found?** Start playback on the page, then open VidSnag again. Choose **No video?** in the popup for more help.
+- **App not open?** The selected video needs the desktop app. Start it and, if prompted to connect, use a fresh code from **Settings → Chrome extension**. Direct Chrome downloads do not require it.
+- **A download failed?** Check its message in the popup or **Chrome Downloads**. For desktop downloads, open **Details**. An expired link usually means reopening the source page and trying again.
 
-For bug reports, describe what you clicked and the plain-language error. Review the redacted diagnostics before sharing; never paste raw cookies, tokens or private source URLs into a public issue.
+For a bug report, include what you clicked and the error you saw. Review diagnostics before sharing them, and keep cookies, tokens, and private video links out of public issues. Report security concerns through [SECURITY.md](SECURITY.md).
 
-## License
+## Contributing
 
-GPL-3.0-only. No paid tiers, artificial download quotas or required cloud account. Third-party dependencies retain their licenses.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and verification, the [desktop release guide](docs/release-guide.md), and the [Chrome extension release guide](docs/extension-release.md) for packaging and distribution.
+
+Licensed under [GPL-3.0-only](LICENSE). Third-party dependencies and sample media retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).

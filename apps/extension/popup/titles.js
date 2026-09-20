@@ -761,6 +761,13 @@ function formatEpisodeTag(seasonNumber, episodeNumber) {
   return `${seasonPart}${episodePart}`;
 }
 
+// Sites write the same episode many ways: S04E09, S4:E9, S4 · E9, 4x09, Season 4 Episode 9.
+function titleAlreadyNamesEpisode(title, seasonNumber, episodeNumber) {
+  const between = '[\\s:;,.·•|/_-]*';
+  return new RegExp(`\\bs(?:eason)?\\s*0*${seasonNumber}${between}e(?:p(?:isode)?)?\\s*0*${episodeNumber}\\b`, 'i').test(title)
+    || new RegExp(`\\b0*${seasonNumber}\\s*x\\s*0*${episodeNumber}\\b`, 'i').test(title);
+}
+
 function appendEpisodeTagToTitle(titleValue, titleHints) {
   const title = String(titleValue || '').trim();
   if (!title) return title;
@@ -769,15 +776,7 @@ function appendEpisodeTagToTitle(titleValue, titleHints) {
   const episodeNumber = parseBoundedInteger(titleHints && titleHints.episodeNumber, 1, 999);
   if (!seasonNumber || !episodeNumber) return title;
 
-  const seasonText = String(seasonNumber);
-  const episodeText = String(episodeNumber);
-  if (
-    new RegExp(`\\bs\\s*0*${seasonText}\\s*e\\s*0*${episodeText}\\b`, 'i').test(title)
-    || new RegExp(`\\b${seasonText}\\s*x\\s*0*${episodeText}\\b`, 'i').test(title)
-    || new RegExp(`\\bseason\\s*0*${seasonText}\\s*(?:-|\\s)*(?:episode|ep)\\s*0*${episodeText}\\b`, 'i').test(title)
-  ) {
-    return title;
-  }
+  if (titleAlreadyNamesEpisode(title, seasonNumber, episodeNumber)) return title;
 
   const tag = formatEpisodeTag(seasonNumber, episodeNumber);
   return tag ? `${title} ${tag}` : title;
@@ -797,6 +796,9 @@ function appendDisplayEpisodeTagToTitle(titleValue, titleHints) {
   if (normalizedTitle.includes(tag.toUpperCase())) {
     return title;
   }
+  const knownSeason = parseBoundedInteger(titleHints && titleHints.seasonNumber, 1, 60);
+  const knownEpisode = parseBoundedInteger(titleHints && titleHints.episodeNumber, 1, 999);
+  if (knownSeason && knownEpisode && titleAlreadyNamesEpisode(title, knownSeason, knownEpisode)) return title;
 
   return `${title} ${tag}`;
 }

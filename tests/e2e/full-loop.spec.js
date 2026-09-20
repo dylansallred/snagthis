@@ -24,8 +24,7 @@ test('full loop: actual Chrome pairing and 480p selection → Electron → playa
 
     // Use the actual product pairing flow; no test bearer token or fake API.
     await desktop.getByRole('button', { name: 'Settings', exact: true }).click();
-    await desktop.locator('summary').filter({ hasText: 'Advanced' }).click();
-    await desktop.getByRole('button', { name: 'Connect Chrome', exact: true }).click();
+    await desktop.getByRole('button', { name: 'Show connection code', exact: true }).click();
     const code = (await desktop.getByLabel('Connection code', { exact: true }).textContent()).trim();
     expect(code).toMatch(/^\d{6}$/);
 
@@ -54,7 +53,8 @@ test('full loop: actual Chrome pairing and 480p selection → Electron → playa
     await popup.getByRole('button', { name: 'Download', exact: true }).click();
     await expect(desktop.locator('.video-row')).toHaveCount(1);
     await expect(desktop.locator('.video-row').getByRole('button', { name: /^Play:/ })).toBeVisible({ timeout: 60_000 });
-    await expect(popup.locator('.row-status')).toHaveText('Saved');
+    await expect(popup.locator('.row-status .saved-copy')).toHaveText('Saved');
+    await expect(popup.locator('.row-status .resolution')).toHaveText('480p');
     await expect(popup.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
 
     const history = await desktop.evaluate(async () => {

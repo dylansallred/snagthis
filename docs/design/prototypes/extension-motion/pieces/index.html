@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Pieces</title>
+  <style>
+    @font-face{font-family:Inter;src:url('/apps/extension/fonts/inter-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
+    :root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111317;color:#f1eeeb;font-synthesis:none}
+    *{box-sizing:border-box}body{width:400px;margin:0;font-size:13px;-webkit-font-smoothing:antialiased}button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}button:focus-visible{outline:2px solid #f6ab73;outline-offset:3px}button:disabled{cursor:default}svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}[hidden]{display:none!important}
+    .popup{width:400px;background:#111317;overflow:hidden}
+    .header{height:48px;padding:0 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #25282e}
+    .brand-mark{width:19px;height:19px;object-fit:contain}.brand{font-size:13px;font-weight:610;letter-spacing:-.2px}.count{margin-left:auto;color:#94979e;font-size:11.5px;font-variant-numeric:tabular-nums}
+    .video-row{padding:14px;border-bottom:1px solid #25282e;background:#111317;transition:background 150ms ease}.video-row:hover,.video-row:focus-within{background:#15181d}
+    .row-main{display:grid;grid-template-columns:144px minmax(0,1fr);gap:12px;align-items:center}
+    .preview{width:144px;height:81px;border-radius:7px;padding:0;position:relative;display:block;overflow:hidden;background:#1c2128;isolation:isolate}
+    .preview img,.preview video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}.preview video{opacity:0;transition:opacity 140ms ease}.preview.playing video{opacity:1}
+    .row-copy{min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:5px}
+    .copy-top{display:flex;align-items:center;gap:6px;min-width:0;min-height:26px}.title{margin:0;flex:1;min-width:0;font-size:14px;line-height:19px;font-weight:590;letter-spacing:-.2px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+    .icon-button{display:grid;place-items:center;width:28px;height:28px;border-radius:7px;color:#c5c6c9;flex:none;padding:0}.icon-button:hover{background:#292d34;color:#fff}.icon-button:disabled{color:#646b75}.icon-button.pause-action{color:#f1eeeb}
+    .metadata,.status{display:flex;align-items:center;gap:6px;min-height:17px;white-space:nowrap;font-size:11.5px;line-height:17px;font-variant-numeric:tabular-nums}.metadata{color:#8d939c}.separator{color:#515964}.status{color:#afb5bd;margin-top:1px}.status strong{color:#f1eeeb;font-size:12px;font-weight:570}.status.saved{color:#a5cbbb}.status.saved svg{width:12px;height:12px;stroke-width:2}.status.waiting{color:#8d939c}
+    .pieces{display:grid;grid-template-columns:repeat(40,minmax(0,1fr));gap:3px;margin-top:11px;height:7px;align-items:stretch}
+    .piece{min-width:0;border-radius:1.7px;background:#292f37;border:1px solid #333a44;transition:background 180ms ease,border-color 180ms ease;position:relative}
+    .piece.done{background:#80bfa6;border-color:#91cbb4;box-shadow:0 1px 0 #b4dbc51a inset}
+    .piece.current{background:#30291f;border-color:#d0a471}
+    body[data-motion="true"] .video-row[data-state="downloading"] .piece.current::after{content:"";position:absolute;inset:0;border-radius:1px;background:#f4c38a;animation:piece-working 1.9s ease-in-out infinite}
+    .video-row[data-state="paused"] .pieces{opacity:.62}.video-row[data-state="paused"] .piece.current{background:#62513a;border-color:#a18b6b}
+    @keyframes piece-working{0%,100%{opacity:.12}50%{opacity:.9}}
+    .footer{height:43px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;color:#787f89;font-size:11px;background:#101216}.footer-action{border-radius:6px;padding:5px 7px;color:#aeb3bc;font-size:11.5px}.footer-action:hover{background:#232830;color:#f1eeeb}
+    dialog{width:372px;max-width:calc(100vw - 28px);border:1px solid #343b45;border-radius:10px;padding:12px;background:#15191f;color:#f1eeeb}dialog::backdrop{background:#000a}.dialog-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.dialog-header h2{font-size:13px;font-weight:590;margin:0}dialog video{display:block;width:100%;border-radius:6px;background:#0b0d10}
+    body[data-motion="false"] *,body[data-motion="false"] *::after{animation:none!important;transition:none!important}
+    @media(prefers-reduced-motion:reduce){*,*::after{animation:none!important;transition:none!important}.piece.current::after{display:none}}
+  </style>
+</head>
+<body data-progress="42" data-state="downloading" data-motion="true">
+  <main class="popup" aria-label="VidSnag videos">
+    <header class="header"><img class="brand-mark" src="/apps/extension/img/vidsnag-logo-mark.png" alt=""><span class="brand">VidSnag</span><span class="count">3 videos on this page</span></header>
+    <article class="video-row featured" id="featured-row" data-progress="42" data-state="downloading" aria-label="Sintel">
+      <div class="row-main">
+        <button class="preview" type="button" data-clip="sintel" aria-label="Preview Sintel"><img src="/apps/extension/popup/media/sintel.jpg" alt="Scene from Sintel"><video muted loop playsinline preload="none" aria-hidden="true"></video></button>
+        <div class="row-copy">
+          <div class="copy-top"><h2 class="title">Sintel</h2><button class="icon-button pause-action" id="featured-action" type="button" aria-label="Pause download"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4v12M13 4v12"></path></svg></button></div>
+          <div class="metadata"><span>1080p</span><span class="separator" aria-hidden="true">·</span><span>14:48</span></div>
+          <div class="status" id="featured-status" role="progressbar" aria-label="Sintel download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42"><strong>42%</strong><span class="separator" aria-hidden="true">·</span><span>5 min left</span></div>
+        </div>
+      </div>
+      <div class="pieces" id="pieces" aria-hidden="true"></div>
+    </article>
+    <article class="video-row" data-state="saved" aria-label="Big Buck Bunny">
+      <div class="row-main">
+        <button class="preview" type="button" data-clip="big-buck-bunny" aria-label="Preview Big Buck Bunny"><img src="/apps/extension/popup/media/big-buck-bunny.jpg" alt="Scene from Big Buck Bunny"><video muted loop playsinline preload="none" aria-hidden="true"></video></button>
+        <div class="row-copy">
+          <div class="copy-top"><h2 class="title">Big Buck Bunny</h2><button class="icon-button" id="saved-play" type="button" aria-label="Play Big Buck Bunny"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 9 6-9 6Z"></path></svg></button></div>
+          <div class="metadata"><span>720p</span><span class="separator" aria-hidden="true">·</span><span>9:56</span></div>
+          <div class="status saved"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"></path></svg><span>Saved</span><span class="separator" aria-hidden="true">·</span><span>182 MB</span></div>
+        </div>
+      </div>
+    </article>
+    <article class="video-row" data-state="queued" aria-label="Tears of Steel">
+      <div class="row-main">
+        <button class="preview" type="button" data-clip="tears-of-steel" aria-label="Preview Tears of Steel"><img src="/apps/extension/popup/media/tears-of-steel.jpg" alt="Scene from Tears of Steel"><video muted loop playsinline preload="none" aria-hidden="true"></video></button>
+        <div class="row-copy">
+          <div class="copy-top"><h2 class="title">Tears of Steel</h2><button class="icon-button" type="button" aria-label="Waiting to download Tears of Steel" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12"></path></svg></button></div>
+          <div class="metadata"><span>1080p</span><span class="separator" aria-hidden="true">·</span><span>12:14</span></div>
+          <div class="status waiting">Next in line</div>
+        </div>
+      </div>
+    </article>
+    <footer class="footer"><span>Downloads stay in VidSnag</span><button class="footer-action" id="footer-action" type="button">Pause download</button></footer>
+  </main>
+  <dialog id="player-dialog"><div class="dialog-header"><h2 id="player-title">Big Buck Bunny</h2><button class="icon-button" id="close-player" type="button" aria-label="Close video"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"></path></svg></button></div><video id="player" controls playsinline preload="none"></video></dialog>
+  <script>
+    (() => {
+      'use strict';
+      const mediaBase = '/apps/extension/popup/media/';
+      const featured = document.getElementById('featured-row');
+      const status = document.getElementById('featured-status');
+      const action = document.getElementById('featured-action');
+      const footerAction = document.getElementById('footer-action');
+      const pieces = document.getElementById('pieces');
+      const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
+      const state = { progress: 42, state: 'downloading', motion: true };
+      const cells = Array.from({ length: 40 }, () => { const cell = document.createElement('span'); cell.className = 'piece'; pieces.append(cell); return cell; });
+      const previews = Array.from(document.querySelectorAll('.preview'));
+      const dialog = document.getElementById('player-dialog');
+      const player = document.getElementById('player');
+      function motionAllowed() { return state.motion && !motionPreference.matches && !document.hidden && !dialog.open; }
+      function updatePreview(button) {
+        const video = button.querySelector('video');
+        const active = motionAllowed() && (button.matches(':hover') || button === document.activeElement);
+        if (!active) {
+          button.classList.remove('playing'); video.pause();
+          if (video.hasAttribute('src')) { video.removeAttribute('src'); video.load(); }
+          return;
+        }
+        if (!video.hasAttribute('src')) video.src = mediaBase + button.dataset.clip + '.mp4';
+        video.muted = true; video.loop = true;
+        video.play().catch(() => button.classList.remove('playing'));
+      }
+      function updatePreviews() { previews.forEach(updatePreview); }
+      function play(clip, title) {
+        document.getElementById('player-title').textContent = title;
+        player.poster = mediaBase + clip + '.jpg'; player.src = mediaBase + clip + '.mp4';
+        dialog.showModal(); updatePreviews(); player.play().catch(() => {});
+      }
+      function paint() {
+        document.body.dataset.progress = featured.dataset.progress = String(state.progress);
+        document.body.dataset.state = featured.dataset.state = state.state;
+        document.body.dataset.motion = String(state.motion && !motionPreference.matches);
+        const completed = Math.floor(state.progress / 100 * cells.length);
+        cells.forEach((cell, index) => { cell.className = 'piece' + (index < completed ? ' done' : index === completed && state.progress < 100 ? ' current' : ''); });
+        pieces.hidden = state.state === 'saved';
+        const saved = state.state === 'saved';
+        const paused = state.state === 'paused';
+        status.className = 'status' + (saved ? ' saved' : '');
+        status.replaceChildren();
+        if (saved) {
+          status.textContent = 'Saved · 2.1 GB'; status.removeAttribute('role'); status.removeAttribute('aria-valuenow'); status.removeAttribute('aria-valuetext');
+        } else {
+          const amount = document.createElement('strong'); amount.textContent = paused ? `Paused at ${state.progress}%` : `${state.progress}%`; status.append(amount);
+          if (!paused) { const separator = document.createElement('span'); separator.className = 'separator'; separator.textContent = '·'; separator.setAttribute('aria-hidden', 'true'); const eta = document.createElement('span'); eta.textContent = state.progress >= 97 ? 'Finishing' : '5 min left'; status.append(separator, eta); }
+          status.setAttribute('role', 'progressbar'); status.setAttribute('aria-valuenow', String(state.progress)); status.setAttribute('aria-valuetext', paused ? `Paused at ${state.progress} percent` : `${state.progress} percent downloaded`);
+        }
+        const label = saved ? 'Play Sintel' : paused ? 'Resume download' : 'Pause download';
+        action.setAttribute('aria-label', label);
+        action.querySelector('path').setAttribute('d', saved || paused ? 'm7 4 9 6-9 6Z' : 'M7 4v12M13 4v12');
+        footerAction.textContent = saved ? 'Play video' : paused ? 'Resume download' : 'Pause download';
+        updatePreviews();
+      }
+      function toggleDownload() {
+        if (state.state === 'saved') { play('sintel', 'Sintel'); return; }
+        state.state = state.state === 'paused' ? 'downloading' : 'paused'; paint();
+      }
+      previews.forEach(button => {
+        const video = button.querySelector('video');
+        video.addEventListener('playing', () => { if (motionAllowed() && (button.matches(':hover') || button === document.activeElement)) button.classList.add('playing'); });
+        video.addEventListener('error', () => button.classList.remove('playing'));
+        for (const event of ['pointerenter', 'pointerleave', 'focus', 'blur']) button.addEventListener(event, () => updatePreview(button));
+        button.addEventListener('click', () => updatePreview(button));
+      });
+      action.addEventListener('click', toggleDownload); footerAction.addEventListener('click', toggleDownload);
+      document.getElementById('saved-play').addEventListener('click', () => play('big-buck-bunny', 'Big Buck Bunny'));
+      document.getElementById('close-player').addEventListener('click', () => dialog.close());
+      dialog.addEventListener('close', () => { player.pause(); player.removeAttribute('src'); player.load(); updatePreviews(); });
+      window.addEventListener('message', event => {
+        const value = event.data;
+        if (!value || value.type !== 'vidsnag-design-state') return;
+        if (Number.isFinite(value.progress)) state.progress = Math.round(Math.max(0, Math.min(100, value.progress)));
+        if (['downloading', 'paused', 'saved'].includes(value.state)) state.state = value.state;
+        if (typeof value.motion === 'boolean') state.motion = value.motion;
+        paint();
+      });
+      motionPreference.addEventListener('change', paint);
+      document.addEventListener('visibilitychange', updatePreviews);
+      window.addEventListener('pagehide', () => { for (const button of previews) button.querySelector('video').pause(); player.pause(); });
+      paint();
+    })();
+  </script>
+</body>
+</html>

@@ -59,6 +59,8 @@ function createNativeProgress(job, { playlistInfo = {}, playlistText = '', playl
   job.totalSegments = Number(playlistInfo.totalSegments) || 0;
   job.speedBps = 0;
   job.etaSeconds = null;
+  job.totalBytes = 0;
+  job.totalBytesKnown = false;
   if (descriptors) for (const items of descriptors.values()) for (const item of items) job.segmentStates[item.index] = { status: 'pending', attempt: 0 };
 
   function matchesRange(item, range) {
@@ -136,6 +138,13 @@ function createNativeProgress(job, { playlistInfo = {}, playlistText = '', playl
     samples.push(sample);
     while (samples.length > 2 && samples[1].time < time - 5000) samples.shift();
     const elapsed = (time - samples[0].time) / 1000;
+    // Native inputs can mix video, audio and subtitles. Estimate the resulting
+    // output from muxed bytes/media time, rather than one track's piece sizes.
+    const minimumMediaSeconds = Math.min(30, durationSeconds * 0.1);
+    if (durationSeconds > 0 && outputSeconds >= minimumMediaSeconds && outputSeconds > 0 && sample.bytes > 0) {
+      const estimate = Math.ceil(sample.bytes * Math.max(1, durationSeconds / outputSeconds));
+      if (Number.isSafeInteger(estimate)) { job.totalBytes = estimate; job.totalBytesKnown = false; }
+    }
     if (elapsed > 0) {
       job.speedBps = Math.max(0, (sample.bytes - samples[0].bytes) / elapsed);
       const measuredFactor = Math.max(0, (sample.seconds - samples[0].seconds) / elapsed);
@@ -160,7 +169,8 @@ function createNativeProgress(job, { playlistInfo = {}, playlistText = '', playl
       realtimeFactor = Number.isFinite(factor) && factor > 0 ? factor : null;
     } else if (key === 'progress') {
       updateRates();
-      if (value === 'end') { job.progress = 99; job.etaSeconds = 0; }
+      // FFmpeg also emits progress=end when SIGTERM stops a partial download.
+      // Keep measured output time; the runner confirms successful completion.
     }
     job.updatedAt = now();
   }

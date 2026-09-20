@@ -31,4 +31,5 @@ export function formatEta(seconds?: number | null): string;
 export function formatSize(bytes?: number | null, options?: { estimated?: boolean }): string;
 export function formatWhen(value?: number | string | Date | null, now?: number | Date): string;
 export function formatDuration(seconds?: number | null): string;
+export function formatQualityBadge(label: string): { tier: string; label: string; name: string };
 export function classifyProblem(error: unknown, options?: { progress?: number; folder?: string }): RowProblem;

@@ -45,8 +45,12 @@ export interface QueueJob {
   completedSegments: number;
   bytesDownloaded: number;
   totalBytes?: number;
+  totalBytesKnown?: boolean;
   speedBps?: number;
   etaSeconds?: number | null;
+  activeConnections?: number | null;
+  maxConnections?: number;
+  connectionCountAvailable?: boolean;
   error: string | null;
   fallbackUsed: boolean;
   fallbackUrl: string | null;

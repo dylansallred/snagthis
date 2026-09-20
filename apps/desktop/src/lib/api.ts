@@ -8,6 +8,10 @@ export interface MediaSelection { variantUrl?: string; height?: number; audioLan
 export interface MediaInspection {
   mediaUrl?: string;
   mediaType?: 'hls' | 'file';
+  title?: string;
+  sourcePageUrl?: string;
+  thumbnailUrl?: string;
+  headers?: Record<string, string>;
   isDrm?: boolean;
   isLive?: boolean | null;
   variants?: { url: string; height?: number; bandwidth?: number; estimatedSizeBytes?: number; sizeBytes?: number; audioGroupId?: string }[];
@@ -15,6 +19,7 @@ export interface MediaInspection {
   subtitles?: { language?: string; name?: string; url?: string }[];
   durationSeconds?: number;
 }
+export class MediaInspectionError extends Error {}
 
 export function createApiClient(baseUrl: string, authToken = '') {
   const base = normalizeLocalApiBase(baseUrl);
@@ -44,8 +49,15 @@ export function createApiClient(baseUrl: string, authToken = '') {
       if (cursor) params.set('cursor', cursor);
       return request<LibraryPage>(`/api/history?${params}`);
     },
-    createJob: (url: string, selection: MediaSelection, mediaType?: 'hls' | 'file') => post('/api/jobs', { queue: { url, selection, mediaType, sourcePageUrl: url } }),
-    inspectMedia: (url: string) => post<MediaInspection>('/v1/media/inspect', { mediaUrl: url }),
+    createJob: (url: string, selection: MediaSelection, inspection?: MediaInspection) => post('/api/jobs', { queue: {
+      url: inspection?.mediaUrl || url, selection, mediaType: inspection?.mediaType,
+      title: inspection?.title, sourcePageUrl: inspection?.sourcePageUrl || url,
+      thumbnailUrl: inspection?.thumbnailUrl, headers: inspection?.headers,
+    } }),
+    inspectMedia: async (url: string) => {
+      try { return await post<MediaInspection>('/api/media/inspect', { mediaUrl: url }); }
+      catch (error) { throw new MediaInspectionError(error instanceof Error ? error.message : 'Could not check this video link.'); }
+    },
     startJob: (jobId: string) => post(`/api/queue/${id(jobId)}/start`),
     pauseJob: (jobId: string) => post(`/api/queue/${id(jobId)}/pause`),
     resumeJob: (jobId: string) => post(`/api/queue/${id(jobId)}/resume`),

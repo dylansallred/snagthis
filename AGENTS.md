@@ -15,3 +15,5 @@ Keep one quiet row and one visible action at rest. Keep thumbnails unobscured fo
 Never replace a real-media correctness assertion with a command-argument assertion. Never suppress an authentication check to make a test pass. Keep credentials out of persisted queue state and diagnostics. Saved-file removal must distinguish list removal from moving the file to Trash.
 
 Do not publish releases or archive the predecessor repository as a side effect of ordinary development. Produce reviewable artifacts first.
+
+For UI variation requests, use `docs/design/prototypes/ui-refresh/controls.html` as the reference: numbered, named, clickable options with short descriptions, a current baseline, and previews in the real interface context. Keep independent design choices independently selectable. Wait for the owner's selection before applying an exploration to the desktop app or extension.

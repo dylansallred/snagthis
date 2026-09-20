@@ -1,4 +1,5 @@
 const path = require('path');
+const { allocateJobStorageDir } = require('@m3u8/downloader-engine/src/core/JobStorage');
 const EXTERNAL_DOWNLOAD_PREFIX = '/downloads/__external__/';
 
 function toPosixPath(value) {
@@ -12,8 +13,8 @@ function safeJobIdSegment(jobId) {
     .slice(0, 80) || 'job';
 }
 
-function buildJobStorageDir(downloadDir, jobId) {
-  return path.join(downloadDir, safeJobIdSegment(jobId));
+function buildJobStorageDir(downloadDir, jobId, title) {
+  return allocateJobStorageDir(downloadDir, jobId, title);
 }
 
 function normalizeRelativePath(value) {

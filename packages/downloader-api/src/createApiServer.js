@@ -10,8 +10,7 @@ const { createHash } = require('node:crypto');
 const rateLimit = require('express-rate-limit');
 const { API, HEADER, CLIENT, validateSelection, classifyProblem } = require('@m3u8/contracts');
 const { createBridgeSecurity, redact } = require('./utils/security');
-const { scopeMediaHeaders } = require('@m3u8/downloader-engine/src/core/MediaRequest');
-const { generatePreviewClip } = require('@m3u8/downloader-engine/src/core/VideoConverter');
+const { generatePreviewAssets, PREVIEW_CLIP_SUFFIX } = require('@m3u8/downloader-engine/src/core/PreviewClip');
 const {
   QueueManager,
   createJobProcessor,
@@ -25,6 +24,7 @@ const registerJobRoutes = require('./routes/jobs');
 const { HistoryIndexService } = require('./services/historyIndex');
 const logger = require('./utils/logger');
 const { inferMediaMetadata } = require('./utils/mediaMetadata');
+const { inspectMedia } = require('./services/mediaInspection');
 const { lookupPoster } = require('./services/tmdb');
 const {
   buildDownloadAssetUrl,
@@ -191,6 +191,7 @@ function createApiServer(options = {}) {
     onGetSettings,
     onSaveSettings,
     onDownloadComplete,
+    onResolvePage,
   } = options;
 
   if (!dataDir) {
@@ -461,25 +462,35 @@ function createApiServer(options = {}) {
   const previewTasks = new Map();
   const previewAbort = new AbortController();
   let previewWork = Promise.resolve();
+  const keepYouTubeArtwork = (item) => Boolean(item
+    && (isYouTubeUrl(item.url || item.sourcePageUrl) || item.youtubeMetadata?.videoId)
+    && (item.youtubeMetadata?.thumbnailUrl || item.thumbnailUrls?.length || item.thumbnailUrl));
 
   async function publishPreview(entry) {
     let queueChanged = false;
     let historyChanged = false;
     for (const jobId of entry.jobIds) {
       const job = jobs.get(jobId);
-      if (!job || job.previewClipPath === entry.outputPath) continue;
+      if (!job || (job.previewClipPath === entry.outputPath && (keepYouTubeArtwork(job) || job.thumbnailPath === entry.posterPath))) continue;
       job.previewClipPath = entry.outputPath;
       job.previewClipDurationSeconds = entry.durationSeconds;
+      if (entry.posterPath && !keepYouTubeArtwork(job)) {
+        job.thumbnailPath = entry.posterPath;
+        job.thumbnailPaths = [entry.posterPath];
+      }
       job.updatedAt = Date.now();
       queueChanged = true;
       broadcastJobUpdate(job);
     }
     for (const item of historyIndex.items) {
       if (!entry.historyIds.has(item.id) && !entry.jobIds.has(item.jobId) && !entry.sourcePaths.has(path.resolve(item.absolutePath || ''))) continue;
-      if (item.previewClipPath === entry.outputPath) continue;
+      const preserveArtwork = keepYouTubeArtwork(jobs.get(item.jobId)) || keepYouTubeArtwork(item);
+      const posterUrl = entry.posterPath ? buildDownloadAssetUrl(resolvedDownloadDir, entry.posterPath) : null;
+      if (item.previewClipPath === entry.outputPath && (preserveArtwork || item.thumbnailUrl === posterUrl)) continue;
       item.previewClipPath = entry.outputPath;
       item.previewClipUrl = entry.url;
       item.previewClipDurationSeconds = entry.durationSeconds;
+      if (posterUrl && !preserveArtwork) item.thumbnailUrl = posterUrl;
       historyChanged = true;
     }
     if (queueChanged) {
@@ -494,8 +505,11 @@ function createApiServer(options = {}) {
 
   async function requestPreview({ job, historyItem } = {}) {
     if (previewAbort.signal.aborted || !FFMPEG_PATH || !FFPROBE_PATH) return { status: 'unavailable' };
-    // Read only completed local media. An active download keeps its poster.
-    if (job && !['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) return { status: 'unavailable' };
+    if (job && !['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) {
+      const earlyUrl = queueManager.buildPreviewClipUrl(job);
+      if (earlyUrl) return { status: 'ready', previewClipUrl: earlyUrl, previewClipDurationSeconds: job.previewClipDurationSeconds || null };
+      return { status: ['downloading', 'finalizing'].includes(job.status) ? 'pending' : 'unavailable' };
+    }
     const inputPath = historyItem ? historyIndex.resolveFilePath(historyItem.id)
       : job && (job.mp4Path && fs.existsSync(job.mp4Path) ? job.mp4Path : job.filePath);
     if (!inputPath || !path.isAbsolute(inputPath)) return { status: 'unavailable' };
@@ -506,12 +520,13 @@ function createApiServer(options = {}) {
     const key = createHash('sha256').update(`${sourcePath}:${stat.size}:${stat.mtimeMs}`).digest('hex').slice(0, 32);
     let entry = previewTasks.get(key);
     if (!entry) {
-      const outputPath = path.join(resolvedDownloadDir, '__previews', `${key}.mp4`);
+      const outputPath = path.join(resolvedDownloadDir, '__previews', `${key}${PREVIEW_CLIP_SUFFIX}`);
+      const posterPath = path.join(resolvedDownloadDir, '__previews', `${key}.poster-v2.jpg`);
       entry = {
-        outputPath, url: `/downloads/__previews/${key}.mp4`,
+        outputPath, posterPath, url: `/downloads/__previews/${key}${PREVIEW_CLIP_SUFFIX}`,
         sourcePaths: new Set([path.resolve(inputPath), sourcePath]), jobIds: new Set(), historyIds: new Set(),
         durationSeconds: (job || historyItem).previewClipDurationSeconds || null,
-        status: fs.existsSync(outputPath) ? 'ready' : 'pending',
+        status: fs.existsSync(outputPath) && fs.existsSync(posterPath) ? 'ready' : 'pending',
       };
       previewTasks.set(key, entry);
       if (entry.status === 'pending') {
@@ -519,7 +534,7 @@ function createApiServer(options = {}) {
         previewWork = previewWork.then(async () => {
           if (previewAbort.signal.aborted) { entry.status = 'unavailable'; return; }
           try {
-            const clip = await generatePreviewClip(sourcePath, outputPath, { FFMPEG_PATH, FFPROBE_PATH, signal: previewAbort.signal });
+            const { clip } = await generatePreviewAssets(sourcePath, outputPath, posterPath, { FFMPEG_PATH, FFPROBE_PATH, signal: previewAbort.signal });
             entry.durationSeconds = clip.durationSeconds;
             entry.status = 'ready';
             await publishPreview(entry);
@@ -530,7 +545,10 @@ function createApiServer(options = {}) {
       }
     }
     if (job) entry.jobIds.add(job.id);
-    if (historyItem) entry.historyIds.add(historyItem.id);
+    if (historyItem) {
+      entry.historyIds.add(historyItem.id);
+      if (jobs.has(historyItem.jobId)) entry.jobIds.add(historyItem.jobId);
+    }
     entry.sourcePaths.add(path.resolve(inputPath));
     if (entry.status === 'ready') {
       await publishPreview(entry);
@@ -626,7 +644,11 @@ function createApiServer(options = {}) {
       segmentProgressAvailable: typeof job.segmentProgressAvailable === 'boolean' ? job.segmentProgressAvailable : null,
       bytesDownloaded: job.bytesDownloaded,
       totalBytes: Number(job.totalBytes || 0) || 0,
+      totalBytesKnown: job.totalBytesKnown === true,
       speedBps: Number(job.speedBps || 0) || 0,
+      activeConnections: job.connectionCountAvailable ? Number(job.activeConnections || 0) : null,
+      maxConnections: Number(job.maxConnections || job.maxConcurrent || 0) || null,
+      connectionCountAvailable: job.connectionCountAvailable === true,
       etaSeconds: Number.isFinite(job.etaSeconds) ? Number(job.etaSeconds) : null,
       failedSegments: Array.isArray(job.failedSegments) ? job.failedSegments.length : 0,
       threadStates: Array.isArray(job.threadStates) ? job.threadStates : [],
@@ -671,6 +693,9 @@ function createApiServer(options = {}) {
     } else {
       baseName = queue.title || queue.name || 'video';
     }
+    // queue.manualTitleOverride is supplied by internal retry reconstruction;
+    // public v1 creation builds its own queue object above this boundary.
+    const manualTitleOverride = queue.manualTitleOverride === true || (namingMode === 'custom' && Boolean(customName));
 
     const fileNameBase = safeFilename(baseName);
     const isHls = queue.mediaType === 'hls' || /\.m3u8(\?|$)/i.test(queue.url || '');
@@ -714,6 +739,7 @@ function createApiServer(options = {}) {
         )
       ),
     };
+    if (manualTitleOverride || namingMode === 'resource') mediaHints.lookupTitle = baseName;
     const queueYoutubeMetadata = queue.youtubeMetadata && typeof queue.youtubeMetadata === 'object'
       ? queue.youtubeMetadata
       : null;
@@ -742,7 +768,7 @@ function createApiServer(options = {}) {
     let directFallbackFilePath = null;
     let directFallbackDownloadName = null;
     let directFallbackDownloadNameMp4 = null;
-    const storageDir = buildJobStorageDir(resolvedDownloadDir, id);
+    const storageDir = buildJobStorageDir(resolvedDownloadDir, id, baseName);
 
     if (isHls) {
       tsName = fileNameBase;
@@ -803,6 +829,8 @@ function createApiServer(options = {}) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       title: baseName || queue.title || queue.name || 'Download',
+      fileNaming: namingMode,
+      manualTitleOverride,
       url: queue.url,
       headers: sanitizeHeaders(queue.headers),
       headerOrigin: queue.headerOrigin || new URL(queue.url).origin,
@@ -1621,40 +1649,17 @@ function createApiServer(options = {}) {
   app.post(['/v1/media/inspect', '/api/media/inspect'], async (req, res) => {
     const mediaUrl = String(req.body && req.body.mediaUrl || '');
     if (!isValidHttpUrl(mediaUrl)) return res.status(400).json({ error: 'Provide a valid video URL' });
-    let target = mediaUrl;
-    const headers = sanitizeHeaders(req.body.headers);
     try {
-      let response;
-      for (let redirects = 0; redirects <= 4; redirects += 1) {
-        response = await fetch(target, {
-          headers: scopeMediaHeaders(headers, target, { credentialOrigin: mediaUrl }),
-          redirect: 'manual', signal: AbortSignal.timeout(8000),
-        });
-        if (response.status < 300 || response.status >= 400 || !response.headers.get('location')) break;
-        const next = new URL(response.headers.get('location'), target);
-        await response.body?.cancel();
-        if (!['http:', 'https:'].includes(next.protocol) || (new URL(target).protocol === 'https:' && next.protocol !== 'https:')) throw new Error('This link redirects to an unsupported address');
-        target = next.href;
+      const result = await inspectMedia({ mediaUrl, headers: sanitizeHeaders(req.body.headers), resolvePage: onResolvePage });
+      if (req.path === '/api/media/inspect') {
+        // The authenticated desktop needs the observed request context for its
+        // subsequent job submission. This private route is blocked to extension
+        // clients above; public queue/bridge responses still strip all headers.
+        return res.type('application/json').send(JSON.stringify({
+          ...security.publicPayload(result), headers: sanitizeHeaders(result.headers),
+        }));
       }
-      if (!response || !response.ok) throw new Error('This link could not be checked. Open the source page and try again.');
-      const contentType = String(response.headers.get('content-type') || '');
-      if (!/mpegurl|text\/plain/.test(contentType) && !/\.m3u8(?:[?#]|$)/i.test(target)) {
-        await response.body?.cancel();
-        return res.json({ url: target, mediaType: 'file', variants: [], audio: [], subtitles: [] });
-      }
-      const reader = response.body.getReader();
-      const chunks = [];
-      let size = 0;
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        size += chunk.value.length;
-        if (size > 1_000_000) { await reader.cancel(); throw new Error('The playlist is too large to inspect'); }
-        chunks.push(Buffer.from(chunk.value));
-      }
-      const { parseHlsManifest } = require('@m3u8/contracts');
-      const result = parseHlsManifest(Buffer.concat(chunks).toString('utf8'), target);
-      return res.json({ ...result, mediaType: 'hls' });
+      return res.json(result);
     } catch (error) { return res.status(400).json({ error: redact(error.message) }); }
   });
 
@@ -1763,6 +1768,7 @@ function createApiServer(options = {}) {
       headerOrigin: sourceJob.credentialOrigin || sourceJob.headerOrigin,
       title: sourceJob.title || 'HLS Retry',
       name: sourceJob.title || 'HLS Retry',
+      manualTitleOverride: sourceJob.manualTitleOverride === true,
       headers: sourceJob.headers || {},
       sourcePageUrl: sourceJob.sourcePageUrl || '',
       youtubeMetadata: sourceJob.youtubeMetadata || null,
@@ -1770,8 +1776,8 @@ function createApiServer(options = {}) {
     };
 
     const settings = {
-      fileNaming: 'title',
-      customName: '',
+      fileNaming: sourceJob.fileNaming || 'title',
+      customName: sourceJob.fileNaming === 'custom' ? sourceJob.title || '' : '',
       maxSegmentAttempts: sourceJob.maxSegmentAttempts === Infinity
         ? 'infinite'
         : String(sourceJob.maxSegmentAttempts || engineConfig.defaultMaxSegmentAttempts),
@@ -1814,6 +1820,7 @@ function createApiServer(options = {}) {
       headerOrigin: sourceJob.credentialOrigin || sourceJob.headerOrigin,
       title: sourceJob.title || 'Retry Job',
       name: sourceJob.title || 'Retry Job',
+      manualTitleOverride: sourceJob.manualTitleOverride === true,
       headers: sourceJob.headers || {},
       sourcePageUrl: sourceJob.sourcePageUrl || '',
       youtubeMetadata: sourceJob.youtubeMetadata || null,
@@ -1821,8 +1828,8 @@ function createApiServer(options = {}) {
     };
 
     const settings = {
-      fileNaming: 'title',
-      customName: '',
+      fileNaming: sourceJob.fileNaming || 'title',
+      customName: sourceJob.fileNaming === 'custom' ? sourceJob.title || '' : '',
       maxSegmentAttempts: sourceJob.maxSegmentAttempts === Infinity
         ? 'infinite'
         : String(sourceJob.maxSegmentAttempts || engineConfig.defaultMaxSegmentAttempts),
@@ -1949,6 +1956,7 @@ function createApiServer(options = {}) {
   const clientSubscriptions = new Map();
   const lastSentTimestamps = new Map();
   let lastQueueSignature = '';
+  let lastHistoryQueueSignature = '';
   const notifiedCompletedJobs = new Set();
 
   const CHANNELS = new Set(['queue', 'history', 'compatibility']);
@@ -2037,20 +2045,16 @@ function createApiServer(options = {}) {
   }
 
   function getQueueSignature(payload) {
-    const queue = Array.isArray(payload.queue) ? payload.queue : [];
-    const settings = payload.settings || {};
-    return [
-      `${settings.maxConcurrent || 1}:${settings.autoStart !== false ? 1 : 0}`,
-      ...queue.map((job) => [
-        job.id,
-        job.queueStatus,
-        job.status,
-        Number(job.progress || 0),
-        Number(job.bytesDownloaded || 0),
-        Number(job.completedSegments || 0),
-        job.previewClipUrl || '',
-      ].join(':')),
-    ].join('|');
+    // Every public field can affect a row; the envelope timestamp cannot.
+    return JSON.stringify([payload.settings || {}, payload.queue || []]);
+  }
+
+  function getHistoryQueueSignature(payload) {
+    return JSON.stringify((payload.queue || []).map((job) => {
+      const source = jobs.get(job.id) || {};
+      return [job.id, ['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status),
+        source.filePath, source.mp4Path, job.thumbnailUrls, job.previewClipUrl];
+    }));
   }
 
   function broadcastQueueUpdate(payloadOverride = null) {
@@ -2177,9 +2181,12 @@ function createApiServer(options = {}) {
   });
 
   const broadcastInterval = setInterval(() => {
-    const queueChanged = broadcastQueueUpdate();
-    if (queueChanged) {
-      historyIndex.refreshFromDisk().catch((err) => {
+    const payload = getQueuePayload();
+    broadcastQueueUpdate(payload);
+    const historySignature = getHistoryQueueSignature(payload);
+    if (historySignature !== lastHistoryQueueSignature) {
+      lastHistoryQueueSignature = historySignature;
+      historyIndex.refreshFromDisk({ force: true }).catch((err) => {
         logger.warn('History index refresh failed after queue update', { error: err && err.message });
       });
     }
@@ -2220,7 +2227,9 @@ function createApiServer(options = {}) {
     for (const job of jobs.values()) if (['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) notifiedCompletedJobs.add(job.id);
     await historyIndex.init();
     lastQueueSignature = '';
-    broadcastQueueUpdate();
+    const initialQueue = getQueuePayload();
+    lastHistoryQueueSignature = getHistoryQueueSignature(initialQueue);
+    broadcastQueueUpdate(initialQueue);
     broadcastCompatibilityUpdate();
 
     cleanupTimer = startCleanupScheduler({
@@ -2272,6 +2281,9 @@ function createApiServer(options = {}) {
     previewAbort.abort();
     await previewWork;
     await queueManager.persistence;
+    // A scan can still enqueue an index write after the current persistence
+    // promise settles. Finish that scan before draining its final write.
+    await historyIndex.refreshInFlight;
     await historyIndex.persistence;
 
     return new Promise((resolve, reject) => {

@@ -190,6 +190,7 @@ function registerJobRoutes(
       // Default: prefer webpage title.
       baseName = queue.title || queue.name || 'video';
     }
+    const manualTitleOverride = namingMode === 'custom' && Boolean(customName);
 
     const fileNameBase = safeFilename(baseName);
 
@@ -199,7 +200,7 @@ function registerJobRoutes(
     let filePath;
     let tsName;
     let downloadNameMp4;
-    const storageDir = buildJobStorageDir(downloadDir, id);
+    const storageDir = buildJobStorageDir(downloadDir, id, baseName);
 
     if (isHls) {
       // HLS flow: use TS container internally and MP4 as the final remuxed output.
@@ -253,6 +254,8 @@ function registerJobRoutes(
       updatedAt: Date.now(),
       // Use the resolved baseName (which already prefers customName) for display.
       title: baseName || queue.title || queue.name || 'Download',
+      fileNaming: namingMode,
+      manualTitleOverride,
       url: queue.url,
       headers: queue.headers || {},
       headerOrigin: new URL(queue.url).origin,
@@ -323,6 +326,7 @@ function registerJobRoutes(
         )
       ),
     };
+    if (manualTitleOverride || namingMode === 'resource') mediaHints.lookupTitle = baseName;
     job.mediaHints = mediaHints;
 
     const lookupTitle = mediaHints.lookupTitle || job.title || job.downloadName;
@@ -552,7 +556,11 @@ function registerJobRoutes(
       segmentProgressAvailable: typeof job.segmentProgressAvailable === 'boolean' ? job.segmentProgressAvailable : null,
       bytesDownloaded: job.bytesDownloaded,
       totalBytes: Number(job.totalBytes || 0) || 0,
+      totalBytesKnown: job.totalBytesKnown === true,
       speedBps: Number(job.speedBps || 0) || 0,
+      activeConnections: job.connectionCountAvailable ? Number(job.activeConnections || 0) : null,
+      maxConnections: Number(job.maxConnections || job.maxConcurrent || 0) || null,
+      connectionCountAvailable: job.connectionCountAvailable === true,
       etaSeconds: Number.isFinite(job.etaSeconds) ? Number(job.etaSeconds) : null,
       failedSegments: Array.isArray(job.failedSegments) ? job.failedSegments.length : 0,
       threadStates: Array.isArray(job.threadStates) ? job.threadStates : [],
@@ -647,6 +655,7 @@ function registerJobRoutes(
     job.resumeRequested = false;
     job.status = 'cancelled';
     job.queueStatus = 'cancelled';
+    job._downloadAbort?.abort();
     job.updatedAt = Date.now();
     job.completedAt = job.updatedAt;
     await queueManager.saveQueue();

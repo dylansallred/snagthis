@@ -11,7 +11,7 @@ VidSnag is licensed GPL-3.0-only. Dependencies retain their own licenses; the pr
 | React | [MIT](https://github.com/facebook/react/blob/main/LICENSE) | Retain installed dependency notice. |
 | Radix UI | [MIT](https://github.com/radix-ui/primitives/blob/main/LICENSE) | Retain installed dependency notice. |
 | Inter | [SIL Open Font License 1.1](https://github.com/rsms/inter/blob/master/LICENSE.txt) | License is copied alongside the extension font. |
-| Lucide | [ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE) | Retain library license. |
+| Lucide | [ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE) | Desktop library and extension settings icon; the extension includes `vendor/lucide.LICENSE.txt`. |
 | Blender demo excerpts | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) | Development gallery only. Clip-specific attributions accompany gallery assets. |
 
 Installed package license files are authoritative for their exact installed versions. The release pipeline must retain dependency notices and identify bundled multimedia tool sources before public binary distribution.

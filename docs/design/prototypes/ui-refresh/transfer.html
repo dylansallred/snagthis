@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Transfer graph and segment studies</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="hover.css">
+  <link rel="stylesheet" href="studies.css">
+  <link rel="stylesheet" href="transfer.css">
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / TRANSFER DETAILS</div>
+    <h1>Fine-tune the graph and the squares.</h1>
+    <p>Keep the filled graph behind the segments. Adjust its fill and line independently, then let more of the graph show through the unfinished squares.</p>
+    <nav class="study-nav" aria-label="Design studies"><a href="folder.html">Folder &amp; copy actions</a><a href="transfer.html" aria-current="page">Graph &amp; segments</a></nav>
+  </header>
+  <div class="study-workspace">
+  <div class="choices">
+    <section class="study" aria-labelledby="fill-title">
+      <h2 class="study-title" id="fill-title">1 · The fill <small>The filled area stays, fading toward the bottom.</small></h2>
+      <label class="colour-control" for="fill-color">Fill colour <span><input type="color" id="fill-color" value="#fa5d0e"><output id="fill-color-value" for="fill-color">#FA5D0E</output></span></label>
+      <div class="colour-swatches" id="fill-swatches" aria-label="Fill colour choices"></div>
+      <label class="tuning-range" for="fill-opacity"><span>Fill opacity <output id="fill-opacity-value" for="fill-opacity">85%</output></span><input type="range" id="fill-opacity" min="5" max="100" value="85"></label>
+    </section>
+    <section class="study" aria-labelledby="line-title">
+      <h2 class="study-title" id="line-title">2 · The line <small>Choose its colour independently of the fill.</small></h2>
+      <label class="colour-control" for="line-color">Line colour <span><input type="color" id="line-color" value="#ff7566"><output id="line-color-value" for="line-color">#FF7566</output></span></label>
+      <div class="colour-swatches" id="line-swatches" aria-label="Line colour choices"></div>
+      <label class="tuning-range" for="line-opacity"><span>Line opacity <output id="line-opacity-value" for="line-opacity">100%</output></span><input type="range" id="line-opacity" min="10" max="100" value="100"></label>
+    </section>
+    <section class="study" aria-labelledby="squares-title">
+      <h2 class="study-title" id="squares-title">3 · Unfinished squares <small>Lower opacity reveals the graph underneath.</small></h2>
+      <label class="tuning-range" for="pending-opacity"><span><i class="control-chip pending"></i>Pending <output id="pending-opacity-value" for="pending-opacity">25%</output></span><input type="range" id="pending-opacity" min="5" max="100" value="25"></label>
+      <label class="tuning-range" for="downloading-opacity"><span><i class="control-chip downloading"></i>Downloading <output id="downloading-opacity-value" for="downloading-opacity">100%</output></span><input type="range" id="downloading-opacity" min="5" max="100" value="100"></label>
+      <label class="tuning-range" for="retrying-opacity"><span><i class="control-chip retrying"></i>Retrying <output id="retrying-opacity-value" for="retrying-opacity">75%</output></span><input type="range" id="retrying-opacity" min="5" max="100" value="75"></label>
+      <p class="palette-note">Completed squares stay fully visible. Segment colours and outlined retries keep your selected look.</p>
+    </section>
+  </div>
+  <section class="preview-section" aria-labelledby="preview-title">
+    <div class="preview-heading"><h2 id="preview-title">Try your combination</h2><output id="selection" aria-live="polite"></output></div>
+    <div class="hub-controls preview-controls">
+      <label>Preview width <select id="sample-width"><option value="820">Desktop · 820px</option><option value="640">Small desktop · 640px</option></select></label>
+      <label>Progress <input id="progress" type="range" min="0" max="873" step="1" value="275"><output id="progress-value" for="progress">31.5%</output></label>
+      <button type="button" id="simulate" aria-pressed="false">Simulate transfer</button>
+      <button type="button" id="reset">Reset to Today</button>
+    </div>
+    <div class="preview-scroll">
+      <div class="transfer-preview" id="transfer-preview" data-graph="custom" data-palette="today" data-marks="outline" data-width="820" data-running="false">
+        <div class="context-bar"><span class="context-wordmark">Vid<span>Snag</span></span><span class="context-paste">Paste a video link <kbd>⌘V</kbd></span><span class="context-tabs"><b>All</b> Downloading Saved</span></div>
+        <div class="context-row">
+          <img class="context-poster" src="../../../../apps/extension/popup/media/sintel.jpg" alt="Sintel movie scene">
+          <div class="context-copy"><div class="context-heading"><strong>Sintel — an open movie by Blender</strong><span>14:48</span></div><div class="context-status" id="row-status">31% · 4 minutes left</div></div>
+          <span class="context-pause" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg></span>
+          <div class="context-lane" id="row-lane" aria-hidden="true"></div>
+        </div>
+        <div class="details-context">
+          <article class="transfer-card" aria-label="Download details preview">
+            <div class="folder-bar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 3h10v12H3Z"/></svg><span><span class="folder-label">Saving to</span> ~/Movies/VidSnag/<strong>Sintel — an open movie by Blender</strong></span><span aria-hidden="true">›</span></div>
+            <div class="transfer-body">
+              <div class="transfer-top">
+                <div class="speed-stat"><strong><span id="speed-value">23.80</span> <small>MB/s</small></strong><div class="connection-dots" id="connection-dots" aria-hidden="true"></div><span id="connections">16 of 16 active</span></div>
+                <dl class="transfer-facts"><div><dt>Quality</dt><dd>900p</dd></div><div><dt>Size</dt><dd><span id="downloaded-size">2.4 GB</span> / ~7.8 GB</dd></div><div><dt>From</dt><dd>popcornmovies.ac</dd></div></dl>
+              </div>
+              <div class="telemetry">
+                <figure class="speed-plot" aria-label="Sample transfer speed history"><figcaption>Speed history</figcaption><svg viewBox="0 0 740 116" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="transfer-fill" x1="0" y1="0" x2="0" y2="1"><stop id="fill-top" offset="0" stop-color="var(--fill-color)" stop-opacity=".85"/><stop offset="1" stop-color="var(--fill-color)" stop-opacity="0"/></linearGradient></defs><path class="chart-area" id="chart-area"/><path class="chart-line" id="chart-line"/><circle class="chart-dot" id="chart-dot" r="3.5"/></svg></figure>
+                <section class="segments" aria-label="Segment progress">
+                  <div class="segment-caption"><strong>Segments</strong><span id="segment-summary">275 of 873 · 12 retrying</span></div>
+                  <div class="segment-map" id="segment-map" role="img" aria-label="873 segments: 275 completed, 16 downloading, 12 retrying, 570 pending"></div>
+                  <div class="segment-legend" id="segment-legend"></div>
+                </section>
+              </div>
+            </div>
+            <div class="context-actions"><span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-6 6-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m2 5 2-2a4 4 0 0 0-6-6l-2 2" transform="translate(3 1)"/></svg>Copy link</span><span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H3v18h18v-7"/></svg>Open page</span><span class="cancel-copy">×&nbsp; Cancel download</span></div>
+          </article>
+        </div>
+      </div>
+    </div>
+    <p class="study-note" id="combination-note">Your selected fill, line, and segment opacities are applied in the desktop app.</p>
+    <p class="study-note">Every small cell is one segment. The legend and counts follow the slider. Simulation uses the same repeatable sample for every design.</p>
+  </section>
+  </div>
+  <footer class="hub-footer"><p>The selected combination is applied in the desktop app. Further adjustments here are preview-only. Use the colour pickers, swatches, and sliders. Your combination is saved in the address, ready to share.</p><p><a href="controls.html">Controls reference ↗</a> · <a href="folder.html">Folder &amp; copy actions ↗</a></p></footer>
+</main>
+<script src="transfer.js"></script>
+</body>
+</html>

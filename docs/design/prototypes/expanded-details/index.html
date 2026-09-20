@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VidSnag · Expanded details designs</title><link rel="stylesheet" href="base.css"><link rel="stylesheet" href="gallery.css"></head>
+<body><main class="design-hub">
+  <header class="intro"><div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / 03</div><h1>A clearer view of your download.</h1><p>Three layouts for the expanded row. Full folder paths, one-click folder access, and the Pieces grid you like.</p></header>
+  <div class="design-tabs" role="tablist" aria-label="Choose a design">
+    <button id="tab-streamlined" role="tab" aria-selected="true" aria-controls="preview-streamlined" data-design="streamlined"><span>A · Streamlined</span><small>Compact and close to today</small></button>
+    <button id="tab-grouped" role="tab" aria-selected="false" aria-controls="preview-grouped" data-design="grouped" tabindex="-1"><span>B · Grouped</span><small>Clearer sections, more room</small></button>
+    <button id="tab-pieces-first" role="tab" aria-selected="false" aria-controls="preview-pieces-first" data-design="pieces-first" tabindex="-1"><span>C · Pieces first</span><small>Download activity takes priority</small></button>
+  </div>
+  <div class="hub-controls"><label for="progress">Progress <output>29%</output><input id="progress" type="range" min="0" max="100" value="29"></label><label for="state">State<select id="state"><option value="downloading">Downloading</option><option value="paused">Paused</option><option value="saved">Saved</option></select></label><a id="standalone" href="streamlined/" target="_blank" rel="noopener">Open full size ↗</a></div>
+  <section class="design-panel" id="preview-streamlined" role="tabpanel" aria-labelledby="tab-streamlined"><iframe src="streamlined/?embedded" title="Streamlined desktop design"></iframe></section>
+  <section class="design-panel" id="preview-grouped" role="tabpanel" aria-labelledby="tab-grouped" hidden><iframe src="grouped/?embedded" title="Grouped desktop design"></iframe></section>
+  <section class="design-panel" id="preview-pieces-first" role="tabpanel" aria-labelledby="tab-pieces-first" hidden><iframe src="pieces-first/?embedded" title="Pieces first desktop design"></iframe></section>
+  <footer><p><strong>Try it:</strong> move the progress slider, pause, switch to Saved, hover the video, and click the folder area.</p><p>UI prototypes only. Folder actions show feedback without opening or changing your files. Real video: <a href="/apps/extension/popup/media/CREDITS.md">Blender’s Sintel</a>.</p></footer>
+</main><script src="gallery.js"></script></body></html>

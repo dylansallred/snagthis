@@ -4,7 +4,7 @@
   if (window.__vidsnagObserver) return;
   window.__vidsnagObserver = true;
   const CHANNEL = 'vidsnag:media';
-  const MAX_MANIFEST = 262144;
+  const MAX_MANIFEST = 5 * 1024 * 1024;
   function resolveRequestUrl(input) {
     if (typeof input === 'string') return input;
     if (input && typeof input.url === 'string') return input.url;
@@ -24,7 +24,7 @@
   function emit(url, contentType, contentLength, body, requestHeaders) {
     const resolved = absolute(url); const type = typeFor(resolved, contentType, body);
     if (!resolved || !type) return;
-    window.postMessage({ source: CHANNEL, media: { url: resolved, type, contentType, contentLength: Number(contentLength) || 0, manifestText: type === 'hls' && /^\uFEFF?\s*#EXTM3U/.test(body || '') ? body : '', requestHeaders, detectedAt: Date.now() } }, '*');
+    window.postMessage({ source: CHANNEL, pageUrl: location.href, media: { url: resolved, type, contentType, contentLength: Number(contentLength) || 0, manifestText: type === 'hls' && /^\uFEFF?\s*#EXTM3U/.test(body || '') ? body : '', requestHeaders, detectedAt: Date.now() } }, '*');
   }
   function headersOf(value) {
     try { return Object.fromEntries(new Headers(value || {}).entries()); } catch { return {}; }
@@ -34,7 +34,9 @@
     if (!reader) return '';
     const decoder = new TextDecoder(); let body = ''; let length = 0;
     try {
-      while (length < MAX_MANIFEST) {
+      // Read through EOF even at the exact limit; a prefix of a longer
+      // playlist would publish incomplete duration and component references.
+      while (length <= MAX_MANIFEST) {
         const { value, done } = await reader.read(); if (done) break;
         length += value.byteLength; if (length > MAX_MANIFEST) return '';
         body += decoder.decode(value, { stream: true });
@@ -55,7 +57,7 @@
       const size = response.headers.get('content-length');
       const scopedHeaders = absolute(url) && requestUrl && new URL(url).origin === new URL(requestUrl).origin ? requestHeaders : {};
       emit(url, type, size, '', scopedHeaders);
-      if (/mpegurl/i.test(type) || /\.m3u8(?:[?#]|$)/i.test(url) || !type || /^(?:text\/|application\/octet-stream)/i.test(type)) {
+      if (/mpegurl/i.test(type) || /\.m3u8(?:[?#]|$)/i.test(url) || !type || /^(?:text\/|image\/|application\/octet-stream)/i.test(type)) {
         const body = await inspectBody(response);
         if (pageUrl === location.href && body) emit(url, type, size, body, scopedHeaders);
       }
@@ -66,6 +68,7 @@
   const originalSetHeader = XMLHttpRequest.prototype.setRequestHeader;
   const requests = new WeakMap();
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    requests.get(this)?.cleanup?.();
     requests.set(this, { url: absolute(resolveRequestUrl(url)), page: location.href, headers: {} });
     return originalOpen.call(this, method, url, ...rest);
   };
@@ -75,15 +78,36 @@
   };
   const originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function(...args) {
-    this.addEventListener('load', () => {
-      const request = requests.get(this); if (!request || request.page !== location.href || this.status < 200 || this.status >= 400) return;
-      let body = '';
-      try { if (!this.responseType || this.responseType === 'text') { const text = this.responseText; if (text.length <= MAX_MANIFEST && /^\uFEFF?\s*#EXTM3U/.test(text)) body = text; } } catch { /* Binary XHR has no responseText. */ }
+    const request = requests.get(this);
+    const cleanup = () => {
+      this.removeEventListener('load', onLoad);
+      for (const event of ['abort', 'error', 'timeout', 'loadend']) this.removeEventListener(event, cleanup);
+      if (request?.cleanup === cleanup) delete request.cleanup;
+    };
+    const onLoad = async () => {
+      cleanup();
+      if (!request || requests.get(this) !== request || request.page !== location.href || this.status < 200 || this.status >= 400) return;
+      // Capture response identity before an asynchronous Blob read: the page
+      // may reuse this XHR while that read is still finishing.
       const url = this.responseURL || request.url;
+      const contentType = this.getResponseHeader('content-type') || '';
+      const contentLength = this.getResponseHeader('content-length');
+      let body = '';
+      try {
+        let text = '';
+        if (!this.responseType || this.responseType === 'text') text = this.responseText;
+        else if (this.responseType === 'arraybuffer' && this.response?.byteLength <= MAX_MANIFEST) text = new TextDecoder().decode(this.response);
+        else if (this.responseType === 'blob' && this.response?.size <= MAX_MANIFEST) text = await this.response.text();
+        if (text.length <= MAX_MANIFEST && /^\uFEFF?\s*#EXTM3U/.test(text)) body = text;
+      } catch { /* Unsupported or unreadable responses remain header-only. */ }
+      if (request.page !== location.href) return;
       const scopedHeaders = request.url && new URL(url).origin === new URL(request.url).origin ? request.headers : {};
-      emit(url, this.getResponseHeader('content-type') || '', this.getResponseHeader('content-length'), body, scopedHeaders);
-    }, { once: true });
-    return originalSend.apply(this, args);
+      emit(url, contentType, contentLength, body, scopedHeaders);
+    };
+    if (request) request.cleanup = cleanup;
+    this.addEventListener('load', onLoad);
+    for (const event of ['abort', 'error', 'timeout', 'loadend']) this.addEventListener(event, cleanup, { once: true });
+    try { return originalSend.apply(this, args); } catch (error) { cleanup(); throw error; }
   };
   for (const name of ['pushState', 'replaceState']) {
     const original = history[name];

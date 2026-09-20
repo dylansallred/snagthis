@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VidSnag · Lettering, colour &amp; symbol</title>
+  <link rel="stylesheet" href="logo.css">
+</head>
+<body>
+<main class="logo-study" id="logo-study">
+  <header class="study-intro">
+    <div><p class="eyebrow"><span>VidSnag</span> LOGO STUDY / MIX &amp; MATCH</p><h1>Same name. More possibilities.</h1><p class="intro-copy">Try a different typeface, swap the orange and white, or reshape the symbol on the right. Combine the parts you like and see them in the app.</p></div>
+    <a class="back-link" href="controls.html">Controls study <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <div class="studio">
+    <aside class="directions" aria-labelledby="directions-title">
+      <h2 class="sr-only" id="directions-title">Build your combination</h2>
+      <section class="choice-group" aria-labelledby="font-title">
+        <div class="section-heading"><h3 id="font-title"><span>01</span> Lettering</h3><span>5 treatments</span></div>
+        <div class="direction-grid font-grid" id="font-grid" role="group" aria-label="Lettering choices"></div>
+      </section>
+      <section class="choice-group" aria-labelledby="color-title">
+        <div class="section-heading"><h3 id="color-title"><span>02</span> Colour roles</h3><span>4 combinations</span></div>
+        <div class="direction-grid color-grid" id="color-grid" role="group" aria-label="Colour choices"></div>
+      </section>
+      <section class="choice-group" aria-labelledby="icon-title">
+        <div class="section-heading"><h3 id="icon-title"><span>03</span> Right-hand symbol</h3><span>5 shapes</span></div>
+        <div class="direction-grid icon-grid" id="icon-grid" role="group" aria-label="Symbol choices"></div>
+      </section>
+      <p class="keyboard-note">Choose one from each group. Tab + Enter, or use 1–5 within a group.</p>
+      <div class="baseline-note"><span class="note-dot" aria-hidden="true"></span><p><strong>The original stays beside you</strong>The Current comparison is your untouched logo file. These choices only affect this study.</p></div>
+    </aside>
+
+    <section class="preview-column" aria-labelledby="selected-title">
+      <div class="selection-heading"><div><span class="section-kicker">YOUR COMBINATION</span><h2 id="selected-title">Original lettering</h2></div><output id="selection" aria-live="polite">Current colours · Original symbol</output></div>
+
+      <div class="comparison-board">
+        <figure class="comparison-current"><figcaption>Current · original artwork</figcaption><div class="large-logo" data-current-wordmark></div></figure>
+        <figure class="comparison-selected"><figcaption id="comparison-label">Current</figcaption><div class="large-logo" data-selected-wordmark></div></figure>
+      </div>
+      <p class="direction-description" id="direction-description"></p>
+
+      <div class="preview-controls">
+        <label>Desktop width <select id="desktop-width"><option value="820">820px</option><option value="640">640px</option></select></label>
+        <label class="mono-control"><input type="checkbox" id="one-colour"><span>One-colour check</span></label>
+        <button id="reset" type="button">Reset to current <span aria-hidden="true">↺</span></button>
+      </div>
+
+      <div class="context-heading"><h3>In the desktop app</h3><span>112 × 22px · actual header size</span></div>
+      <div class="desktop-shell" id="desktop-shell" aria-label="Desktop header and library preview">
+        <div class="native-bar" aria-hidden="true"><i></i><i></i><i></i><span>VidSnag</span></div>
+        <header class="desktop-header"><div class="header-logo" data-selected-wordmark></div><div class="paste-field">Paste a video link <kbd>⌘V</kbd></div><div class="header-tabs"><span class="active-tab">All</span><span>Downloading</span><span>Saved</span></div><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></header>
+        <div class="desktop-row"><img src="../../../../apps/extension/popup/media/sintel.jpg" alt="Sintel movie scene"><div class="row-copy"><p class="video-title">Sintel — an open movie by Blender <span>14:48</span></p><p class="video-meta">34% <i>·</i> 5 min left</p><div class="progress-lane" aria-hidden="true"></div></div><svg class="ui-icon row-action" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></div>
+        <div class="desktop-row"><img src="../../../../apps/extension/popup/media/tears-of-steel.jpg" alt="Tears of Steel movie scene"><div class="row-copy"><p class="video-title">Tears of Steel <span>12:14</span></p><p class="video-meta"><b class="quality-badge">FHD</b> 1080p <i>·</i> 182 MB <i>·</i> <span class="saved-check">✓</span> Saved today</p></div><svg class="ui-icon row-action" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 14 8-14 8Z"/></svg></div>
+        <footer class="desktop-footer"><span>1 downloading · 4.1 MB/s</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 3h10v12H3Z"/></svg><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/></svg></footer>
+      </div>
+
+      <div class="secondary-contexts">
+        <section class="extension-context" aria-labelledby="extension-title"><div class="context-heading"><h3 id="extension-title">In the Chrome extension</h3><span>480px popup</span></div>
+          <div class="popup-shell"><header class="popup-header"><div class="header-logo" data-selected-wordmark></div><span>2 videos on this page</span></header>
+            <div class="popup-row"><img src="../../../../apps/extension/popup/media/sintel.jpg" alt="Sintel movie scene"><div><p class="video-title">Sintel — an open movie by Blender</p><p class="video-meta"><b class="quality-badge">HD</b> 720p <i>·</i> 14:48</p></div><span class="download-action" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/></svg></span></div>
+            <footer class="popup-footer"><span>⚙ <span>No video?</span></span><strong>Open VidSnag <span>1</span></strong></footer>
+          </div>
+        </section>
+        <section class="small-context" aria-labelledby="small-title"><div class="context-heading"><h3 id="small-title">When space is tight</h3></div><div class="small-stage">
+          <div class="app-sample"><div class="app-icon" data-selected-app></div><span>App icon · 64px</span></div>
+          <div class="size-samples"><div><span class="symbol-sample symbol-32" data-selected-mark></span><span>32px</span></div><div><span class="symbol-sample symbol-24" data-selected-mark></span><span>24px</span></div><div><span class="toolbar-slot"><span class="symbol-sample symbol-16" data-selected-toolbar></span></span><span>Toolbar · 16px</span></div></div>
+        </div></section>
+      </div>
+      <p class="context-note">The name and right-hand placement stay consistent. New lettering uses local fonts; the symbol also appears at icon sizes. Reset restores the original artwork in every preview.</p>
+    </section>
+  </div>
+  <footer class="study-footer"><span>Exploration only · Nothing has replaced your app logo.</span><span>Your selection is saved in this page’s URL.</span></footer>
+</main>
+<script src="logo.js"></script>
+</body>
+</html>

@@ -5,6 +5,7 @@ const config = require('./config');
 
 module.exports = {
   QueueManager,
+  ...require('./core/JobStorage'),
   createJobProcessor,
   startCleanupScheduler,
   config,

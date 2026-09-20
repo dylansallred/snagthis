@@ -133,7 +133,7 @@ function requestMediaWithRedirects(url, headers, onResponse, options = {}) {
 // FFmpeg applies -headers to every child HLS request. This short-lived loopback
 // relay keeps all credentials in Node, where each redirect, key and segment can
 // be scoped independently. Only resources registered from a playlist are served.
-async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, credentialOrigin, onResourceEvent, pieceSpool, requiredPlaylistUrls = [] } = {}) {
+async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, credentialOrigin, onResourceEvent, onTransferStart, onLocalResource, localResourceUrls = [], pieceSpool, requiredPlaylistUrls = [] } = {}) {
   const root = mediaUrl(rootUrl);
   const token = crypto.randomBytes(24).toString('hex');
   const resources = new Map();
@@ -143,6 +143,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
   let baseUrl = '';
   let lastError = null;
   let closed = false;
+  let closingPromise;
   let requestSequence = 0;
   let spool = null;
   let fatalError = null;
@@ -283,6 +284,9 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
       notify({ ...resourceEvent, type, bytesDelta: 0, ...extra });
     };
     const forwardedHeaders = { ...headers };
+    let endTransfer;
+    let localChunks = consumer === 'download' && localResourceUrls.includes(remoteUrl) && onLocalResource ? [] : null;
+    let localBytes = 0;
     // FFmpeg may request a byte range for an initialization section or segment.
     if (request.headers.range) forwardedHeaders.Range = request.headers.range;
     try {
@@ -331,6 +335,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           return;
         }
         const responseHeaders = { 'Cache-Control': 'no-store' };
+        if (consumer === 'download' && !spool) endTransfer = onTransferStart?.();
         if (consumer === 'download' && requiredTracks.has(remoteUrl)) {
           observedTracks.add(remoteUrl);
           requiredPieces.set(remoteUrl, [{ url: remoteUrl, range: null }]);
@@ -360,6 +365,11 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
         response.writeHead(upstream.statusCode, responseHeaders);
         const writeChunk = (chunk) => new Promise((resolve, reject) => {
           if (response.destroyed) { reject(new Error('Media client disconnected.')); return; }
+          if (localChunks) {
+            localBytes += chunk.length;
+            if (localBytes <= 2 * 1024 * 1024) localChunks.push(Buffer.from(chunk));
+            else localChunks = null;
+          }
           response.write(chunk, (error) => {
             if (error) { reject(error); return; }
             if (resourceEvent) {
@@ -407,6 +417,9 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
             || (range !== null && range.start === 0 && range.total !== null && range.end + 1 === range.total);
           if (consumer === 'download') recordDelivered(remoteUrl, resourceEvent);
           emitResourceEvent('complete');
+          if (localChunks && resourceEvent.completeResource) {
+            try { await onLocalResource(remoteUrl, Buffer.concat(localChunks)); } catch { /* Local preview is optional. */ }
+          }
         } else response.end();
       }, {
         credentialOrigin: credentialOrigin || root.origin,
@@ -423,6 +436,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
         response.writeHead(502, { 'Content-Type': 'text/plain' }).end('The media request failed.');
       } else if (!response.destroyed) response.destroy();
     } finally {
+      endTransfer?.();
       controllers.delete(controller);
     }
   });
@@ -461,6 +475,8 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           }
         },
         request: async (url, filePath, { signal, onBytes, onContentLength }) => {
+          const endTransfer = onTransferStart?.();
+          try {
           const event = { requestId: `fetch:${++requestSequence}`, consumer: 'download', url,
             finalUrl: url, statusCode: null, bytesTransferred: 0, contentLength: null,
             totalBytes: null, range: null, completeResource: false };
@@ -494,7 +510,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
             savedHeaders = { 'content-type': upstream.headers['content-type'] || 'application/octet-stream' };
             await pipeline(upstream, async function* (source) {
               for await (const chunk of source) {
-                onBytes(chunk.length);
+                await onBytes(chunk.length);
                 event.bytesTransferred += chunk.length;
                 notify({ ...event, type: 'progress', bytesDelta: chunk.length });
                 yield chunk;
@@ -507,6 +523,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
             }
           }, { credentialOrigin: credentialOrigin || root.origin, sourcePageUrl, timeoutMs: 30_000, signal });
           return { headers: savedHeaders, statusCode: 200, bytes: event.bytesTransferred };
+          } finally { endTransfer?.(); }
         },
       });
     } catch (error) {
@@ -538,14 +555,17 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
         throw error;
       }
     },
-    close: async () => {
-      if (closed) return;
+    close: () => {
+      if (closingPromise) return closingPromise;
       closed = true;
       resolveFailure(null);
       for (const controller of controllers) controller.abort();
       for (const socket of sockets) socket.destroy();
-      if (spool) await spool.close();
-      await new Promise((resolve) => server.close(resolve));
+      closingPromise = (async () => {
+        if (spool) await spool.close();
+        await new Promise((resolve) => server.close(resolve));
+      })();
+      return closingPromise;
     },
   };
 }

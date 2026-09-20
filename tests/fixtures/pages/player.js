@@ -27,6 +27,7 @@ if (kind === 'iframe' || kind === 'nested') {
       video.src = `${base}/media/direct.mp4`;
     } else {
       if (kind === 'variants') mediaUrl = `${base}/media/master.m3u8`;
+      if (kind === 'black-preview') mediaUrl = `${base}/media/black-preview/index.m3u8`;
       if (kind === 'base64') mediaUrl = atob(btoa(`${base}/cases/tiny/manifest`));
       if (kind === 'fetch') {
         const manifest = await (await fetch(mediaUrl)).text();

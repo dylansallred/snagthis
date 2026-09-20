@@ -1,6 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { runTool } = require('./fixtures/server');
+const { toRowModel } = require('../packages/contracts/src/rows');
 const { createNativeProgress } = require('../packages/downloader-engine/src/core/NativeProgress');
 const { inspectHlsPlaylist } = require('../packages/downloader-engine/src/core/HlsNativeDownload');
 const { startScopedMediaProxy } = require('../packages/downloader-engine/src/core/MediaRequest');
@@ -145,4 +151,107 @@ test('native finalization requires every selected track, not only completed prim
     await proxy.close();
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+
+test('native output size stays estimated until a real completed file establishes its size', () => {
+  let time = 0;
+  const job = { bytesDownloaded: 0, progress: 0, totalBytes: 999, totalBytesKnown: true };
+  const tracker = createNativeProgress(job, { durationSeconds: 300, now: () => time });
+  const update = (seconds, bytes) => {
+    time += 1000;
+    tracker.onFfmpegProgress('total_size', String(bytes));
+    tracker.onFfmpegProgress('out_time_us', String(seconds * 1000000));
+    tracker.onFfmpegProgress('progress', 'continue');
+  };
+  update(5, 100000);
+  assert.equal(job.totalBytes, 0, 'initial headers are not a useful movie-size sample');
+  assert.equal(job.totalBytesKnown, false, 'a new attempt cannot retain a previously exact total');
+  update(30, 3000000);
+  assert.equal(job.totalBytes, 30000000);
+  assert.equal(job.totalBytesKnown, false);
+  update(60, 9000000);
+  assert.equal(job.totalBytes, 45000000, 'variable bitrate changes the estimate using actual muxed output');
+  update(300, 42000000);
+  tracker.onFfmpegProgress('progress', 'end');
+  assert.equal(job.totalBytes, 42000000);
+  assert.equal(job.totalBytesKnown, false, 'FFmpeg progress is not a final filesystem measurement');
+  const unknown = { bytesDownloaded: 500000 };
+  const unknownTracker = createNativeProgress(unknown);
+  unknownTracker.onFfmpegProgress('out_time_us', '30000000');
+  unknownTracker.onFfmpegProgress('progress', 'continue');
+  assert.equal(unknown.totalBytes, 0, 'unknown duration cannot produce a total estimate');
+});
+
+test('real FFmpeg SIGTERM emits end for a partial MP4 without inflating paused progress', {
+  timeout: 15000,
+  skip: process.platform === 'win32' ? 'Node terminates Windows children without a graceful SIGTERM handler.' : false,
+}, async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-partial-progress-'));
+  const output = path.join(directory, 'partial.mp4');
+  const durationSeconds = 30;
+  const job = { id: 'partial-fixture', progress: 0, bytesDownloaded: 0 };
+  const tracker = createNativeProgress(job, { durationSeconds });
+  let child;
+  let closed;
+  t.after(async () => {
+    if (child?.pid > 0 && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await closed?.catch(() => {});
+    await fs.rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
+  });
+  child = spawn(process.env.FFMPEG_PATH || 'ffmpeg', [
+    '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+    '-re', '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=10',
+    '-t', String(durationSeconds), '-an', '-c:v', 'libx264', '-preset', 'ultrafast',
+    '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-threads', '1',
+    '-progress', 'pipe:1', '-stats_period', '0.1', output,
+  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  closed = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (code, signal) => resolve({ code, signal }));
+  });
+  let pending = '';
+  let stderr = '';
+  let outputSeconds = 0;
+  let stopSent = false;
+  let observedEnd = false;
+  let progressBeforeEnd;
+  child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-4000); });
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', chunk => {
+    pending += chunk;
+    const lines = pending.split('\n');
+    pending = lines.pop();
+    for (const line of lines) {
+      const separator = line.indexOf('=');
+      if (separator < 0) continue;
+      const key = line.slice(0, separator);
+      const value = line.slice(separator + 1).trim();
+      if (key === 'out_time_us') outputSeconds = Number(value) / 1000000;
+      if (key === 'progress' && value === 'end') {
+        observedEnd = true;
+        progressBeforeEnd = job.progress;
+      }
+      tracker.onFfmpegProgress(key, value);
+      if (!stopSent && key === 'progress' && value === 'continue' && outputSeconds >= 1) {
+        stopSent = child.kill('SIGTERM');
+      }
+    }
+  });
+  const exit = await closed;
+  assert.equal(stopSent, true, stderr);
+  assert.equal(observedEnd, true, 'FFmpeg flushes progress=end even when SIGTERM stops a partial output');
+  assert.notEqual(exit.code, 0, 'the signal-stopped encoder did not finish normally');
+  assert.ok(outputSeconds >= 1 && outputSeconds < durationSeconds / 2);
+  assert.equal(job.progress, progressBeforeEnd, 'the end marker must preserve the measured partial percentage');
+  assert.ok(Math.abs(job.progress - outputSeconds / durationSeconds * 100) < 0.000001);
+  const metadata = JSON.parse(await runTool(process.env.FFPROBE_PATH || 'ffprobe', [
+    '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', output,
+  ], { timeout: 5000 }));
+  const savedSeconds = Number(metadata.format.duration);
+  assert.ok(savedSeconds >= 1 && savedSeconds < durationSeconds / 2, 'the actual playable MP4 contains only partial media');
+  const row = toRowModel({ ...job, queueStatus: 'paused' });
+  assert.equal(row.statusLine, `Paused at ${Math.floor(job.progress)}%`);
+  assert.equal(row.fill.percent, job.progress);
+  assert.equal(row.fill.dimmed, true);
 });

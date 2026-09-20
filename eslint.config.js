@@ -10,6 +10,8 @@ module.exports = [
       '**/dist-electron/**',
       '**/playwright-report/**',
       '**/test-results/**',
+      'work/**',
+      'release-assets/**',
       '**/.cache/**',
       '**/*.min.js',
       'apps/extension/popup.css',
@@ -36,7 +38,7 @@ module.exports = [
     },
   },
   {
-    files: ['**/*.mjs'],
+    files: ['**/*.mjs', 'docs/design/prototypes/ui-refresh/logo-entrance*.js'],
     languageOptions: { sourceType: 'module' },
   },
   {

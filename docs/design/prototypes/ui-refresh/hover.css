@@ -1,0 +1,84 @@
+.intro kbd { font: 600 11px/16px inherit; padding: 1px 6px; border-radius: 4px; background: var(--bg-active); color: var(--fg); }
+.hover-picker { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin: 26px -8px 14px; padding: 8px; background: #07080aee; backdrop-filter: blur(8px); }
+.hover-picker button { text-align: left; padding: 10px 12px; border-radius: 9px; background: var(--bg-raised); border: 1px solid var(--border-subtle); }
+.hover-picker button:hover { background: var(--bg-hover); }
+.hover-picker button[aria-pressed="true"] { border-color: var(--primary-hover); background: hsl(16 58% 16% / .35); }
+.hover-picker span { display: block; font-size: 13px; font-weight: 600; }
+.hover-picker small { display: block; color: var(--fg-muted); font-size: 11px; line-height: 15px; margin-top: 2px; }
+@media (max-width: 1100px) { .hover-picker { grid-template-columns: repeat(3, 1fr); } }
+
+/* Neutral baseline: every option starts from a row with no hover treatment. */
+.prow { isolation: isolate; overflow: hidden; }
+.row::before, .row::after, .prow::before, .prow::after { content: ""; position: absolute; z-index: -1; pointer-events: none; opacity: 0; }
+.hub[data-hover] :is(.row, .prow) { background: var(--row); }
+.hub[data-hover] :is(.row, .prow)::before { background: none; }
+.hub[data-hover] .row:focus-visible { box-shadow: none; outline: none; }
+.thumb, .title, .ptitle, .act { transition: transform 220ms cubic-bezier(.2, .7, .2, 1), box-shadow 220ms ease, color 160ms ease; }
+
+/* 1 · Focus (round two) */
+.hub[data-hover="focus"] :is(.row, .prow, .details) { transition: opacity 200ms ease, filter 200ms ease, background-color 160ms ease; }
+.hub[data-hover="focus"] :is(.content, .plist):has(:is(.row, .prow):hover) :is(.row, .prow, .details) { opacity: .4; }
+.hub[data-hover="focus"] :is(.content, .plist) :is(.row, .prow):hover, .hub[data-hover="focus"] .item:has(.row:hover) .details { opacity: 1 !important; filter: none !important; }
+.hub[data-hover="focus"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #20242b; }
+.hub[data-hover="focus"] :is(.row, .prow)::after { left: 0; top: 0; bottom: 0; width: 3px; background: var(--primary-hover); transition: opacity 120ms ease; }
+.hub[data-hover="focus"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::after { opacity: 1; }
+
+/* 2 · Frame (round two) */
+.hub[data-hover="frame"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #1f2329; }
+.hub[data-hover="frame"] :is(.row, .prow)::before { inset: 3px 4px; border-radius: 10px; border: 1.5px solid var(--primary-hover); background: hsl(20 96% 52% / .07); box-shadow: 0 0 20px hsl(20 96% 52% / .18) inset; transform: scale(.985); transition: opacity 140ms ease, transform 200ms cubic-bezier(.2, .7, .2, 1); }
+.hub[data-hover="frame"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::before { opacity: 1; transform: none; }
+
+/* 3 · Focus + Frame */
+.hub[data-hover="focus-frame"] :is(.row, .prow, .details) { transition: opacity 200ms ease, filter 200ms ease, background-color 160ms ease; }
+.hub[data-hover="focus-frame"] :is(.content, .plist):has(:is(.row, .prow):hover) :is(.row, .prow, .details) { opacity: .4; }
+.hub[data-hover="focus-frame"] :is(.content, .plist) :is(.row, .prow):hover, .hub[data-hover="focus-frame"] .item:has(.row:hover) .details { opacity: 1 !important; filter: none !important; }
+.hub[data-hover="focus-frame"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #1f2329; }
+.hub[data-hover="focus-frame"] :is(.row, .prow)::before { inset: 3px 4px; border-radius: 10px; border: 1.5px solid var(--primary-hover); background: hsl(20 96% 52% / .07); box-shadow: 0 0 20px hsl(20 96% 52% / .18) inset; transform: scale(.985); transition: opacity 140ms ease, transform 200ms cubic-bezier(.2, .7, .2, 1); }
+.hub[data-hover="focus-frame"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::before { opacity: 1; transform: none; }
+
+/* 4 · Soft combo */
+.hub[data-hover="focus-frame-soft"] :is(.row, .prow, .details) { transition: opacity 200ms ease, filter 200ms ease, background-color 160ms ease; }
+.hub[data-hover="focus-frame-soft"] :is(.content, .plist):has(:is(.row, .prow):hover) :is(.row, .prow, .details) { opacity: .62; }
+.hub[data-hover="focus-frame-soft"] :is(.content, .plist) :is(.row, .prow):hover, .hub[data-hover="focus-frame-soft"] .item:has(.row:hover) .details { opacity: 1 !important; filter: none !important; }
+.hub[data-hover="focus-frame-soft"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #1f2329; }
+.hub[data-hover="focus-frame-soft"] :is(.row, .prow)::before { inset: 3px 4px; border-radius: 10px; border: 1px solid hsl(20 96% 52% / .75); background: hsl(20 96% 52% / .04); box-shadow: none; transform: scale(.985); transition: opacity 140ms ease, transform 200ms cubic-bezier(.2, .7, .2, 1); }
+.hub[data-hover="focus-frame-soft"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::before { opacity: 1; transform: none; }
+
+/* 5 · Focus mono */
+.hub[data-hover="focus-mono"] :is(.row, .prow, .details) { transition: opacity 200ms ease, filter 200ms ease, background-color 160ms ease; }
+.hub[data-hover="focus-mono"] :is(.content, .plist):has(:is(.row, .prow):hover) :is(.row, .prow, .details) { opacity: .45; filter: grayscale(1); }
+.hub[data-hover="focus-mono"] :is(.content, .plist) :is(.row, .prow):hover, .hub[data-hover="focus-mono"] .item:has(.row:hover) .details { opacity: 1 !important; filter: none !important; }
+.hub[data-hover="focus-mono"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #20242b; }
+.hub[data-hover="focus-mono"] :is(.row, .prow)::after { left: 0; top: 0; bottom: 0; width: 3px; background: var(--primary-hover); transition: opacity 120ms ease; }
+.hub[data-hover="focus-mono"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::after { opacity: 1; }
+
+/* 6 · Frame glow */
+.hub[data-hover="frame-glow"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #1f2329; }
+.hub[data-hover="frame-glow"] :is(.row, .prow)::before { inset: 3px 4px; border-radius: 10px; border: 2px solid var(--primary-hover); background: hsl(20 96% 52% / .09); box-shadow: 0 0 0 3px hsl(20 96% 52% / .18), 0 0 26px hsl(20 96% 52% / .45), 0 0 22px hsl(20 96% 52% / .16) inset; transform: scale(.985); transition: opacity 140ms ease, transform 200ms cubic-bezier(.2, .7, .2, 1); }
+.hub[data-hover="frame-glow"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::before { opacity: 1; transform: none; }
+
+/* 7 · Frame neutral */
+.hub[data-hover="frame-neutral"] :is(.row, .prow, .details) { transition: opacity 200ms ease, filter 200ms ease, background-color 160ms ease; }
+.hub[data-hover="frame-neutral"] :is(.content, .plist):has(:is(.row, .prow):hover) :is(.row, .prow, .details) { opacity: .45; }
+.hub[data-hover="frame-neutral"] :is(.content, .plist) :is(.row, .prow):hover, .hub[data-hover="frame-neutral"] .item:has(.row:hover) .details { opacity: 1 !important; filter: none !important; }
+.hub[data-hover="frame-neutral"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #1f2329; }
+.hub[data-hover="frame-neutral"] :is(.row, .prow)::before { inset: 3px 4px; border-radius: 10px; border: 1.5px solid rgb(255 255 255 / .55); background: rgb(255 255 255 / .05); box-shadow: none; transform: scale(.985); transition: opacity 140ms ease, transform 200ms cubic-bezier(.2, .7, .2, 1); }
+.hub[data-hover="frame-neutral"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::before { opacity: 1; transform: none; }
+
+/* 8 · Frame + edge */
+.hub[data-hover="frame-edge"] :is(.row, .prow, .details) { transition: opacity 200ms ease, filter 200ms ease, background-color 160ms ease; }
+.hub[data-hover="frame-edge"] :is(.content, .plist):has(:is(.row, .prow):hover) :is(.row, .prow, .details) { opacity: .45; }
+.hub[data-hover="frame-edge"] :is(.content, .plist) :is(.row, .prow):hover, .hub[data-hover="frame-edge"] .item:has(.row:hover) .details { opacity: 1 !important; filter: none !important; }
+.hub[data-hover="frame-edge"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #1f2329; }
+.hub[data-hover="frame-edge"] :is(.row, .prow)::before { inset: 3px 4px; border-radius: 10px; border: 1.5px solid var(--primary-hover); background: hsl(20 96% 52% / .07); box-shadow: none; border-left-width: 5px; transform: scale(.985); transition: opacity 140ms ease, transform 200ms cubic-bezier(.2, .7, .2, 1); }
+.hub[data-hover="frame-edge"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::before { opacity: 1; transform: none; }
+
+/* 9 · Viewfinder */
+.hub[data-hover="corners"] :is(.row, .prow, .details) { transition: opacity 200ms ease, filter 200ms ease, background-color 160ms ease; }
+.hub[data-hover="corners"] :is(.content, .plist):has(:is(.row, .prow):hover) :is(.row, .prow, .details) { opacity: .45; }
+.hub[data-hover="corners"] :is(.content, .plist) :is(.row, .prow):hover, .hub[data-hover="corners"] .item:has(.row:hover) .details { opacity: 1 !important; filter: none !important; }
+.hub[data-hover="corners"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: #20242b; }
+.hub[data-hover="corners"] :is(.row, .prow)::before { inset: 4px 5px; background: linear-gradient(var(--primary-hover),var(--primary-hover)) left top / 18px 2px no-repeat, linear-gradient(var(--primary-hover),var(--primary-hover)) left top / 2px 18px no-repeat, linear-gradient(var(--primary-hover),var(--primary-hover)) right top / 18px 2px no-repeat, linear-gradient(var(--primary-hover),var(--primary-hover)) right top / 2px 18px no-repeat, linear-gradient(var(--primary-hover),var(--primary-hover)) left bottom / 18px 2px no-repeat, linear-gradient(var(--primary-hover),var(--primary-hover)) left bottom / 2px 18px no-repeat, linear-gradient(var(--primary-hover),var(--primary-hover)) right bottom / 18px 2px no-repeat, linear-gradient(var(--primary-hover),var(--primary-hover)) right bottom / 2px 18px no-repeat; transform: scale(1.03, 1.2); transition: opacity 140ms ease, transform 260ms cubic-bezier(.2, .7, .2, 1); }
+.hub[data-hover="corners"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible))::before { opacity: 1; transform: none; }
+
+.hub[data-hover] .row:focus-visible { box-shadow: inset 0 0 0 1.5px hsl(20 96% 52% / .6); }

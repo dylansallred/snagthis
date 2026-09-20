@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Folder hover and copied feedback</title>
+  <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="folder.css"><link rel="stylesheet" href="copy-feedback.css">
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DETAILS / INTERACTION STUDIES</div>
+    <h1>A little more life in the details.</h1>
+    <p>Your selected combination: Soft reveal + Open + settle + Sheets snap. Hover the folder bar and click Copy link to replay the animations.</p>
+    <nav class="study-nav" aria-label="Design studies"><a href="folder.html" aria-current="page">Folder &amp; Copy</a><a href="transfer.html">Graph &amp; Segments ↗</a></nav>
+  </header>
+  <div class="hub-controls">
+    <label>App width <select id="preview-width"><option value="820">820px</option><option value="640">640px</option></select></label>
+    <label>Path <select id="path-length"><option value="normal">Your example</option><option value="long">Long folder name</option></select></label>
+    <label><input type="checkbox" id="hold-hover"> Hold folder hover</label>
+    <label><input type="checkbox" id="reduced-motion"> Reduced motion</label>
+    <button type="button" id="reset">Reset to original</button>
+  </div>
+  <div class="study-workspace">
+    <div class="choices">
+      <section class="choice-section" id="bar-study" aria-labelledby="bar-title">
+        <h2 id="bar-title">1 · The whole bar</h2><p>What lights up when you hover.</p>
+        <div class="option-grid" id="bar-options" aria-label="Folder bar treatments"></div>
+      </section>
+      <section class="choice-section" id="motion-study" aria-labelledby="motion-title">
+        <h2 id="motion-title">2 · The folder icon</h2><p>Independent of the bar treatment.</p>
+        <div class="option-grid" id="motion-options" aria-label="Folder animations"></div>
+      </section>
+      <section class="choice-section" id="copy-study" aria-labelledby="copy-title">
+        <h2 id="copy-title">3 · After you copy</h2><p>Choose a treatment, then click Copy link.</p>
+        <div class="option-grid" id="copy-options" aria-label="Copied feedback options"></div>
+        <p class="option-note" id="copy-note"></p>
+      </section>
+    </div>
+    <section class="preview-column" aria-labelledby="preview-title">
+      <div class="preview-heading"><h2 id="preview-title">Try your combination</h2><span>Desktop app</span></div>
+      <output id="selection" aria-live="polite"></output>
+      <div class="folder-desktop" id="desktop-preview">
+        <div class="folder-titlebar"><i></i><i></i><i></i><span>VidSnag Desktop</span></div>
+        <header class="folder-appbar"><img src="../../../../apps/desktop/src/assets/vidsnag-logo-title.png" alt="VidSnag"><span>Paste a video link <kbd>⌘V</kbd></span><b>Saved</b></header>
+        <div class="folder-video-row">
+          <img src="../../../../apps/extension/popup/media/tears-of-steel.jpg" alt="Sample video thumbnail">
+          <div><div class="folder-row-title">Watch Spider-Man: Brand New Day <small>2:25:30</small></div><p>900p <span>·</span> 7.8 GB <span>·</span> <span class="saved-mark">✓</span> Saved today</p></div>
+          <span class="row-play" aria-hidden="true">▷</span>
+        </div>
+        <div class="folder-details">
+          <div class="folder-card">
+            <button type="button" class="folder-target" id="folder-target" aria-label="Preview opening the saved folder">
+              <span class="folder-mark" aria-hidden="true"></span>
+              <span class="folder-copy"><span class="folder-label">Saved in </span><span class="folder-path">~/Movies/VidSnag/<strong>Watch Spider Man Brand New Day</strong></span></span>
+              <svg class="folder-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+            </button>
+            <dl class="folder-facts"><div><dt>Quality</dt><dd>900p</dd></div><div><dt>Size</dt><dd>7.8 GB</dd></div><div><dt>From</dt><dd>popcornmovies.ac</dd></div></dl>
+            <footer class="folder-actions">
+              <button type="button" data-copy-action>Copy link</button>
+              <span class="context-action"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6m0-6-10 10M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg>Open page</span>
+              <span class="context-action remove-context">× &nbsp; Remove…</span>
+            </footer>
+          </div>
+        </div>
+        <footer class="folder-appfooter">2 saved videos <span>⌁</span></footer>
+      </div>
+      <p class="preview-tip" id="hover-note">Alive matches the existing folder icon: it opens, turns warm yellow, and lifts 1px.</p>
+      <div class="preview-notice" id="folder-notice" role="status" aria-live="polite"></div>
+      <details class="baseline-comparison"><summary>Compare with the original folder bar</summary><div class="baseline-card"><button type="button" class="folder-target" data-baseline data-bar="today" data-motion="still"><span class="folder-mark" aria-hidden="true"></span><span class="folder-copy"><span class="folder-label">Saved in </span><span class="folder-path">~/Movies/VidSnag/<strong>Watch Spider Man Brand New Day</strong></span></span><svg class="folder-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div></details>
+      <p class="prototype-note">Prototype only. Folder clicks show a preview message; copy clicks simulate confirmation without changing your clipboard. The still frame uses an existing demo asset.</p>
+    </section>
+  </div>
+  <footer class="hub-footer"><p>Soft reveal + Open + settle are selected for the desktop folder bar. Sheets snap is selected for copy feedback. <a href="controls.html">Original controls study ↗</a></p></footer>
+</main>
+<script src="folder.js"></script><script src="copy-feedback.js"></script>
+</body>
+</html>

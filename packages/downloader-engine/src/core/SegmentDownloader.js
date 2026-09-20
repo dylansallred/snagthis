@@ -1,4 +1,9 @@
 const { requestWithRedirects } = require('./PlaylistUtils');
+const { pipeline } = require('node:stream/promises');
+
+function isLocalWriteError(error) {
+  return ['ENOSPC', 'EDQUOT', 'EACCES', 'EPERM', 'EROFS', 'EIO', 'EMFILE', 'ENFILE', 'ENOTDIR', 'ENOENT'].includes(error?.code);
+}
 
 function getRetryBackoffMs(attempt) {
   const baseMs = 500;
@@ -8,28 +13,46 @@ function getRetryBackoffMs(attempt) {
 }
 
 async function downloadSegment(segmentUrl, headers, stream, job) {
-  return requestWithRedirects(segmentUrl, headers, (res, _finalUrl, req) => {
-    return new Promise((resolve, reject) => {
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        reject(new Error(`Segment failed with status ${res.statusCode}`));
-        res.resume();
-        return;
-      }
-      res.on('data', (chunk) => {
-        if (job && job.cancelled) {
-          req.destroy(new Error('Job cancelled'));
-          return;
+  const endTransfer = job?._transferMetrics?.begin();
+  const writeAbort = new AbortController();
+  const signal = job?._downloadAbort?.signal
+    ? AbortSignal.any([job._downloadAbort.signal, writeAbort.signal]) : writeAbort.signal;
+  let writeError;
+  const onWriteError = error => { writeError = error; writeAbort.abort(error); };
+  // A file can fail to open before the response arrives. Observe it before
+  // starting HTTP, and preserve the filesystem error instead of reporting an
+  // abort caused by that error as a retryable network problem.
+  stream.on('error', onWriteError);
+  try {
+    if (job?.cancelled) writeAbort.abort();
+    return await requestWithRedirects(segmentUrl, headers, async (res, _finalUrl, req) => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          res.resume();
+          throw new Error(`Segment failed with status ${res.statusCode}`);
         }
-        job.bytesDownloaded += chunk.length;
-      });
-      res.on('end', resolve);
-      res.on('error', reject);
-      res.pipe(stream, { end: false });
-    });
-  }, { timeoutMs: 10_000, credentialOrigin: job && (job.credentialOrigin || job.url), sourcePageUrl: job && job.sourcePageUrl });
+        res.on('data', (chunk) => {
+          if (job && job.cancelled) {
+            req.destroy(new Error('Job cancelled'));
+            return;
+          }
+          job.bytesDownloaded += chunk.length;
+          job._transferMetrics?.recordBytes(chunk.length);
+        });
+        // Completion includes the writable's finish/close lifecycle. Waiting
+        // only for response end can miss an already-emitted disk error.
+        await pipeline(res, stream, { signal });
+    }, { timeoutMs: 10_000, credentialOrigin: job && (job.credentialOrigin || job.url), sourcePageUrl: job && job.sourcePageUrl, signal });
+  } catch (error) {
+    throw writeError || error;
+  } finally {
+    stream.removeListener('error', onWriteError);
+    if (!stream.destroyed) stream.destroy();
+    endTransfer?.();
+  }
 }
 
 module.exports = {
   getRetryBackoffMs,
   downloadSegment,
+  isLocalWriteError,
 };

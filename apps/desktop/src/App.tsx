@@ -1,14 +1,16 @@
+import { recordSpeeds } from '@/lib/speedHistory';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, FolderOpen, MoreHorizontal, Settings, LoaderCircle } from 'lucide-react';
+import { Download, FolderOpen, MoreHorizontal, Settings, LoaderCircle, ListX, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { classifyProblem, toRowModel, type RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { useAppInit } from '@/hooks/useAppInit';
 import { useLibrary } from '@/hooks/useLibrary';
-import { createApiClient, type MediaInspection, type MediaSelection } from '@/lib/api';
+import { createApiClient, MediaInspectionError, type MediaInspection, type MediaSelection } from '@/lib/api';
 import { formatBytesPerSecond } from '@/lib/utils';
 import { toWebSocketUrl } from '@/lib/network';
 import { ui } from '@/lib/strings';
 import { TopBar, type ListFilter } from '@/components/layout/TopBar';
+import { StartupLogo } from '@/components/layout/StartupLogo';
 import { QualityPicker } from '@/components/layout/QualityPicker';
 import { VideoList } from '@/components/list/VideoList';
 import type { RowCommand } from '@/components/list/RowDetails';
@@ -39,10 +41,12 @@ function App() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ row: RowModel; mode: 'cancel' | 'remove' } | null>(null);
+  const [confirmPlace, setConfirmPlace] = useState<{ left: number; top: number; above: boolean } | null>(null);
   const [pending, setPending] = useState<{ url: string; inspection: MediaInspection; selection: MediaSelection } | null>(null);
   const [galleryVideo, setGalleryVideo] = useState<{ title: string; url: string } | null>(null);
   const [chromeSessionRow, setChromeSessionRow] = useState<RowModel | null>(null);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
+  const brandRef = useRef<HTMLImageElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const apiBase = appInfo?.apiBaseUrl || 'http://127.0.0.1:49732';
   const api = useMemo(() => !gallery && appInfo?.apiStartupState === 'ready' && appInfo.apiAuthToken ? createApiClient(appInfo.apiBaseUrl, appInfo.apiAuthToken) : null, [appInfo?.apiAuthToken, appInfo?.apiBaseUrl, appInfo?.apiStartupState]);
@@ -65,6 +69,7 @@ function App() {
   const allQueue = gallery ? galleryQueue : library.queue.queue;
   const active = allQueue.filter((job) => job.queueStatus === 'downloading' && !/finaliz|convert|remux/.test(job.status));
   const totalSpeed = active.reduce((total, job) => total + (job.speedBps || 0), 0);
+  useEffect(() => { recordSpeeds(active); }, [active]);
   const ready = gallery || (!!api && !library.loading);
   const failure = startupError || appInfo?.apiStartupError || (!gallery && library.error) || '';
   const firstLaunch = ready && !failure && baseRows.length === 0 && !query && filter === 'all';
@@ -147,7 +152,16 @@ function App() {
     if (action === 'use-chrome-session') { setChromeSessionRow(row); return; }
     if (action === 'details') { setExpandedId((current) => current === row.id ? null : row.id); return; }
     if (action === 'rename') { setRenamingId(row.id); return; }
-    if (action === 'remove') { setConfirm({ row, mode: 'remove' }); return; }
+    if (action === 'remove') {
+      // The remove popover opens beside whatever asked for it: the details button, or otherwise the row.
+      const focused = document.activeElement instanceof HTMLElement ? document.activeElement.closest('.detail-links button') : null;
+      const rect = (focused || document.querySelector(`[data-row-key="${CSS.escape(row.id)}"]`))?.getBoundingClientRect();
+      const height = row.state === 'missing' ? 70 : 132;
+      const above = !!rect && !!focused && rect.top - height - 10 > 56;
+      setConfirmPlace(rect ? { left: Math.max(8, Math.min(window.innerWidth - 288, rect.right - 280)), top: above ? rect.top - height - 10 : Math.min(window.innerHeight - height - 52, (focused ? rect.bottom : rect.top + 46) + 8), above } : null);
+      setConfirm({ row, mode: 'remove' });
+      return;
+    }
     if (action === 'cancel') { if (row.state !== 'problem' && row.progress > 50) setConfirm({ row, mode: 'cancel' }); else cancelRow(row); return; }
     run(row.id, async () => {
       const jobId = row.jobId || row.id;
@@ -157,7 +171,7 @@ function App() {
         else if (action === 'locate') mutateDemo(row, { missing: false });
         else if (action === 'choose-folder') setSettingsOpen(true);
         else if (action === 'play') { const url = await loadGalleryVideo(row); if (url) setGalleryVideo({ title: row.title, url }); }
-        else if (action === 'copy-link') { await navigator.clipboard.writeText(row.source.url || 'https://studio.blender.org/films/'); toast.success(ui.linkCopied); }
+        else if (action === 'copy-link' || action === 'copy-link-inline') { await navigator.clipboard.writeText(row.source.url || 'https://studio.blender.org/films/'); if (action === 'copy-link') toast.success(ui.linkCopied); }
         return;
       }
       if (!api) throw new Error(ui.unavailable);
@@ -166,10 +180,10 @@ function App() {
       if (action === 'retry') await api.retryJob(jobId);
       if (action === 'start') await api.startJob(jobId);
       if (action === 'play') { const result = await window.desktop.openHistoryFile(String(row.source.id)); if (!result.ok) throw new Error(result.error); }
-      if (action === 'show-folder') { const result = await window.desktop.openHistoryFolder(String(row.source.id)); if (!result.ok) throw new Error(result.error); }
+      if (action === 'show-folder') { const result = await window.desktop.openHistoryFolder(row.isHistory ? String(row.source.id) : jobId); if (!result.ok) throw new Error(result.error); }
       if (action === 'locate') { const result = await window.desktop.locateHistoryFile(String(row.source.id)); if (!result.ok && !result.cancelled) throw new Error(result.error); }
       if (action === 'open-page') await openExternal(row.source.sourcePageUrl || row.source.url || row.source.mediaUrl);
-      if (action === 'copy-link') { await navigator.clipboard.writeText(row.source.url || row.source.sourcePageUrl); toast.success(ui.linkCopied); }
+      if (action === 'copy-link' || action === 'copy-link-inline') { await navigator.clipboard.writeText(row.source.url || row.source.sourcePageUrl); if (action === 'copy-link') toast.success(ui.linkCopied); }
       if (action === 'choose-folder') { const result = await window.desktop.chooseOutputDirectory(); if (result.ok && result.path) await save({ outputDirectory: result.path }); else if (!result.cancelled) throw new Error(result.error); }
       if (action === 'move-up' || action === 'move-down') {
         const index = library.queue.queue.findIndex((job) => job.id === jobId);
@@ -186,7 +200,10 @@ function App() {
     const variants = [...(inspection?.variants || [])].sort((a, b) => (b.height || 0) - (a.height || 0));
     const wanted = settings.preferredQuality === 'best' ? Infinity : Number(settings.preferredQuality);
     const variant = variants.find((item) => (item.height || 0) <= wanted) || variants[variants.length - 1];
-    return { ...(variant ? { variantUrl: variant.url, height: variant.height } : Number.isFinite(wanted) ? { height: wanted } : {}), subtitleLang: settings.subtitleLanguage };
+    const subtitleLang = inspection?.mediaType === 'hls'
+      && !(inspection.subtitles || []).some(track => (track.language || track.name) === settings.subtitleLanguage)
+      ? 'none' : settings.subtitleLanguage;
+    return { ...(variant ? { variantUrl: variant.url, height: variant.height } : Number.isFinite(wanted) ? { height: wanted } : {}), subtitleLang };
   };
   const submitPaste = async () => {
     if (checking || !paste.trim()) return;
@@ -204,30 +221,31 @@ function App() {
         if (urls.length === 1 && ((inspection.variants?.length || 0) > 1 || inspection.subtitles?.length || (inspection.audio?.length || 0) > 1)) {
           setPending({ url, inspection, selection: selectionFor(inspection) }); setChecking(false); return;
         }
-        await api.createJob(url, selectionFor(inspection), inspection.mediaType);
-      } catch (err) { failed.push(url); setPasteError(classifyProblem(err instanceof Error ? err.message : err, { folder }).message); }
+        await api.createJob(url, selectionFor(inspection), inspection);
+      } catch (err) { failed.push(url); setPasteError(err instanceof MediaInspectionError ? err.message : classifyProblem(err instanceof Error ? err.message : err, { folder }).message); }
     }
     setPaste(failed.join('\n')); setChecking(false); setFilter('all'); await library.refresh();
   };
   const finishSelection = async (selection: MediaSelection) => {
     if (!pending || !api) return;
     setChecking(true);
-    try { await api.createJob(pending.url, selection, pending.inspection.mediaType); setPending(null); setPaste(''); setFilter('all'); await library.refresh(); }
+    try { await api.createJob(pending.url, selection, pending.inspection); setPending(null); setPaste(''); setFilter('all'); await library.refresh(); }
     catch (err) { setPasteError(classifyProblem(err instanceof Error ? err.message : err, { folder }).message); }
     finally { setChecking(false); }
   };
   return (
     <div className="workbench" data-gallery={gallery || undefined}>
       <h1 className="sr-only">VidSnag</h1>
-      <TopBar pasteRef={pasteRef} searchRef={searchRef} value={paste} onValue={setPaste} onSubmit={submitPaste} filter={filter} onFilter={setFilter} searchOpen={searchOpen} onSearchOpen={setSearchOpen} search={search} onSearch={setSearch} checking={checking} error={pasteError} firstLaunch={firstLaunch} nativeMac={!gallery && /Mac/.test(navigator.platform)} gallery={gallery} />
+      <TopBar brandRef={brandRef} pasteRef={pasteRef} searchRef={searchRef} value={paste} onValue={setPaste} onSubmit={submitPaste} filter={filter} onFilter={setFilter} searchOpen={searchOpen} onSearchOpen={setSearchOpen} search={search} onSearch={setSearch} checking={checking} error={pasteError} firstLaunch={firstLaunch} gallery={gallery} />
+      <StartupLogo targetRef={brandRef} />
       {pending && <QualityPicker key={pending.url} inspection={pending.inspection} initial={pending.selection} onDownload={finishSelection} onCancel={() => setPending(null)} busy={checking} />}
       {failure && <div className="connection-banner" role="alert"><span>{ui.unavailable}</span><button className="row-action labelled" onClick={() => { initialize(); library.refresh(); }}>{ui.tryAgain}</button><button className="row-action" onClick={() => setSettingsOpen(true)}>{ui.settings}</button></div>}
       <main className="workbench-content">
         {!ready && !failure ? <div className="empty-note"><LoaderCircle className="spin" />{ui.startup}</div> : rows.length ? <VideoList rows={rows} apiBase={gallery ? window.location.origin : apiBase} folder={folder} expandedId={expandedId} renamingId={renamingId} busyId={busyId} hasMore={!gallery && library.hasMore && filter !== 'downloading'} loadingMore={library.loadingMore} onLoadMore={library.loadMore} onToggle={(row) => setExpandedId(expandedId === row.id ? null : row.id)} onCommand={command} onRename={rename} onRequestPreview={requestThumbnailPreview}
           onRefreshLink={async (row, url) => { await run(row.id, async () => { if (gallery) mutateDemo(row, { queueStatus: 'downloading', error: null }); else await api?.refreshSource(row.jobId || row.id, url); }); }}
-          onMoveTo={(sourceId, targetId) => { if (gallery) return; const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><div className="empty-icon"><Download /></div><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{!connectedOnce && <button className="row-action primary-action" onClick={() => run('chrome', () => openExternal(chromeInstallUrl))}>{ui.addChrome}</button>}</div> : !failure && <p className="empty-note">{query ? ui.noMatches : filter === 'downloading' ? ui.nothingDownloading : ui.noSaved}</p>}
+          onMoveTo={(sourceId, targetId) => { if (gallery) return; const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><div className="empty-icon"><Download /></div><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{!connectedOnce && <><button className="row-action primary-action" onClick={() => run('chrome', () => openExternal(chromeInstallUrl))}>{ui.addChrome}</button><button className="detail-refresh" onClick={() => setSettingsOpen(true)}>{ui.chromeInstalled}</button></>}</div> : !failure && <p className="empty-note">{query ? ui.noMatches : filter === 'downloading' ? ui.nothingDownloading : ui.noSaved}</p>}
       </main>
-      <footer className="workbench-footer"><span className="footer-status">{active.length ? `${active.length} downloading${totalSpeed > 0 ? ` · ${formatBytesPerSecond(totalSpeed)}` : ''}` : `Saving to ${folder}`}</span>{!connectedOnce && !firstLaunch && <button className="footer-link" onClick={() => run('chrome', () => openExternal(chromeInstallUrl))}>{ui.addChrome}</button>}<div className="footer-space" />
+      <footer className="workbench-footer"><span className="footer-status">{active.length ? `${active.length} downloading${totalSpeed > 0 ? ` · ${formatBytesPerSecond(totalSpeed)}` : ''}` : `Saving to ${folder}`}</span>{!connectedOnce && !firstLaunch && <button className="footer-link" onClick={() => setSettingsOpen(true)}>{ui.connectChrome}</button>}<div className="footer-space" />
         <DropdownMenu><DropdownMenuTrigger asChild><button className="row-action footer-more" aria-label="Download actions"><MoreHorizontal /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => run('all', async () => { if (api) await api.pauseAll(); })}>{ui.pauseAll}</DropdownMenuItem><DropdownMenuItem onSelect={() => run('all', async () => { if (api) await api.startAll(); })}>{ui.resumeAll}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
         <button className="row-action" aria-label={ui.saveFolder} title={ui.saveFolder} onClick={() => run('folder', async () => { if (!gallery) { const result = await window.desktop.openSaveFolder(); if (!result.ok) throw new Error(result.error); } })}><FolderOpen /></button>
         <button className="row-action" aria-label={ui.settings} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}><Settings /></button>
@@ -244,7 +262,12 @@ function App() {
         if (success) setChromeSessionRow(null);
       }}>{ui.useChromeSession}</button><button className="row-action" disabled={!!busyId} onClick={() => setChromeSessionRow(null)}>{ui.cancel}</button></div></DialogContent></Dialog>
       {gallery && <Dialog open={!!galleryVideo} onOpenChange={(open) => { if (!open) setGalleryVideo(null); }}><DialogContent className="gallery-video-dialog"><DialogTitle>{galleryVideo?.title}</DialogTitle><DialogDescription className="sr-only">{ui.galleryVideoDescription}</DialogDescription>{galleryVideo && <video src={galleryVideo.url} controls autoPlay playsInline preload="metadata" aria-label={galleryVideo.title} />}</DialogContent></Dialog>}
-      <Dialog open={!!confirm} onOpenChange={(open) => { if (!open && !busyId) setConfirm(null); }}><DialogContent className="remove-dialog"><DialogTitle>{confirm?.mode === 'remove' ? ui.removeTitle : ui.cancelTitle}</DialogTitle><DialogDescription>{confirm?.mode === 'remove' ? ui.removeBody : ui.cancelBody}</DialogDescription><p className="dialog-video-title">{confirm?.row.title}</p>{confirm?.mode === 'remove' ? <div className="remove-options"><button className="remove-choice" autoFocus disabled={!!busyId} onClick={() => removeRow('list')}><strong>{ui.removeList}</strong><small>{ui.keepFile}</small></button>{confirm.row.state !== 'missing' && <button className="row-action labelled destructive-text" disabled={!!busyId} onClick={() => removeRow('trash')}>{ui.trash}</button>}</div> : <button className="row-action labelled destructive-text" disabled={!!busyId} onClick={() => confirm && cancelRow(confirm.row)}>{ui.cancelDownload}</button>}<button className="row-action" disabled={!!busyId} onClick={() => setConfirm(null)}>{ui.cancel}</button></DialogContent></Dialog>
+      <Dialog open={!!confirm} onOpenChange={(open) => { if (!open && !busyId) setConfirm(null); }}>{confirm?.mode === 'remove'
+        ? <DialogContent className={`remove-popover${confirmPlace?.above ? ' above' : ''}`} showCloseButton={false} style={confirmPlace ? { left: confirmPlace.left, top: confirmPlace.top } : undefined}><DialogTitle>{ui.removeTitle}</DialogTitle><DialogDescription>{ui.removeBody} {confirm.row.title}</DialogDescription>
+          <button className="remove-choice" autoFocus disabled={!!busyId} onClick={() => removeRow('list')}><ListX aria-hidden="true" /><span><strong>{ui.removeList}</strong><small>{ui.keepFile}</small></span></button>
+          {confirm.row.state !== 'missing' && <><hr /><button className="remove-choice destructive-text" disabled={!!busyId} onClick={() => removeRow('trash')}><Trash2 aria-hidden="true" /><span><strong>{ui.trash}</strong><small>{ui.trashAlso}</small></span></button></>}
+        </DialogContent>
+        : <DialogContent className="remove-dialog"><DialogTitle>{ui.cancelTitle}</DialogTitle><DialogDescription>{ui.cancelBody}</DialogDescription><p className="dialog-video-title">{confirm?.row.title}</p><button className="row-action labelled destructive-text" disabled={!!busyId} onClick={() => confirm && cancelRow(confirm.row)}>{ui.cancelDownload}</button><button className="row-action" disabled={!!busyId} onClick={() => setConfirm(null)}>{ui.cancel}</button></DialogContent>}</Dialog>
     </div>
   );
 }

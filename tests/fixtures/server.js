@@ -111,7 +111,18 @@ async function startFixtureServer({ ffmpegPath = process.env.FFMPEG_PATH || 'ffm
     let contentTypeOverride;
     if (pathname.startsWith('/cases/')) {
       const [, , scenario, name] = pathname.split('/');
-      if (['native-retry', 'native-missing', 'native-expired'].includes(scenario)) {
+      if (scenario === 'preview-context') {
+        if (req.headers.referer !== `${baseUrl}/` || (name === 'index.m3u8' && req.headers.origin !== baseUrl)) {
+          respond(403, 'Preview requires the observed page request context'); return;
+        }
+        if (name === 'index.m3u8') {
+          const playlist = fs.readFileSync(path.join(directory, 'media/preview-context/index.m3u8'), 'utf8')
+            .replaceAll('init.mp4', `${crossOriginUrl}/media/preview-context/init.mp4`)
+            .replace(/segment-(\d+)\.m4s/g, `${crossOriginUrl}/media/preview-context/segment-$1.m4s`);
+          respond(200, playlist, 'application/vnd.apple.mpegurl'); return;
+        }
+        filePath = path.join(directory, 'media/preview-context', name || 'missing');
+      } else if (['native-retry', 'native-missing', 'native-expired'].includes(scenario)) {
         if (name === 'index.m3u8') {
           respond(200, fs.readFileSync(path.join(directory, 'media/fmp4/index.m3u8')), 'application/vnd.apple.mpegurl'); return;
         }

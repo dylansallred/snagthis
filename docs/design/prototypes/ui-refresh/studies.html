@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Progress, Download button and details studies</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="hover.css">
+  <link rel="stylesheet" href="studies.css">
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / 15</div>
+    <h1>Round eight: the speed and connections readout, the button’s hover fill, and what to call “Pieces”.</h1>
+    <p>Three separate choices on the shipped Steel · Very dark look. Click an option, or rest the pointer anywhere in a section and press its number key.</p>
+  </header>
+
+  <section class="study" id="progress" data-variant="spark">
+    <h2 class="study-title">1 · Download progress animation</h2>
+    <div class="hover-picker study-picker"></div>
+    <div class="hub-controls">
+      <label for="p-range">Progress <output id="p-out">34%</output><input id="p-range" type="range" min="0" max="100" value="34"></label>
+      <button type="button" id="p-auto" aria-pressed="true">Stop auto-play</button>
+      <span>Both surfaces use the same treatment.</span>
+    </div>
+    <div class="stage">
+      <div class="panel desk"><div class="panel-label">Desktop row</div><div id="p-desk"></div></div>
+      <div class="panel pop"><div class="panel-label">Chrome popup row</div><div id="p-pop"></div></div>
+    </div>
+  </section>
+
+  <section class="study" id="button" data-variant="hsquare">
+    <h2 class="study-title">2 · Download button: how the hover fill arrives <small>hover slowly on and off; the enlarged one shows it best</small></h2>
+    <div class="hover-picker study-picker"></div>
+    <div class="stage">
+      <div class="panel pop"><div class="panel-label">Chrome popup</div><div id="b-pop"></div></div>
+      <div class="panel zoom"><div class="panel-label">Enlarged 3×</div><div id="b-zoom"></div></div>
+    </div>
+  </section>
+
+  <section class="study" id="details" data-variant="snow">
+    <h2 class="study-title">3 · Speed and connections readout <small>inside the shipped card</small></h2>
+    <div class="hover-picker study-picker"></div>
+    <div class="hub-controls">
+      <div class="segmented" style="margin-left:0" role="group" aria-label="Row state"><span>Row is</span>
+        <button type="button" data-dstate="downloading" aria-pressed="true">Downloading</button>
+        <button type="button" data-dstate="saved" aria-pressed="false">Saved</button></div>
+      <div class="segmented" style="margin-left:0" role="group" aria-label="Name for pieces"><span>Call them</span><button type="button" data-word="Pieces" aria-pressed="true">Pieces</button><button type="button" data-word="Chunks" aria-pressed="false">Chunks</button><button type="button" data-word="Parts" aria-pressed="false">Parts</button><button type="button" data-word="Segments" aria-pressed="false">Segments</button><button type="button" data-word="Blocks" aria-pressed="false">Blocks</button></div>
+      <button type="button" id="d-restart">Restart the chart from zero</button>
+      <span>The chart starts empty so you can watch it build; Saved shows the finished download’s history.</span>
+    </div>
+    <div class="stage"><div class="panel desk wide"><div id="d-desk"></div></div></div>
+  </section>
+
+  <footer class="hub-footer"><p>UI prototypes only; nothing is downloaded. Video: Blender open films.</p></footer>
+</main>
+<script src="studies.js"></script>
+</body>
+</html>

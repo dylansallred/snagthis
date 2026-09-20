@@ -1,0 +1,106 @@
+/* Scoped copy-feedback study. These controls never access the clipboard. */
+#copy-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 8px; }
+#copy-options > button { display: block; min-width: 0; padding: 12px; border: 1px solid var(--border, #29313c); border-radius: 8px; background: var(--bg-raised, hsl(215 22% 8%)); color: var(--fg, #f0edeb); text-align: left; }
+#copy-options > button:hover { background: var(--bg-hover, hsl(215 22% 10.5%)); }
+#copy-options > button[aria-pressed="true"] { border-color: var(--primary-hover, #f5660f); background: hsl(20 60% 16% / .25); }
+#copy-options > button > span { display: block; font-size: 12.5px; font-weight: 600; }
+#copy-options > button > small { display: block; margin-top: 5px; color: var(--fg-muted, #9f9996); font-size: 11.5px; line-height: 1.45; }
+#copy-options .cf-option-new { display: inline-block; margin-top: 9px; color: #9ecbc0; font-size: 10px; font-style: normal; font-weight: 550; letter-spacing: .015em; }
+#copy-options > button:focus-visible { outline: 2px solid var(--primary-hover, #f5660f); outline-offset: 2px; }
+#copy-note { font-size: 12px; color: var(--fg-muted, #9f9996); }
+#hub button.cf-button { --cf-green: hsl(145 50% 66%); position: relative; display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px; flex: none; height: 28px; margin: 0; padding: 0 9px; border: 0; border-radius: 6px; background: none; color: #c4cad3; font-family: inherit; font-size: 12px; font-weight: 400; line-height: 18px; white-space: nowrap; overflow: visible; cursor: pointer; transition: color 180ms ease; }
+#hub button.cf-button:hover, #hub button.cf-button:focus-visible { color: #6cb8ff; }
+#hub button.cf-button:focus-visible { outline: 2px solid var(--primary-hover, #f5660f); outline-offset: 2px; }
+#hub button.cf-button::after { content: ""; position: absolute; left: 9px; right: 9px; bottom: 3px; height: 1.5px; border-radius: 1px; background: currentColor; transform: scaleX(0); transform-origin: left; transition: transform 260ms cubic-bezier(.2, .8, .2, 1); }
+#hub button.cf-button:hover::after, #hub button.cf-button:focus-visible::after, #hub button.cf-button.cf-copied::after { transform: scaleX(1); }
+#hub button.cf-button.cf-copied { color: var(--cf-green); }
+.cf-button .cf-symbol { position: relative; display: inline-block; flex: none; width: 14px; height: 14px; }
+.cf-button svg { position: absolute; inset: 0; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.cf-button .cf-tick { opacity: 0; stroke-width: 2.4; }
+.cf-button .cf-label { display: inline-grid; perspective: 120px; }
+.cf-button .cf-label > span { grid-area: 1 / 1; display: block; backface-visibility: hidden; }
+.cf-button .cf-done { opacity: 0; }
+.cf-button .cf-ring { position: absolute; inset: 1px; border: 1px solid currentColor; border-radius: 6px; pointer-events: none; opacity: 0; }
+.cf-button .cf-new-art { display: none; position: absolute; inset: 0; }
+.cf-button .cf-float, .cf-button .cf-wash { position: absolute; pointer-events: none; opacity: 0; }
+.cf-button .cf-float { left: 50%; bottom: calc(100% + 3px); padding: 3px 8px; border: 1px solid #426957; border-radius: 5px; background: #173126; color: #a5dfbd; font-size: 10.5px; line-height: 15px; transform: translateX(-50%); }
+.cf-button .cf-float::after { content: ""; position: absolute; width: 5px; height: 5px; left: calc(50% - 3px); bottom: -3px; border-right: 1px solid #426957; border-bottom: 1px solid #426957; background: #173126; transform: rotate(45deg); }
+.cf-button .cf-wash { inset: 0; border-radius: inherit; overflow: hidden; }
+.cf-button .cf-wash::before { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 12%, #b8ffdc12 28%, #e1fff754 48%, #b8ffdc12 68%, transparent 85%); transform: translateX(-110%); }
+.cf-button .cf-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.cf-button.cf-copied .cf-link, .cf-button.cf-copied .cf-original { opacity: 0; }
+.cf-button.cf-copied .cf-tick, .cf-button.cf-copied .cf-done { opacity: 1; }
+
+/* 1 · The shipped check pop and rising confirmation label. */
+[data-copy="today"] .cf-copied .cf-tick { animation: cf-check-pop 320ms cubic-bezier(.3, 1.7, .5, 1); }
+[data-copy="today"] .cf-copied .cf-done { animation: cf-label-rise 240ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes cf-check-pop { from { transform: scale(.3) rotate(-40deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes cf-label-rise { from { transform: translateY(7px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* 2 · The visible check draws once; the label stays in place. */
+[data-copy="draw"] .cf-copied .cf-tick path { stroke-dasharray: 24; animation: cf-draw-check 380ms ease-out both; }
+[data-copy="draw"] .cf-copied .cf-done { animation: cf-fade-in 180ms ease-out; }
+@keyframes cf-draw-check { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+@keyframes cf-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* 3 · A one-off label turn; no continuous ticker or new surface. */
+[data-copy="flip"] .cf-copied .cf-done { transform-origin: center; animation: cf-label-flip 360ms cubic-bezier(.2, .8, .2, 1); }
+[data-copy="flip"] .cf-copied .cf-tick { animation: cf-fade-in 200ms ease-out; }
+@keyframes cf-label-flip { from { opacity: 0; transform: rotateX(-85deg) translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* 4 · Confirmation spreads just beyond the button, then fades. */
+[data-copy="ring"] .cf-copied .cf-ring { animation: cf-soft-ring 650ms ease-out; }
+@keyframes cf-soft-ring { 0% { opacity: 0; transform: scale(.94); } 20% { opacity: .7; } 100% { opacity: 0; transform: scale(1.08, 1.22); } }
+
+/* 5 · Restart the underline in green after the blue hover line. */
+#hub[data-copy="underline"] button.cf-button.cf-copied::after { animation: cf-underline-finish 420ms cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes cf-underline-finish { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* 6 · Both pieces crossfade in place, including when the label returns. */
+[data-copy="fade"] .cf-button :is(.cf-link, .cf-tick, .cf-original, .cf-done) { transition: opacity 220ms ease; }
+[data-copy="fade"] .cf-copied :is(.cf-tick, .cf-done) { animation: cf-fade-in 220ms ease; }
+
+/* 7 · Tactile press without moving the adjacent actions. */
+#hub[data-copy="press"] button.cf-button.cf-copied { animation: cf-gentle-press 280ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes cf-gentle-press { 0%, 100% { transform: scale(1); } 35% { transform: scale(.94); } }
+
+/* 8–12 · Different confirmation imagery; none displays a checkmark. */
+#hub:is([data-copy="stack"], [data-copy="clipboard"], [data-copy="echo"], [data-copy="float"], [data-copy="sweep"]) .cf-button.cf-copied .cf-tick { display: none; }
+[data-copy="stack"] .cf-copied .cf-art-stack, [data-copy="clipboard"] .cf-copied .cf-art-clipboard, [data-copy="echo"] .cf-copied .cf-art-echo { display: block; }
+
+/* A copy emerges from the original sheet and snaps into a tidy stack. */
+.cf-stack-back { opacity: .5; }
+.cf-stack-front { fill: var(--bg-raised, hsl(215 22% 8%)); }
+[data-copy="stack"] .cf-copied .cf-stack-front { animation: cf-sheets-snap 430ms cubic-bezier(.2, .9, .3, 1.25); }
+@keyframes cf-sheets-snap { from { opacity: 0; transform: translate(-5px, -5px); } to { opacity: 1; transform: none; } }
+
+/* The destination stays put as a page lands inside it. */
+.cf-flying-page { transform-origin: 12px 14px; }
+[data-copy="clipboard"] .cf-copied .cf-flying-page { animation: cf-page-arrive 500ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes cf-page-arrive { 0% { opacity: 0; transform: translate(-5px, -6px) rotate(-15deg) scale(.8); } 75% { opacity: 1; transform: translateY(1px); } 100% { opacity: 1; transform: none; } }
+
+/* Keep the link itself; the confirmation radiates from that small symbol. */
+[data-copy="echo"] .cf-copied .cf-link, [data-copy="float"] .cf-copied .cf-link, [data-copy="sweep"] .cf-copied .cf-link { opacity: 1; }
+.cf-art-echo i { position: absolute; inset: 0; border: 1px solid currentColor; border-radius: 50%; opacity: 0; }
+[data-copy="echo"] .cf-copied .cf-art-echo i { animation: cf-link-echo 700ms ease-out; }
+[data-copy="echo"] .cf-copied .cf-art-echo i + i { animation-delay: 160ms; }
+@keyframes cf-link-echo { 0% { opacity: .8; transform: scale(.6); } 100% { opacity: 0; transform: scale(1.85); } }
+
+/* A small local bubble leaves the original control intact and unobscured. */
+#hub[data-copy="float"] .cf-button.cf-copied { color: #6cb8ff; }
+[data-copy="float"] .cf-copied .cf-original { opacity: 1; }
+[data-copy="float"] .cf-copied .cf-done { opacity: 0; }
+[data-copy="float"] .cf-copied .cf-float { opacity: 1; animation: cf-float-arrive 280ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes cf-float-arrive { from { opacity: 0; transform: translate(-50%, 5px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Light passes only inside this button, then the plain confirmation remains. */
+[data-copy="sweep"] .cf-copied .cf-wash { opacity: 1; }
+[data-copy="sweep"] .cf-copied .cf-wash::before { animation: cf-light-sweep 650ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes cf-light-sweep { from { transform: translateX(-110%); } to { transform: translateX(110%); } }
+
+#hub[data-reduced="true"] .cf-button, #hub[data-reduced="true"] .cf-button *, #hub[data-reduced="true"] .cf-button::after, #hub[data-reduced="true"] .cf-button .cf-wash::before { animation: none !important; transition: none !important; }
+#hub[data-reduced="true"] .cf-button :is(.cf-tick, .cf-done) { transform: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  #hub .cf-button, #hub .cf-button *, #hub .cf-button::after, #hub .cf-button .cf-wash::before { animation: none !important; transition: none !important; }
+  #hub .cf-button :is(.cf-tick, .cf-done) { transform: none !important; }
+}

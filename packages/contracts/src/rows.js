@@ -31,6 +31,19 @@
     return minutes < 60 ? minutes + ':' + sec : Math.floor(minutes / 60) + ':' + String(minutes % 60).padStart(2, '0') + ':' + sec;
   }
 
+  function formatQualityBadge(value) {
+    const label = typeof value === 'string' ? value.trim() : '';
+    const resolution = /^(\d+)[pi]$/i.exec(label) || /^\d+\s*[x×]\s*(\d+)$/i.exec(label);
+    const tiers = {
+      144: ['SD', 'Standard definition'], 240: ['SD', 'Standard definition'],
+      360: ['SD', 'Standard definition'], 480: ['SD', 'Standard definition'], 576: ['SD', 'Standard definition'],
+      720: ['HD', 'HD'], 1080: ['FHD', 'Full HD'], 1440: ['QHD', 'Quad HD'],
+      2160: ['4K', '4K'], 4320: ['8K', '8K'],
+    };
+    const tier = resolution ? tiers[Number(resolution[1])] : null;
+    return { tier: tier ? tier[0] : '', label: label, name: tier ? tier[1] : '' };
+  }
+
   function formatWhen(value, now) {
     if (value === undefined || value === null || value === '') return '';
     const date = new Date(value);
@@ -178,5 +191,5 @@
     return rows;
   }
 
-  return { toRowModel: toRowModel, formatEta: formatEta, formatSize: formatSize, formatWhen: formatWhen, formatDuration: formatDuration, classifyProblem: classifyProblem, mergeRows: mergeRows };
+  return { toRowModel: toRowModel, formatEta: formatEta, formatSize: formatSize, formatWhen: formatWhen, formatDuration: formatDuration, formatQualityBadge: formatQualityBadge, classifyProblem: classifyProblem, mergeRows: mergeRows };
 });

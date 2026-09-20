@@ -1,0 +1,102 @@
+name: Prepare extension release
+
+on:
+  push:
+    tags: ['extension-v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-release
+  cancel-in-progress: false
+
+jobs:
+  release-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Require a matching extension version from main
+        shell: bash
+        run: |
+          node scripts/extension-release.cjs --check
+          git merge-base --is-ancestor HEAD origin/main
+
+  checks:
+    needs: release-contract
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Build the extension ZIP and source identity
+        shell: bash
+        run: |
+          npm run build:extension:css
+          RELEASE_SOURCE_COMMIT="$(git rev-parse HEAD)" node scripts/extension-release.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-release
+          path: |
+            release-assets/extension-only/vidsnag-extension.zip
+            release-assets/extension-only/extension-release.json
+            release-assets/extension-only/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-release
+          path: release-assets/extension-only
+      - name: Verify staged checksums
+        working-directory: release-assets/extension-only
+        run: sha256sum --check --strict SHA256SUMS
+      - name: Create a draft only; owner publication remains manual
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const { assertNewRelease, validateTag } = require('./scripts/extension-release.cjs');
+            const tag = context.ref.replace('refs/tags/', '');
+            const version = validateTag(tag, require('./apps/extension/manifest.json').version, require('./apps/extension/package.json').version);
+            const releases = await github.paginate(github.rest.repos.listReleases, { ...context.repo, per_page: 100 });
+            assertNewRelease(tag, releases);
+            const report = JSON.parse(fs.readFileSync('release-assets/extension-only/extension-release.json'));
+            if (report.tag !== tag || report.version !== version) throw new Error('Staged extension metadata does not match this release');
+            const created = await github.rest.repos.createRelease({
+              ...context.repo, tag_name: tag, target_commitish: report.sourceCommit,
+              name: `Chrome extension ${version}`, draft: true, prerelease: true, make_latest: 'false',
+              body: `Extension-only release draft. The runtime ZIP, commit manifest and SHA256 checksum are attached.\n\nSource commit: ${report.sourceCommit}\nBuild source: ${report.sourceArchive}\nUse Node from .nvmrc, then npm ci and npm run package:extension. GitHub also provides the tagged source archives. These links stay private until the owner makes this repository public at launch.\n\nOwner review is required before manual publication: inspect the package and source/licenses. Keep this release marked pre-release and do not mark it Latest; desktop updates use the stable Latest release.\n\nThis workflow does not publish the draft, change repository visibility, or upload to Chrome Web Store. ZIP installations update manually by replacing the same folder and reloading the existing extension.`,
+            });
+            for (const name of ['vidsnag-extension.zip', 'extension-release.json', 'SHA256SUMS']) {
+              const data = fs.readFileSync(path.join('release-assets/extension-only', name));
+              await github.rest.repos.uploadReleaseAsset({ ...context.repo, release_id: created.data.id, name, data });
+            }

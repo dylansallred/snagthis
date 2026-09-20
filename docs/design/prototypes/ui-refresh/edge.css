@@ -1,0 +1,40 @@
+.picker-title { margin: 22px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-muted); }
+.picker-title small { font-weight: 400; color: var(--fg-subtle); text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.hover-picker.edge-picker, .hover-picker.anim-picker { position: static; grid-template-columns: repeat(5, 1fr); margin: 8px -8px 0; }
+
+/* Focus mono, as shipped. --ms is set by the animation option. */
+.hub { --ms: 200ms; }
+.hub :is(.row, .prow, .details) { transition: opacity var(--ms) ease, filter var(--ms) ease, background-color var(--ms) ease; }
+.hub[data-hover] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)) { background: var(--row-hover); }
+.content:has(.row:is(:hover, :focus-visible, :has(:focus-visible))) .row:not(:is(:hover, :focus-visible, :has(:focus-visible))), .content:has(.row:is(:hover, :focus-visible, :has(:focus-visible))) .item:not(:has(> .row:is(:hover, :focus-visible, :has(:focus-visible)))) > .details, .plist:has(.prow:is(:hover, :focus-visible, :has(:focus-visible))) .prow:not(:is(:hover, :focus-visible, :has(:focus-visible))) { opacity: .45; filter: grayscale(1); }
+
+/* One edge element per surface: .item spans row + details, .row spans the row only. */
+.item { position: relative; }
+.hub[data-hover] :is(.item, .prow, .row)::after { content: ""; position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; right: auto; width: 3px; height: auto; background: var(--primary-hover); box-shadow: none; pointer-events: none; opacity: 0; }
+.hub:not([data-edge="d"], [data-edge="now"]) .row::after, .hub:is([data-edge="d"], [data-edge="now"]) .item:not(.expanded)::after, .hub[data-edge="d"] .item::after { display: none; }
+.hub .item:has(> .row:is(:hover, :focus-visible, :has(:focus-visible)))::after, .hub :is(.prow, .row):is(:hover, :focus-visible, :has(:focus-visible))::after { opacity: 1; transform: none; background: var(--primary-hover); }
+
+/* Open-row edge options */
+.hub[data-edge="now"] .item.expanded::after { width: 2px; opacity: 1; transform: none; transition: none; }
+.hub[data-edge="a"] .item.expanded:not(:has(> .row:is(:hover, :focus-visible, :has(:focus-visible))))::after { opacity: .4; transform: none; }
+.hub[data-edge="c"] .item.expanded:not(:has(> .row:is(:hover, :focus-visible, :has(:focus-visible))))::after { opacity: 1; transform: none; background: rgb(255 255 255 / .22); }
+
+/* Hover animations */
+.hub[data-anim="1"] :is(.item, .prow, .row)::after { transition: opacity 120ms ease, background-color 120ms ease; }
+
+.hub[data-anim="2"] { --ms: 300ms; }
+.hub[data-anim="2"] :is(.item, .prow, .row)::after { transform: scaleY(0); transition: transform 380ms cubic-bezier(.4, 0, .2, 1), opacity 380ms ease, background-color 300ms ease; }
+.hub[data-anim="2"] .item:has(> .row:is(:hover, :focus-visible, :has(:focus-visible)))::after, .hub[data-anim="2"] :is(.prow, .row):is(:hover, :focus-visible, :has(:focus-visible))::after { transition: transform 300ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease, background-color 300ms ease; }
+
+.hub[data-anim="3"] { --ms: 260ms; }
+.hub[data-anim="3"] :is(.item, .prow, .row)::after { transform: translateX(-4px); transition: transform 260ms cubic-bezier(.2, .8, .2, 1), opacity 260ms ease, background-color 260ms ease; }
+
+.hub[data-anim="4"] { --ms: 320ms; }
+.hub[data-anim="4"] :is(.item, .prow, .row)::after { transform: scaleY(0); transform-origin: bottom; transition: transform 340ms cubic-bezier(.4, 0, .2, 1), opacity 340ms ease, background-color 300ms ease; }
+.hub[data-anim="4"] .item:has(> .row:is(:hover, :focus-visible, :has(:focus-visible)))::after, .hub[data-anim="4"] :is(.prow, .row):is(:hover, :focus-visible, :has(:focus-visible))::after { transform-origin: top; }
+
+.hub[data-anim="5"] { --ms: 450ms; }
+.hub[data-anim="5"] :is(.row, .prow, .details) { transition-delay: 90ms; }
+.hub[data-anim="5"] :is(.row, .prow):is(:hover, :focus-visible, :has(:focus-visible)), .hub[data-anim="5"] .content:has(.row:is(:hover, :focus-visible, :has(:focus-visible))) :is(.row, .details), .hub[data-anim="5"] .plist:has(.prow:is(:hover, :focus-visible, :has(:focus-visible))) .prow { transition-delay: 0ms; }
+.hub[data-anim="5"] :is(.item, .prow, .row)::after { transition: opacity 450ms ease 90ms, background-color 450ms ease; }
+.hub[data-anim="5"] .item:has(> .row:is(:hover, :focus-visible, :has(:focus-visible)))::after, .hub[data-anim="5"] :is(.prow, .row):is(:hover, :focus-visible, :has(:focus-visible))::after { transition-delay: 0ms; }

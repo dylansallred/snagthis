@@ -3,6 +3,8 @@ const fs = require('fs');
 const logger = require('../utils/logger');
 const { resolveHlsSelection } = require('./MediaSelection');
 const { buildPlexBaseName } = require('../utils/plexNaming');
+const { allocateJobStorageDir, sanitizeJobFolderName, isOwnedJobStorageDir, hasJobStorageMarker, JOB_STORAGE_MARKER } = require('./JobStorage');
+const { isCurrentPreviewClipPath } = require('./PreviewClip');
 
 class QueueManager {
   constructor(options) {
@@ -82,6 +84,11 @@ class QueueManager {
         // Browser-session consent is a trusted desktop action for one attempt.
         // It must never be restored from a saved or imported queue.
         delete queuedJob.youtubeBrowserSession;
+        // Open requests belong to the current runner, never to a saved session.
+        delete queuedJob.activeConnections;
+        delete queuedJob.maxConnections;
+        delete queuedJob.connectionCountAvailable;
+        queuedJob.fileNaming = ['title', 'resource', 'custom'].includes(queuedJob.fileNaming) ? queuedJob.fileNaming : 'title';
         if (!queuedJob.storageDir && queuedJob.filePath) {
           queuedJob.storageDir = path.dirname(queuedJob.filePath);
         }
@@ -261,12 +268,19 @@ class QueueManager {
     const ext = path.extname(primaryPath) || (job.mp4Path ? '.mp4' : '');
     const preferredBaseName = this.sanitizeFinalFileName(buildPlexBaseName(job), ext);
     const preferredDir = this.getCompletedOutputDir ? String(this.getCompletedOutputDir() || '').trim() : '';
-    const targetDir = preferredDir
-      ? path.join(preferredDir, this.buildCompletedArtifactFolderName(preferredBaseName))
-      : path.dirname(primaryPath);
-    if (!targetDir) return;
-
     try {
+      const currentFolder = path.dirname(path.resolve(primaryPath));
+      const folderName = sanitizeJobFolderName(preferredBaseName);
+      const currentName = path.basename(currentFolder);
+      const matchesName = currentName === folderName || (currentName.startsWith(`${folderName} (`) && /^\((?:[2-9]|[1-9]\d+)\)$/.test(currentName.slice(folderName.length + 1)));
+      const targetRoot = preferredDir || this.downloadDir;
+      const ownedCurrent = isOwnedJobStorageDir(targetRoot, job.id, currentFolder);
+      // A marker identifies new jobs that may adopt a title resolved during the
+      // download. Legacy default folders keep their original location.
+      const shouldAllocate = preferredDir
+        ? !(ownedCurrent && matchesName)
+        : hasJobStorageMarker(currentFolder, job.id) && !matchesName;
+      const targetDir = shouldAllocate ? allocateJobStorageDir(targetRoot, job.id, preferredBaseName) : currentFolder;
       fs.mkdirSync(targetDir, { recursive: true });
       const resolvedCurrent = path.resolve(primaryPath);
       const resolvedTargetDir = path.resolve(targetDir);
@@ -302,14 +316,28 @@ class QueueManager {
         }
       }
 
-      job.thumbnailPath = this.relocateSidecarArtifact(job.thumbnailPath, resolvedTargetDir);
+      const relocatedSidecars = new Map();
+      const relocateSidecar = candidate => {
+        if (relocatedSidecars.has(candidate)) return relocatedSidecars.get(candidate);
+        const moved = this.relocateSidecarArtifact(candidate, resolvedTargetDir);
+        relocatedSidecars.set(candidate, moved);
+        return moved;
+      };
+      job.thumbnailPath = relocateSidecar(job.thumbnailPath);
       if (Array.isArray(job.thumbnailPaths)) {
         job.thumbnailPaths = job.thumbnailPaths.map((thumbPath) =>
-          this.relocateSidecarArtifact(thumbPath, resolvedTargetDir)
+          relocateSidecar(thumbPath)
         );
       }
-      job.subtitlePath = this.relocateSidecarArtifact(job.subtitlePath, resolvedTargetDir);
-      job.subtitleZipPath = this.relocateSidecarArtifact(job.subtitleZipPath, resolvedTargetDir);
+      job.subtitlePath = relocateSidecar(job.subtitlePath);
+      job.subtitleZipPath = relocateSidecar(job.subtitleZipPath);
+      if (currentDir !== resolvedTargetDir && hasJobStorageMarker(currentDir, job.id)) {
+        const remaining = fs.readdirSync(currentDir);
+        if (remaining.every(name => name === JOB_STORAGE_MARKER)) {
+          fs.unlinkSync(path.join(currentDir, JOB_STORAGE_MARKER));
+          fs.rmdirSync(currentDir);
+        }
+      }
 
       job.outputPath = targetPath;
       job.outputDirectory = path.dirname(targetPath);
@@ -346,6 +374,7 @@ class QueueManager {
           downloadNameMp4,
           bytesDownloaded,
           totalBytes,
+          totalBytesKnown,
           totalSegments,
           completedSegments,
           progress,
@@ -380,6 +409,7 @@ class QueueManager {
           downloadNameMp4,
           bytesDownloaded,
           totalBytes,
+          totalBytesKnown,
           totalSegments,
           completedSegments,
           progress,
@@ -410,6 +440,7 @@ class QueueManager {
           tmdbMetadata: job.tmdbMetadata || null,
           mediaHints: job.mediaHints || null,
           manualTitleOverride: !!job.manualTitleOverride,
+          fileNaming: ['title', 'resource', 'custom'].includes(job.fileNaming) ? job.fileNaming : 'title',
           skipThumbnailGeneration: job.skipThumbnailGeneration,
           subtitlePath: job.subtitlePath,
           subtitleZipPath: job.subtitleZipPath,
@@ -497,9 +528,13 @@ class QueueManager {
       status: job.status || 'pending',
       bytesDownloaded: job.bytesDownloaded || 0,
       totalBytes: Number(job.totalBytes || 0) || 0,
+      totalBytesKnown: job.totalBytesKnown === true,
       totalSegments: job.totalSegments || 0,
       completedSegments: job.completedSegments || 0,
       speedBps: Number(job.speedBps || 0) || 0,
+      activeConnections: job.connectionCountAvailable ? Number(job.activeConnections || 0) : null,
+      maxConnections: Number(job.maxConnections || job.maxConcurrent || 0) || null,
+      connectionCountAvailable: job.connectionCountAvailable === true,
       etaSeconds: Number.isFinite(job.etaSeconds) ? Number(job.etaSeconds) : null,
       failedSegments: Array.isArray(job.failedSegments) ? job.failedSegments.length : 0,
       queuedAt: job.queuedAt,
@@ -534,7 +569,8 @@ class QueueManager {
     if (!job.previewClipPath || !fs.existsSync(job.previewClipPath)) return null;
     const candidate = path.resolve(job.previewClipPath);
     const directory = path.resolve(this.downloadDir, '__previews');
-    if (path.dirname(candidate) !== directory || !/^[a-f0-9]{32}\.mp4$/i.test(path.basename(candidate))) return null;
+    const allowInterim = !['completed', 'completed-with-errors'].includes(job.queueStatus || job.status);
+    if (path.dirname(candidate) !== directory || !isCurrentPreviewClipPath(candidate, { allowInterim })) return null;
     return `/downloads/__previews/${path.basename(candidate)}`;
   }
 
@@ -739,6 +775,7 @@ class QueueManager {
       job.cancelled = true;
       job.resumePartialSegments = true;
       job.queueStatus = 'paused';
+      job._downloadAbort?.abort();
       this.saveQueue();
       return true;
     }
@@ -826,6 +863,7 @@ class QueueManager {
       job.cancelled = true;
       // Ensure in-flight job processors cleanup partial artifacts before exiting.
       job.cleanupOnCancel = true;
+      job._downloadAbort?.abort();
     }
 
     const isActiveDownload = this.activeJobs.has(jobId) || job.queueStatus === 'downloading'
@@ -896,8 +934,7 @@ class QueueManager {
         if (
           jobStorageDir
           && fs.existsSync(jobStorageDir)
-          && path.resolve(path.dirname(jobStorageDir)) === path.resolve(this.downloadDir)
-          && path.basename(jobStorageDir) === String(job.id || '')
+          && isOwnedJobStorageDir(this.downloadDir, job.id, jobStorageDir)
         ) {
           if (deleteTransientOnly) {
             try {
@@ -913,7 +950,8 @@ class QueueManager {
                   }
                 });
               const remaining = fs.readdirSync(jobStorageDir);
-              if (remaining.length === 0) {
+              if (remaining.every(name => name === JOB_STORAGE_MARKER)) {
+                if (remaining.length) fs.unlinkSync(path.join(jobStorageDir, JOB_STORAGE_MARKER));
                 fs.rmdirSync(jobStorageDir);
               }
             } catch (err) {

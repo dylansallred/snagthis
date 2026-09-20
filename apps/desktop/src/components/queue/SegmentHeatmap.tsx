@@ -65,7 +65,7 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     canvas.style.width = `${containerWidth}px`;
     canvas.style.height = `${canvasHeight}px`;
     canvas.dataset.piecesPerCell = String(piecesPerCell);
-    canvas.setAttribute('aria-label', `${totalSegments} download pieces${piecesPerCell > 1 ? `, grouped in sets of up to ${piecesPerCell}` : ''}; status is summarized above`);
+    canvas.setAttribute('aria-label', `${totalSegments} download segments${piecesPerCell > 1 ? `, grouped in sets of up to ${piecesPerCell}` : ''}; status is summarized above`);
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, containerWidth, canvasHeight);
 
@@ -74,6 +74,7 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     for (const [status, cssVar] of Object.entries(STATUS_COLORS)) {
       resolvedColors[status] = resolveCssColor(cssVar);
     }
+    const retryInterior = resolveCssColor('var(--color-surface-row)');
 
     for (let cell = 0; cell < cells; cell++) {
       const first = cell * piecesPerCell;
@@ -88,11 +89,25 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
       let offset = 0;
       for (const [status, count] of counts) {
         const width = cellSize * count / (last - first);
+        ctx.globalAlpha = status === 'pending' ? 0.25 : status === 'retrying' ? 0.75 : 1;
         ctx.fillStyle = resolvedColors[status] || resolvedColors.pending;
-        ctx.fillRect(x + offset, y, width, cellSize);
+        if (status === 'retrying' && width > 2) {
+          // Paint the 1px border and centre without overlap, so the entire
+          // retry cell has the same opacity rather than a twice-painted centre.
+          ctx.fillRect(x + offset, y, width, 1);
+          ctx.fillRect(x + offset, y + cellSize - 1, width, 1);
+          ctx.fillRect(x + offset, y + 1, 1, cellSize - 2);
+          ctx.fillRect(x + offset + width - 1, y + 1, 1, cellSize - 2);
+          ctx.fillStyle = retryInterior;
+          ctx.fillRect(x + offset + 1, y + 1, width - 2, cellSize - 2);
+        } else {
+          // Narrow grouped slices retain their colour so retries stay visible.
+          ctx.fillRect(x + offset, y, width, cellSize);
+        }
         offset += width;
       }
     }
+    ctx.globalAlpha = 1;
   }, [totalSegments, segmentStates]);
 
   useEffect(() => {
@@ -128,7 +143,7 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     const state = segmentStates?.[String(idx)];
     const status = state?.status || 'pending';
     const attempt = state?.attempt || 0;
-    let text = `Piece ${idx + 1}: ${status}${attempt > 1 ? ` (attempt ${attempt})` : ''}`;
+    let text = `Segment ${idx + 1}: ${status}${attempt > 1 ? ` (attempt ${attempt})` : ''}`;
     if (layout.piecesPerCell > 1) {
       const last = Math.min(totalSegments, idx + layout.piecesPerCell);
       const counts = new Map<string, number>();
@@ -136,7 +151,7 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
         const itemStatus = segmentStates?.[String(index)]?.status || 'pending';
         counts.set(itemStatus, (counts.get(itemStatus) || 0) + 1);
       }
-      text = `Pieces ${idx + 1}–${last}: ${[...counts].map(([itemStatus, count]) => `${count} ${itemStatus}`).join(', ')}`;
+      text = `Segments ${idx + 1}–${last}: ${[...counts].map(([itemStatus, count]) => `${count} ${itemStatus}`).join(', ')}`;
     }
 
     const containerRect = containerRef.current?.getBoundingClientRect();
@@ -153,7 +168,7 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
       <canvas
         ref={canvasRef}
         role="img"
-        aria-label={`${totalSegments} download pieces; status is summarized above`}
+        aria-label={`${totalSegments} download segments; status is summarized above`}
         className="w-full cursor-crosshair"
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}

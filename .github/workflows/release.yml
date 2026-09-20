@@ -7,8 +7,28 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
 jobs:
+  release-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Require a stable matching version from main
+        shell: bash
+        run: |
+          bash scripts/release-preflight.sh --version-only
+          git merge-base --is-ancestor HEAD origin/main
+
   checks:
+    needs: release-contract
     uses: ./.github/workflows/ci.yml
 
   desktop:
@@ -85,7 +105,8 @@ jobs:
             apps/desktop/dist-electron/*.zip
             apps/desktop/dist-electron/*.exe.blockmap
             apps/desktop/dist-electron/*.zip.blockmap
-            apps/desktop/dist-electron/*.yml
+            apps/desktop/dist-electron/latest.yml
+            apps/desktop/dist-electron/latest-mac.yml
             apps/desktop/dist-electron/release-verification-*.json
           if-no-files-found: error
           retention-days: 7
@@ -100,11 +121,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Include GPL license and package the extension
-        run: |
-          cp LICENSE apps/extension/LICENSE
-          cp THIRD_PARTY_NOTICES.md apps/extension/THIRD_PARTY_NOTICES.md
-          npm run package:extension
+      - name: Package the extension with its license and notices
+        run: npm run package:extension
       - uses: actions/upload-artifact@v4
         with:
           name: release-extension
@@ -112,11 +130,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  prepare-draft:
     needs: [checks, desktop, extension]
     runs-on: ubuntu-latest
-    # Required reviewers must verify all linked GPL dependency sources before approval.
-    environment: release-approval
+    # Publication remains a separate, explicit owner action in GitHub Releases.
     permissions:
       contents: write
       actions: read
@@ -124,18 +141,25 @@ jobs:
       CORRESPONDING_SOURCE_RUN_ID: ${{ vars.CORRESPONDING_SOURCE_RUN_ID }}
     steps:
       - uses: actions/checkout@v4
+      - name: Require a new stable release without overwriting existing assets
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const version = tag.slice(1).split('.').map(Number);
+            const releases = await github.paginate(github.rest.repos.listReleases, { ...context.repo, per_page: 100 });
+            for (const release of releases) {
+              if (release.tag_name === tag) throw new Error(`A release or draft already exists for ${tag}. Published assets are immutable. Inspect and delete an incomplete draft before retrying.`);
+              if (release.draft || release.prerelease || !/^v\d+\.\d+\.\d+$/.test(release.tag_name)) continue;
+              const previous = release.tag_name.slice(1).split('.').map(Number);
+              const difference = version.map((part, i) => part - previous[i]).find(value => value !== 0) || 0;
+              if (difference <= 0) throw new Error(`Release ${tag} must be newer than published ${release.tag_name}; published assets are never overwritten.`);
+            }
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
           path: release-assets
           merge-multiple: false
-      - name: Require a protected manual release environment
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          protected="$(gh api "repos/$GITHUB_REPOSITORY/environments/release-approval" --jq '.protection_rules | any(.type == "required_reviewers" and (.reviewers | length > 0))')"
-          [[ "$protected" == true ]] || { echo 'Configure required reviewers on release-approval; automatic publication is disabled.'; exit 1; }
       - name: Require an explicitly prepared source packet
         shell: bash
         run: |
@@ -154,18 +178,26 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Validate corresponding source and assemble the release payload
         run: node scripts/release-assets.cjs release-assets
-      - name: Upload the verified desktop and extension to a release draft
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          fail_on_unmatched_files: true
-          files: |
-            release-assets/publish/*
-            LICENSE
-            THIRD_PARTY_NOTICES.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish only after every verified asset is attached
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+      - name: Prepare release notes for owner review
+        shell: bash
+        run: |
+          cat > release-notes.md <<'NOTES'
+          VidSnag desktop and Chrome extension.
+
+          Desktop installers are signed and verified. Chrome's ZIP is the manual-install package; Chrome Web Store publication is separate.
+
+          Maintainer review before publishing:
+          - Confirm the corresponding-source archive is complete for every bundled build.
+          - Review the signed installer and update verification reports, checksums, and user-facing release notes.
+          - Keep this release a draft during private testing. Make the repository public before public launch so downloads and automatic desktop updates are accessible without credentials.
+          - Select **Set as the latest release** when publishing this desktop release. Extension-only releases must not replace the desktop latest release.
+          NOTES
+      - name: Upload every verified artifact to a draft without publishing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/publish/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft --latest=false \
+            --title "VidSnag $GITHUB_REF_NAME" --notes-file release-notes.md
+          printf '## Release draft ready\n\nReview all artifacts and edit the release notes in [GitHub Releases](https://github.com/%s/releases). This workflow does not publish releases. Keep the draft private until the repository is public and you are ready to distribute it.\n' "$GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"

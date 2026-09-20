@@ -5,11 +5,16 @@ const tls = require('node:tls');
 const { spawn, spawnSync } = require('child_process');
 const { requestWithRedirects } = require('./PlaylistUtils');
 const { createHash } = require('crypto');
+const { isOwnedJobStorageDir } = require('./JobStorage');
 const { createNativeProgress } = require('./NativeProgress');
+const { createProcessStopper } = require('./ProcessTermination');
+const { createTransferMetrics } = require('./TransferMetrics');
+const { generatePreviewAssets, INTERIM_PREVIEW_CLIP_SUFFIX, isCurrentPreviewClipPath } = require('./PreviewClip');
+const { createLocalPreviewCollector } = require('./LocalPreviewCollector');
 const { createDownloadEta } = require('./DownloadEta');
 const { sniffMedia, resolveHlsSelection, mediaError } = require('./MediaSelection');
 const { startScopedMediaProxy, scopeMediaHeaders } = require('./MediaRequest');
-const { getRetryBackoffMs, downloadSegment } = require('./SegmentDownloader');
+const { getRetryBackoffMs, downloadSegment, isLocalWriteError } = require('./SegmentDownloader');
 const {
   buildHlsRequestHeaders,
   buildNativeHlsArgs,
@@ -144,27 +149,50 @@ function createJobProcessor({
   }
 
   function attemptEarlyThumbnail(job, inputPath) {
-    if (!FFMPEG_PATH || job.earlyThumbnailAttempted || job.thumbnailPath || job.thumbnailUrls?.length || job.youtubeMetadata?.thumbnailUrl) return;
-    job.earlyThumbnailAttempted = true;
-    const outputPath = path.join(job.storageDir || path.dirname(job.filePath), `${job.id}-early.jpg`);
-    job._earlyThumbnailPromise = new Promise((resolve) => {
-      const previewIdentity = /^http:\/\//.test(inputPath) ? ['-user_agent', 'VidSnag-Thumbnail/1.0'] : [];
-      const child = spawn(FFMPEG_PATH, ['-nostdin', '-v', 'error', ...previewIdentity, '-i', inputPath, '-frames:v', '1', '-vf', 'scale=224:126:force_original_aspect_ratio=increase,crop=224:126', '-q:v', '5', '-y', outputPath], { stdio: 'ignore' });
-      const timer = setTimeout(() => child.kill('SIGKILL'), 8000);
-      const finish = (code) => {
-        clearTimeout(timer);
-        if (code === 0 && fs.existsSync(outputPath)) {
-          job.thumbnailPath = outputPath;
-          job.updatedAt = Date.now();
+    if (!FFMPEG_PATH || !FFPROBE_PATH || !path.isAbsolute(inputPath || '') || job.cancelled || job.earlyThumbnailAttempted || isCurrentPreviewClipPath(job.previewClipPath, { allowInterim: true }) || job.selection?.audioOnly || job._previewEncoding) return;
+    const now = Date.now();
+    const bytes = Number(job.bytesDownloaded) || 0;
+    if (now < (job._nextPreviewAttemptAt || 0) || (inputPath === job._previewAttemptPath && bytes <= (job._previewAttemptBytes || 0))) return;
+    job._nextPreviewAttemptAt = now + 10000;
+    job._previewAttemptBytes = bytes;
+    job._previewAttemptPath = inputPath;
+    job._previewEncoding = true;
+    job._previewAbort ||= new AbortController();
+    const outputDir = job.storageDir || path.dirname(job.filePath);
+    const key = createHash('sha256').update(`${job.id}:early-preview`).digest('hex').slice(0, 32);
+    const outputPath = path.join(downloadDir, '__previews', `${key}${INTERIM_PREVIEW_CLIP_SUFFIX}`);
+    const posterPath = path.join(outputDir, `${job.id}-opening-poster-v2.jpg`);
+    job._earlyThumbnailPromise = (async () => {
+      let snapshotDirectory;
+      try {
+        // Snapshot only existing local bytes, so preview readers cannot lock a
+        // downloader's output while it renames or removes its current transfer.
+        const stat = await fsPromises.stat(inputPath);
+        if (!stat.isFile() || !stat.size) return;
+        snapshotDirectory = await fsPromises.mkdtemp(path.join(outputDir, 'local-preview-'));
+        const source = path.join(snapshotDirectory, `source${path.extname(inputPath).replace('.part', '') || '.mp4'}`);
+        await require('node:stream/promises').pipeline(fs.createReadStream(inputPath, { start: 0, end: Math.min(stat.size, 64 * 1024 * 1024) - 1 }), fs.createWriteStream(source));
+        const { poster, clip } = await generatePreviewAssets(source, outputPath, posterPath, {
+          FFMPEG_PATH, FFPROBE_PATH, signal: job._previewAbort.signal, interim: true,
+        });
+        if (job.cancelled) return;
+        if (!job.youtubeMetadata?.thumbnailUrl && !(isYouTubeUrl(job.url) && job.thumbnailUrls?.length)) {
+          job.thumbnailPath = poster.path;
+          job.thumbnailPaths = [poster.path];
         }
-        resolve();
-      };
-      child.on('error', () => finish(-1));
-      child.on('close', finish);
-    });
+        job.previewClipPath = clip.path;
+        job.previewClipDurationSeconds = clip.durationSeconds;
+        job.updatedAt = Date.now();
+      } catch { /* More local bytes can make the next bounded attempt usable. */ }
+      finally {
+        if (snapshotDirectory) await fsPromises.rm(snapshotDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 }).catch(() => {});
+        job._previewEncoding = false;
+      }
+    })();
   }
 
   async function dispatchJob(job) {
+    let downloadAbort;
     const stopCancelled = () => {
       if (!job.cancelled) return false;
       job.status = 'cancelled';
@@ -174,6 +202,9 @@ function createJobProcessor({
     };
     try {
       if (stopCancelled()) return;
+      downloadAbort = new AbortController();
+      job._downloadAbort = downloadAbort;
+      job._transferMetrics = createTransferMetrics(job, { maxConnections: Math.max(1, Math.min(16, Number(job.maxConcurrent || DEFAULT_MAX_CONCURRENT) || 4)), available: !isYouTubeUrl(job.url) });
       job.url = resolveYouTubeVideoUrl(job);
       buildYouTubeBrowserSessionArgs(job); // Validate explicit browser access before any network request.
       job.credentialOrigin ||= new URL(job.headerOrigin || job.url).origin;
@@ -183,7 +214,7 @@ function createJobProcessor({
 
       if (isYouTubeUrl(job.url)) return await runDirectJobInternal(job);
       const headers = buildHlsRequestHeaders(job.headers || {}, { sourcePageUrl: job.sourcePageUrl });
-      const detected = await sniffMedia(job.url, headers, { credentialOrigin: job.credentialOrigin, sourcePageUrl: job.sourcePageUrl });
+      const detected = await sniffMedia(job.url, headers, { credentialOrigin: job.credentialOrigin, sourcePageUrl: job.sourcePageUrl, signal: downloadAbort.signal });
       // A pause may arrive while sniffing. Do not begin another manifest
       // request before the old runner gives its slot back to the queue.
       if (stopCancelled()) return;
@@ -196,10 +227,17 @@ function createJobProcessor({
       return await runDirectJobInternal(job);
     } catch (error) {
       job.status = job.cancelled ? 'cancelled' : 'error';
-      job.error = error.message;
+      job.error = job.cancelled ? null : error.message;
       job.errorCode = classifyError(error);
       job.updatedAt = Date.now();
     } finally {
+      job._transferMetrics?.finish();
+      if (job.cancelled) job._previewAbort?.abort();
+      await job._localPreviewCollector?.close();
+      if (job._earlyThumbnailPromise) await job._earlyThumbnailPromise;
+      delete job._localPreviewCollector;
+      delete job._previewAbort;
+      if (job._downloadAbort === downloadAbort) delete job._downloadAbort;
       // Consent applies to this attempt, never to an automatic retry or restart.
       delete job.youtubeBrowserSession;
     }
@@ -330,6 +368,7 @@ function createJobProcessor({
     if (!job || !job.url) {
       throw new Error('Missing job URL for yt-dlp download');
     }
+    job._transferMetrics = createTransferMetrics(job, { maxConnections: job.maxConnections || job.maxConcurrent || DEFAULT_MAX_CONCURRENT || 4, available: false });
     if (!hasYtDlp()) {
       throw new Error('yt-dlp is not installed. Install yt-dlp, restart the desktop app, and retry.');
     }
@@ -342,6 +381,7 @@ function createJobProcessor({
     job.storageDir = storageDir;
 
     const outputTemplate = path.join(storageDir, `${job.id}-%(title).120B.%(ext)s`);
+    let previewInputPath = '';
     let ffmpegLocation = '';
     if (typeof FFMPEG_PATH === 'string' && FFMPEG_PATH.trim()) {
       const normalizedFfmpegPath = FFMPEG_PATH.trim();
@@ -366,6 +406,7 @@ function createJobProcessor({
       '--no-playlist',
       '--no-part',
       '--no-keep-video',
+      '--no-simulate',
       '--progress',
       '--no-quiet',
       '--newline',
@@ -379,6 +420,8 @@ function createJobProcessor({
       buildYtDlpSelector(job.selection),
       '--progress-template',
       'download:bytes=%(progress.downloaded_bytes)s,total=%(progress.total_bytes)s,total_estimate=%(progress.total_bytes_estimate)s,speed=%(progress.speed)s,eta=%(progress.eta)s',
+      '--print',
+      'before_dl:vidsnag_title=%(title)j',
       '--print',
       'after_move:filepath=%(filepath)s',
       '-o',
@@ -511,6 +554,7 @@ function createJobProcessor({
 
       const cancelPoll = setInterval(() => {
         if (!job.cancelled) return;
+        job._previewAbort?.abort();
         if (!child.killed) {
           child.kill('SIGTERM');
         }
@@ -524,6 +568,26 @@ function createJobProcessor({
       const handleYtDlpLine = (line, fromStderr = false) => {
         const text = String(line || '').trim();
         if (!text) return;
+
+        if (!fromStderr && text.startsWith('vidsnag_title=')) {
+          try {
+            const value = JSON.parse(text.slice('vidsnag_title='.length));
+            const title = typeof value === 'string'
+              ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 255)
+              : '';
+            if (title) {
+              if (isYouTubeUrl(job.url)) job.youtubeMetadata = { ...(job.youtubeMetadata || {}), title };
+              if (!job.manualTitleOverride && job.fileNaming !== 'resource') {
+                job.title = title;
+                // Completion naming prefers this inferred hint to the title.
+                // Replace the initial placeholder along with the display name.
+                job.mediaHints = { ...(job.mediaHints || {}), lookupTitle: title };
+              }
+              job.updatedAt = Date.now();
+            }
+          } catch { /* Missing or malformed metadata must retain the existing name. */ }
+          return;
+        }
 
         if (/^\[info\].*Downloading\s+\d+\s+format\(s\):/i.test(text)) {
           const formatMatch = text.match(/format\(s\):\s*(.+)$/i);
@@ -546,6 +610,9 @@ function createJobProcessor({
         }
 
         if (/^\[download\]\s+Destination:/i.test(text)) {
+          const destination = path.resolve(text.replace(/^\[download\]\s+Destination:\s*/i, ''));
+          const relative = path.relative(storageDir, destination);
+          previewInputPath = relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? `${destination}.part` : '';
           eta.reset();
           job.etaSeconds = null;
           job.speedBps = 0;
@@ -651,6 +718,7 @@ function createJobProcessor({
         }
 
         if (progressUpdated) {
+          if (previewInputPath && job.bytesDownloaded >= 2 * 1024 * 1024) attemptEarlyThumbnail(job, previewInputPath);
           if (ytDebugEnabled && ytDebugLineCount < 40) {
             ytDebugLineCount += 1;
             logger.info('yt-dlp progress parsed', {
@@ -852,8 +920,7 @@ function createJobProcessor({
       job
       && job.id
       && typeof jobStorageDir === 'string'
-      && path.resolve(path.dirname(jobStorageDir)) === path.resolve(downloadDir)
-      && path.basename(jobStorageDir) === String(job.id)
+      && isOwnedJobStorageDir(downloadDir, job.id, jobStorageDir)
     ) {
       try {
         await fsPromises.rm(jobStorageDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
@@ -907,8 +974,7 @@ function createJobProcessor({
     if (
       jobStorageDir
       && job.id
-      && path.resolve(path.dirname(jobStorageDir)) === path.resolve(downloadDir)
-      && path.basename(jobStorageDir) === String(job.id)
+      && isOwnedJobStorageDir(downloadDir, job.id, jobStorageDir)
     ) {
       try {
         await fsPromises.rm(jobStorageDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
@@ -936,7 +1002,8 @@ function createJobProcessor({
 
     const mp4Path = path.join(outputDir, `${job.id}-${job.downloadNameMp4}`);
     const tempMp4Path = `${mp4Path}.part`;
-    const estimatedDurationSeconds = Number(playlistInfo && playlistInfo.totalDurationSeconds) || 0;
+    const sourceDurationSeconds = Number(playlistInfo && playlistInfo.totalDurationSeconds) || 0;
+    const estimatedDurationSeconds = job.probe?.seconds ? Math.min(sourceDurationSeconds || job.probe.seconds, job.probe.seconds) : sourceDurationSeconds;
     const progressTracker = createNativeProgress(job, { playlistInfo, playlistText: resolved.playlistText || '', playlistUrl, durationSeconds: estimatedDurationSeconds });
     const primaryTrackSelected = !(job.selection?.audioOnly && resolved.audioUrl);
     // A single resource holding multiple byte-range pieces stays on the scoped
@@ -952,9 +1019,13 @@ function createJobProcessor({
       ...(!job.selection?.audioOnly && resolved.subtitleUrl ? [resolved.subtitleUrl] : []),
     ] : [];
     const proxy = await startScopedMediaProxy({ rootUrl: playlistUrl, headers: job.headers || {}, sourcePageUrl: job.sourcePageUrl, credentialOrigin: job.credentialOrigin || job.url, onResourceEvent: progressTracker.onResourceEvent,
+      onTransferStart: () => job._transferMetrics?.begin(),
+      onLocalResource: (url, bytes) => job._localPreviewCollector?.captureBytes(url, bytes),
+      localResourceUrls: [...String(resolved.playlistText || '').matchAll(/^#EXT-X-(?:KEY|MAP):.*?URI="([^"]+)"/gm)].map(match => new URL(match[1], playlistUrl).href),
       requiredPlaylistUrls,
       pieceSpool: spooledInput ? { segments: playlistInfo.segments, directory: outputDir,
-        concurrency: job.maxConcurrent || DEFAULT_MAX_CONCURRENT, maxAttempts: maxSegmentAttempts } : undefined,
+        concurrency: job.maxConcurrent || DEFAULT_MAX_CONCURRENT, maxAttempts: maxSegmentAttempts,
+        onReady: ({ url, filePath }) => job._localPreviewCollector?.captureFile(url, filePath) } : undefined,
     });
     const nativeArgs = buildNativeHlsArgs({
       job,
@@ -989,7 +1060,6 @@ function createJobProcessor({
       const value = rest.join('=').trim();
 
       progressTracker.onFfmpegProgress(key, value);
-      if (key === 'total_size' && Number(value) > 0 && !job.selection?.audioOnly) attemptEarlyThumbnail(job, proxy.url);
 
       job.updatedAt = Date.now();
     };
@@ -1000,18 +1070,19 @@ function createJobProcessor({
         const child = spawn(FFMPEG_PATH, nativeArgs, {
           stdio: ['ignore', 'ignore', 'pipe'],
         });
+        const stopper = createProcessStopper(child, { onStop: () => proxy.close() });
         // Exhausted piece retries must stop the muxer; otherwise its HLS
         // demuxer can skip a missing URI and return a deceptively successful MP4.
-        proxy.failure.then(error => { if (error && !child.killed) child.kill('SIGTERM'); });
+        proxy.failure.then(error => { if (error) void stopper.stop(); });
 
         let progressBuffer = '';
         const cancelPoll = setInterval(() => {
-          if (!job.cancelled || child.killed) return;
-          child.kill('SIGTERM');
+          if (job.cancelled) void stopper.stop();
         }, 250);
 
         const finalize = (cb) => {
           clearInterval(cancelPoll);
+          stopper.dispose();
           cb();
         };
 
@@ -1064,8 +1135,10 @@ function createJobProcessor({
       }
       throw proxy.fatalError || proxy.lastError || err;
     } finally {
+      if (job.cancelled) job._previewAbort?.abort();
       if (job._earlyThumbnailPromise) await job._earlyThumbnailPromise;
       await proxy.close();
+      await job._localPreviewCollector?.close();
     }
 
     if (job.cancelled) {
@@ -1104,6 +1177,10 @@ function createJobProcessor({
     }
 
     job.mp4Path = mp4Path;
+    const completedFile = await fsPromises.stat(mp4Path);
+    job.bytesDownloaded = completedFile.size;
+    job.totalBytes = completedFile.size;
+    job.totalBytesKnown = true;
     // Keep the observed piece count. Successful muxing is not evidence that a
     // particular HTTP resource response completed in full.
     job.totalSegments = Number(playlistInfo && playlistInfo.totalSegments) || 0;
@@ -1324,10 +1401,12 @@ function createJobProcessor({
 
               res.on('data', (chunk) => {
                 if (job.cancelled) {
+                  job._previewAbort?.abort();
                   req.destroy(new Error('Job cancelled'));
                   return;
                 }
                 job.bytesDownloaded += chunk.length;
+                job._transferMetrics?.recordBytes(chunk.length);
                 if (job.bytesDownloaded >= 2 * 1024 * 1024) attemptEarlyThumbnail(job, tempFilePath);
                 if (job.totalBytes) {
                   job.progress = Math.max(0, Math.min(100, Math.round((job.bytesDownloaded / job.totalBytes) * 100)));
@@ -1339,7 +1418,7 @@ function createJobProcessor({
               outStream.on('finish', resolve);
               res.pipe(outStream);
             });
-          }, { timeoutMs: 30_000, credentialOrigin: job.credentialOrigin || job.url, sourcePageUrl: job.sourcePageUrl });
+          }, { timeoutMs: 30_000, credentialOrigin: job.credentialOrigin || job.url, sourcePageUrl: job.sourcePageUrl, signal: job._downloadAbort?.signal }).finally(job._transferMetrics?.begin() || (() => {}));
 
           await closeWriteStream(directWriteStream);
           if (job._earlyThumbnailPromise) await job._earlyThumbnailPromise;
@@ -1349,7 +1428,7 @@ function createJobProcessor({
         } catch (err) {
           await closeWriteStream(directWriteStream);
           lastErr = err;
-          if (job.cancelled || attempt >= DIRECT_MAX_ATTEMPTS) {
+          if (job.cancelled || isLocalWriteError(err) || attempt >= DIRECT_MAX_ATTEMPTS) {
             break;
           }
 
@@ -1426,7 +1505,7 @@ function createJobProcessor({
     if (!job || !job.fallbackUrl || job.cancelled || job.fallbackAttempted) {
       return false;
     }
-    if (['LINK_EXPIRED', 'SOURCE_EXPIRED', 'INSECURE_REDIRECT', 'INVALID_MEDIA_URL'].includes(cause?.code)) return false;
+    if (isLocalWriteError(cause) || ['LINK_EXPIRED', 'SOURCE_EXPIRED', 'INSECURE_REDIRECT', 'INVALID_MEDIA_URL'].includes(cause?.code)) return false;
 
     // Fallback is intended for HLS jobs that made no usable progress.
     if ((job.completedSegments || 0) > 0) {
@@ -1521,6 +1600,12 @@ function createJobProcessor({
       job.threadStates = [];
       job.segmentStates = {};
       job.updatedAt = Date.now();
+
+      if (!job.selection?.audioOnly && !job.earlyThumbnailAttempted) {
+        job.storageDir ||= job.filePath ? path.dirname(job.filePath) : downloadDir;
+        job._localPreviewCollector = createLocalPreviewCollector({ job, playlistText: resolved.playlistText, playlistUrl,
+          directory: job.storageDir, previewDirectory: path.join(downloadDir, '__previews'), FFMPEG_PATH, FFPROBE_PATH });
+      }
 
       const needsNative = shouldPreferNativeHlsDownload(playlistInfo) || resolved.audioUrl || resolved.subtitleUrl || job.selection && job.selection.audioOnly || job.probe;
       if (needsNative && !FFMPEG_PATH) throw mediaError('This video needs the media tools included with VidSnag', 'MEDIA_TOOLS_MISSING');
@@ -1632,6 +1717,7 @@ function createJobProcessor({
       // Index for new segments; failed segments are managed in a separate queue.
       let nextIndex = 0;
       const failedQueue = [];
+      let terminalSegmentError = null;
       const areAllSegmentsTerminal = () => {
         for (let idx = 0; idx < segments.length; idx += 1) {
           const state = job.segmentStates[idx];
@@ -1653,7 +1739,7 @@ function createJobProcessor({
       };
 
       async function worker(workerId) {
-        while (!job.cancelled) {
+        while (!job.cancelled && !terminalSegmentError) {
           if (nextIndex >= segments.length && failedQueue.length === 0 && areAllSegmentsTerminal()) {
             break;
           }
@@ -1850,11 +1936,6 @@ function createJobProcessor({
               });
             });
             await downloadSegment(segmentUrl, headers, segmentStream, job);
-            await new Promise((resolve, reject) => {
-              segmentStream.once('finish', resolve);
-              segmentStream.once('error', reject);
-              segmentStream.end();
-            });
             await closeWriteStream(segmentStream);
 
             // Check again if another thread completed this segment while we were downloading
@@ -1958,6 +2039,11 @@ function createJobProcessor({
               }
             }
           } catch (err) {
+            if (isLocalWriteError(err) && !terminalSegmentError) {
+              terminalSegmentError = err;
+              job._downloadAbort?.abort(err);
+              job._previewAbort?.abort();
+            }
             await closeWriteStream(segmentStream);
             if (attemptTempPath) {
               try {
@@ -1970,6 +2056,10 @@ function createJobProcessor({
                 await fsPromises.unlink(canonicalSegmentPath);
               }
             } catch (_) {
+            }
+            if (terminalSegmentError || job.cancelled) {
+              job.segmentStates[i] = { status: terminalSegmentError ? 'failed' : 'pending', attempt, error: err.message };
+              break;
             }
             console.warn(attempt > 1 ? 'Retry segment failed' : 'Segment download failed', {
               jobId: job.id,
@@ -2022,7 +2112,7 @@ function createJobProcessor({
                 (s) => s && s.status === 'completed'
               ).length;
               job.completedSegments = completedCount;
-              if (completedCount >= 1) attemptEarlyThumbnail(job, canonicalSegmentPath);
+              await job._localPreviewCollector?.captureFile(segmentUrl, canonicalSegmentPath);
             }
           }
           
@@ -2061,6 +2151,7 @@ function createJobProcessor({
         workers.push(worker(i));
       }
       await Promise.all(workers);
+      if (terminalSegmentError) throw terminalSegmentError;
       if (job._earlyThumbnailPromise) await job._earlyThumbnailPromise;
 
       const incompleteSegmentIndexes = [];
@@ -2109,6 +2200,7 @@ function createJobProcessor({
       job.tsParts = tsParts;
       const filePathFinal = tsParts && tsParts.length > 0 ? tsParts[0] : job.filePath;
 
+      await job._localPreviewCollector?.close();
       const remuxResult = await remuxAndGenerateThumbnails(job, filePathFinal, {
         downloadDir,
         FFMPEG_PATH,

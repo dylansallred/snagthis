@@ -7,16 +7,14 @@ import {
   OctagonXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
-
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme="dark"
       className="toaster group"
+      offset={{ bottom: 57, right: 14 }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,
@@ -26,12 +24,17 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          "--normal-bg": "var(--color-background-active)",
+          "--normal-text": "var(--color-foreground)",
+          "--normal-border": "var(--color-border)",
+          "--border-radius": "var(--radius-lg)",
+          "--width": "320px",
         } as React.CSSProperties
       }
+      toastOptions={{
+        style: { padding: "12px 14px", gap: 12, border: 0, boxShadow: "0 8px 28px #0006", fontFamily: "var(--font-sans)" },
+        actionButtonStyle: { background: "var(--color-secondary)", color: "var(--color-foreground)", height: 30, padding: "0 12px", borderRadius: "var(--radius)" },
+      }}
       {...props}
     />
   )

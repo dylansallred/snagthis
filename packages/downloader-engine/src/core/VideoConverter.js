@@ -596,117 +596,23 @@ async function generateThumbnailFromMp4(job, mp4Path, {
   FFPROBE_PATH,
   skipThumbnailGeneration = false,
 }) {
-  const hasEarlyThumbnails =
-    Array.isArray(job.thumbnailPaths) &&
-    job.thumbnailPaths.length >= 5 &&
-    job.thumbnailPaths.every((p) => fs.existsSync(p));
-
-  if (hasEarlyThumbnails || skipThumbnailGeneration) {
-    const thumbnailCount = Array.isArray(job.thumbnailPaths) ? job.thumbnailPaths.length : 0;
-    logger.info('Skipping MP4 thumbnail generation', {
-      jobId: job.id,
-      reason: skipThumbnailGeneration ? 'skipThumbnailGeneration' : 'earlyThumbnailsAlreadyPresent',
-      thumbnailCount,
-    });
-    return;
+  if (skipThumbnailGeneration || !FFMPEG_PATH || !FFPROBE_PATH) return;
+  if (job.youtubeMetadata?.thumbnailUrl) return;
+  try {
+    const host = new URL(job.sourcePageUrl || job.url).hostname.toLowerCase();
+    if ((host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be') && job.thumbnailUrls?.length) return;
+  } catch { /* Local sources have no page URL. */ }
+  try {
+    const poster = await require('./PreviewClip').generateRepresentativePoster(mp4Path,
+      path.join(outputDir, `${job.id}-video-poster.jpg`), { FFMPEG_PATH, FFPROBE_PATH });
+    job.thumbnailPath = poster.path;
+    job.thumbnailPaths = [poster.path];
+    job.updatedAt = Date.now();
+  } catch (error) {
+    // Keep a usable earlier poster when later candidate frames are dark or the
+    // output is not ready; completion must never replace it with a black image.
+    logger.warn('Representative video poster unavailable', { jobId: job.id, code: error.code || 'PREVIEW_UNAVAILABLE' });
   }
-
-  logger.info('Starting thumbnail generation from MP4', { jobId: job.id });
-
-  let duration = 0;
-  if (!FFPROBE_PATH) {
-    logger.warn('FFprobe not available - skipping duration-based thumbnail positions', { jobId: job.id });
-  } else {
-    duration = await new Promise((resolve, reject) => {
-      logger.info('Starting ffprobe to read duration', {
-        jobId: job.id,
-        mp4Path,
-        ffprobePath: FFPROBE_PATH,
-      });
-      const ffprobe = spawn(FFPROBE_PATH, [
-        '-v', 'error',
-        '-show_entries', 'format=duration',
-        '-of', 'default=noprint_wrappers=1:nokey=1',
-        mp4Path,
-      ]);
-      let output = '';
-      ffprobe.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-      ffprobe.on('error', (err) => {
-        logger.warn('ffprobe spawn error during duration read', {
-          jobId: job.id,
-          message: err && err.message,
-        });
-        reject(err);
-      });
-      ffprobe.on('exit', (code) => {
-        if (code === 0) {
-          const parsed = parseFloat(output.trim());
-          resolve(Number.isFinite(parsed) ? parsed : 0);
-        } else {
-          logger.warn('ffprobe exited with non-zero code', {
-            jobId: job.id,
-            code,
-            rawOutput: output,
-          });
-          reject(new Error(`ffprobe exited with code ${code}`));
-        }
-      });
-    });
-  }
-
-  logger.info('Thumbnail generation source duration', {
-    jobId: job.id,
-    durationSeconds: duration,
-  });
-
-  const seekTime = duration > 0 ? Math.min(duration * 0.1, 5) : 1;
-  const thumbPath = path.join(outputDir, `${job.id}-thumb.jpg`);
-
-  logger.info('Extracting thumbnail frame', {
-    jobId: job.id,
-    seekTime,
-    thumbPath,
-  });
-
-  await new Promise((resolve) => {
-    const ffThumb = spawn(FFMPEG_PATH, [
-      '-ss', String(seekTime),
-      '-i', mp4Path,
-      '-vframes', '1',
-      '-q:v', '4',
-      '-vf', 'scale=320:-2',
-      '-y',
-      thumbPath,
-    ], { stdio: 'ignore' });
-
-    ffThumb.on('error', (err) => {
-      logger.warn('ffmpeg thumbnail spawn error', {
-        jobId: job.id,
-        message: err && err.message,
-      });
-      resolve();
-    });
-
-    ffThumb.on('exit', (code, signal) => {
-      if (code === 0) {
-        logger.info('Thumbnail extracted successfully', {
-          jobId: job.id,
-          thumbPath,
-          seekTime,
-        });
-        job.thumbnailPath = thumbPath;
-      } else {
-        logger.warn('ffmpeg thumbnail extraction exited with non-zero code', {
-          jobId: job.id,
-          code,
-          signal,
-        });
-      }
-      resolve();
-    });
-  });
 }
 
 async function remuxAndGenerateThumbnails(job, filePathFinal, {

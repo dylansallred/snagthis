@@ -4,6 +4,7 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const preferences = require('./preferences');
 const diagnostics = require('./diagnostics');
+const { resolveMediaPage } = require('./mediaPageResolver');
 const { autoUpdater } = require('electron-updater');
 const { API } = require('@m3u8/contracts');
 
@@ -289,7 +290,7 @@ function getWindowIconPath() {
   return undefined;
 }
 
-function resolveHistoryFilePath(historyId) {
+function resolveHistoryFolderPath(historyId) {
   if (typeof historyId !== 'string' || !historyId.trim()) return null;
   try {
     const downloadDir = getDownloadDirPath();
@@ -301,11 +302,13 @@ function resolveHistoryFilePath(historyId) {
     let filePath;
     if (typeof item.absolutePath === 'string' && path.isAbsolute(item.absolutePath)) filePath = item.absolutePath;
     else {
-      filePath = path.resolve(downloadDir, String(item.relativePath || item.fileName || ''));
+      const relativePath = String(item.relativePath || item.fileName || '');
+      if (!relativePath.trim()) return null;
+      filePath = path.resolve(downloadDir, relativePath);
       const relative = path.relative(downloadDir, filePath);
       if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
     }
-    return fs.existsSync(filePath) && fs.statSync(filePath).isFile() ? filePath : null;
+    return path.dirname(filePath);
   } catch { return null; }
 }
 
@@ -396,7 +399,7 @@ function getUpdaterSupportState() {
     };
   }
 
-  if (isTranslocatedMacApp()) {
+  if (isTranslocatedMacApp() || !isInstalledInApplicationsFolder()) {
     return {
       supported: false,
       message: 'Move the app to /Applications to enable updates.',
@@ -640,12 +643,14 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on('error', (error) => {
+    const failedPhase = updaterState.phase;
     clearUpdaterCheckTimeout();
     clearUpdaterInstallTimer();
     updaterInstallRequested = false;
     clearUpdaterReminderTimer();
     updaterState.phase = 'error';
-    updaterState.message = 'Update check failed';
+    updaterState.message = failedPhase === 'installing' ? 'Update install failed'
+      : failedPhase === 'downloading' ? 'Update download failed' : 'Update check failed';
     updaterState.deferredUntil = null;
     updaterState.nextReminderAt = null;
     updaterState.reminderIntervalMs = null;
@@ -664,6 +669,10 @@ async function checkForUpdatesNow() {
 
   if (updaterCheckPromise) {
     return { ok: true, inFlight: true };
+  }
+  // A scheduled check must not replace a ready update or interrupt its install.
+  if (['downloading', 'downloaded', 'installing'].includes(updaterState.phase)) {
+    return { ok: true, inFlight: updaterState.phase !== 'downloaded' };
   }
 
   updaterState.phase = 'checking';
@@ -692,6 +701,9 @@ async function checkForUpdatesNow() {
 
     try {
       const result = await autoUpdater.checkForUpdates();
+      // checkForUpdates resolves before the download. The updater emits its
+      // error event and also rejects this separate promise on download failure.
+      result?.downloadPromise?.catch(() => {});
       if (updaterState.phase === 'checking') {
         const nextVersion = result && result.updateInfo && result.updateInfo.version
           ? String(result.updateInfo.version)
@@ -785,6 +797,7 @@ async function startLocalApi() {
       autoStart: savedSettings.queueAutoStart !== false,
     },
     onFocus: (view) => focusMainWindow(view),
+    onResolvePage: resolveMediaPage,
     onTrashFile: async (filePath) => { await shell.trashItem(filePath); },
     onOpenFile: async (filePath) => {
       const error = await shell.openPath(filePath);
@@ -958,18 +971,21 @@ function registerIpc() {
 
   handleIpc('app:open-history-file', async (_event, id) => historyRequest(id, 'open'));
 
-  handleIpc('app:open-history-folder', async (event, historyId) => {
+  handleIpc('app:open-history-folder', async (_event, historyId) => {
     try {
-      const safeHistoryId = String(historyId || '').trim();
+      const safeHistoryId = typeof historyId === 'string' ? historyId.trim() : '';
       if (!safeHistoryId) {
-        return { ok: false, error: 'Missing file name' };
+        return { ok: false, error: 'Missing video' };
       }
-      const filePath = resolveHistoryFilePath(safeHistoryId);
-      if (!filePath || !fs.existsSync(filePath)) {
-        return { ok: false, error: 'File not found' };
+      // The renderer provides only an identity. Resolve its directory from the
+      // trusted history index or current queue, including unfinished downloads.
+      const job = apiServer?.getState?.().queue?.find(item => item.id === safeHistoryId);
+      const folderPath = resolveHistoryFolderPath(safeHistoryId) || job?.outputDirectory;
+      if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath) || !fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+        return { ok: false, error: 'Folder not found' };
       }
-      shell.showItemInFolder(filePath);
-      return { ok: true, filePath, folderPath: path.dirname(filePath) };
+      const error = await shell.openPath(folderPath);
+      return error ? { ok: false, error } : { ok: true, folderPath };
     } catch (err) {
       return { ok: false, error: String(err.message || err) };
     }
@@ -996,7 +1012,6 @@ function registerIpc() {
   handleIpc('updater:check-now', async () => checkForUpdatesNow());
 
   handleIpc('updater:install-now', async () => {
-    clearUpdaterReminderTimer();
     if (updaterState.phase !== 'downloaded') {
       return { ok: false, error: 'No downloaded update available' };
     }
@@ -1019,7 +1034,16 @@ function registerIpc() {
       sendToRenderer('updater:event', updaterState);
       return { ok: false, error };
     }
+    const activeJobs = apiServer?.getState?.().queue?.some((job) =>
+      job.queueStatus === 'downloading' || ['fetching-playlist', 'downloading', 'finalizing'].includes(job.status));
+    if (activeJobs) {
+      const error = 'Pause active downloads or let them finish before restarting to install the update.';
+      updaterState.message = error;
+      sendToRenderer('updater:event', updaterState);
+      return { ok: false, error };
+    }
 
+    clearUpdaterReminderTimer();
     updaterInstallRequested = true;
     clearUpdaterInstallTimer();
     updaterState.phase = 'installing';
@@ -1145,7 +1169,11 @@ async function bootstrap() {
   });
 }
 
-app.on('before-quit', async () => {
+let apiShutdownPromise = null;
+let apiShutdownComplete = false;
+
+app.on('before-quit', (event) => {
+  const installingUpdate = updaterInstallRequested;
   updaterInstallRequested = false;
   clearUpdaterInstallTimer();
   if (updaterTimer) {
@@ -1155,13 +1183,20 @@ app.on('before-quit', async () => {
   clearUpdaterReminderTimer();
   clearUpdaterCheckTimeout();
 
-  if (apiServer) {
+  if (!apiServer || apiShutdownComplete) return;
+  // Keep the installer's quit direct. Normal quit must wait for local cleanup;
+  // Electron does not wait for promises returned by event listeners.
+  if (!installingUpdate) event.preventDefault();
+  if (apiShutdownPromise) return;
+  apiShutdownPromise = (async () => {
     try {
       await apiServer.stop();
     } catch {
       // ignore shutdown error
     }
-  }
+    apiShutdownComplete = true;
+    if (!installingUpdate) app.quit();
+  })();
 });
 
 bootstrap();

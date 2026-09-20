@@ -8,9 +8,9 @@
 </head>
 <body>
   <main class="popup" id="popup">
-    <header class="popup-header"><img src="img/vidsnag-logo-mark.png" alt="VidSnag" class="logo-mark"><span id="page-count">No videos yet</span></header>
+    <header class="popup-header"><span class="logo-finish"><img src="img/vidsnag-logo-title.png" alt="VidSnag" class="logo-wordmark" width="112" height="22"></span><span id="page-count">Checking this page…</span></header>
     <div id="connection-banner" class="connection-banner" role="status" hidden></div>
-    <div id="video-list" class="video-list" aria-label="Videos on this page"></div>
+    <div id="video-list" class="video-list" data-view="loading" aria-label="Videos on this page" aria-busy="true"><section class="discovery-state" role="status"><span class="discovery-dots" aria-hidden="true"><i class="thumb-loading-dot"></i><i class="thumb-loading-dot"></i><i class="thumb-loading-dot"></i></span><p>Looking for videos…</p></section></div>
     <footer class="popup-footer">
       <button type="button" class="action" id="settings-button" aria-label="Settings"></button>
       <button type="button" class="action" id="help-button">No video?</button>
@@ -26,8 +26,12 @@
   <script src="shared/hls.js"></script>
   <script src="shared/selection.js"></script>
   <script src="js/detection.js"></script>
+  <script src="js/browser-downloads.js"></script>
   <script src="popup/titles.js"></script>
   <script src="popup/model.js"></script>
+  <script src="vendor/hls.min.js"></script>
+  <script src="popup/source-preview.js"></script>
+  <script src="popup/page-preview.js"></script>
   <script src="popup/demo.js"></script>
   <script src="popup.js"></script>
 </body>

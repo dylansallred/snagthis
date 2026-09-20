@@ -49,10 +49,58 @@ test('a finalizing or pausing runner retains its slot until it exits', async () 
   } finally { await fixture.close(); }
 });
 
+test('two-download settings fill capacity and a cancelled runner releases its slot only after cleanup', async () => {
+  const releases = new Map();
+  const started = [];
+  const fixture = await queueFixture(async (job) => {
+    started.push(job.id);
+    job.status = 'downloading';
+    await new Promise((resolve) => { releases.set(job.id, resolve); });
+    job.status = job.cancelled ? 'cancelled' : 'completed';
+  });
+  const { manager } = fixture;
+  try {
+    for (const id of ['cancelled-video', 'current-video', 'waiting-video']) {
+      manager.addJob({ id, url: `https://example.test/${id}.mp4` });
+    }
+    manager.updateSettings({ maxConcurrent: 1, autoStart: true });
+    await turn();
+    assert.deepEqual(started, ['cancelled-video']);
+    manager.updateSettings({ maxConcurrent: 2 });
+    await turn();
+    assert.deepEqual(started, ['cancelled-video', 'current-video']);
+    assert.equal(manager.getSettings().maxConcurrent, 2);
+
+    // The cancel endpoint hides the row before the child process has exited.
+    const cancelled = manager.jobs.get('cancelled-video');
+    cancelled.cancelled = true;
+    cancelled.status = 'cancelled';
+    cancelled.queueStatus = 'cancelled';
+    manager.processQueue();
+    assert.equal(manager.getActiveCount(), 2);
+    assert.equal(manager.jobs.get('waiting-video').queueStatus, 'queued');
+
+    const cleanup = manager.waitForJobIdle(cancelled.id);
+    releases.get(cancelled.id)();
+    await cleanup;
+    await turn();
+    assert.deepEqual(started, ['cancelled-video', 'current-video', 'waiting-video']);
+    assert.equal(manager.getActiveCount(), 2);
+    assert.equal(manager.jobs.get('waiting-video').queueStatus, 'downloading');
+  } finally {
+    manager.updateSettings({ autoStart: false });
+    for (const release of releases.values()) release();
+    await Promise.all([...manager.runners.values()]);
+    await fixture.close();
+  }
+});
+
 test('queue snapshots are atomic, retain latest state, and never persist request secrets', async () => {
   const fixture = await queueFixture();
   try {
-    const job = { id: 'private-source', youtubeBrowserSession: 'chrome', title: 'First', url: 'https://media.test/video', headers: { Cookie: 'session=secret-cookie', Authorization: 'Bearer secret-auth', 'X-Token': 'secret-token', Referer: 'https://page.test/watch' } };
+    const job = { id: 'private-source', youtubeBrowserSession: 'chrome', title: 'First', url: 'https://media.test/video', activeConnections: 6, maxConnections: 16, connectionCountAvailable: true, headers: { Cookie: 'session=secret-cookie', Authorization: 'Bearer secret-auth', 'X-Token': 'secret-token', Referer: 'https://page.test/watch' } };
+    job.totalBytes = 2400000;
+    job.totalBytesKnown = false;
     fixture.manager.addJob(job);
     const firstWrite = fixture.manager.saveQueue();
     job.title = 'Latest';
@@ -64,6 +112,18 @@ test('queue snapshots are atomic, retain latest state, and never persist request
     assert.equal(snapshot.queue[0].headers.Referer, 'https://page.test/watch');
     assert.doesNotMatch(text, /secret-cookie|secret-auth|secret-token|youtubeBrowserSession/);
     assert.equal(fixture.manager.getQueue()[0].youtubeBrowserSession, undefined);
+    assert.equal(fixture.manager.getQueue()[0].activeConnections, 6);
+    assert.equal(fixture.manager.getQueue()[0].maxConnections, 16);
+    assert.equal(fixture.manager.getQueue()[0].connectionCountAvailable, true);
+    assert.equal(fixture.manager.getQueue()[0].totalBytes, 2400000);
+    assert.equal(fixture.manager.getQueue()[0].totalBytesKnown, false);
+    assert.equal(snapshot.queue[0].totalBytesKnown, false);
+    job.totalBytesKnown = true;
+    await fixture.manager.saveQueue();
+    assert.equal(fixture.manager.getQueue()[0].totalBytesKnown, true);
+    assert.equal(JSON.parse(fs.readFileSync(fixture.manager.queueFilePath, 'utf8')).queue[0].totalBytesKnown, true);
+    assert.equal(snapshot.queue[0].activeConnections, undefined, 'open request counts are never restored as live state');
+    assert.equal(snapshot.queue[0].connectionCountAvailable, undefined);
     assert.equal(fs.existsSync(`${fixture.manager.queueFilePath}.tmp`), false);
     // Windows exposes synthetic mode bits; its ACL controls access instead.
     if (process.platform !== 'win32') assert.equal(fs.statSync(fixture.manager.queueFilePath).mode & 0o777, 0o600);

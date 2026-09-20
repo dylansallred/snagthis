@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { resolveThumbnailUrl } from '@/lib/utils';
 
@@ -9,8 +9,14 @@ function MotionPreview({ url }: { url: string }) {
   const [playbackUrl] = useState(url);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const player = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const video = player.current;
+    if (video && video.getAttribute('src') !== playbackUrl) video.src = playbackUrl;
+    return () => { if (video) { video.pause(); video.removeAttribute('src'); video.load(); } };
+  }, [playbackUrl]);
   if (failed) return null;
-  return <video className={`thumb-fill thumb-preview${ready ? ' ready' : ''}`} src={playbackUrl}
+  return <video ref={player} className={`thumb-fill thumb-preview${ready ? ' ready' : ''}`} src={playbackUrl}
     muted autoPlay loop playsInline preload="auto" disablePictureInPicture tabIndex={-1}
     onLoadedData={() => setReady(true)} onError={() => setFailed(true)}
     onCanPlay={(event) => { event.currentTarget.play().catch(() => setFailed(true)); }} />;
@@ -25,7 +31,7 @@ export function FillThumb({ row, apiBase, previewUrl, previewActive = false }: {
   const showImage = !!url && failedUrl !== url;
   return (
     <div className="fill-thumb thumb" aria-hidden="true">
-      {showImage ? <img className="thumb-fill thumb-poster" src={url!} alt="" draggable={false} onError={() => setFailedUrl(url)} /> : <div className="thumb-fill thumb-placeholder" />}
+      {showImage ? <img className="thumb-fill thumb-poster" src={url!} alt="" draggable={false} onError={() => setFailedUrl(url)} /> : <div className="thumb-fill thumb-placeholder"><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /></div>}
       {previewActive && resolvedPreview && <MotionPreview key={resolvedPreview.split(/[?#]/, 1)[0]} url={resolvedPreview} />}
     </div>
   );

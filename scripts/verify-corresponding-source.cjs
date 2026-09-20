@@ -3,13 +3,14 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
-function verifyCorrespondingSource(base, releaseTag) {
+function verifySourcePacket(base, releaseTag) {
   const directory = path.join(base, 'release-source');
   const archive = path.join(directory, 'vidsnag-corresponding-source.tar.xz');
   const manifestPath = path.join(directory, 'corresponding-source.json');
   if (!fs.existsSync(archive) || !fs.existsSync(manifestPath)) throw new Error('Publication requires the reviewed corresponding-source archive and manifest');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   if (!/^v\d+\.\d+\.\d+$/.test(releaseTag || '') || manifest.releaseTag !== releaseTag) throw new Error('Corresponding source must identify this exact release tag');
+  if (!/^[a-f0-9]{40}$/.test(manifest.sourceCommit || '')) throw new Error('Corresponding source must identify the exact VidSnag Git commit');
   const sha256 = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
   if (manifest.archiveSha256 !== sha256) throw new Error('Corresponding-source archive SHA256 does not match its reviewed manifest');
   const listed = spawnSync('tar', ['-tJf', archive], { encoding: 'utf8', timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
@@ -26,12 +27,18 @@ function verifyCorrespondingSource(base, releaseTag) {
     components.set(component.id, component);
   }
   if (components.get('vidsnag')?.version !== releaseTag.slice(1)) throw new Error('The source archive must include VidSnag source for this release');
+  return { archive, manifestPath, sha256, manifest, components };
+}
+
+function verifyCorrespondingSource(base, releaseTag) {
+  const { archive, manifestPath, sha256, manifest, components } = verifySourcePacket(base, releaseTag);
   const verifiedPlatforms = new Set();
   for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
     if (!entry.isDirectory() || !entry.name.startsWith('release-') || entry.name === 'release-source') continue;
     for (const file of fs.readdirSync(path.join(base, entry.name))) {
       if (!/^release-verification-.*\.json$/.test(file)) continue;
       const report = JSON.parse(fs.readFileSync(path.join(base, entry.name, file), 'utf8'));
+      if (report.sourceCommit !== manifest.sourceCommit || report.releaseTag !== releaseTag) throw new Error('Corresponding source and verified binaries must use the same Git commit and release tag');
       const build = manifest.builds.find(item => item.platform === report.platform && item.arch === report.arch);
       if (!build || report.smoke?.passed !== true) throw new Error(`Missing source coverage or passed smoke for ${report.platform}/${report.arch}`);
       const versions = { ffmpeg: report.ffmpeg.tools.ffmpeg.version.split('\n')[0], ffprobe: report.ffmpeg.tools.ffprobe.version.split('\n')[0], 'yt-dlp': report.ytdlp.version };
@@ -44,13 +51,15 @@ function verifyCorrespondingSource(base, releaseTag) {
   }
   if (['darwin/arm64', 'darwin/x64', 'win32/x64'].some(platform => !verifiedPlatforms.has(platform))) throw new Error('Source coverage is required for macOS arm64, macOS x64 and Windows x64');
   // Archive contents cannot prove completeness of linked dependency sources;
-  // the protected release environment is the human review of that evidence.
+  // the owner reviews that evidence before manually publishing the draft.
   return { archive, manifestPath, sha256 };
 }
 if (require.main === module) {
   try {
-    verifyCorrespondingSource(path.resolve(process.argv[2] || 'release-assets'), process.env.GITHUB_REF_NAME);
-    console.log('Corresponding-source packet matches the release and every bundled tool version');
+    const packetOnly = process.argv.includes('--packet-only');
+    const verify = packetOnly ? verifySourcePacket : verifyCorrespondingSource;
+    verify(path.resolve(process.argv[2] || 'release-assets'), process.env.GITHUB_REF_NAME);
+    console.log(packetOnly ? 'Source packet structure and archive checksum verified; exact bundled-tool coverage is checked during release assembly' : 'Corresponding-source packet matches the release and every bundled tool version');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { verifyCorrespondingSource };
+module.exports = { verifyCorrespondingSource, verifySourcePacket };

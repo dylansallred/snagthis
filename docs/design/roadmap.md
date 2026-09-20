@@ -125,14 +125,17 @@ The only milestone that changes the download engine. Until it ships, the quality
 | 3.2 | Job payload + engine accept a selection: `selection: { variantUrl?, height?, audioLang?, subtitleLang?, audioOnly? }`. `JobProcessor` downloads the chosen variant instead of auto-picking; native-HLS path maps it to ffmpeg `-map`. | `packages/contracts`, `routes/jobs.js`, `JobProcessor.js`, `HlsNativeDownload.js` | Fixture: requesting 480p produces a 480p file (ffprobe assertion). |
 | 3.3 | YouTube path: map selection to yt-dlp format selectors. | yt-dlp job path | Requesting 720p yields ≤ 720p. |
 | 3.4 | Quality menu UI in popup; desktop paste flow shows the same menu inline while "Checking link…" resolves, defaulting to Preferred quality. Settings: `preferredQuality`, `subtitleLanguage`. | popup, `TopBar`, `SettingsSheet` | Keyboard-operable; default honours the setting. |
-| 3.5 | Early frame grab: after the first N segments (or first 2 MB of a direct file) run ffmpeg once to produce a 224×126 JPEG, publish it on the job (`thumbnailUrls`), push a queue update. Skip when a thumbnail already exists. | `JobProcessor.js`, `VideoConverter.js`, `QueueManager.buildThumbnailUrls` | HLS job with no poster shows a real thumbnail within a few seconds of starting; placeholder → image swap does not reset row progress. |
+| 3.5 | Early local preview: use the first playable downloaded excerpt to create a silent, roughly ten-second loop and select a nonblack poster. Replace generic site artwork or page screenshots; preserve YouTube artwork. Publish assets through queue updates and repair saved-video posters when preparing their previews. | `JobProcessor.js`, `VideoConverter.js`, `QueueManager.buildThumbnailUrls` | A playable local excerpt provides the preview during downloading, without another source transfer; image updates do not reset row progress. |
 
 **Owner field revisions, 2026-09-19:**
 
 - Smooth ETA from recent transfer rates, resetting between video/audio stages and attempts.
 - Extend bounded parallel piece scheduling and delayed retries to native HLS; require complete selected-track coverage before saving. A failed piece must release its worker so later pieces can download during backoff.
 - Replace thumbnail progress with the selected **A+B: Leading edge + Soft sweep** row background. Duration sits beside the title; no hover labels cover the video.
-- Generate silent, roughly ten-second previews from completed local files, and loop only on hover/focus. Keep the poster until a local clip is ready; the owner declined extra network preview fetching. Respect reduced motion.
+- Generate silent, roughly ten-second desktop previews from the first usable downloaded media as well as completed files. In Chrome, preview the detected source directly before sending a download to the desktop; a running or paired desktop must not be required for that preview. This later owner clarification permits the small source-preview transfer in the extension. Loop only on hover/focus and respect reduced motion.
+- Show measured active connections beside the per-download limit in Details. Clearly state when an external downloader does not report its live count. Cancelled media processes must exit and release their queue slot.
+- Use compact borderless desktop menus, pointer-aware focus styling, concise expandable details and a Saved check badge. Strengthen the active row glow while keeping thumbnails unobscured.
+- Sample seekable preview sources around 35% of their duration; try alternate scenes when black. YouTube can use the already-playing page video without seeking or interrupting it.
 
 **Exit:** the full approved design is live.
 

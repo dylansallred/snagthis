@@ -13,10 +13,14 @@ export function useLibrary(api: ApiClient | null, query: string) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const generation = useRef(0);
+  const refreshSequence = useRef(0);
+  const queueRevision = useRef(0);
   const historyCount = useRef(100);
   const refresh = useCallback(async () => {
     if (!api) return;
     const current = generation.current;
+    const request = ++refreshSequence.current;
+    const revision = queueRevision.current;
     try {
       const [nextQueue, firstPage] = await Promise.all([api.getQueue(), api.getHistory(query)]);
       let items = firstPage.items || [];
@@ -26,10 +30,12 @@ export function useLibrary(api: ApiClient | null, query: string) {
         items = items.concat(page.items || []);
         nextCursor = page.nextCursor;
       }
-      if (current !== generation.current) return;
-      setQueue(nextQueue); setHistory(items); setCursor(nextCursor || null); setError(''); setLoading(false);
+      if (current !== generation.current || request !== refreshSequence.current) return;
+      // A WebSocket update received while this request was pending is newer.
+      if (revision === queueRevision.current) setQueue(nextQueue);
+      setHistory(items); setCursor(nextCursor || null); setError(''); setLoading(false);
     } catch (err) {
-      if (current !== generation.current) return;
+      if (current !== generation.current || request !== refreshSequence.current) return;
       setError(err instanceof Error ? err.message : 'Unable to load your videos'); setLoading(false);
     }
   }, [api, query]);
@@ -50,9 +56,13 @@ export function useLibrary(api: ApiClient | null, query: string) {
         refresh();
       };
       socket.onmessage = (event) => {
+        if (disposed) return;
         try {
           const payload = JSON.parse(event.data);
-          if (payload.type === 'queue:update' && Array.isArray(payload.data?.queue)) setQueue(payload.data);
+          if (payload.type === 'queue:update' && Array.isArray(payload.data?.queue)) {
+            queueRevision.current += 1;
+            setQueue(payload.data);
+          }
           if (payload.type === 'history:update') refresh();
         } catch { /* Ignore malformed notification. */ }
       };

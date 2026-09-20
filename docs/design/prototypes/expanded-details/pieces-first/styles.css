@@ -1,0 +1,190 @@
+/* The transfer is the focus: a quiet facts line, then the full-width map. */
+.details-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "facts" "pieces" "location" "actions";
+  gap: 12px;
+  padding: 16px 18px 12px;
+  background: hsl(222 13% 12%);
+}
+
+.facts {
+  grid-area: facts;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 24px;
+  margin: 0;
+  padding: 0;
+}
+
+.fact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 7px;
+  min-width: 0;
+}
+
+.fact dt {
+  margin: 0;
+  color: hsl(221 8% 56%);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.fact dd {
+  margin: 0;
+  color: hsl(220 9% 78%);
+  font-size: 12px;
+  font-weight: 450;
+  overflow-wrap: anywhere;
+}
+
+.fact.source { margin-left: auto; }
+.fact.size dd { color: hsl(220 12% 90%); }
+
+.pieces {
+  grid-area: pieces;
+  min-width: 0;
+  width: 100%;
+  padding: 15px 0 16px;
+  border-top: 1px solid hsl(222 10% 20%);
+}
+
+.pieces-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-bottom: 11px;
+}
+
+.pieces-heading h2 {
+  margin: 0;
+  color: hsl(220 12% 90%);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.piece-count {
+  color: #a4c7b9;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.piece-grid { width: 100%; }
+.piece-legend { margin-top: 11px; }
+
+.location {
+  grid-area: location;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid hsl(222 11% 22%);
+  border-radius: 7px;
+  background: hsl(222 14% 9%);
+  text-align: left;
+  cursor: pointer;
+}
+
+.location:hover {
+  border-color: hsl(222 10% 32%);
+  background: hsl(222 12% 11%);
+}
+
+.location:focus-visible {
+  outline: 2px solid hsl(20 90% 61%);
+  outline-offset: 3px;
+}
+
+.folder-icon {
+  flex: 0 0 auto;
+  width: 19px;
+  height: 19px;
+  color: hsl(220 9% 69%);
+}
+
+.location-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.location-label {
+  color: hsl(221 8% 58%);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.location-path {
+  display: block;
+  color: hsl(220 12% 88%);
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.55;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+
+.location-arrow {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: hsl(221 8% 55%);
+}
+
+.location:hover .location-arrow { color: hsl(20 85% 65%); }
+
+.detail-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  margin: -4px 0 0;
+}
+
+.detail-actions .icon-button {
+  width: 32px;
+  height: 30px;
+  border-color: transparent;
+  background: transparent;
+  color: hsl(221 8% 64%);
+}
+
+.detail-actions .icon-button:hover {
+  background: hsl(222 11% 19%);
+  color: hsl(220 12% 92%);
+}
+
+.detail-actions [data-action="cancel"] { margin-left: 7px; }
+.detail-actions [data-action="cancel"]:hover {
+  color: hsl(0 65% 73%);
+  background: hsl(0 30% 18%);
+}
+
+.saved-message {
+  grid-area: pieces;
+  padding: 12px 0;
+  margin: 0;
+  color: #a4c7b9;
+}
+
+@media (max-width: 640px) {
+  .details-layout { padding: 14px 12px 10px; gap: 10px; }
+  .facts { gap: 9px 18px; }
+  .fact.source { margin-left: 0; }
+  .fact.size { flex-basis: 100%; }
+  .pieces { padding-top: 13px; padding-bottom: 12px; }
+  .location { gap: 10px; padding: 11px; }
+  .location-path { font-size: 11.5px; }
+}

@@ -1103,7 +1103,7 @@ test('completed downloads are stored under a per-job folder', async () => {
     const queuePayload = JSON.parse(fs.readFileSync(queueFilePath, 'utf8'));
     const persisted = (queuePayload.queue || []).find((entry) => entry.id === jobId);
     assert.ok(persisted);
-    assert.equal(path.dirname(persisted.filePath), path.join(downloadDir, jobId));
+    assert.equal(path.dirname(persisted.filePath), path.join(downloadDir, 'Folder Layout Job'));
     assert.equal(fs.existsSync(persisted.filePath), true);
   } finally {
     await apiServer.stop();

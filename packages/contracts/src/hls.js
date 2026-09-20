@@ -84,12 +84,13 @@
           const resolution = /^(\d+)x(\d+)$/i.exec(attrs.RESOLUTION || '');
           const bandwidth = number(attrs.BANDWIDTH);
           const averageBandwidth = number(attrs['AVERAGE-BANDWIDTH']);
+          const sizeBytes = estimateSizeBytes(averageBandwidth || bandwidth, opts.durationSeconds);
           variants.push({
             id: uri, url: uri, variantUrl: uri,
             width: resolution ? Number(resolution[1]) : null, height: resolution ? Number(resolution[2]) : null,
             bandwidth: bandwidth, averageBandwidth: averageBandwidth, codecs: attrs.CODECS || null,
             frameRate: number(attrs['FRAME-RATE']), audioGroup: attrs.AUDIO || null, subtitleGroup: attrs.SUBTITLES || null,
-            sizeBytes: estimateSizeBytes(averageBandwidth || bandwidth, opts.durationSeconds),
+            sizeBytes: sizeBytes, sizeEstimated: sizeBytes !== null,
           });
           pendingVariant = null;
         } else segmentUrls.push(uri);
@@ -148,6 +149,27 @@
       const main = group.find(function (item) { return manifest(item).isMaster || (manifest(item).variants || []).length > 0; })
         || group.find(function (item) { return Array.isArray(manifest(item).segmentUrls); }) || group[0];
       const hls = manifest(main);
+      const sourcesByUrl = new Map(group.map(function (item) { return [httpUrl(item.url), item]; }));
+      const videoUrls = new Set();
+      function includeVideo(url, base) {
+        const resolved = httpUrl(url, base);
+        if (!resolved || videoUrls.has(resolved)) return;
+        videoUrls.add(resolved);
+        const source = sourcesByUrl.get(resolved);
+        if (source) (manifest(source).variants || []).forEach(function (variant) { includeVideo(variant.url || variant.variantUrl, source.url); });
+      }
+      // Follow only declared video variants, including nested masters. Audio,
+      // subtitles and same-page alternatives cannot supply this video's art.
+      includeVideo(main.url);
+      const mediaPlaylists = group.filter(function (item) {
+        const info = manifest(item);
+        return !info.isMaster && Array.isArray(info.segmentUrls)
+          && videoUrls.has(httpUrl(item.url));
+      });
+      // A child's EXTINF durations describe this stream. Page metadata can be
+      // missing when the master arrives, or still belong to an earlier video.
+      const completePlaylist = mediaPlaylists.find(function (item) { return manifest(item).isLive === false && number(manifest(item).durationSeconds) > 0; });
+      const durationSeconds = completePlaylist ? number(manifest(completePlaylist).durationSeconds) : number(main.durationSeconds ?? hls.durationSeconds);
       const componentUrls = new Set(group.flatMap(components));
       const variants = [];
       const seen = new Set();
@@ -165,27 +187,42 @@
         // Its exact playlist reference proves it is a component, not a quality.
         if (componentUrls.has(httpUrl(item.url))) return;
         if ((hls.audio || []).concat(hls.subtitles || []).some(function (rendition) { return rendition.url === item.url; })) return;
+        const kind = String(item.mediaKind || '');
+        const contentType = String(item.contentType || '').toLowerCase();
+        const isPlaylist = item.type === 'hls' || item.streamType === 'hls'
+          || kind.startsWith('hls-') || /mpegurl|dash\+xml/.test(contentType)
+          || Array.isArray(manifest(item).segmentUrls)
+          || /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(item.url || '');
         if (hasDeclaredVariants) {
           // Observing a master/child request again does not discover another quality.
           // Its height may merely be copied from the currently playing video. Keep
           // the master's actual renditions authoritative, including equal heights.
           // Separately observed direct files can still be genuine alternatives.
-          const kind = String(item.mediaKind || '');
-          const contentType = String(item.contentType || '').toLowerCase();
-          const isPlaylist = item.type === 'hls' || item.streamType === 'hls'
-            || kind.startsWith('hls-') || /mpegurl|dash\+xml/.test(contentType)
-            || Array.isArray(manifest(item).segmentUrls)
-            || /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(item.url || '');
           const isDirectFile = !isPlaylist && kind !== 'youtube-page' && (
             /\.(?:mp4|m4v|mov|webm|mkv|avi|flv|ogv|mp3|m4a|ogg|wav)(?:[?#]|$)/i.test(item.url || '')
             || /^(?:video|audio)\/(?!unknown(?:;|$)|youtube(?:;|$)|mp2t(?:;|$))/.test(contentType)
           );
           if (!isDirectFile) return;
         }
-        addVariant({ url: item.url, height: item.height || null, sizeBytes: item.sizeBytes || item.contentLength || null });
+        addVariant({ url: item.url, height: item.height || null, sizeBytes: item.sizeBytes || (!isPlaylist && item.contentLength) || null, sizeEstimated: Boolean(item.sizeEstimated) });
+      });
+      variants.forEach(function (variant) {
+        if (!(variant.averageBandwidth || variant.bandwidth)) return;
+        const child = mediaPlaylists.find(function (item) { return httpUrl(item.url) === variant.url; });
+        const childManifest = child && manifest(child);
+        const duration = childManifest ? childManifest.isLive === false ? childManifest.durationSeconds : null : durationSeconds;
+        const estimate = estimateSizeBytes(variant.averageBandwidth || variant.bandwidth, duration);
+        if (estimate !== null) {
+          variant.sizeBytes = estimate;
+          variant.sizeEstimated = true;
+        }
       });
       variants.sort(function (a, b) { return (b.height || 0) - (a.height || 0) || (b.bandwidth || 0) - (a.bandwidth || 0); });
       return Object.assign({}, main, {
+        durationSeconds: durationSeconds,
+        thumbnailUrl: main.thumbnailUrl || mediaPlaylists.find(function (item) { return item.thumbnailUrl; })?.thumbnailUrl,
+        poster: main.poster || mediaPlaylists.find(function (item) { return item.poster; })?.poster,
+        height: main.height || mediaPlaylists.find(function (item) { return item.height; })?.height,
         variants: variants, audio: hls.audio || [], subtitles: hls.subtitles || [],
         detectedStreams: group.slice(), collapsedCount: group.length,
       });

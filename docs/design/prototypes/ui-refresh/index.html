@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · UI refresh designs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="hub" id="hub" data-design="a">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / 04</div>
+    <h1>Three ways to refresh the desktop and the popup.</h1>
+    <p>Each direction shows both surfaces with the same sample videos. All keep the dark Workbench tokens, clean hover-preview thumbnails, the Pieces lane and one visible action per row.</p>
+  </header>
+
+  <div class="design-tabs" role="group" aria-label="Choose a design">
+    <button type="button" data-design="a" aria-pressed="true"><span>A · Refined</span><small>Same layout, sharper details</small></button>
+    <button type="button" data-design="b" aria-pressed="false"><span>B · Spotlight</span><small>Active downloads get a card, saved stays quiet</small></button>
+    <button type="button" data-design="c" aria-pressed="false"><span>C · Gallery</span><small>Saved videos become a poster library</small></button>
+  </div>
+
+  <div class="hub-controls">
+    <label for="state">Download state
+      <select id="state">
+        <option value="downloading">Downloading</option>
+        <option value="paused">Paused</option>
+        <option value="attention">Needs the user</option>
+        <option value="saved">Saved</option>
+      </select>
+    </label>
+    <label for="progress">Progress <output id="progress-value">34%</output>
+      <input id="progress" type="range" min="0" max="99" value="34">
+    </label>
+    <button type="button" id="simulate" aria-pressed="false">Animate progress</button>
+    <div class="segmented" role="group" aria-label="Videos on the page">
+      <span>Popup finds</span>
+      <button type="button" data-count="1" aria-pressed="true">1 video</button>
+      <button type="button" data-count="3" aria-pressed="false">3 videos</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <section class="surface" aria-label="Desktop design">
+      <h2>Desktop <small>820 px wide</small></h2>
+      <div class="desk-frame">
+        <div class="titlebar"><i></i><i></i><i></i><span>VidSnag Desktop</span></div>
+        <div class="app" id="desktop"></div>
+      </div>
+    </section>
+    <section class="surface" aria-label="Chrome popup design">
+      <h2>Chrome popup <small>400 px wide</small></h2>
+      <div class="popup-frame"><div class="popup" id="popup"></div></div>
+    </section>
+  </div>
+
+  <section class="notes" id="notes" aria-live="polite"></section>
+
+  <footer class="hub-footer">
+    <p><strong>Try it:</strong> click a row or poster to open its details, hover a thumbnail to play its clip, press Download in the popup, switch tabs, and change the state above.</p>
+    <p>UI prototypes only; nothing is downloaded and folder actions do nothing. Video: Blender open films, see <a href="../../../../apps/extension/popup/media/CREDITS.md">credits</a>.</p>
+  </footer>
+</main>
+<script src="script.js"></script>
+</body>
+</html>

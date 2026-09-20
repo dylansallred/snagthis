@@ -106,6 +106,96 @@ test('native spool reserves active disk space and releases known-size headroom',
   assert.equal(spool.stats().reservedBytes, 0);
 });
 
+test('native spool overlaps sixteen unknown-length transfers with bounded small admissions', { timeout: 3000 }, async (t) => {
+  const segments = urls(16);
+  const gates = [];
+  const { spool } = await fixture(t, {
+    segments, concurrency: 16, maxSpoolBytes: 512, maxPieceBytes: 128, admissionBytes: 1,
+    request: async (_url, filePath, context) => {
+      // No Content-Length: admitting sixteen transfers must not reserve
+      // sixteen maximum-size pieces before any response bytes arrive.
+      assert.equal(context.onBytes(2), undefined, 'available capacity stays synchronous');
+      await new Promise((resolve) => gates.push(resolve));
+      await fs.writeFile(filePath, 'ok');
+      return { statusCode: 200, bytes: 2 };
+    },
+  });
+  await waitUntil(() => gates.length === 16);
+  assert.equal(spool.stats().active, 16);
+  assert.equal(spool.stats().reservedBytes, 32);
+  for (const resolve of gates) resolve();
+  const results = await Promise.all(segments.map((url) => spool.get(url)));
+  assert.ok(results.every((result) => result.bytes === 2));
+  assert.ok(spool.stats().reservedBytes <= 512);
+});
+
+test('native spool preserves retry-head capacity while unknown-length followers wait for bytes', { timeout: 3000 }, async (t) => {
+  const segments = urls(3);
+  let allowHeadFailure;
+  const headGate = new Promise((resolve) => { allowHeadFailure = resolve; });
+  let attempts = 0;
+  const { spool } = await fixture(t, {
+    segments, concurrency: 3, maxSpoolBytes: 12, maxPieceBytes: 8, admissionBytes: 1,
+    maxAttempts: 2, retryDelayMs: 0,
+    request: async (url, filePath, context) => {
+      if (url === segments[0] && ++attempts === 1) {
+        await headGate;
+        throw new Error('Temporary head failure.');
+      }
+      await context.onBytes(8);
+      await fs.writeFile(filePath, '12345678');
+      return { statusCode: 200, bytes: 8 };
+    },
+  });
+  await waitUntil(() => spool.stats().waitingForBytes === 2);
+  assert.equal(spool.stats().active, 3);
+  allowHeadFailure();
+  for (const url of segments) {
+    const result = await spool.get(url);
+    assert.equal(await fs.readFile(result.filePath, 'utf8'), '12345678');
+    assert.ok(spool.stats().reservedBytes <= 12);
+    await spool.release(url);
+  }
+  assert.equal(attempts, 2);
+  assert.equal(spool.stats().reservedBytes, 0);
+});
+
+test('native spool cancellation wakes byte waiters and waits for active adapters to close', { timeout: 3000 }, async (t) => {
+  const controller = new AbortController();
+  const segments = urls(3);
+  let releaseAdapter;
+  const adapterGate = new Promise((resolve) => { releaseAdapter = resolve; });
+  let headAborted = false;
+  const { spool } = await fixture(t, {
+    segments, concurrency: 3, maxSpoolBytes: 12, maxPieceBytes: 8, admissionBytes: 1,
+    signal: controller.signal,
+    request: async (url, _filePath, context) => {
+      if (url === segments[0]) {
+        await new Promise((resolve) => context.signal.addEventListener('abort', () => {
+          headAborted = true;
+          resolve();
+        }, { once: true }));
+        await adapterGate;
+        throw context.signal.reason;
+      }
+      await context.onBytes(8);
+      assert.fail('Blocked followers must be cancelled before receiving byte capacity.');
+    },
+  });
+  await waitUntil(() => spool.stats().waitingForBytes === 2);
+  const waiting = assert.rejects(spool.get(segments[0]), { code: 'ABORT_ERR' });
+  controller.abort();
+  assert.equal(spool.stats().waitingForBytes, 0, 'abort wakes budget waiters immediately');
+  assert.equal(headAborted, true);
+  let cleaned = false;
+  const closing = spool.close().then(() => { cleaned = true; });
+  await tick();
+  assert.equal(cleaned, false, 'cleanup waits for adapter-owned writes and handles');
+  releaseAdapter();
+  await Promise.all([waiting, closing]);
+  await assert.rejects(fs.stat(spool.stats().directory), { code: 'ENOENT' });
+});
+
 test('native spool keeps retry headroom while a small earlier piece is still being served', { timeout: 3000 }, async (t) => {
   const segments = urls(5);
   let headReady;
@@ -133,7 +223,7 @@ test('native spool keeps retry headroom while a small earlier piece is still bei
 });
 
 test('native spool rejects oversized pieces once and expires credentials without burning retries', async (t) => {
-  for (const scenario of ['oversize', 'expired']) {
+  for (const scenario of ['oversize', 'oversize-unknown', 'expired']) {
     await t.test(scenario, async (subtest) => {
       let attempts = 0;
       const { spool } = await fixture(subtest, {
@@ -142,12 +232,13 @@ test('native spool rejects oversized pieces once and expires credentials without
         request: async (_url, _filePath, context) => {
           attempts += 1;
           if (scenario === 'oversize') context.onContentLength(5);
+          if (scenario === 'oversize-unknown') await context.onBytes(5);
           const error = new Error('Fixture link expired.');
           error.code = 'LINK_EXPIRED';
           throw error;
         },
       });
-      await assert.rejects(spool.get(urls(1)[0]), { code: scenario === 'oversize' ? 'SPOOL_PIECE_TOO_LARGE' : 'LINK_EXPIRED' });
+      await assert.rejects(spool.get(urls(1)[0]), { code: scenario.startsWith('oversize') ? 'SPOOL_PIECE_TOO_LARGE' : 'LINK_EXPIRED' });
       assert.equal(attempts, 1);
     });
   }

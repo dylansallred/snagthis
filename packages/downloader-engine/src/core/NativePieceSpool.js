@@ -12,7 +12,7 @@ function boundedInteger(value, fallback, maximum) {
   return Number.isFinite(number) ? Math.max(1, Math.min(maximum, Math.floor(number))) : fallback;
 }
 
-// The request adapter must call onBytes(delta) before writing each chunk. A
+// The request adapter must await onBytes(delta) before writing each chunk. A
 // complete piece is published only after the adapter has closed its output file.
 async function createNativePieceSpool(options = {}) {
   const { directory, request, onState, signal } = options;
@@ -25,6 +25,7 @@ async function createNativePieceSpool(options = {}) {
   const maxAttempts = boundedInteger(options.maxAttempts, 30, 30);
   const maxSpoolBytes = boundedInteger(options.maxSpoolBytes, 512 * 1024 * 1024, Number.MAX_SAFE_INTEGER);
   const maxPieceBytes = Math.min(maxSpoolBytes, boundedInteger(options.maxPieceBytes, 128 * 1024 * 1024, Number.MAX_SAFE_INTEGER));
+  const admissionBytes = Math.min(maxPieceBytes, boundedInteger(options.admissionBytes, 64 * 1024, Number.MAX_SAFE_INTEGER));
   const lookahead = boundedInteger(options.lookahead, Math.max(4, concurrency * 2), Math.max(1, segments.length));
   const retryDelay = typeof options.retryDelayMs === 'function' ? options.retryDelayMs
     : options.retryDelayMs === undefined ? (attempt) => Math.min(8000, 500 * (2 ** (attempt - 1)))
@@ -33,7 +34,7 @@ async function createNativePieceSpool(options = {}) {
   const spoolDirectory = await fs.mkdtemp(path.join(directory, 'native-pieces-'));
   const records = segments.map((url, index) => ({
     url, index, status: 'pending', attempt: 0, bytes: 0, reserved: 0,
-    retryAt: 0, controller: null, result: null, error: null, waiters: [],
+    retryAt: 0, controller: null, result: null, error: null, waiters: [], contentLength: null,
     partPath: path.join(spoolDirectory, `${index}.part`),
     filePath: path.join(spoolDirectory, `${index}.piece`),
   }));
@@ -46,6 +47,7 @@ async function createNativePieceSpool(options = {}) {
   let pumpPending = false;
   let retryTimer;
   let stoppedError = null;
+  const budgetWaiters = new Set();
 
   function notify(record, status) {
     const message = record.error
@@ -67,6 +69,51 @@ async function createNativePieceSpool(options = {}) {
     record.reserved = bytes;
   }
 
+  function firstUnfinished() {
+    return records.slice(head, head + lookahead).find((record) => !['ready', 'released'].includes(record.status));
+  }
+
+  function canGrow(record, additionalBytes) {
+    if (reservedBytes + additionalBytes > maxSpoolBytes) return false;
+    const first = firstUnfinished();
+    if (!first || first === record) return true;
+    // Followers may use spare space, but the earliest unfinished piece must
+    // always be able to finish even when its response has no Content-Length.
+    const headroom = Math.max(0, maxPieceBytes - first.reserved);
+    return reservedBytes + additionalBytes + headroom <= maxSpoolBytes;
+  }
+
+  function drainBudgetWaiters() {
+    if (closed || stoppedError) return;
+    for (const waiter of [...budgetWaiters].sort((left, right) => left.record.index - right.record.index)) {
+      if (!canGrow(waiter.record, waiter.additionalBytes)) continue;
+      budgetWaiters.delete(waiter);
+      waiter.record.controller.signal.removeEventListener('abort', waiter.onAbort);
+      reserve(waiter.record, waiter.record.reserved + waiter.additionalBytes);
+      waiter.record.bytes += waiter.delta;
+      waiter.resolve();
+    }
+  }
+
+  function chargeBytes(record, delta) {
+    const additionalBytes = Math.max(0, record.bytes + delta - record.reserved);
+    if (!additionalBytes || canGrow(record, additionalBytes)) {
+      reserve(record, record.reserved + additionalBytes);
+      record.bytes += delta;
+      return;
+    }
+    return new Promise((resolve, reject) => {
+      const waiter = { record, delta, additionalBytes, resolve, reject, onAbort: null };
+      waiter.onAbort = () => {
+        budgetWaiters.delete(waiter);
+        reject(spoolError('Download cancelled.', 'ABORT_ERR'));
+      };
+      budgetWaiters.add(waiter);
+      record.controller.signal.addEventListener('abort', waiter.onAbort, { once: true });
+      if (record.controller.signal.aborted) waiter.onAbort();
+    });
+  }
+
   function schedulePump() {
     if (closed || stoppedError || pumpPending) return;
     pumpPending = true;
@@ -77,6 +124,7 @@ async function createNativePieceSpool(options = {}) {
     record.status = 'downloading';
     record.attempt += 1;
     record.bytes = 0;
+    record.contentLength = null;
     record.controller = new AbortController();
     notify(record, 'downloading');
     try {
@@ -87,15 +135,17 @@ async function createNativePieceSpool(options = {}) {
           if (!Number.isSafeInteger(length) || length < 0) return;
           if (length > maxPieceBytes) throw spoolError('A video piece exceeds the temporary download size limit.', 'SPOOL_PIECE_TOO_LARGE');
           if (length < record.bytes) throw spoolError('A video piece has inconsistent length metadata.', 'SPOOL_CONTENT_LENGTH_MISMATCH');
-          // A known size releases unused reservation, allowing more workers.
-          if (length <= record.reserved) { reserve(record, length); schedulePump(); }
+          record.contentLength = length;
+          if (length <= record.reserved) { reserve(record, length); drainBudgetWaiters(); schedulePump(); }
         },
         onBytes(delta) {
           if (closed || record.controller.signal.aborted) throw spoolError('Download cancelled.', 'ABORT_ERR');
           if (!Number.isSafeInteger(delta) || delta < 0) throw spoolError('Invalid video-piece byte count.', 'SPOOL_BYTE_ACCOUNTING');
           if (record.bytes + delta > maxPieceBytes) throw spoolError('A video piece exceeds the temporary download size limit.', 'SPOOL_PIECE_TOO_LARGE');
-          if (record.bytes + delta > record.reserved) throw spoolError('A video piece exceeds its declared content length.', 'SPOOL_CONTENT_LENGTH_MISMATCH');
-          record.bytes += delta;
+          if (record.contentLength !== null && record.bytes + delta > record.contentLength) throw spoolError('A video piece exceeds its declared content length.', 'SPOOL_CONTENT_LENGTH_MISMATCH');
+          // Returns undefined when admitted immediately; otherwise the adapter
+          // must await capacity before writing these bytes to disk.
+          return chargeBytes(record, delta);
         },
       });
       if (closed || record.controller.signal.aborted) throw spoolError('Download cancelled.', 'ABORT_ERR');
@@ -105,10 +155,13 @@ async function createNativePieceSpool(options = {}) {
       await fs.rename(record.partPath, record.filePath);
       reserve(record, stat.size);
       record.result = { filePath: record.filePath, headers: result?.headers || {}, statusCode: result?.statusCode || 200, bytes: stat.size };
+      // Copy an optional local preview source before a consumer can release this piece.
+      try { await options.onReady?.({ url: record.url, index: record.index, filePath: record.filePath, bytes: stat.size }); } catch { /* Preview failure must not fail the download. */ }
       record.status = 'ready';
       record.error = null;
       notify(record, 'ready');
       settleWaiters(record);
+      drainBudgetWaiters();
     } catch (error) {
       await fs.rm(record.partPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 }).catch(() => {});
       reserve(record, 0);
@@ -136,6 +189,7 @@ async function createNativePieceSpool(options = {}) {
         record.retryAt = Date.now() + Math.max(0, Number(retryDelay(record.attempt)) || 0);
         notify(record, 'retrying');
       }
+      if (!closed && !stoppedError) drainBudgetWaiters();
     } finally {
       record.controller = null;
     }
@@ -146,28 +200,28 @@ async function createNativePieceSpool(options = {}) {
     clearTimeout(retryTimer);
     retryTimer = undefined;
     const window = records.slice(head, head + lookahead);
-    while (active.size < concurrency && reservedBytes + maxPieceBytes <= maxSpoolBytes) {
+    while (active.size < concurrency) {
       // A broken early piece must not occupy a worker while untouched pieces
       // inside this bounded lookahead window can still make progress.
       let next = window.find((record) => record.status === 'pending')
         || window.find((record) => record.status === 'retrying' && record.retryAt <= Date.now());
       if (!next) break;
-      const first = window.find((record) => !['ready', 'released'].includes(record.status));
+      const first = firstUnfinished();
       if (next !== first && ['pending', 'retrying'].includes(first?.status)
-        && reservedBytes + maxPieceBytes * 2 > maxSpoolBytes) {
-        // Keep capacity for the earliest unfinished piece even when a ready
-        // earlier piece is still being served. Freeing a small consumed piece
-        // must not be the only space left for a full-size retry reservation.
+        && (!canGrow(next, admissionBytes) || (admissionBytes < maxPieceBytes && active.size >= concurrency - 1))) {
+        // Keep both byte capacity and one worker for a missing head's retry;
+        // otherwise every worker could end up waiting on follower growth.
         next = first.status === 'pending' || first.retryAt <= Date.now() ? first : null;
         if (!next) break;
       }
-      reserve(next, maxPieceBytes);
+      if (!canGrow(next, admissionBytes)) break;
+      reserve(next, admissionBytes);
       const task = run(next);
       active.add(task);
       task.finally(() => { active.delete(task); schedulePump(); });
     }
     const delayed = window.filter((record) => record.status === 'retrying' && record.retryAt > Date.now());
-    if (delayed.length && active.size < concurrency && reservedBytes + maxPieceBytes <= maxSpoolBytes) {
+    if (delayed.length && active.size < concurrency) {
       retryTimer = setTimeout(schedulePump, Math.max(1, Math.min(...delayed.map((record) => record.retryAt)) - Date.now()));
     }
   }
@@ -193,6 +247,7 @@ async function createNativePieceSpool(options = {}) {
     record.result = null;
     record.status = 'released';
     while (records[head]?.status === 'released') head += 1;
+    drainBudgetWaiters();
     schedulePump();
   }
 
@@ -226,6 +281,7 @@ async function createNativePieceSpool(options = {}) {
       head, windowEnd: Math.min(records.length, head + lookahead),
       ready: records.filter((record) => record.status === 'ready').length,
       failed: records.filter((record) => record.status === 'failed').length,
+      waitingForBytes: budgetWaiters.size,
       closed,
     }),
   };

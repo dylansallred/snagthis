@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Quality and text studies</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="hover.css">
+  <link rel="stylesheet" href="studies.css">
+  <link rel="stylesheet" href="metadata.css">
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / TEXT &amp; QUALITY</div>
+    <h1>The same information. A different emphasis.</h1>
+    <p>Try quality labels, the details text, and the saved line separately. Your choices combine in the previews below.</p>
+  </header>
+  <div class="hub-controls preview-controls">
+    <label>Sample quality <select id="sample-quality"><option value="480">480p · SD</option><option value="720">720p · HD</option><option value="1080" selected>1080p · Full HD</option><option value="2160">2160p · 4K</option><option value="unknown">Unknown</option></select></label>
+    <label>Preview width <select id="sample-width"><option value="820">Desktop · 820px</option><option value="640">Small desktop · 640px</option><option value="400">Compact · 400px</option></select></label>
+    <button type="button" id="reset">Reset to selected</button>
+  </div>
+  <section class="study" id="quality" aria-labelledby="quality-title">
+    <h2 class="study-title" id="quality-title">1 · Quality labels <small>one style, from SD to 4K</small></h2>
+    <div class="hover-picker study-picker" aria-label="Quality label options"></div>
+    <div class="tier-strip" id="tier-strip"></div>
+    <p class="study-note">SD = 480p · HD = 720p · Full HD = 1080p · 4K = 2160p. Exact resolution stays visible; unknown quality gets no badge.</p>
+  </section>
+  <section class="study" id="facts" aria-labelledby="facts-title">
+    <h2 class="study-title" id="facts-title">2 · Inside the details <small>Quality, Size, and From</small></h2>
+    <div class="hover-picker study-picker" aria-label="Details layout options"></div>
+    <div class="stage"><div class="panel metadata-preview"><div class="panel-label">Expanded details <span class="width-label"></span></div><div class="context-folder">Saved in <strong>~/Movies/VidSnag</strong></div><div id="facts-stage"></div></div></div>
+  </section>
+  <section class="study" id="status" aria-labelledby="status-title">
+    <h2 class="study-title" id="status-title">3 · Beneath the title <small>Saved today, file size, and quality</small></h2>
+    <div class="hover-picker study-picker" aria-label="Saved line layout options"></div>
+    <div class="stage"><div class="panel metadata-preview"><div class="panel-label">Saved videos <span class="width-label"></span></div><div id="status-stage"></div></div></div>
+    <p class="study-note">The first row uses your sample quality. The next two let you compare 720p and 4K in the same list.</p>
+  </section>
+  <footer class="hub-footer"><output id="selection" aria-live="polite"></output><p>Click an option, or hover a section and press its number. The address keeps your combination when you reload.</p><p>Selected direction: Solid badge · Inset tiles · Quality first. Other options remain comparisons. <a href="controls.html">Earlier controls study ↗</a></p></footer>
+</main>
+<script src="metadata.js"></script>
+</body>
+</html>
