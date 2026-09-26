@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Collapsed row download activity</title>
+<style>
+/* Token values copied from apps/desktop/src/globals.css; do not fork them. */
+:root {
+  --bg-raised: hsl(215 22% 8%); --bg-hover: hsl(215 22% 10.5%); --bg-active: hsl(215 22% 13.5%);
+  --chrome: hsl(215 22% 4%); --row: hsl(215 22% 8%); --row-hover: hsl(215 22% 11.5%); --inset: hsl(215 22% 3.5%);
+  --border: hsl(215 15% 18%); --border-subtle: hsl(215 14% 15.5%);
+  --fg: hsl(20 20% 93%); --fg-muted: hsl(20 6% 60%); --fg-subtle: hsl(20 5% 52%);
+  --primary: hsl(18 96% 40%); --primary-hover: hsl(20 96% 52%); --amber: hsl(44 84% 58%); --green: hsl(145 62% 46%);
+  --orange: #fa5d0e; --coral: #ff7566; --piece-now: #f4c38a; --piece-done: #80bfa6;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #07080a; color: var(--fg); font: 13px/1.45 "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; padding: 0; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--primary-hover); outline-offset: 2px; }
+.icon { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* Hub — follows ui-refresh/controls.html */
+.hub { max-width: 1360px; margin: 0 auto; padding: 40px 28px 56px; }
+.eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--fg-subtle); }
+.eyebrow span { color: var(--primary-hover); font-weight: 600; margin-right: 10px; }
+.intro h1 { font-size: 28px; line-height: 1.2; font-weight: 620; margin: 10px 0 8px; letter-spacing: -.01em; }
+.intro p { color: var(--fg-muted); max-width: 820px; margin: 0; font-size: 14px; }
+.intro kbd { font: 600 11px/16px inherit; padding: 1px 6px; border-radius: 4px; background: var(--bg-active); color: var(--fg); }
+.picker { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 22px -8px 14px; padding: 8px; background: #07080aee; backdrop-filter: blur(8px); }
+.picker button { position: relative; text-align: left; padding: 9px 12px; border-radius: 9px; background: var(--bg-raised); border: 1px solid var(--border-subtle); }
+.picker button:hover { background: var(--bg-hover); }
+.picker button[aria-pressed="true"] { border-color: var(--primary-hover); background: hsl(16 58% 16% / .35); }
+.picker span { display: block; font-size: 13px; font-weight: 600; }
+.picker small { display: block; color: var(--fg-muted); font-size: 11px; line-height: 15px; margin-top: 2px; }
+.picker .pick { position: absolute; top: 8px; right: 9px; font-size: 9.5px; font-weight: 650; letter-spacing: .06em; color: var(--primary-hover); }
+.study-title { font-size: 15px; font-weight: 600; margin: 0; }
+.study-title small { color: var(--fg-subtle); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+.stage { display: flex; align-items: flex-start; gap: 24px; margin-top: 14px; }
+.hub-footer { margin-top: 26px; color: var(--fg-subtle); font-size: 12px; }
+.hub-footer p { margin: 4px 0; }
+
+/* Spec card */
+.spec { flex: 1; min-width: 300px; padding: 18px 18px 16px; border-radius: 10px; background: var(--bg-raised); border: 1px solid var(--border-subtle); position: sticky; top: 150px; }
+.spec h3 { margin: 0; font-size: 17px; font-weight: 620; }
+.spec h3 em { font-style: normal; color: var(--primary-hover); margin-right: 6px; }
+.spec .lede { margin: 6px 0 14px; color: var(--fg-muted); font-size: 12.5px; }
+.spec dl { margin: 0; display: grid; gap: 11px; }
+.spec dt { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-subtle); font-weight: 600; }
+.spec dd { margin: 2px 0 0; font-size: 12.5px; line-height: 1.5; color: #d6d0cc; }
+.noise { display: inline-flex; gap: 3px; vertical-align: -1px; margin-right: 6px; }
+.noise i { width: 7px; height: 7px; background: #2a313b; }
+.noise i.on { background: var(--primary-hover); }
+
+/* Window */
+.win { width: 960px; flex: none; border-radius: 10px; overflow: hidden; background: var(--bg-raised); box-shadow: 0 0 0 1px #ffffff12, 0 24px 60px #0009; }
+.topbar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 53px; background: var(--chrome); border-bottom: 1px solid; border-image: linear-gradient(90deg, var(--primary-hover), hsl(20 96% 52% / .25) 45%, var(--border-subtle) 80%) 1; }
+.lights { display: flex; gap: 8px; margin-right: 4px; } .lights i { width: 12px; height: 12px; border-radius: 50%; background: #2b3038; }
+.logo { width: 120px; height: 22px; display: block; }
+.paste { flex: 1; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--inset); color: var(--fg-subtle); }
+.paste kbd { margin-left: auto; padding: 0 5px; border-radius: 4px; background: var(--bg-active); color: var(--fg-muted); font: 500 10.5px/16px inherit; }
+.tabs { display: flex; gap: 2px; } .tabs span { padding: 5px 10px 7px; color: var(--fg-muted); font-size: 12.5px; }
+.tabs span.sel { color: var(--fg); box-shadow: inset 0 -2px 0 var(--primary-hover); }
+.topbar > .icon { color: var(--fg-muted); margin: 0 6px; }
+.foot { display: flex; align-items: center; gap: 14px; padding: 6px 14px; min-height: 43px; background: var(--chrome); border-top: 1px solid var(--border-subtle); color: var(--fg-subtle); font-size: 12px; font-variant-numeric: tabular-nums; }
+.foot .sp { flex: 1; } .foot .icon { color: var(--fg-muted); }
+.list { background: var(--bg-raised); padding-bottom: 36px; }
+
+/* Row — mirrors .video-row in globals.css */
+.item { position: relative; border-top: 1px solid var(--border-subtle); }
+.item:first-child { border-top: 0; } .item:last-child { border-bottom: 1px solid var(--border-subtle); }
+.vrow { position: relative; isolation: isolate; display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 0 14px 0 0; min-height: 84px; overflow: hidden; background: var(--row); transition: opacity 200ms ease-out, background-color 300ms ease; }
+.vrow.has-lane { grid-template-rows: minmax(0, 1fr) auto; }
+.thumb { grid-column: 1; grid-row: 1; align-self: stretch; position: relative; width: 128px; min-height: 84px; overflow: hidden; background: #1a2029; }
+.vrow.has-lane .thumb { grid-row: 1 / span 2; }
+.thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.thumb .dot { position: absolute; top: calc(50% - 2px); width: 4px; height: 4px; border-radius: 50%; background: #8292a6; animation: tdots 1.8s ease-in-out infinite; }
+@keyframes tdots { 0%, 100% { opacity: .25; } 40% { opacity: .9; } }
+.text { grid-column: 2; grid-row: 1; padding: 12px 0; min-width: 0; }
+.vrow.has-lane .text { padding-bottom: 8px; }
+.heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.title { font-size: 13.5px; font-weight: 570; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dur { color: var(--fg-muted); font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
+.status { font-size: 12px; color: var(--fg-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.status .tier { display: inline-flex; align-items: center; justify-content: center; min-width: 29px; height: 19px; padding: 0 4px; border-radius: 3px; background: #d1d9e3; color: #131922; font-size: 9px; font-weight: 750; letter-spacing: .03em; vertical-align: middle; margin-right: 6px; }
+.status .res { color: #a7b0bd; } .status .md { color: var(--fg-subtle); margin: 0 6px; }
+.status .ok { color: hsl(145 44% 62%); display: inline-flex; align-items: center; gap: 6px; }
+.status .ok svg { width: 13px; height: 13px; stroke-width: 2.2; }
+.vrow.just-saved { animation: row-saved 900ms ease-out; }
+@keyframes row-saved { 0%, 30% { box-shadow: inset 0 0 0 200px hsl(145 62% 46% / .06); } 100% { box-shadow: inset 0 0 0 200px transparent; } }
+.vrow.just-saved .ok path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: check-draw 360ms ease-out 80ms forwards; }
+@keyframes check-draw { to { stroke-dashoffset: 0; } }
+.actions { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 2px; }
+.act { display: flex; align-items: center; justify-content: flex-end; min-height: 30px; margin-right: 4px; }
+.act:empty { display: none; }
+.vrow.act-off .act { display: none; }
+.vrow.just-saved .act { animation: act-out 420ms ease-out 520ms forwards; }
+@keyframes act-out { to { opacity: 0; } }
+.wrap { position: relative; display: inline-flex; }
+.btn { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 31px; height: 30px; border-radius: 7px; color: var(--fg-muted); transition: color 160ms ease; }
+.btn:hover { color: #f2c45a; } .btn:hover .icon { fill: currentColor; }
+.btn.resume:hover, .btn.play:hover { color: var(--primary-hover); }
+.more { opacity: 0; } .vrow:hover .more { opacity: 1; }
+.btn.none { visibility: hidden; } /* keeps the activity column aligned across rows */
+/* Soft focus hover */
+.list:has(.vrow:hover) .vrow:not(:hover) { opacity: .72; }
+.vrow:hover { background: var(--row-hover); }
+.item::after { content: ""; position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 3px; background: var(--primary-hover); opacity: 0; transform: scaleY(0); transition: transform 380ms cubic-bezier(.4, 0, .2, 1), opacity 380ms ease; pointer-events: none; }
+.item:has(.vrow:hover)::after { opacity: 1; transform: none; transition: transform 300ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
+
+/* Pieces lane — mirrors .progress-pieces */
+.lane { grid-column: 2 / -1; grid-row: 2; position: relative; display: grid; grid-template-columns: repeat(40, minmax(0, 1fr)); gap: 3px; height: 7px; margin-bottom: 10px; }
+.pc { position: relative; min-width: 0; border-radius: 1.7px; background: #292f37; border: 1px solid #333a44; transition: background 180ms ease, border-color 180ms ease; }
+.pc.done { background: #80bfa6; border-color: #91cbb4; }
+.pc.cur { background: #30291f; border-color: #d0a471; }
+.vrow[data-active="true"] .pc.cur::after { content: ""; position: absolute; inset: 0; right: calc((1 - max(var(--f, 1), .15)) * 100%); border-radius: 1px; background: #f4c38a; animation: pw 1.9s ease-in-out infinite; transition: right 400ms linear; }
+@keyframes pw { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+.vrow[data-active="false"] .lane { opacity: .62; }
+.vrow[data-active="false"] .pc.cur { background: #62513a; border-color: #a18b6b; }
+.vrow[data-active="false"]:not(.just-saved) .pc.done { background: #5f7f73; border-color: #6b8a7e; }
+.pc.spark { z-index: 1; animation: spark 520ms ease-out; }
+@keyframes spark { 0% { background: #fff; border-color: #fff; box-shadow: 0 0 0 0 #ffe2b8, 0 0 14px 5px hsl(36 100% 70% / .9); } 100% { box-shadow: 0 0 0 7px transparent, 0 0 14px 5px transparent; } }
+.vrow.just-saved .lane { animation: act-out 400ms ease-out forwards; }
+
+/* Option decorations */
+.deco { pointer-events: none; }
+.ring { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 0; }
+.vrow[data-opt="ring"] .wrap { margin-left: 5px; }
+.pixel { image-rendering: pixelated; }
+.logo-tile { width: 24px; height: 24px; }
+.logo-tile.press { animation: press 520ms cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes press { 25% { transform: translateY(1.5px) scale(.86); } 100% { transform: none; } }
+.odo { display: inline-flex; align-items: center; gap: 7px; min-width: 76px; justify-content: flex-end; color: var(--fg-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.odo-num { display: inline-flex; height: 16px; line-height: 16px; overflow: hidden; }
+.odo-d { display: inline-block; width: .62em; text-align: center; height: 16px; overflow: hidden; }
+.odo-d > span { display: flex; flex-direction: column; transition: transform 260ms cubic-bezier(.2, .8, .2, 1); }
+.odo-d > span > b { display: block; font-weight: 400; height: 16px; line-height: 16px; }
+.odo-d.fast > span { transition: none; filter: blur(.3px); opacity: .7; }
+.odo-arrow { width: 7px; height: 8px; }
+.odo.paused { color: var(--fg-subtle); }
+.odo.done { color: hsl(145 44% 62%); transition: color 200ms; }
+.chip { display: inline-flex; align-items: center; gap: 7px; height: 22px; padding: 0 9px 0 8px; border-radius: 6px; background: var(--inset); box-shadow: inset 0 0 0 1px var(--border-subtle); color: #d9d3cf; font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip i { width: 5px; height: 5px; background: var(--piece-now); animation: pw 1.9s ease-in-out infinite; }
+.chip.stalled i { background: #56606c; animation: none; }
+.chip.done { color: hsl(145 44% 62%); } .chip.done i { background: var(--piece-done); animation: none; }
+.chip b { font-weight: 500; display: inline-block; }
+.chip b.tick { animation: tick 200ms ease-out; }
+@keyframes tick { from { transform: translateY(5px); opacity: .1; } }
+.sheen { position: absolute; z-index: -1; left: 128px; right: 0; top: 0; bottom: 0; overflow: hidden; }
+.sheen i, .glint i { position: absolute; top: 0; bottom: 0; left: 0; will-change: transform; }
+.sheen i { width: 220px; background: linear-gradient(90deg, transparent, hsl(28 90% 62% / .055) 50%, transparent); }
+.glint { position: absolute; left: 0; top: -1px; bottom: -1px; overflow: hidden; mix-blend-mode: overlay; }
+.glint i { width: 64px; background: linear-gradient(90deg, transparent, #fff 50%, transparent); }
+.glint.amber i { background: linear-gradient(90deg, transparent, #ffd49a 50%, transparent); }
+
+/* Live preview */
+.live { margin-top: 30px; }
+.live-grid { display: flex; gap: 24px; align-items: stretch; margin-top: 14px; }
+.live-box { flex: none; width: 960px; border-radius: 10px; background: var(--chrome); box-shadow: 0 0 0 1px #ffffff12; padding: 22px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.live-row { width: 610px; zoom: 1.55; border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); }
+.live-row .item::after { display: none; }
+.readouts { display: flex; gap: 22px; color: var(--fg-subtle); font-size: 12px; font-variant-numeric: tabular-nums; }
+.readouts b { color: var(--fg); font-weight: 550; margin-left: 5px; }
+.ctrl { flex: 1; min-width: 300px; padding: 18px; border-radius: 10px; background: var(--bg-raised); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 14px; font-size: 12.5px; color: var(--fg-muted); }
+.ctrl label { display: flex; flex-direction: column; gap: 6px; }
+.ctrl .rowl { display: flex; justify-content: space-between; }
+.ctrl output { color: var(--fg); font-variant-numeric: tabular-nums; }
+.ctrl input[type=range] { accent-color: var(--primary-hover); width: 100%; }
+.ctrl .ticks { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--fg-subtle); }
+.ctrl .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.ctrl .buttons button { height: 28px; padding: 0 11px; border-radius: 7px; border: 1px solid var(--border); color: var(--fg); font-size: 12.5px; }
+.ctrl .buttons button:hover { background: var(--bg-active); }
+.ctrl .check { flex-direction: row; align-items: center; gap: 8px; color: var(--fg); }
+.ctrl .check input { accent-color: var(--primary-hover); }
+
+.rm .vrow .pc.cur::after, .rm .thumb .dot, .rm .chip i { animation: none !important; opacity: 1; }
+.rm .pc.cur::after { transition: none !important; }
+.rm .vrow.just-saved, .rm .vrow.just-saved .lane, .rm .logo-tile.press { animation: none; }
+.rm .odo-d > span { transition: none; filter: none; }
+.rm .chip b.tick { animation: none; }
+</style>
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>SnagThis</span>DESIGN STUDIES / ROW ACTIVITY</div>
+    <h1>Showing live download activity on a collapsed row.</h1>
+    <p>Each option adds one small, live treatment at the right of a <em>collapsed</em> downloading row, beside Pause, echoing what Details shows when the row is open. Speeds and progress are simulated and respond to the slider below. Every option keeps the 40-cell lane, leaves the thumbnail clear and keeps one visible action. Click an option or press <kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd>, <kbd>-</kbd> (or <kbd>←</kbd> <kbd>→</kbd>). Hover a row to see the Soft focus state.</p>
+  </header>
+  <div class="picker" id="picker" role="group" aria-label="Designs"></div>
+  <h2 class="study-title">In a list <small>fast · slow (with stalls) · finishing · paused · waiting · saved. Click Pause or Resume on any row.</small></h2>
+  <div class="stage">
+    <div class="win" aria-label="Desktop window preview">
+      <div class="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <img class="logo" src="../../../../apps/desktop/src/assets/snagthis-logo-title.svg" alt="SnagThis">
+        <div class="paste"><svg class="icon" viewBox="0 0 24 24"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>Paste a video link<kbd>⌘V</kbd></div>
+        <nav class="tabs"><span class="sel">All</span><span>Downloading</span><span>Saved</span></nav>
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </div>
+      <div class="list" id="list" role="list"></div>
+      <div class="foot"><span id="foot"></span><span class="sp"></span>
+        <svg class="icon" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </div>
+    </div>
+    <aside class="spec" id="spec" aria-live="polite"></aside>
+  </div>
+
+  <section class="live">
+    <h2 class="study-title">Live preview <small>the fast row at 1.55×; drag the speed to judge how the treatment responds</small></h2>
+    <div class="live-grid">
+      <div class="live-box">
+        <div class="live-row list-live" id="live" role="list"></div>
+        <div class="readouts" id="readouts"></div>
+      </div>
+      <div class="ctrl">
+        <label><span class="rowl">Download speed (fast row)<output id="speed-out"></output></span>
+          <input id="speed" type="range" min="0" max="100" step="1" value="73" aria-describedby="speed-ticks">
+          <span class="ticks" id="speed-ticks"><span>stalled</span><span>0.5</span><span>3</span><span>15</span><span>40 MB/s</span></span></label>
+        <div class="buttons">
+          <button type="button" id="b-pause">Pause</button>
+          <button type="button" id="b-stall">Stall 3 s</button>
+          <button type="button" id="b-jump">Jump to 96%</button>
+          <button type="button" id="b-restart">Restart</button>
+        </div>
+        <label class="check"><input type="checkbox" id="rm"> Reduced motion</label>
+        <p style="margin:0;font-size:12px;color:var(--fg-subtle)">The fast row loops: it finishes, shows <em>Finishing up…</em> for about 2 s, becomes Saved (with the lane fade and check), then restarts after 5 s.</p>
+      </div>
+    </div>
+  </section>
+  <footer class="hub-footer"><p>UI prototype only; nothing is downloaded. Speeds, connections and segments are simulated. Lane, tokens and Spark timings are copied from <code>apps/desktop/src/globals.css</code>.</p></footer>
+</main>
+<script>
+(() => {
+'use strict';
+const MEDIA = '../../../../apps/extension/popup/media/';
+const STEP = 500; // speed sample interval, as in speedHistory
+let RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rand = Math.random;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const ICON = {
+  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  resume: '<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+};
+const svg = n => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
+
+/* ── Options ─────────────────────────────────────────────── */
+const OPTIONS = [
+  { key: 'today', name: 'Today', desc: 'Lane only; the right side stays empty', noise: 1,
+    shows: 'Nothing new. The 40-cell Pieces lane under the text is the only progress signal; the right side holds only Pause.',
+    motion: 'Spark: current cell pulses 1.9 s ease-in-out and fills over 400 ms linear; each finished cell flashes 520 ms ease-out, at most one per 250 ms.',
+    states: 'Paused: lane dims to 62% with desaturated cells. Finishing: current cell keeps pulsing. Saved: lane fades over 400 ms with a 6% green row pulse and the check draws.',
+    rm: 'Lane is still; no pulse or sparks.',
+    a11y: 'Status line is a progressbar with aria-valuetext “34% · 5 min left”.' },
+  { key: 'trace', name: 'Speed trace', desc: 'Tiny live speed chart from Details, scrolling left', noise: 3,
+    shows: 'A 78×26 miniature of the Details “Ceiling + halo” chart: the last 12 s of this job’s speed, orange fill fading down, coral line and a live dot with halo at the right edge. The scale eases to the recent peak, so shape (steady, bursty, stalling) matters more than height.',
+    motion: 'Scrolls continuously one sample per 500 ms (linear interpolation, like SpeedChart); the vertical scale eases 6% per frame. Stalls drop the line to the floor and dim the dot.',
+    states: 'Paused: freezes, turns grey at 60% opacity, no dot. Finishing: freezes in amber with the dot resting. Saved: turns mint, then fades out with the lane (420 ms after a 520 ms hold).',
+    rm: 'Redraws once per sample with no scroll interpolation or glow.',
+    a11y: 'Decorative (aria-hidden). Speed stays in the footer total and in Details, so the status text is unchanged.' },
+  { key: 'eq', name: 'Pixel meter', desc: 'Six pixel bars bounce with throughput', noise: 4,
+    shows: 'A 23×23 six-bar pixel equalizer. Average height tracks speed on a log scale (0.1–40 MB/s); per-bar jitter shows burstiness, with an amber peak pixel that falls back.',
+    motion: 'Stepped, no easing (pixel feel). Refresh 6/s when slow up to 16/s when fast; peaks decay one pixel per two refreshes.',
+    states: 'Stalled: all bars rest at one dim pixel. Paused: one grey pixel per bar. Finishing: a slow amber wave (sine, 1.9 s). Saved: bars fill mint once, then fade.',
+    rm: 'Bars hold a steady level for the current speed, updated once per second, no jitter or peaks.',
+    a11y: 'Decorative (aria-hidden); status text unchanged.' },
+  { key: 'cells', name: 'In-flight cells', desc: 'Mini Segments map: the pieces in flight right now', noise: 2, pick: 2,
+    shows: 'A 2×8 window onto the Details Segments map around the download frontier: finished pieces mint, pieces being fetched amber (one per active connection), pending grey. When a row of eight is complete the window slides up and a fresh row enters.',
+    motion: 'Amber cells pulse 1.9 s ease-in-out, staggered; the frontier cell fills with real progress. Completed cells flash white 520 ms (≤ one per 250 ms). Row change slides 8 px over 240 ms ease-out.',
+    states: 'Stalled: amber cells stop pulsing. Paused: desaturated like the paused lane, still. Finishing: every cell mint and still. Saved: a single white flash, then fades.',
+    rm: 'No pulse, flash or slide; the window jumps to the current row.',
+    a11y: 'Decorative; the progressbar text is unchanged and Details keeps the full “412 of 1210” count.' },
+  { key: 'ring', name: 'Pixel ring', desc: 'Pixels around Pause fill with progress; a comet orbits at speed', noise: 3,
+    shows: 'Thirty-two 3 px cells (corners dropped so it reads rounded) around the Pause button, clockwise from the top: mint for progress, an amber current cell, and a short bright comet whose orbit speed follows throughput.',
+    motion: 'Comet orbits 0.25 rev/s when slow up to 1.45 rev/s at 40 MB/s, with a four-cell fading tail. Current cell pulses 1.9 s.',
+    states: 'Stalled: comet stops. Paused: ring desaturates to 70%, no comet; Resume sits inside. Finishing: full mint ring with a slow amber comet. Saved: a white wave travels around once, then fades.',
+    rm: 'Static ring showing progress; no comet or pulse.',
+    a11y: 'Decorative; the Pause button keeps its label “Pause: {title}”.' },
+  { key: 'odo', name: 'Byte odometer', desc: 'Downloaded size rolls up like a counter', noise: 2,
+    shows: 'Downloaded amount, e.g. “214.6 MB”, in rolling digits with a small pixel down-arrow. Fast downloads blur the last digits like a spinning counter; slow ones tick visibly.',
+    motion: 'Each digit rolls 260 ms cubic-bezier(.2,.8,.2,1), always forward (9 → 0 wraps). Digits changing faster than ~8/s stop rolling and swap in place, slightly blurred and dimmed, like a spinning counter. Arrow steps down 1 px, 0.3–1.4 s cadence by speed.',
+    states: 'Stalled/paused: digits hold, arrow still, subtle colour. Finishing: rolls to the total. Saved: turns green for the check moment, then fades.',
+    rm: 'Digits swap without rolling or blur; arrow still.',
+    a11y: 'Adds real information, so the progressbar text becomes “34% · 214 MB of 620 MB · 5 min left”.' },
+  { key: 'stream', name: 'Snag stream', desc: 'Pixels stream into the Pause button; denser when faster', noise: 4,
+    shows: 'Two-pixel squares flow toward the action button and are absorbed, warming it with a faint glow. Density and velocity follow speed: a trickle at 0.3 MB/s, a stream at 40 MB/s.',
+    motion: 'Spawn 6–56 px/s, velocity 26–176 px/s, positions snapped to whole pixels; paths converge on the button centre. Absorbed pixels add glow that decays with a 250 ms time constant.',
+    states: 'Stalled: no new pixels. Paused: in-flight pixels decelerate and fade in 300 ms. Finishing: sparse amber trickle. Saved: one mint burst into Play, then fades.',
+    rm: 'Three static pixel chevrons “›››”, brightness by speed.',
+    a11y: 'Decorative; status text unchanged.' },
+  { key: 'logo', name: 'Filling play', desc: 'The pixel play logo fills with orange as it downloads', noise: 2, pick: 1,
+    shows: 'The 16×16 Pixel bevel play tile from the logo at 1.5×. It starts as a dark outline and fills row by row from the bottom with real progress; the current pixel row fills left to right in amber.',
+    motion: 'Current row pulses 1.9 s; a bright scan pixel runs along it at 4–34 px/s by speed. Each finished row flashes 400 ms. Finishing: the logo’s pixel shine sweeps every 1.8 s.',
+    states: 'Stalled: scan stops. Paused: fill desaturates, no scan. Finishing: full tile with shine. Saved: the logo’s “press” (520 ms, sink and spring back) as the check draws, then fades.',
+    rm: 'Static fill level; no scan, flash, shine or press.',
+    a11y: 'Decorative; mirrors the progressbar, whose text is unchanged.' },
+  { key: 'eta', name: 'Countdown chip', desc: 'Time left moves into a chip with a pulsing pixel', noise: 1,
+    shows: 'The ETA leaves the status line (“34%”) for a small inset chip: “5 min”, then a per-second “0:42” countdown in the last minute, beside a pulsing amber pixel.',
+    motion: 'Pixel pulses 1.9 s ease-in-out (same as the current cell). Each text change slides up 5 px and fades in over 200 ms. ETA is smoothed over ~4 s so it does not jitter.',
+    states: 'Stalled: “—” and a grey pixel. Paused and finishing: chip hidden (status line already says it). Saved: “Done” in green, then fades.',
+    rm: 'Pixel still; text swaps without motion.',
+    a11y: 'Progressbar text stays “34% · 5 min left”; the chip itself is aria-hidden to avoid a double announcement.' },
+  { key: 'dots', name: 'Connection lights', desc: 'One pixel per active request, blinking as pieces land', noise: 4,
+    shows: 'Sixteen square pixels (2×8) matching the Details “6 of 16 active” connection dots. Lit pixels are measured active requests; each blinks white when its request completes and relights for the next piece.',
+    motion: 'Request lifetimes 0.6–1.8 s divided by speed; 160 ms white flash, 60 ms dark gap, 4 px glow on lit pixels.',
+    states: 'Stalled: lit pixels stop blinking. Paused: all dark. Finishing: one amber pixel steps across (processing). Saved: all mint once, then fade.',
+    rm: 'Static count of lit pixels; no blinking.',
+    a11y: 'Decorative; Details keeps the text “6 of 16 active”.' },
+  { key: 'sheen', name: 'Speed glint', desc: 'A glint runs along the lane; faster downloads sweep faster', noise: 2, pick: 3,
+    shows: 'No new element: a soft warm band crosses the row background (right of the thumbnail) and a white glint runs along the finished cells of the lane in the same sweep. Pass speed is proportional to download speed.',
+    motion: 'Sweep 60 px/s + 70 px/s per MB/s (capped 1400 px/s), linear, with a 500 ms rest between passes. Background band at 5.5% alpha; glint blends with overlay so it brightens only finished cells.',
+    states: 'Stalled: no new passes start. Paused: none. Finishing: slow amber pass (140 px/s). Saved: covered by the existing lane fade.',
+    rm: 'No sweep.',
+    a11y: 'Decorative; status text unchanged. Never crosses the thumbnail or text (background layer only).' },
+];
+
+/* ── Simulation ──────────────────────────────────────────── */
+const speedFromSlider = v => v <= 0 ? 0 : 0.1 * Math.pow(400, v / 100);
+let sliderSpeed = speedFromSlider(73);
+const JOBS = [
+  { id: 'fast', title: 'Sintel — an open movie by Blender', dur: '14:48', thumb: 'sintel', sizeMB: 1400, progress: 34, state: 'downloading', target: () => sliderSpeed, loops: true, quality: ['HD', '720p'] },
+  { id: 'slow', title: 'Behind the scenes — the animation process', dur: '9:54', thumb: null, sizeMB: 180, progress: 18, state: 'downloading', target: () => 0.45, stalls: true },
+  { id: 'fin', title: 'Tears of Steel', dur: '12:14', thumb: 'tears-of-steel', sizeMB: 540, progress: 100, state: 'finishing', target: () => 5 },
+  { id: 'paused', title: 'Big Buck Bunny — director’s commentary', dur: '24:18', thumb: 'big-buck-bunny', sizeMB: 900, progress: 48.2, state: 'paused', target: () => 2.4 },
+  { id: 'wait', title: 'Sintel — concept art', dur: '5:12', thumb: 'sintel', sizeMB: 90, progress: 0, state: 'waiting', statusText: 'Waiting · starts next' },
+  { id: 'saved', title: 'Tears of Steel — Blender open movie', dur: '12:14', thumb: 'tears-of-steel', sizeMB: 182, progress: 100, state: 'saved', quality: ['FHD', '1080p'] },
+];
+for (const j of JOBS) {
+  j.seed = rand() * 100; j.walk = 0; j.doneMB = j.sizeMB * j.progress / 100; j.stateAt = -1e9; j.sampleAt = 0; j.stallUntil = 0; j.nextStall = 5000;
+  j.segCount = Math.max(24, Math.round(j.sizeMB / 5));
+  const base = j.target ? j.target() : 0;
+  j.speed = j.state === 'downloading' ? base : 0; j.etaSpeed = base;
+  let w = 0; j.samples = Array.from({ length: 40 }, (_, i) => { w = w * .6 + (rand() - .5) * .5; return Math.max(0, base * (1 + .16 * Math.sin(i * .7 + j.seed) + w)); });
+  j.conns = j.state === 'downloading' ? 3 : 0; j.connsAt = 0;
+}
+const L = j => j.speed <= 0.03 ? 0 : clamp(Math.log10(j.speed / 0.1) / Math.log10(400), 0.02, 1);
+const stalled = j => j.state === 'downloading' && j.speed < 0.03;
+const setState = (j, s, now) => { j.state = s; j.stateAt = now; };
+
+function step(j, now, dt) {
+  if (j.state === 'downloading') {
+    if (j.stalls && now > j.nextStall) { j.stallUntil = now + 1400 + rand() * 1400; j.nextStall = now + 7000 + rand() * 7000; }
+    const target = now < j.stallUntil ? 0 : j.target();
+    j.walk += (rand() - .5) * dt * 0.9; j.walk *= 1 - Math.min(1, dt * .7);
+    const wob = 1 + .18 * Math.sin(now / 900 + j.seed) + .12 * Math.sin(now / 340 + j.seed * 3) + j.walk;
+    j.speed += (target * Math.max(0, wob) - j.speed) * Math.min(1, dt * 3);
+    if (target === 0) j.speed *= Math.exp(-dt * 5);
+    if (j.speed < 0.005) j.speed = 0;
+    j.doneMB = Math.min(j.sizeMB, j.doneMB + j.speed * dt);
+    j.progress = j.doneMB / j.sizeMB * 100;
+    if (j.progress >= 100) { if (j.loops) setState(j, 'finishing', now); else { j.doneMB = j.sizeMB * .999; j.progress = 99.9; } }
+    if (now - j.connsAt > 700) {
+      j.connsAt = now;
+      j.conns = j.speed < 0.03 ? Math.min(j.conns, 2) : clamp(Math.round(1 + 12 * L(j) + (rand() - .5) * 2.4), 1, 16);
+    }
+  } else { j.speed = 0; if (j.state !== 'finishing') j.conns = 0; }
+  j.etaSpeed += (j.speed - j.etaSpeed) * Math.min(1, dt / 4);
+  if (j.state === 'downloading' && now - j.sampleAt >= STEP) { j.samples.push(j.speed); j.samples.shift(); j.sampleAt = now; }
+  if (j.loops && j.state === 'finishing' && now - j.stateAt > 2200) { j.doneMB = j.sizeMB; setState(j, 'saved', now); j.justSaved = now; }
+  if (j.loops && j.state === 'saved' && now - j.stateAt > 5000) { j.doneMB = j.sizeMB * .03; j.progress = 3; setState(j, 'downloading', now); j.etaSpeed = j.target(); }
+}
+const etaSeconds = j => j.etaSpeed < 0.03 ? null : (j.sizeMB - j.doneMB) / j.etaSpeed;
+const etaText = s => s == null ? '' : s < 60 ? 'under a minute left' : s < 3600 ? `${Math.ceil(s / 60)} min left` : `${Math.floor(s / 3600)} hr ${Math.ceil(s % 3600 / 60)} min left`;
+const sizeText = mb => mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+
+/* ── Canvas helper ───────────────────────────────────────── */
+function canvas(w, h, cls = '', density = 4) {
+  const c = document.createElement('canvas'); c.width = w * density; c.height = h * density;
+  c.style.width = w + 'px'; c.style.height = h + 'px'; c.className = 'deco ' + cls; c.setAttribute('aria-hidden', 'true');
+  const x = c.getContext('2d'); x.setTransform(density, 0, 0, density, 0, 0);
+  return { c, x, w, h };
+}
+const justSaved = (j, now) => !!(j.state === 'saved' && j.justSaved && now - j.justSaved < 1000);
+
+/* ── Widgets ─────────────────────────────────────────────── */
+const WIDGETS = {
+  trace(v) {
+    const { c, x, w, h } = canvas(78, 26); v.act.append(c); let scale = 0, lastDraw = 0;
+    return { update(now) {
+      const j = v.job; const live = j.state === 'downloading';
+      if (RM && now - lastDraw < STEP && !justSaved(j, now) && lastDraw) return; lastDraw = now;
+      const n = 26, s = j.samples.slice(-n);
+      const frac = live && !RM ? Math.min(1, (now - j.sampleAt) / STEP) : 0;
+      const target = Math.max(...s, .05) * 1.18;
+      scale = scale ? scale + (target - scale) * (RM ? 1 : .06) : target;
+      const R = w - 6, stepX = R / (n - 3);
+      const pts = s.map((sp, i) => [R + (i - (n - 2) + .5 - frac) * stepX, h - 3 - sp / scale * (h - 8)]);
+      const pal = j.state === 'paused' ? ['#6b7480', '#3a424d'] : j.state === 'finishing' ? ['#f4c38a', '#d9a56b'] : j.state === 'saved' ? ['#80bfa6', '#80bfa6'] : ['#ff7566', '#fa5d0e'];
+      c.style.opacity = j.state === 'paused' ? .6 : 1;
+      x.clearRect(0, 0, w, h); x.save(); x.beginPath(); x.rect(0, 0, R + .5, h); x.clip();
+      const line = new Path2D(); pts.forEach(([px, py], i) => i ? line.lineTo(px, py) : line.moveTo(px, py));
+      const area = new Path2D(line); area.lineTo(pts[n - 1][0], h); area.lineTo(pts[0][0], h); area.closePath();
+      const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, pal[1] + 'cc'); g.addColorStop(1, pal[1] + '00');
+      x.fillStyle = g; x.fill(area);
+      x.lineWidth = 1.5; x.lineJoin = 'round'; x.strokeStyle = pal[0];
+      if (!RM && live) { x.shadowColor = pal[0] + '99'; x.shadowBlur = 5; }
+      x.stroke(line); x.shadowBlur = 0;
+      x.globalCompositeOperation = 'destination-in';
+      const fade = x.createLinearGradient(0, 0, R, 0); fade.addColorStop(0, 'rgba(0,0,0,.08)'); fade.addColorStop(.55, '#000'); x.fillStyle = fade; x.fillRect(0, 0, w, h);
+      x.restore();
+      if (live || j.state === 'finishing') {
+        const along = frac + .5;
+        const y = along <= 1 ? pts[n - 3][1] + (pts[n - 2][1] - pts[n - 3][1]) * along : pts[n - 2][1] + (pts[n - 1][1] - pts[n - 2][1]) * (along - 1);
+        const dim = stalled(j) || j.state === 'finishing' ? .45 : 1;
+        if (!RM) { const hg = x.createRadialGradient(R, y, 0, R, y, 6); hg.addColorStop(0, `rgba(255,117,102,${.6 * dim})`); hg.addColorStop(1, 'rgba(255,117,102,0)'); x.fillStyle = hg; x.fillRect(R - 6, y - 6, 12, 12); }
+        x.globalAlpha = dim; x.fillStyle = j.state === 'finishing' ? '#ffe2b8' : '#ffd6cf'; x.beginPath(); x.arc(R, y, 2, 0, 7); x.fill(); x.globalAlpha = 1;
+      }
+    } };
+  },
+
+  eq(v) {
+    const cols = 6, rows = 6, { c, x, w, h } = canvas(23, 23); v.act.append(c);
+    const hgt = Array(cols).fill(1), peak = Array(cols).fill(1); let next = 0, tickN = 0;
+    return { update(now) {
+      const j = v.job, lv = L(j);
+      if (now >= next) {
+        tickN++;
+        next = now + (RM ? 1000 : j.state === 'finishing' ? 90 : 170 - 110 * lv);
+        for (let i = 0; i < cols; i++) {
+          if (j.state === 'downloading') {
+            if (stalled(j)) hgt[i] = 1;
+            else { const base = 1 + lv * (rows - 1); hgt[i] = RM ? Math.round(base) : clamp(Math.round(base * (.45 + .75 * rand()) + (rand() < .15 ? 1 : 0)), 1, rows); }
+          } else if (j.state === 'finishing') hgt[i] = RM ? 2 : 1 + Math.round((Math.sin(now / 300 - i * .9) + 1) * 1.2);
+          else if (justSaved(j, now)) hgt[i] = rows;
+          else hgt[i] = 1;
+          if (hgt[i] >= peak[i]) peak[i] = hgt[i]; else if (tickN % 2 === 0) peak[i] = Math.max(hgt[i], peak[i] - 1);
+        }
+      }
+      x.clearRect(0, 0, w, h);
+      for (let i = 0; i < cols; i++) for (let r = 0; r < rows; r++) {
+        const lit = r < hgt[i]; const isPeak = !RM && j.state === 'downloading' && !stalled(j) && r === peak[i] - 1 && peak[i] > hgt[i];
+        let col = '#1f252d';
+        if (lit) col = j.state === 'paused' ? '#3d4550' : stalled(j) ? '#5a3a26' : justSaved(j, now) ? '#80bfa6' : j.state === 'finishing' ? '#f4c38a' : r >= 4 ? '#f4c38a' : '#fa5d0e';
+        if (isPeak) col = '#ffe2b8';
+        x.fillStyle = col; x.fillRect(i * 4, h - 3 - r * 4, 3, 3);
+      }
+    } };
+  },
+
+  cells(v) {
+    const { c, x, w, h } = canvas(62, 14); v.act.append(c);
+    let top = null, slideAt = -1e9, lastDone = null, lastSpark = 0; const flash = new Map();
+    return { update(now) {
+      const j = v.job; const f = j.progress / 100 * j.segCount;
+      const all = j.state === 'finishing' || j.state === 'saved';
+      const done = all ? j.segCount : Math.floor(f);
+      if (lastDone !== null && done > lastDone && done - lastDone <= 3 && j.state === 'downloading' && !RM && now - lastSpark > 250) { flash.set(done - 1, now); lastSpark = now; }
+      if (justSaved(j, now) && !flash.has('saved')) { flash.set('saved', now); }
+      lastDone = done;
+      const rowTop = Math.max(0, Math.min(Math.floor(done / 8), Math.ceil(j.segCount / 8) - 2));
+      if (top !== null && rowTop > top && !RM) slideAt = now; top = rowTop;
+      const off = RM ? 0 : 8 * (1 - easeOut(clamp((now - slideAt) / 240, 0, 1)));
+      const active = j.state === 'downloading' ? Math.max(1, j.conns) : 0;
+      x.clearRect(0, 0, w, h);
+      const paused = j.state === 'paused';
+      for (let r = rowTop - 1; r <= rowTop + 2; r++) for (let col = 0; col < 8; col++) {
+        const idx = r * 8 + col; if (idx < 0 || idx >= j.segCount) continue;
+        const y = (r - rowTop) * 8 + off; if (y < -6 || y > h) continue; const px = col * 8;
+        let fill = '#292f37', stroke = '#333a44', part = 0, alpha = 1;
+        if (idx < done) { fill = paused ? '#5f7f73' : '#80bfa6'; stroke = paused ? '#6b8a7e' : '#91cbb4'; }
+        else if (idx < done + active) {
+          const k = idx - done; fill = '#30291f'; stroke = '#d0a471';
+          part = k === 0 ? Math.max(.18, f - done) : 1;
+          alpha = RM || stalled(j) ? .75 : .45 + .55 * (0.5 + .5 * Math.sin(now / 1900 * Math.PI * 2 - k * 1.3));
+        } else if (paused && idx === done) { fill = '#62513a'; stroke = '#a18b6b'; }
+        x.globalAlpha = paused ? .75 : 1;
+        x.fillStyle = stroke; x.fillRect(px, y, 6, 6); x.fillStyle = fill; x.fillRect(px + 1, y + 1, 4, 4);
+        if (part) { x.globalAlpha = alpha; x.fillStyle = '#f4c38a'; x.fillRect(px, y, 6 * part, 6); x.globalAlpha = 1; }
+        const fl = flash.get(idx) ?? (flash.has('saved') ? flash.get('saved') : undefined);
+        if (fl !== undefined && now - fl < 520) { x.globalAlpha = 1 - (now - fl) / 520; x.fillStyle = '#fff'; x.fillRect(px - .5, y - .5, 7, 7); x.globalAlpha = 1; }
+      }
+      x.globalAlpha = 1;
+      if (!justSaved(j, now)) flash.delete('saved');
+    } };
+  },
+
+  ring(v) {
+    const N = 10, W = 39, { c, x } = canvas(W, W, 'ring'); v.wrap.prepend(c);
+    const cells = [];
+    for (let i = 0; i < N; i++) cells.push([i * 4, 0]);
+    for (let i = 1; i < N; i++) cells.push([36, i * 4]);
+    for (let i = N - 2; i >= 0; i--) cells.push([i * 4, 36]);
+    for (let i = N - 2; i >= 1; i--) cells.push([0, i * 4]);
+    const corners = new Set(['0,0', '36,0', '36,36', '0,36']); const round = cells.filter(([a, b]) => !corners.has(a + ',' + b));
+    const order = round.slice(4).concat(round.slice(0, 4)); const M = order.length; // start top-centre, clockwise; corners dropped so it reads rounded
+    let phase = 0;
+    return { update(now, dt) {
+      const j = v.job; x.clearRect(0, 0, W, W);
+      const all = j.state === 'finishing' || j.state === 'saved';
+      const filledF = all ? M : j.progress / 100 * M; const filled = Math.floor(filledF);
+      const paused = j.state === 'paused'; c.style.opacity = paused ? .7 : 1;
+      const rate = RM ? 0 : j.state === 'finishing' ? .4 : j.state === 'downloading' && !stalled(j) ? .25 + 1.2 * L(j) : 0;
+      phase = (phase + dt * rate * M) % M;
+      order.forEach(([px, py], i) => {
+        let col = '#262c35';
+        if (i < filled) col = paused ? '#5f7f73' : '#80bfa6';
+        else if (i === filled && !all) col = paused ? '#62513a' : '#f4c38a';
+        x.globalAlpha = i === filled && !all && !paused && !RM && j.state === 'downloading' ? .55 + .45 * (0.5 + .5 * Math.sin(now / 1900 * Math.PI * 2)) : i < filled ? .85 : 1;
+        x.fillStyle = col; x.fillRect(px, py, 3, 3);
+      });
+      x.globalAlpha = 1;
+      if (rate > 0) for (let t = 0; t < 4; t++) {
+        const i = (Math.floor(phase) - t + M) % M; const [px, py] = order[i];
+        x.globalAlpha = [1, .6, .35, .15][t]; x.fillStyle = j.state === 'finishing' ? '#f4c38a' : '#fff1dc'; x.fillRect(px, py, 3, 3);
+      }
+      if (justSaved(j, now) && !RM) {
+        const head = (now - j.justSaved) / 520 * M;
+        order.forEach(([px, py], i) => { const d = head - i; if (d > 0 && d < 6) { x.globalAlpha = 1 - d / 6; x.fillStyle = '#fff'; x.fillRect(px, py, 3, 3); } });
+      }
+      x.globalAlpha = 1;
+    } };
+  },
+
+  odo(v) {
+    const el = document.createElement('span'); el.className = 'deco odo'; el.setAttribute('aria-hidden', 'true');
+    const arrow = canvas(7, 8, 'odo-arrow pixel', 4); const num = document.createElement('span'); num.className = 'odo-num';
+    el.append(arrow.c, num); v.act.append(el);
+    const ax = arrow.x; let shape = '', digits = [], arrowY = 0, arrowAt = 0;
+    const drawArrow = (col) => { ax.clearRect(0, 0, 7, 8); ax.fillStyle = col; const y = arrowY; ax.fillRect(3, y, 1, 4); ax.fillRect(1, y + 3, 5, 1); ax.fillRect(2, y + 4, 3, 1); ax.fillRect(3, y + 5, 1, 1); ax.fillRect(0, 7, 7, 1); };
+    const fmt = mb => mb >= 1000 ? `${(mb / 1000).toFixed(2)} GB` : `${mb.toFixed(1)} MB`;
+    return { update(now) {
+      const j = v.job; const s = fmt(j.state === 'finishing' || j.state === 'saved' ? j.sizeMB : j.doneMB);
+      const sh = s.replace(/\d/g, '0');
+      if (sh !== shape) {
+        shape = sh; num.textContent = ''; digits = [];
+        for (const ch of s) {
+          if (/\d/.test(ch)) { const d = document.createElement('span'); d.className = 'odo-d'; const strip = document.createElement('span'); strip.innerHTML = Array.from({ length: 20 }, (_, i) => `<b>${i % 10}</b>`).join(''); d.append(strip); num.append(d); digits.push({ d, strip, cur: -1, changed: 0, rate: 0 }); }
+          else num.append(document.createTextNode(ch === ' ' ? ' ' : ch));
+        }
+      }
+      let di = 0;
+      for (const ch of s) {
+        if (!/\d/.test(ch)) continue; const g = digits[di++]; const n = +ch;
+        if (g.cur === n) continue;
+        const gap = now - g.changed; g.rate = g.rate * .7 + (gap < 1 ? 60 : 1000 / gap) * .3; g.changed = now;
+        const fast = g.rate > 8 && !RM; g.d.classList.toggle('fast', fast);
+        if (g.cur < 0 || RM || fast) { g.strip.style.transition = 'none'; g.strip.style.transform = `translateY(${-n * 16}px)`; }
+        else {
+          const to = n < g.cur ? n + 10 : n; g.strip.style.transition = ''; g.strip.style.transform = `translateY(${-to * 16}px)`;
+          if (to >= 10) { const s2 = g.strip, nn = n; clearTimeout(g.t); g.t = setTimeout(() => { s2.style.transition = 'none'; s2.style.transform = `translateY(${-nn * 16}px)`; }, fast ? 100 : 270); }
+        }
+        g.cur = n;
+      }
+      const live = j.state === 'downloading' && !stalled(j);
+      el.classList.toggle('paused', j.state === 'paused' || stalled(j)); el.classList.toggle('done', justSaved(j, now));
+      if (live && !RM && now - arrowAt > 1400 - 1100 * L(j)) { arrowAt = now; arrowY = arrowY ? 0 : 1; }
+      if (!live) arrowY = 0;
+      drawArrow(justSaved(j, now) ? '#80bfa6' : live ? '#fa5d0e' : j.state === 'finishing' ? '#f4c38a' : '#56606c');
+    } };
+  },
+
+  stream(v) {
+    const { c, x, w, h } = canvas(104, 30); v.act.append(c); v.act.style.marginRight = '0';
+    const parts = []; let acc = 0, glow = 0, burst = false;
+    const cols = ['#fa5d0e', '#fa5d0e', '#fa5d0e', '#ff7566', '#f4c38a', '#f4c38a', '#fff1dc'];
+    return { update(now, dt) {
+      const j = v.job, lv = L(j); x.clearRect(0, 0, w, h);
+      if (RM) {
+        const a = j.state === 'downloading' ? (stalled(j) ? .25 : .35 + .65 * lv) : .2;
+        for (let k = 0; k < 3; k++) { x.globalAlpha = a * (.45 + k * .27); x.fillStyle = j.state === 'paused' ? '#56606c' : '#fa5d0e'; const bx = w - 26 + k * 7, cy = 15; x.fillRect(bx, cy - 4, 2, 2); x.fillRect(bx + 2, cy - 2, 2, 2); x.fillRect(bx + 4, cy, 2, 2); x.fillRect(bx + 2, cy + 2, 2, 2); x.fillRect(bx, cy + 4, 2, 2); }
+        x.globalAlpha = 1; v.btn.style.boxShadow = ''; return;
+      }
+      let rate = 0, vx = 26 + 150 * lv, palette = cols;
+      if (j.state === 'downloading' && !stalled(j)) rate = 6 + 50 * lv;
+      if (j.state === 'finishing') { rate = 3; vx = 22; palette = ['#f4c38a']; }
+      if (justSaved(j, now) && !burst) { burst = true; for (let k = 0; k < 26; k++) parts.push({ x: rand() * 50, y0: 4 + rand() * 22, vx: 140 + rand() * 80, col: rand() < .7 ? '#80bfa6' : '#dff5ea' }); }
+      if (j.state !== 'saved') burst = false;
+      acc += rate * dt;
+      while (acc >= 1) { acc -= 1; parts.push({ x: -2, y0: 4 + rand() * 22, vx: vx * (.8 + rand() * .4), col: palette[Math.floor(rand() * palette.length)] }); }
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        if (j.state === 'paused') { p.vx *= Math.exp(-dt * 6); p.fade = (p.fade ?? 1) - dt / .3; if (p.fade <= 0) { parts.splice(i, 1); continue; } }
+        p.x += p.vx * dt;
+        if (p.x >= w - 2) { glow = Math.min(1, glow + .07); parts.splice(i, 1); continue; }
+        const t = clamp(p.x / (w - 2), 0, 1); const y = p.y0 + (15 - p.y0) * t * t;
+        x.globalAlpha = Math.min(1, p.x / 18) * (p.fade ?? 1); x.fillStyle = p.col; x.fillRect(Math.round(p.x), Math.round(y - 1), 2, 2);
+      }
+      x.globalAlpha = 1; glow *= Math.exp(-dt / .25);
+      v.btn.style.boxShadow = glow > .02 ? `0 0 ${4 + glow * 10}px hsl(20 96% 52% / ${glow * .45}), inset 0 0 0 1px hsl(20 96% 52% / ${glow * .35})` : '';
+      if (!v.btn.matches(':hover')) v.btn.style.color = glow > .15 ? `color-mix(in srgb, #f2c45a ${Math.round(glow * 70)}%, var(--fg-muted))` : '';
+    } };
+  },
+
+  logo(v) {
+    const { c, x } = canvas(16, 16, 'logo-tile pixel', 1); v.act.append(c);
+    const inside = (r, col) => r >= 0 && r < 16 && col >= 0 && col < 16 && !((r === 0 || r === 15) && (col < 2 || col > 13)) && !((r === 1 || r === 14) && (col < 1 || col > 14));
+    const TRI = [[4, 2], [5, 3], [6, 4], [7, 5], [8, 5], [9, 4], [10, 3], [11, 2]];
+    const tri = (r, col) => TRI.some(([rr, n]) => rr === r && col >= 6 && col < 6 + n);
+    let lastRows = null, flashRow = -1, flashAt = -1e9, scan = 0, pressed = false;
+    return { update(now, dt) {
+      const j = v.job; const all = j.state === 'finishing' || j.state === 'saved';
+      const level = all ? 16 : j.progress / 100 * 16; const rowsDone = Math.floor(level), frac = level - rowsDone;
+      if (lastRows !== null && rowsDone > lastRows && !RM && j.state === 'downloading') { flashRow = rowsDone - 1; flashAt = now; }
+      lastRows = rowsDone;
+      const live = j.state === 'downloading' && !stalled(j); if (live && !RM) scan = (scan + dt * (4 + 30 * L(j))) % 16;
+      const paused = j.state === 'paused'; c.style.filter = paused ? 'saturate(.3) brightness(.8)' : '';
+      if (justSaved(j, now) && !pressed && !RM) { pressed = true; c.classList.remove('press'); void c.offsetWidth; c.classList.add('press'); }
+      if (j.state !== 'saved') pressed = false;
+      const pulse = RM ? 1 : .55 + .45 * (0.5 + .5 * Math.sin(now / 1900 * Math.PI * 2));
+      const shineAt = j.state === 'finishing' && !RM ? Math.floor(((now % 1800) / 900) * 40) - 6 : -99;
+      x.clearRect(0, 0, 16, 16);
+      for (let r = 0; r < 16; r++) for (let col = 0; col < 16; col++) {
+        if (!inside(r, col)) continue;
+        const rb = 15 - r; const lit = rb < rowsDone; const cur = rb === rowsDone && col < frac * 16;
+        const tl = !inside(r - 1, col) || !inside(r, col - 1), br = !inside(r + 1, col) || !inside(r, col + 1);
+        const t = tri(r, col); let colr, a = 1;
+        if (lit) colr = t ? '#0c0e11' : tl ? '#ffb238' : br ? '#bd3f00' : '#fa5d0e';
+        else if (cur) { colr = t ? '#0c0e11' : '#f4c38a'; a = t ? 1 : pulse; }
+        else colr = t ? '#56606c' : tl || br ? '#343c47' : '#242b34';
+        x.globalAlpha = a; x.fillStyle = colr; x.fillRect(col, r, 1, 1); x.globalAlpha = 1;
+        if (lit && !t && r + col >= shineAt && r + col < shineAt + 3) { x.fillStyle = '#ffe2b8'; x.fillRect(col, r, 1, 1); }
+        if (rb === flashRow && now - flashAt < 400 && !t) { x.globalAlpha = 1 - (now - flashAt) / 400; x.fillStyle = '#fff'; x.fillRect(col, r, 1, 1); x.globalAlpha = 1; }
+      }
+      if (live && !RM && rowsDone < 16) { const col = Math.floor(scan), r = 15 - rowsDone; if (inside(r, col) && !tri(r, col)) { x.fillStyle = '#fff5e6'; x.fillRect(col, r, 1, 1); } }
+    } };
+  },
+
+  eta(v) {
+    const chip = document.createElement('span'); chip.className = 'deco chip'; chip.setAttribute('aria-hidden', 'true');
+    chip.innerHTML = '<i></i><b></b>'; v.act.append(chip); const b = chip.querySelector('b'); let text = '', smooth = null;
+    return { update(now, dt) {
+      const j = v.job; const js = justSaved(j, now);
+      const show = j.state === 'downloading' || js; chip.style.display = show ? '' : 'none'; if (!show) { smooth = null; return; }
+      let t;
+      if (js) t = 'Done';
+      else { const e = etaSeconds(j); if (e == null) { t = '—'; smooth = null; } else { smooth = smooth == null ? e : Math.max(0, smooth - dt) + (e - smooth) * Math.min(1, dt / 2); t = smooth < 60 ? `0:${String(Math.ceil(smooth)).padStart(2, '0')}` : smooth < 3600 ? `${Math.ceil(smooth / 60)} min` : `${Math.floor(smooth / 3600)} hr ${Math.ceil(smooth % 3600 / 60)} min`; } }
+      chip.classList.toggle('stalled', t === '—'); chip.classList.toggle('done', js);
+      if (t !== text) { text = t; b.textContent = t; if (!RM) { b.classList.remove('tick'); void b.offsetWidth; b.classList.add('tick'); } }
+    } };
+  },
+
+  dots(v) {
+    const { c, x, w, h } = canvas(53, 11); v.act.append(c);
+    const slots = Array.from({ length: 16 }, () => ({ until: 0, flash: -1e9, gap: 0 }));
+    let sweep = 0;
+    return { update(now, dt) {
+      const j = v.job, lv = L(j); x.clearRect(0, 0, w, h);
+      const on = j.state === 'downloading' ? j.conns : 0; const js = justSaved(j, now);
+      if (j.state === 'finishing') sweep = (sweep + dt * 2) % 16;
+      slots.forEach((s, i) => {
+        const px = (i % 8) * 7, py = Math.floor(i / 8) * 7; let col = '#262c35', glow = false;
+        if (i < on) {
+          if (!RM && !stalled(j) && now > s.until) { s.flash = now; s.gap = now + 60; s.until = now + (600 + 1200 * rand()) / (.4 + lv); }
+          col = now < s.gap && !RM ? '#262c35' : stalled(j) ? '#8a3d17' : '#fa5d0e'; glow = col === '#fa5d0e';
+        }
+        if (j.state === 'finishing' && i === Math.floor(sweep)) col = '#f4c38a';
+        if (js) col = '#80bfa6';
+        if (glow && !RM) { x.shadowColor = 'rgba(250,93,14,.7)'; x.shadowBlur = 4; }
+        x.fillStyle = col; x.fillRect(px, py, 4, 4); x.shadowBlur = 0;
+        if (i < on && !RM && now - s.flash < 160) { x.globalAlpha = 1 - (now - s.flash) / 160; x.fillStyle = '#fff'; x.fillRect(px, py, 4, 4); x.globalAlpha = 1; }
+      });
+    } };
+  },
+
+  sheen(v) {
+    const band = document.createElement('div'); band.className = 'deco sheen'; band.innerHTML = '<i></i>'; v.row.append(band);
+    const glint = document.createElement('div'); glint.className = 'deco glint'; glint.innerHTML = '<i></i>'; v.lane.append(glint);
+    const bi = band.firstChild, gi = glint.firstChild; let pos = -1e9, restUntil = 0;
+    return { update(now, dt) {
+      const j = v.job; const width = band.offsetWidth; const laneW = v.lane.offsetWidth;
+      glint.style.width = `${(j.state === 'finishing' ? 1 : j.progress / 100) * laneW}px`;
+      glint.classList.toggle('amber', j.state === 'finishing');
+      let speed = 0;
+      if (!RM && j.state === 'downloading' && !stalled(j)) speed = Math.min(1400, 60 + 70 * j.speed);
+      if (!RM && j.state === 'finishing') speed = 140;
+      const running = pos > -1e8 && pos < width + 220;
+      if (running) pos += dt * (speed || (j.state === 'downloading' ? 300 : 0) || 900);
+      else if (speed && now > restUntil) pos = -220;
+      if (pos > -1e8 && pos >= width + 220) { pos = -1e9; restUntil = now + 500; }
+      const vis = pos > -1e8 && (j.state === 'downloading' || j.state === 'finishing');
+      bi.style.opacity = gi.style.opacity = vis ? 1 : 0;
+      bi.style.transform = `translateX(${pos}px)`; gi.style.transform = `translateX(${pos + 110 - 12 - 32}px)`;
+    } };
+  },
+};
+
+/* ── Rows ────────────────────────────────────────────────── */
+let OPT = OPTIONS[0];
+const views = [];
+function makeRow(job, container, live) {
+  const item = document.createElement('div'); item.className = 'item'; item.setAttribute('role', 'listitem');
+  item.innerHTML = `<div class="vrow" tabindex="0">
+    <div class="lane" aria-hidden="true">${'<span class="pc"></span>'.repeat(40)}</div>
+    <div class="thumb" aria-hidden="true">${job.thumb ? `<img src="${MEDIA}${job.thumb}.jpg" alt="">` : '<i class="dot" style="left:calc(50% - 14px)"></i><i class="dot" style="left:calc(50% - 2px);animation-delay:.18s"></i><i class="dot" style="left:calc(50% + 10px);animation-delay:.36s"></i>'}</div>
+    <div class="text"><div class="heading"><div class="title"></div><span class="dur">${job.dur}</span></div><div class="status"></div></div>
+    <div class="actions"><button class="btn more" type="button" aria-label="More: ${job.title}" title="More">${svg('more')}</button><span class="act"></span><span class="wrap"><button class="btn main" type="button"></button></span></div>
+  </div>`;
+  container.append(item);
+  const row = item.firstElementChild;
+  const v = { job, item, row, live, lane: row.querySelector('.lane'), pcs: [...row.querySelectorAll('.pc')], status: row.querySelector('.status'), act: row.querySelector('.act'), wrap: row.querySelector('.wrap'), btn: row.querySelector('.main'), prevCells: null, lastSpark: 0, key: '', widget: null };
+  row.querySelector('.title').textContent = job.title; row.querySelector('.title').title = job.title;
+  v.btn.addEventListener('click', e => { e.stopPropagation(); togglePause(job); });
+  views.push(v); return v;
+}
+function togglePause(j) {
+  const now = performance.now();
+  if (j.state === 'downloading') setState(j, 'paused', now);
+  else if (j.state === 'paused') { setState(j, 'downloading', now); j.speed = j.target() * .4; }
+}
+function mountWidget(v) {
+  v.row.querySelectorAll('.deco').forEach(e => e.remove()); v.act.textContent = ''; v.act.style.marginRight = '';
+  v.btn.style.boxShadow = ''; v.btn.style.color = ''; v.row.dataset.opt = OPT.key;
+  v.widget = WIDGETS[OPT.key] ? WIDGETS[OPT.key](v) : null;
+}
+function renderRow(v, now, dt) {
+  const j = v.job, row = v.row, st = j.state, js = justSaved(j, now);
+  const lane = ['downloading', 'finishing'].includes(st) || (st === 'paused' && j.progress > 0) || js;
+  const active = st === 'downloading' || st === 'finishing';
+  row.dataset.state = st; row.dataset.active = String(active);
+  row.classList.toggle('has-lane', lane); v.lane.style.display = lane ? '' : 'none';
+  row.classList.toggle('just-saved', js && !RM);
+  row.classList.toggle('act-off', !(['downloading', 'finishing', 'paused'].includes(st) || js));
+  // Status line
+  const pct = Math.min(99, Math.floor(j.progress)); let text, html = null;
+  if (st === 'downloading') { const e = etaText(etaSeconds(j)); text = OPT.key === 'eta' || !e ? `${pct}%` : `${pct}% · ${e}`; }
+  else if (st === 'finishing') text = 'Finishing up…';
+  else if (st === 'paused') text = `Paused at ${pct}%`;
+  else if (st === 'waiting') text = j.statusText;
+  else { text = `${j.quality[0]} ${j.quality[1]} · ${sizeText(j.sizeMB)} · Saved today`; html = `<span class="tier">${j.quality[0]}</span><span class="res">${j.quality[1]}</span><span class="md">·</span>${sizeText(j.sizeMB)}<span class="md">·</span><span class="ok"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${ICON.check}</svg>Saved today</span>`; }
+  const key = st + '|' + (html ? 'h' : text) + (js ? 'js' : '');
+  if (key !== v.key) { v.key = key; if (html) v.status.innerHTML = html; else v.status.textContent = text; }
+  const prog = ['downloading', 'finishing', 'paused'].includes(st);
+  if (prog) {
+    v.status.setAttribute('role', 'progressbar'); v.status.setAttribute('aria-valuemin', 0); v.status.setAttribute('aria-valuemax', 100); v.status.setAttribute('aria-valuenow', pct);
+    let vt = text; if (OPT.key === 'odo' && st === 'downloading') { const e = etaText(etaSeconds(j)); vt = `${pct}% · ${sizeText(j.doneMB)} of ${sizeText(j.sizeMB)}${e ? ' · ' + e : ''}`; }
+    if (OPT.key === 'eta' && st === 'downloading') { const e = etaText(etaSeconds(j)); vt = e ? `${pct}% · ${e}` : `${pct}%`; }
+    v.status.setAttribute('aria-valuetext', vt);
+  } else ['role', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext'].forEach(a => v.status.removeAttribute(a));
+  row.setAttribute('aria-label', `${j.title}. ${text}`);
+  // Action
+  const act = st === 'downloading' ? 'pause' : st === 'paused' ? 'resume' : st === 'saved' ? 'play' : null;
+  if (v.btn.dataset.a !== String(act)) {
+    v.btn.dataset.a = String(act); v.btn.className = `btn main ${act || 'none'}`;
+    const label = act === 'pause' ? 'Pause' : act === 'resume' ? 'Resume download' : 'Play';
+    v.btn.innerHTML = act ? svg(act) : ''; v.btn.setAttribute('aria-label', `${label}: ${j.title}`); v.btn.title = label;
+  }
+  // Lane (Spark)
+  if (lane) {
+    const done = st === 'finishing' ? 39 : Math.floor(j.progress / 100 * 40);
+    for (let i = 0; i < 40; i++) {
+      const cls = i < done ? 'pc done' : i === done && j.progress < 100 || (st === 'finishing' && i === 39) ? 'pc cur' : 'pc';
+      const pc = v.pcs[i]; const spark = pc.classList.contains('spark');
+      if (pc.className.replace(' spark', '') !== cls) pc.className = cls + (spark ? ' spark' : '');
+      if (cls === 'pc cur') pc.style.setProperty('--f', st === 'finishing' ? .7 : j.progress / 100 * 40 - done); else pc.style.removeProperty('--f');
+    }
+    if (v.prevCells !== null && active && done > v.prevCells && done - v.prevCells <= 3 && !RM && now - v.lastSpark > 250) {
+      v.lastSpark = now; const pc = v.pcs[done - 1]; pc.classList.add('spark'); pc.addEventListener('animationend', () => pc.classList.remove('spark'), { once: true });
+    }
+    v.prevCells = done;
+  } else v.prevCells = null;
+  if (v.widget && !row.classList.contains('act-off') || v.widget && OPT.key === 'sheen') v.widget.update(now, dt);
+}
+
+/* ── Picker, spec, controls ──────────────────────────────── */
+const picker = $('#picker'); const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'];
+picker.innerHTML = OPTIONS.map((o, i) => `<button type="button" data-key="${o.key}" aria-pressed="false"><span>${i + 1} · ${o.name}</span><small>${o.desc}</small>${o.pick ? `<em class="pick">PICK ${o.pick}</em>` : ''}</button>`).join('');
+function choose(key) {
+  OPT = OPTIONS.find(o => o.key === key) || OPTIONS[0];
+  picker.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.key === OPT.key)));
+  views.forEach(mountWidget);
+  const i = OPTIONS.indexOf(OPT);
+  $('#spec').innerHTML = `<h3><em>${i + 1}</em>${OPT.name}</h3><p class="lede">${OPT.desc}.</p><dl>
+    <div><dt>What it shows</dt><dd>${OPT.shows}</dd></div>
+    <div><dt>Animation</dt><dd>${OPT.motion}</dd></div>
+    <div><dt>Paused · finishing · saved</dt><dd>${OPT.states}</dd></div>
+    <div><dt>Reduced motion</dt><dd>${OPT.rm}</dd></div>
+    <div><dt>Accessibility</dt><dd>${OPT.a11y}</dd></div>
+    <div><dt>Noise in a long list</dt><dd><span class="noise">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= OPT.noise ? 'on' : ''}"></i>`).join('')}</span>${['', 'Quiet', 'Calm', 'Noticeable', 'Busy', 'Loud'][OPT.noise]}</dd></div></dl>`;
+  history.replaceState(null, '', '#' + OPT.key);
+}
+picker.addEventListener('click', e => { const b = e.target.closest('button'); if (b) choose(b.dataset.key); });
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.matches('input')) return;
+  const i = keys.indexOf(e.key); if (i >= 0 && OPTIONS[i]) return choose(OPTIONS[i].key);
+  const cur = OPTIONS.indexOf(OPT);
+  if (e.key === 'ArrowRight') choose(OPTIONS[(cur + 1) % OPTIONS.length].key);
+  if (e.key === 'ArrowLeft') choose(OPTIONS[(cur - 1 + OPTIONS.length) % OPTIONS.length].key);
+});
+const fast = JOBS[0];
+const speedIn = $('#speed'), speedOut = $('#speed-out');
+const syncSpeed = () => { sliderSpeed = speedFromSlider(+speedIn.value); speedOut.textContent = sliderSpeed ? `${sliderSpeed < 1 ? sliderSpeed.toFixed(2) : sliderSpeed.toFixed(1)} MB/s` : 'stalled'; };
+speedIn.addEventListener('input', syncSpeed); syncSpeed();
+$('#b-pause').addEventListener('click', () => togglePause(fast));
+$('#b-stall').addEventListener('click', () => { fast.stallUntil = performance.now() + 3000; });
+$('#b-jump').addEventListener('click', () => { if (fast.state !== 'downloading') setState(fast, 'downloading', performance.now()); fast.doneMB = fast.sizeMB * .96; });
+$('#b-restart').addEventListener('click', () => { setState(fast, 'downloading', performance.now()); fast.doneMB = fast.sizeMB * .03; });
+const rmBox = $('#rm'); rmBox.checked = RM;
+const applyRM = () => { RM = rmBox.checked; document.documentElement.classList.toggle('rm', RM); };
+rmBox.addEventListener('change', applyRM); applyRM();
+
+const list = $('#list'); JOBS.forEach(j => makeRow(j, list, false));
+makeRow(fast, $('#live'), true);
+choose((location.hash || '#today').slice(1));
+
+/* ── Loop ────────────────────────────────────────────────── */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.1, (now - last) / 1000); last = now;
+  JOBS.forEach(j => step(j, now, dt));
+  views.forEach(v => renderRow(v, now, dt));
+  const dl = JOBS.filter(j => j.state === 'downloading');
+  const total = dl.reduce((s, j) => s + j.speed, 0);
+  $('#foot').textContent = dl.length ? `${dl.length} downloading · ${total.toFixed(2)} MB/s` : 'Saving to ~/Downloads/SnagThis';
+  const e = etaSeconds(fast);
+  $('#readouts').innerHTML = `<span>State<b>${fast.state}</b></span><span>Speed<b>${fast.speed.toFixed(2)} MB/s</b></span><span>Progress<b>${fast.progress.toFixed(1)}%</b></span><span>ETA<b>${e == null ? '—' : Math.round(e) + ' s'}</b></span><span>Connections<b>${fast.state === 'downloading' ? fast.conns : 0} of 16</b></span>`;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

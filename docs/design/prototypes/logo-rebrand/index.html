@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SnagThis logo directions</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --brand: #bd3f00;        /* current logo orange */
+    --brand-bright: #fa5d0e; /* current UI primary */
+    --chrome: #0c0e11;
+    --row: #171a1f;
+    --row-hover: #1c2026;
+    --line: #2a2f37;
+    --text: #e8ebef;
+    --muted: #8d96a3;
+    --font: "Montserrat", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #101216; color: var(--text); font: 14px/1.5 var(--font); }
+  main { max-width: 1240px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 40px 0 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  p.lede { color: var(--muted); margin: 0 0 24px; max-width: 760px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 20px 32px; padding: 16px; background: var(--row); border: 1px solid var(--line); border-radius: 10px; position: sticky; top: 0; z-index: 5; }
+  .control > span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { font: inherit; font-size: 13px; color: var(--text); background: transparent; border: 0; padding: 6px 12px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--brand-bright); color: #160700; font-weight: 600; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+  .card { background: var(--row); border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; text-align: left; color: inherit; font: inherit; display: block; width: 100%; }
+  .card:hover { background: var(--row-hover); }
+  .card[aria-pressed="true"] { border-color: var(--brand-bright); box-shadow: 0 0 0 1px var(--brand-bright); }
+  .card header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .card .num { color: var(--brand-bright); font-weight: 700; font-size: 13px; }
+  .card .name { font-weight: 700; font-size: 16px; }
+  .card .tag { margin-left: auto; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 1px 8px; }
+  .card p { margin: 0 0 12px; color: var(--muted); font-size: 13px; min-height: 58px; }
+  .panel { border-radius: 8px; padding: 22px 16px; display: flex; align-items: center; justify-content: center; }
+  .panel.light { background: #fff; color: #000; }
+  .panel.dark { background: var(--chrome); color: #fff; margin-top: 8px; border: 1px solid var(--line); }
+  .icons { display: flex; align-items: flex-end; gap: 12px; margin-top: 12px; }
+  .icons small { display: block; text-align: center; color: var(--muted); font-size: 10px; margin-top: 4px; }
+
+  /* lockup */
+  .lockup { display: inline-flex; align-items: center; gap: .22em; font-size: 40px; line-height: 1; white-space: nowrap; }
+  .lockup.right { flex-direction: row-reverse; }
+  .lockup svg { height: 1.05em; width: 1.05em; flex: none; color: var(--brand); }
+  .dark .lockup svg, .on-dark .lockup svg { color: var(--brand-bright); }
+  .wm { letter-spacing: -.035em; }
+  .wm .a { font-weight: 800; }
+  .wm .b { font-weight: 300; color: var(--brand); }
+  .wm .c { font-weight: 800; }
+  .wm .tld { font-weight: 400; opacity: .45; }
+  .dark .wm .b, .on-dark .wm .b { color: var(--brand-bright); }
+  .wm.heavy .b { font-weight: 800; }
+  .wm.lower { text-transform: lowercase; letter-spacing: -.05em; }
+  .wm.lower .b { font-weight: 800; }
+
+  /* app tiles */
+  .tile { display: grid; place-items: center; border-radius: 22.5%; }
+  .tile.orange { background: linear-gradient(160deg, var(--brand-bright), var(--brand) 70%); color: #fff; }
+  .tile.night { background: var(--chrome); color: var(--brand-bright); border: 1px solid var(--line); }
+  .tile.paper { background: #fff; color: var(--brand); }
+  .tile svg { width: 66%; height: 66%; }
+
+  /* context mocks */
+  .context { display: grid; grid-template-columns: 360px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .context { grid-template-columns: 1fr; } }
+  .mock { background: var(--row); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .mock .bar { background: var(--chrome); display: flex; align-items: center; gap: 12px; padding: 10px 12px; color: #fff; border-bottom: 1px solid; border-image: linear-gradient(90deg, var(--brand-bright), #3a3f47 60%) 1; }
+  .mock .bar .lockup { font-size: 20px; }
+  .mock .bar .count { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .mock .bar .paste { flex: 1; max-width: 340px; background: #14171b; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font-size: 12px; color: var(--muted); }
+  .mock .bar .tabs { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .mock .row { display: flex; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #20242a; }
+  .mock .thumb { width: 64px; height: 36px; border-radius: 4px; background: linear-gradient(135deg, #2b3038, #1d2127); flex: none; }
+  .mock .t { font-size: 12px; } .mock .s { font-size: 11px; color: var(--muted); }
+  .caption { color: var(--muted); font-size: 11px; padding: 6px 12px; }
+  .strip { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; margin-top: 16px; padding: 16px; background: var(--row); border: 1px solid var(--line); border-radius: 10px; }
+  .browser-tab { display: inline-flex; align-items: center; gap: 8px; background: #2a2e35; border-radius: 8px 8px 0 0; padding: 7px 14px 7px 10px; font-size: 12px; }
+  .browser-tab svg { width: 16px; height: 16px; color: var(--brand-bright); }
+  .dock { display: flex; gap: 10px; padding: 8px 12px; background: rgba(255,255,255,.08); border-radius: 18px; }
+  .dock .ghost { width: 56px; height: 56px; border-radius: 22.5%; background: #2b3038; }
+  .social { display: flex; align-items: center; justify-content: center; width: 340px; height: 120px; border-radius: 8px; background: #fff; color: #000; }
+  .social .lockup { font-size: 34px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SnagThis — logo directions</h1>
+  <p class="lede">First-pass directions for the rename. All use the current VidSnag orange (<code>#BD3F00</code> on light, <code>#FA5D0E</code> on dark) and black/white. Name, wordmark style and mark position are independent of the mark, so mix freely. Click a card to see it in the popup, desktop header, dock and browser tab.</p>
+
+  <div class="controls">
+    <div class="control"><span>Name</span><div class="seg" data-key="name">
+      <button data-v="snagthis">SnagThis</button><button data-v="snagthisvid">SnagThisVid</button><button data-v="app">snagthis.app</button>
+    </div></div>
+    <div class="control"><span>Wordmark</span><div class="seg" data-key="wm">
+      <button data-v="contrast">A · Heavy + light</button><button data-v="heavy">B · All heavy</button><button data-v="lower">C · Lowercase</button>
+    </div></div>
+    <div class="control"><span>Mark position</span><div class="seg" data-key="pos">
+      <button data-v="left">Left</button><button data-v="right">Right (current)</button>
+    </div></div>
+  </div>
+
+  <h2>Marks</h2>
+  <div class="grid" id="grid"></div>
+
+  <h2>Selected direction in context</h2>
+  <div class="context">
+    <div class="mock">
+      <div class="bar on-dark"><span data-lockup></span><span class="count">3 videos on this page</span></div>
+      <div class="row"><div class="thumb"></div><div><div class="t">How to restore a cast iron pan</div><div class="s">1080p · 84 MB</div></div></div>
+      <div class="row"><div class="thumb"></div><div><div class="t">Trailer — official</div><div class="s">720p · 31 MB</div></div></div>
+      <div class="caption">Extension popup header</div>
+    </div>
+    <div class="mock">
+      <div class="bar on-dark"><span data-lockup></span><span class="paste">Paste a video link</span><span class="tabs">All · Downloading · Saved</span></div>
+      <div class="row"><div class="thumb"></div><div><div class="t">Conference keynote (full)</div><div class="s">Downloading · 42%</div></div></div>
+      <div class="row"><div class="thumb"></div><div><div class="t">Drone footage — coastline</div><div class="s">Saved · 212 MB</div></div></div>
+      <div class="caption">Desktop top bar</div>
+    </div>
+  </div>
+  <div class="strip">
+    <div class="dock"><div class="ghost"></div><div data-tile="orange" data-size="56"></div><div data-tile="night" data-size="56"></div><div class="ghost"></div></div>
+    <div class="browser-tab"><span data-mark></span><span data-domain>snagthis.app</span></div>
+    <div data-tile="orange" data-size="32"></div>
+    <div data-tile="orange" data-size="16"></div>
+    <div class="social"><span data-lockup></span></div>
+  </div>
+</main>
+
+<script>
+// Every mark is drawn on a 100×100 grid in currentColor so it works on any tile.
+const MARKS = [
+  { id: 'current', name: 'Play Drop', tag: 'baseline',
+    desc: 'The existing VidSnag mark carried over unchanged. Lowest-risk rename: only the lettering changes, and the startup animation still works as built.',
+    svg: u => `<mask id="${u}"><rect width="100" height="100" fill="#fff"/><path d="M35 0h14v46h13L42 70 22 46h13z" fill="#000" stroke="#000" stroke-width="3" stroke-linejoin="round"/></mask>
+      <path d="M22 18 84 50 22 82z" fill="currentColor" stroke="currentColor" stroke-width="14" stroke-linejoin="round" mask="url(#${u})"/>` },
+  { id: 'arrow-s', name: 'Arrow S', tag: 'monogram',
+    desc: 'An S whose top stroke curls over and becomes the download arrow. A letter-based mark is ownable, isn’t tied to “video”, and is the most distinct from other downloader logos.',
+    svg: () => `<path d="M66 24C66 4 22 4 22 30c0 22 56 16 56 40 0 26-56 24-56 2" fill="none" stroke="currentColor" stroke-width="14" stroke-linecap="round"/>
+      <path d="M51 23h30L66 42z" fill="currentColor" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>` },
+  { id: 'frame', name: 'Frame Snag', tag: '“this”',
+    desc: 'Capture brackets around a play button — “snag <em>this</em>”. Reads as selecting the video on the page, which is what the extension does.',
+    svg: () => `<g fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 34V22a10 10 0 0 1 10-10h12M66 12h12a10 10 0 0 1 10 10v12M88 66v12a10 10 0 0 1-10 10H66M34 88H22a10 10 0 0 1-10-10V66"/></g>
+      <path d="M41 35 67 50 41 65z" fill="currentColor" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/>` },
+  { id: 'hook', name: 'Hook Arrow', tag: 'literal snag',
+    desc: 'A download arrow whose shaft curls into a hook — snag it and pull it down. Leans on the literal meaning of “snag”; one continuous shape, very legible at 16px.',
+    svg: () => `<path d="M24 40v-8a18 18 0 0 1 36 0v34" fill="none" stroke="currentColor" stroke-width="14" stroke-linecap="round"/>
+      <path d="M42 64h36L60 86z" fill="currentColor" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/>` },
+  { id: 'tray', name: 'Tray Drop', tag: 'evolution',
+    desc: 'The play button dropping into a download tray. Same idea as today’s mark, rebuilt from two simple pieces so it stays crisp when tiny.',
+    svg: () => `<path d="M14 58v16a12 12 0 0 0 12 12h48a12 12 0 0 0 12-12V58" fill="none" stroke="currentColor" stroke-width="11" stroke-linecap="round"/>
+      <path d="M39 16 69 35 39 54z" fill="currentColor" stroke="currentColor" stroke-width="9" stroke-linejoin="round"/>` },
+  { id: 'pointer', name: 'Pointer', tag: '“this”',
+    desc: 'A cursor with click sparks — pointing at the thing you want. Works if SnagThis grows beyond video (images, audio, files).',
+    svg: () => `<path d="M34 30v50l13-12 9 21 11-5-9-20h18z" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+      <g stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M12 30h8M34 8v8M17 13l6 6"/></g>` },
+];
+
+const state = { name: 'snagthis', wm: 'contrast', pos: 'left', mark: 'arrow-s' };
+let uid = 0;
+const markSvg = m => `<svg viewBox="0 0 100 100" aria-hidden="true">${m.svg('m' + (++uid))}</svg>`;
+const wordmark = () => {
+  const cls = state.wm === 'contrast' ? '' : state.wm;
+  const tail = state.name === 'snagthisvid' ? '<span class="c">Vid</span>' : state.name === 'app' ? '<span class="tld">.app</span>' : '';
+  return `<span class="wm ${cls}"><span class="a">Snag</span><span class="b">This</span>${tail}</span>`;
+};
+const lockup = m => `<span class="lockup ${state.pos}">${markSvg(m)}${wordmark()}</span>`;
+const tile = (m, kind, size) => `<div class="tile ${kind}" style="width:${size}px;height:${size}px">${markSvg(m)}</div>`;
+
+function render() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = MARKS.map((m, i) => `
+    <button class="card" data-mark-id="${m.id}" aria-pressed="${m.id === state.mark}">
+      <header><span class="num">${i}</span><span class="name">${m.name}</span><span class="tag">${m.tag}</span></header>
+      <p>${m.desc}</p>
+      <div class="panel light">${lockup(m)}</div>
+      <div class="panel dark">${lockup(m)}</div>
+      <div class="icons">
+        <div>${tile(m, 'orange', 96)}<small>96</small></div>
+        <div>${tile(m, 'night', 96)}<small>dark</small></div>
+        <div>${tile(m, 'paper', 48)}<small>48</small></div>
+        <div>${tile(m, 'orange', 32)}<small>32</small></div>
+        <div>${tile(m, 'orange', 16)}<small>16</small></div>
+      </div>
+    </button>`).join('');
+  const sel = MARKS.find(m => m.id === state.mark);
+  document.querySelectorAll('[data-lockup]').forEach(el => el.innerHTML = lockup(sel));
+  document.querySelectorAll('[data-mark]').forEach(el => el.innerHTML = markSvg(sel));
+  document.querySelectorAll('[data-tile]').forEach(el => el.innerHTML = tile(sel, el.dataset.tile, el.dataset.size));
+  document.querySelectorAll('[data-domain]').forEach(el => el.textContent = state.name === 'snagthisvid' ? 'snagthisvid.com' : 'snagthis.app');
+  document.querySelectorAll('.seg').forEach(seg => seg.querySelectorAll('button').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.v === state[seg.dataset.key]))));
+}
+document.addEventListener('click', e => {
+  const opt = e.target.closest('.seg button');
+  if (opt) { state[opt.parentElement.dataset.key] = opt.dataset.v; render(); return; }
+  const card = e.target.closest('.card');
+  if (card) { state.mark = card.dataset.markId; render(); }
+});
+render();
+</script>
+</body>
+</html>

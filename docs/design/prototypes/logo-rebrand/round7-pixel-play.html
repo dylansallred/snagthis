@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SnagThis · round 7 · Pixel Play variations and motion</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800&family=Silkscreen:wght@400;700&family=Press+Start+2P&display=swap">
+<style>
+  :root {
+    --row: #171a1f; --row-hover: #1c2026; --line: #2a2f37; --text: #e8ebef; --muted: #8d96a3;
+    --o: #fa5d0e; --o2: #bd3f00; --amber: #ffb238; --cream: #fff4e6; --night: #0c0e11; --surface: #121418;
+    --ui: "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #101216; color: var(--text); font: 14px/1.5 var(--ui); }
+  main { max-width: 1760px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 44px 0 4px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); display: flex; align-items: center; gap: 12px; }
+  h2 .sel { font: 700 12px var(--mono); color: var(--o); letter-spacing: 0; text-transform: none; }
+  section:first-child h2 { margin-top: 0; }
+  h2 + p { margin: 0 0 12px; color: var(--muted); font-size: 13px; max-width: 980px; }
+  p.lede { color: var(--muted); margin: 0 0 24px; max-width: 980px; }
+  p.lede b { color: var(--text); }
+  kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--text); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 24px; align-items: start; }
+  @media (max-width: 1200px) { .layout { grid-template-columns: 1fr; } .live { order: -1; position: static !important; } }
+
+  button.rp { font: 600 12px var(--ui); color: var(--text); background: #22262d; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  button.rp:hover { border-color: var(--o); color: #fff; }
+  button.rp::before { content: '↻'; color: var(--o); font-weight: 700; }
+
+  /* option cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+  .card { background: var(--row); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; text-align: left; color: inherit; outline: none; }
+  .card:hover { background: var(--row-hover); }
+  .card:focus-visible { box-shadow: 0 0 0 2px #fff4e680; }
+  .card[aria-pressed="true"] { border-color: var(--o); box-shadow: 0 0 0 1px var(--o); }
+  .card header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+  .card .num { color: var(--o); font-weight: 700; font-size: 12px; font-family: var(--mono); }
+  .card .name { font-weight: 700; font-size: 15px; }
+  .card .pill { margin-left: auto; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 0 8px; white-space: nowrap; }
+  .card .pill.base { color: var(--amber); border-color: #5a4320; }
+  .card > p { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; min-height: 38px; }
+  .panel { border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .dark { background: var(--night); --fg: #fff; }
+  .light { background: #fff; --fg: var(--night); }
+  .panel.dark { border: 1px solid var(--line); }
+  .panel.stage { min-height: 116px; padding: 16px 10px; overflow: visible; }
+  .pair { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .tiles { display: flex; align-items: flex-end; gap: 12px; margin-top: 10px; }
+  .tiles small { display: block; text-align: center; color: var(--muted); font-size: 10px; margin-top: 3px; font-family: var(--mono); }
+  .tiles .chip { display: flex; gap: 10px; align-items: flex-end; padding: 8px 10px 4px; border-radius: 8px; background: #fff; margin-left: auto; }
+  .tiles .chip small { color: #777; }
+  .meta { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 10px 0 0; font-size: 12px; }
+  .meta dt { color: var(--muted); }
+  .meta dd { margin: 0; }
+  .cardfoot { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .cardfoot .note { color: var(--muted); font-size: 11.5px; }
+
+  /* mini header strip used in cards */
+  .strip { background: var(--night); border: 1px solid var(--line); border-radius: 8px; height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 12px; margin-top: 6px; overflow: hidden; }
+  .strip .stub { flex: 1; max-width: 150px; height: 26px; border-radius: 6px; background: #14171b; border: 1px solid var(--line); }
+  .strip .tb { margin-left: auto; font: 11px var(--ui); color: var(--muted); white-space: nowrap; }
+
+  /* ── icon + lockup ─────────────────────────── */
+  svg.ic { display: block; flex: none; overflow: visible; }
+  .lk { position: relative; display: inline-flex; align-items: baseline; gap: var(--gap, .34em); white-space: nowrap; line-height: 1; color: var(--fg, #fff); }
+  .lk.stack { flex-direction: column; align-items: center; }
+  .wm { display: inline-flex; align-items: baseline; }
+  .wm .ch { display: inline-block; }
+  .wm .o { color: var(--o); }
+  .wm svg.ic { align-self: baseline; }
+  .tcur { position: absolute; left: 0; top: 0; width: .52em; height: .73em; background: var(--o); pointer-events: none; }
+  .blm { display: inline-block; width: 0; height: 0; }
+
+  /* live preview */
+  .live { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; background: var(--row); border: 1px solid var(--o); border-radius: 12px; padding: 12px; display: grid; gap: 10px; }
+  .live-title { display: flex; align-items: center; gap: 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--o); font-weight: 700; }
+  .live-title .rp { margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .live .hero { min-height: 170px; padding: 18px; overflow: visible; }
+  .live .tiles { margin: 0; flex-wrap: wrap; }
+  .combo { font: 700 13px var(--mono); color: var(--text); }
+  .combo span { color: var(--o); }
+  .summary { font-size: 12.5px; color: var(--muted); display: grid; gap: 3px; }
+  .summary b { color: var(--text); }
+  label.rm { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+
+  /* ── context mocks ─────────────────────────── */
+  .ctx { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  @media (max-width: 1500px) { .ctx { grid-template-columns: 1fr; } }
+  .ctxbox { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
+  .ctxbox.wide { grid-column: 1 / -1; }
+  .ctxhead { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+  .ctxhead b { color: var(--text); font-weight: 600; }
+  .ctxhead .rp { margin-left: auto; }
+
+  .win { position: relative; width: 100%; background: var(--surface); border: 1px solid #262a31; border-radius: 12px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+  .topbar { display: flex; align-items: center; gap: 14px; height: 52px; padding: 0 14px; background: var(--night); border-bottom: 1px solid #1f232a; }
+  .lights { display: flex; gap: 7px; flex: none; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f47; display: block; }
+  .brand { display: flex; align-items: center; flex: none; --fg: #fff; cursor: pointer; }
+  .paste { flex: 1; min-width: 90px; max-width: 300px; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: #15181d; border: 1px solid #262a31; border-radius: 8px; font: 12px var(--ui); color: #6f7885; overflow: hidden; white-space: nowrap; }
+  .paste svg { flex: none; }
+  .paste kbd { margin-left: auto; color: #6f7885; border-color: #2a2f37; }
+  .tabs { margin-left: auto; display: flex; gap: 2px; font: 12px var(--ui); color: var(--muted); white-space: nowrap; }
+  .tabs span { padding: 5px 9px; border-radius: 6px; }
+  .tabs span.on { color: #fff; background: #1d2127; }
+  .vrow { display: flex; gap: 12px; align-items: center; padding: 11px 16px; border-bottom: 1px solid #1b1e24; }
+  .vthumb { width: 76px; height: 43px; border-radius: 5px; flex: none; position: relative; overflow: hidden; }
+  .vrow .t { font-size: 12.5px; color: #e3e6ea; }
+  .vrow .s { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  .bar { width: 120px; height: 3px; border-radius: 2px; background: #262a31; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--o); }
+  .vrow .act { margin-left: auto; font-size: 11px; color: var(--muted); }
+  .splash { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+  .splash .bg { position: absolute; inset: 0; background: var(--night); }
+  .splash .fg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; --fg: #fff; }
+
+  .pop-wrap { background: #35363a; border-radius: 12px; padding: 14px; display: flex; justify-content: center; }
+  .popup { width: 480px; max-width: 100%; background: var(--night); border: 1px solid #2a2f37; border-radius: 10px; overflow: hidden; box-shadow: 0 12px 34px rgba(0,0,0,.4); }
+  .popup .ph { display: flex; align-items: center; height: 50px; padding: 0 14px; border-bottom: 1px solid #1f232a; --fg: #fff; }
+  .popup .ph .count { margin-left: auto; font: 12px var(--ui); color: var(--muted); }
+  .popup .vrow { padding: 9px 14px; }
+  .popup .dl { margin-left: auto; font: 600 11.5px var(--ui); background: var(--o); color: #160700; border-radius: 6px; padding: 4px 10px; }
+
+  .chrome { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+  .chrome + .chrome { margin-top: 10px; }
+  .chrome .tabsbar { display: flex; align-items: flex-end; padding: 8px 10px 0; height: 40px; }
+  .chrome .tab { display: inline-flex; align-items: center; gap: 8px; border-radius: 8px 8px 0 0; padding: 0 14px 0 12px; height: 32px; font-size: 12px; width: 230px; }
+  .chrome .toolbar { display: flex; align-items: center; gap: 12px; padding: 0 12px; height: 40px; }
+  .chrome .nav { display: flex; gap: 14px; font-size: 15px; opacity: .6; }
+  .chrome .omni { flex: 1; height: 28px; border-radius: 99px; padding: 0 14px; display: flex; align-items: center; font-size: 12.5px; }
+  .chrome .ext { display: flex; align-items: center; gap: 12px; }
+  .chrome .ext i { width: 16px; height: 16px; border-radius: 4px; display: block; }
+  .chrome .ext .ours { padding: 6px; margin: -6px; border-radius: 99px; }
+  .chrome .avatar { width: 20px; height: 20px; border-radius: 50%; background: #8a6cf0; }
+  .chrome.l .tabsbar { background: #dee1e6; } .chrome.l .tab, .chrome.l .toolbar { background: #fff; color: #222; }
+  .chrome.l .omni { background: #f1f3f4; color: #555; } .chrome.l .ext i { background: #c4c7cc; }
+  .chrome.d .tabsbar { background: #202124; } .chrome.d .tab, .chrome.d .toolbar { background: #35363a; color: #e8eaed; }
+  .chrome.d .omni { background: #202124; color: #bdc1c6; } .chrome.d .ext i { background: #5f6368; }
+  .desk { background: linear-gradient(160deg, #3b4a66, #7a5b73 60%, #c77d5a); border-radius: 12px; padding: 58px 22px 14px; display: flex; justify-content: center; margin-top: 10px; }
+  .dock { display: flex; align-items: flex-end; gap: 9px; padding: 7px 10px; background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.25); border-radius: 20px; backdrop-filter: blur(10px); }
+  .dock .ghost { width: 56px; height: 56px; border-radius: 22.5%; }
+  .dock .ours { position: relative; }
+  .dock .ours::after { content: ''; position: absolute; left: 50%; bottom: -5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(255,255,255,.8); }
+  .dock .ours svg { filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+  .dock .label { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); background: rgba(40,40,40,.85); color: #fff; font: 12px var(--ui); padding: 3px 9px; border-radius: 6px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SnagThis — round 7 · Pixel Play: button, motion and lockup</h1>
+  <p class="lede">Built from the chosen <b>T1 Pixel Play</b> (round 6): a play triangle stepped out of a 16 × 16 pixel grid on an orange rounded tile, with <b>SNAGTHIS</b> in JetBrains Mono 800. Four choices you can make separately: <b>B</b> the button, <b>A</b> the animation, <b>L</b> where the button sits next to the words, and <b>W</b> the wordmark. Option 1 in every group is T1 exactly as it was. Click a card (or rest the pointer in a group and press its number key); every change replays the animation in the app mocks at the top and in the Live preview on the right. Hover or click the logo in the app mocks to trigger it again.</p>
+
+  <div class="layout">
+    <div>
+      <section>
+        <h2>Your combination in the product <span class="sel" id="ctx-combo"></span></h2>
+        <p>(a) Desktop app with the logo 22 px tall in the top bar. (b) Desktop startup: the logo plays large in the middle, then shrinks into the top bar, like the current app. (c) Chrome extension popup, 480 px wide. (d) The icon alone in the Chrome toolbar (16 px) and the macOS dock (56 px).</p>
+        <div class="ctx">
+          <div class="ctxbox wide">
+            <div class="ctxhead"><b>(a) Desktop app</b> hover or click the logo to replay <button class="rp" data-replay="app">Replay</button></div>
+            <div id="win-app"></div>
+          </div>
+          <div class="ctxbox wide">
+            <div class="ctxhead"><b>(b) Startup</b> plays on launch, then moves into the top bar <button class="rp" data-replay="splash">Replay</button></div>
+            <div id="win-splash"></div>
+          </div>
+          <div class="ctxbox">
+            <div class="ctxhead"><b>(c) Chrome extension popup</b> 480 px <button class="rp" data-replay="popup">Replay</button></div>
+            <div class="pop-wrap" id="popup-wrap">
+              <div class="popup">
+                <div class="ph"><span data-play data-lockup="20" data-ctx="compact" id="popup-lk"></span><span class="count">3 videos on this page</span></div>
+                <div class="vrow"><div class="vthumb" style="background:linear-gradient(135deg,#40506a,#1c222c)"></div><div><div class="t">Official trailer</div><div class="s">1080p · MP4 · 48 MB</div></div><span class="dl">Snag</span></div>
+                <div class="vrow"><div class="vthumb" style="background:linear-gradient(135deg,#6a4a3a,#231a16)"></div><div><div class="t">Behind the scenes, part 2</div><div class="s">720p · MP4 · 31 MB</div></div><span class="dl">Snag</span></div>
+                <div class="vrow" style="border:0"><div class="vthumb" style="background:linear-gradient(135deg,#3a5a4c,#16211c)"></div><div><div class="t">Teaser (15 s)</div><div class="s">720p · WebM · 6 MB</div></div><span class="dl">Snag</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="ctxbox">
+            <div class="ctxhead"><b>(d) Chrome toolbar and macOS dock</b> <button class="rp" data-replay="icons">Replay</button></div>
+            <div id="icons-ctx">
+              <div class="chrome l">
+                <div class="tabsbar"><span class="tab"><span data-play data-icon="16"></span>How to restore a cast iron pan</span></div>
+                <div class="toolbar"><span class="nav">← → ↻</span><span class="omni">example.com/watch?v=cast-iron</span><span class="ext"><i></i><span class="ours" data-play data-icon="16"></span><i></i><span class="avatar"></span></span></div>
+              </div>
+              <div class="chrome d">
+                <div class="tabsbar"><span class="tab"><span data-play data-icon="16"></span>How to restore a cast iron pan</span></div>
+                <div class="toolbar"><span class="nav">← → ↻</span><span class="omni">example.com/watch?v=cast-iron</span><span class="ext"><i></i><span class="ours" data-play data-icon="16" style="background:#4a4c50"></span><i></i><span class="avatar"></span></span></div>
+              </div>
+              <div class="desk"><div class="dock"><div class="ghost" style="background:linear-gradient(#5ac8fa,#007aff)"></div><div class="ghost" style="background:linear-gradient(#fff,#ddd)"></div><div class="ours"><span class="label">SnagThis</span><span data-play data-icon="56"></span></div><div class="ghost" style="background:linear-gradient(#34c759,#248a3d)"></div><div class="ghost" style="background:linear-gradient(#ff9f0a,#ff375f)"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-group="B">
+        <h2>B · Button <span class="sel" data-sel="B"></span></h2>
+        <p>The tile and pixel triangle. Each card shows the logo in the top bar, then the app icon at 128, 48, 32 and 16 px (32 and 16 again on white). All use whole grid cells, so the 16 px icon is pixel-exact, except the 24-grid option, which is there to show what happens when the grid is finer than the screen.</p>
+        <div class="grid" id="grid-B"></div>
+      </section>
+      <section data-group="A">
+        <h2>A · Animation <span class="sel" data-sel="A"></span></h2>
+        <p>Each card plays its own animation with your current button, layout and wordmark. Hover a card’s preview (or press Replay) to play it again. Everything is CSS / Web Animations on the SVG pixels, 400 to 1400 ms; only A11 repeats, and it is optional.</p>
+        <div class="grid" id="grid-A"></div>
+      </section>
+      <section data-group="L">
+        <h2>L · Button position <span class="sel" data-sel="L"></span></h2>
+        <p>Where the button sits against the words, and how big it is. Each card shows a large version and the 22 px top bar. The stacked layout is for the startup screen and store art; small headers fall back to L1.</p>
+        <div class="grid" id="grid-L"></div>
+      </section>
+      <section data-group="W">
+        <h2>W · Wordmark <span class="sel" data-sel="W"></span></h2>
+        <p>Every typeface is scaled so its capitals are the same height, which keeps the button the same size against the words.</p>
+        <div class="grid" id="grid-W"></div>
+      </section>
+    </div>
+
+    <aside class="live">
+      <div class="live-title">Live preview <button class="rp" data-replay="all">Replay all</button></div>
+      <div class="combo" id="combo"></div>
+      <div class="panel dark hero" data-play data-lockup="46" id="live-hero"></div>
+      <div class="strip" style="margin:0"><span data-play data-lockup="22" data-ctx="compact"></span><span class="stub"></span><span class="tb">All · Downloading · Saved</span></div>
+      <div class="tiles" id="live-icons"></div>
+      <div class="summary" id="summary"></div>
+      <label class="rm"><input type="checkbox" id="rm"> Simulate reduced motion (shows the static end state; the startup screen is skipped)</label>
+    </aside>
+  </div>
+</main>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   Geometry.  Every button lives in a 100 × 100 viewBox divided into an
+   n × n grid (n = 16 for T1).  Glyph pixels are individual rects so each
+   one can be animated.
+   ════════════════════════════════════════════════════════════════════ */
+const COL = { o: '#fa5d0e', o2: '#bd3f00', amber: '#ffb238', cream: '#fff4e6', night: '#0c0e11' };
+
+// T1 exactly as in round 6.
+const T1 = [
+  '................',
+  '................',
+  '................',
+  '.....##.........',
+  '.....###........',
+  '.....#####......',
+  '.....######.....',
+  '.....########...',
+  '.....########...',
+  '.....######.....',
+  '.....#####......',
+  '.....###........',
+  '.....##.........',
+  '................',
+  '................',
+  '................'];
+const CURSORPLAY = [
+  '................',
+  '................',
+  '................',
+  '...##...........',
+  '...###..........',
+  '...#####..ccc...',
+  '...######.ccc...',
+  '...######.ccc...',
+  '...######.ccc...',
+  '...######.ccc...',
+  '...#####..ccc...',
+  '...###..........',
+  '...##...........',
+  '................',
+  '................',
+  '................'];
+
+const fromRows = (rows, dy = 0) => rows.flatMap((r, y) => [...r].map((k, x) => ({ x, y: y + dy, k })).filter(p => p.k !== '.'));
+const tri = (x0, y0, widths) => widths.flatMap((w, i) => Array.from({ length: w }, (_, j) => ({ x: x0 + j, y: y0 + i, k: '#' })));
+const key = p => p.x + ',' + p.y;
+const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+function outline(px) { const s = new Set(px.map(key)); return px.filter(p => N4.some(([dx, dy]) => !s.has((p.x + dx) + ',' + (p.y + dy)))); }
+function stepMask(n, insets) { // tile with stepped (pixel) corners
+  const c = [];
+  for (let y = 0; y < n; y++) { const i = insets[y] ?? insets[n - 1 - y] ?? 0; for (let x = i; x < n - i; x++) c.push({ x, y }); }
+  return c;
+}
+function circleMask(n, cx, cy, r) {
+  const c = [];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const dx = x + .5 - cx, dy = y + .5 - cy; if (dx * dx + dy * dy <= r * r) c.push({ x, y }); }
+  return c;
+}
+function edgeShade(mask) { // top-left edge = light, bottom-right edge = dark
+  const s = new Set(mask.map(key)), hi = [], lo = [];
+  mask.forEach(p => {
+    const up = !s.has(p.x + ',' + (p.y - 1)), lf = !s.has((p.x - 1) + ',' + p.y), dn = !s.has(p.x + ',' + (p.y + 1)), rt = !s.has((p.x + 1) + ',' + p.y);
+    if ((up || lf) && !(dn || rt)) hi.push(p); else if ((dn || rt) && !(up || lf)) lo.push(p);
+    else if (up || lf || dn || rt) (p.x + p.y < 15 ? hi : lo).push(p);
+  });
+  return { hi, lo };
+}
+function runsPath(cells, C) { // merge rows of cells into one path
+  const rows = {}; cells.forEach(p => (rows[p.y] ||= []).push(p.x));
+  let d = '';
+  Object.entries(rows).forEach(([y, xs]) => {
+    xs.sort((a, b) => a - b);
+    for (let i = 0; i < xs.length;) { let j = i; while (j + 1 < xs.length && xs[j + 1] === xs[j] + 1) j++; d += `M${f(xs[i] * C)} ${f(y * C)}h${f((j - i + 1) * C)}v${f(C)}h${f(-(j - i + 1) * C)}z`; i = j + 1; }
+  });
+  return d;
+}
+const f = n => +n.toFixed(3);
+const ROUND = { shape: '<rect width="100" height="100" rx="22"/>' };
+
+/* Each builder returns: n, tile (svg markup, drawn inside clip), clip (markup), glyph [{x,y,fill,k}], base (markup under the cap), lip (user units), keyline */
+const BUTTONS = [
+  { id: 'b1', name: 'T1 as-is', pill: 'baseline', base: true, desc: 'The chosen Pixel Play: night pixels on the 16-grid, orange tile with smooth rounded corners.',
+    build: () => ({ n: 16, tile: fill(ROUND.shape, COL.o), clip: ROUND.shape, glyph: fromRows(T1).map(p => ({ ...p, fill: COL.night })) }) },
+  { id: 'b2', name: 'Chunky 8-grid', pill: '8 × 8', desc: 'Half the resolution: three big steps per side. Loudest and most arcade; the triangle becomes a small pixel arrow.',
+    build: () => ({ n: 8, tile: fill(ROUND.shape, COL.o), clip: ROUND.shape, glyph: tri(3, 1, [1, 2, 3, 3, 2, 1]).map(p => ({ ...p, fill: COL.night })) }) },
+  { id: 'b3', name: 'Fine 24-grid', pill: '24 × 24 · soft at 16', desc: 'Sixteen smaller steps per side, closer to a real triangle. Looks refined large; at 16 px the steps fall between screen pixels.',
+    build: () => ({ n: 24, tile: fill(ROUND.shape, COL.o), clip: ROUND.shape, glyph: tri(8, 4, [2, 3, 5, 6, 8, 9, 11, 12, 12, 11, 9, 8, 6, 5, 3, 2]).map(p => ({ ...p, fill: COL.night })) }) },
+  { id: 'b4', name: 'Pixel bevel', pill: '16-grid · 3D', desc: 'Stepped-corner tile lit from the top left (amber edge, deep-orange edge), and a one-pixel deep shadow under the triangle.',
+    build: () => {
+      const mask = stepMask(16, [3, 1, 1]), { hi, lo } = edgeShade(mask), C = 6.25, g = fromRows(T1), s = new Set(g.map(key));
+      const shadow = g.map(p => ({ x: p.x + 1, y: p.y + 1 })).filter(p => !s.has(key(p)));
+      return { n: 16, clip: `<path d="${runsPath(mask, C)}"/>`, swap: true,
+        tile: fill(`<path d="${runsPath(mask, C)}"/>`, COL.o) + cells(hi, C, COL.amber, 'd', 'hi') + cells(lo, C, COL.o2, 'd', 'lo'),
+        glyph: [...shadow.map(p => ({ ...p, k: 's', fill: COL.o2 })), ...g.map(p => ({ ...p, fill: COL.night }))] };
+    } },
+  { id: 'b5', name: 'Arcade button', pill: '16-grid · pushable', desc: 'A round pixel push-button: orange cap with an amber rim, sitting on a deep-orange base two pixels high. It can really press down.',
+    build: () => {
+      const cap = circleMask(16, 8, 7, 7.3), base = circleMask(16, 8, 9, 7.3), C = 6.25, { hi } = edgeShade(cap);
+      const rim = hi.filter(p => p.x + .5 < 8 && p.y + .5 < 7.5 || p.y <= 1);
+      return { n: 16, lip: 2 * C, clip: `<path d="${runsPath(cap, C)}"/>`,
+        base: fill(`<path d="${runsPath(base, C)}"/>`, COL.o2),
+        tile: fill(`<path d="${runsPath(cap, C)}"/>`, COL.o) + cells(rim, C, COL.amber, 'd', 'hi'),
+        glyph: fromRows(T1, -1).map(p => ({ ...p, fill: COL.night })) };
+    } },
+  { id: 'b6', name: 'Outline triangle', pill: '16-grid', desc: 'A larger triangle drawn as a one-pixel outline, so the orange shows through. Lighter, more “icon font”.',
+    build: () => ({ n: 16, tile: fill(ROUND.shape, COL.o), clip: ROUND.shape, glyph: outline(tri(4, 2, [2, 4, 5, 7, 9, 10, 10, 9, 7, 5, 4, 2])).map(p => ({ ...p, fill: COL.night })) }) },
+  { id: 'b7', name: 'Breakout', pill: '16-grid', desc: 'A smaller tile; the triangle’s tip pushes past its right edge and turns orange where it leaves. The video being snagged out of the box.',
+    build: () => ({ n: 16, tile: fill('<rect x="0" y="9.375" width="81.25" height="81.25" rx="18"/>', COL.o), clip: '<rect x="0" y="9.375" width="81.25" height="81.25" rx="18"/>',
+      glyph: tri(6, 3, [2, 4, 6, 8, 10, 10, 8, 6, 4, 2]).map(p => ({ ...p, fill: p.x >= 13 ? COL.o : COL.night })) }) },
+  { id: 'b8', name: 'Night tile', pill: '16-grid', desc: 'Inverted: orange pixels on a night tile with a faint keyline. Quieter in the dark app, sharper on light toolbars.',
+    build: () => ({ n: 16, tile: fill(ROUND.shape, COL.night), clip: ROUND.shape, keyline: true, glyph: fromRows(T1).map(p => ({ ...p, fill: COL.o })) }) },
+  { id: 'b9', name: 'Pixel corners', pill: '16-grid · hard edges', desc: 'Same as T1, but the tile corners are stepped on the grid too, so nothing in the icon is smooth.',
+    build: () => { const m = stepMask(16, [3, 1, 1]); return { n: 16, tile: fill(`<path d="${runsPath(m, 6.25)}"/>`, COL.o), clip: `<path d="${runsPath(m, 6.25)}"/>`, glyph: fromRows(T1).map(p => ({ ...p, fill: COL.night })) }; } },
+  { id: 'b10', name: 'Cursor trail', pill: '16-grid', desc: 'The triangle moves left and a cream block cursor follows its tip, tying the button to the monospace wordmark.',
+    build: () => ({ n: 16, tile: fill(ROUND.shape, COL.o), clip: ROUND.shape, glyph: fromRows(CURSORPLAY).map(p => ({ ...p, fill: p.k === 'c' ? COL.cream : COL.night })) }) },
+];
+function fill(shape, color) { return shape.replace('/>', ` style="fill:${color}"/>`); }
+function cells(list, C, color, cls, sh) { return list.map(p => `<rect class="${cls}" data-sh="${sh}" data-f="${color}" x="${f(p.x * C)}" y="${f(p.y * C)}" width="${f(C)}" height="${f(C)}" style="fill:${color}"/>`).join(''); }
+
+const bById = id => BUTTONS.find(b => b.id === id);
+const CACHE = {};
+let uid = 0;
+function iconSvg(bid, size, extraStyle = '') {
+  const b = bById(bid), d = CACHE[bid] ||= b.build(), C = 100 / d.n, clip = 'clip' + (++uid);
+  const sz = size ? `width="${size}" height="${size}"` : '';
+  const glyph = d.glyph.map(p => `<rect class="p" data-x="${p.x}" data-y="${p.y}" data-k="${p.k}" data-f="${p.fill}" x="${f(p.x * C)}" y="${f(p.y * C)}" width="${f(C)}" height="${f(C)}" style="fill:${p.fill}"/>`).join('');
+  const key = d.keyline ? `<rect x=".75" y=".75" width="98.5" height="98.5" rx="21.5" style="fill:none;stroke:#fff;stroke-opacity:.16;stroke-width:1.5"/>` : '';
+  return `<svg class="ic" ${sz} viewBox="0 0 100 100" data-n="${d.n}" data-lip="${d.lip || 0}" data-swap="${d.swap ? 1 : 0}" data-clip="${clip}" style="${extraStyle}" aria-hidden="true">` +
+    `<defs><clipPath id="${clip}">${d.clip}</clipPath></defs>` +
+    (d.base ? `<g class="base" shape-rendering="crispEdges">${d.base}</g>` : '') +
+    `<g class="cap"><g class="tile"${d.clip.startsWith('<path') ? ' shape-rendering="crispEdges"' : ''}>${d.tile}${key}</g>` +
+    `<g class="glyph" shape-rendering="crispEdges">${glyph}</g><g class="fx" shape-rendering="crispEdges"></g></g></svg>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Wordmarks and layouts
+   ════════════════════════════════════════════════════════════════════ */
+const WMS = [
+  { id: 'w1', name: 'Mono 800, orange THIS', pill: 'baseline', base: true, text: 'SNAGTHIS', split: true, font: "800 1em 'JetBrains Mono'", ls: '.01em', desc: 'JetBrains Mono ExtraBold, SNAG in white and THIS in orange, as chosen in round 6.' },
+  { id: 'w2', name: 'Mono 800, all white', pill: 'one colour', text: 'SNAGTHIS', split: false, font: "800 1em 'JetBrains Mono'", ls: '.01em', desc: 'The same letters in one colour; the orange lives only in the button, which makes it pop harder.' },
+  { id: 'w3', name: 'Silkscreen pixel', pill: 'pixel font', text: 'SNAGTHIS', split: true, font: "400 1em 'Silkscreen'", ls: '0em', desc: 'Silkscreen, a bitmap-style font whose strokes step like the button. Fully retro, less readable small.' },
+  { id: 'w4', name: 'Press Start 2P', pill: 'pixel font · wide', text: 'SNAGTHIS', split: true, font: "400 1em 'Press Start 2P'", ls: '-.02em', desc: 'The classic 8-bit arcade face. Matches the arcade button; it is very wide, so the lockup gets long.' },
+  { id: 'w5', name: 'Lowercase mono', pill: 'friendlier', text: 'snagthis', split: true, font: "800 1em 'JetBrains Mono'", ls: '0em', desc: 'snagthis in lowercase JetBrains Mono 800 with an orange “this”. Softer, reads like a command.' },
+];
+const FS = { w1: 1, w2: 1, w3: 1, w4: 1, w5: 1 }; // font-size factors so capitals are .73em tall (measured on load)
+const CAP = .73;
+
+const LAYOUTS = [
+  { id: 'l1', name: 'Button after the words', pill: 'baseline', base: true, kind: 'after', s: 1.2, gap: .34, desc: 'SNAGTHIS ▶: button 1.2 × the letter size, centred on the capitals, as in round 6.' },
+  { id: 'l2', name: 'Button first', pill: 'app-icon order', kind: 'before', s: 1.2, gap: .34, desc: '▶ SNAGTHIS: the conventional order. The button leads, like the dock and toolbar icon.' },
+  { id: 'l3', name: 'Between the words', pill: 'SNAG ▶ THIS', kind: 'between', s: .98, gap: .2, desc: 'The button splits SNAG from THIS, so it reads “snag ▶ this” and doubles as the space.' },
+  { id: 'l4', name: 'Replaces the A', pill: 'SN▶GTHIS', kind: 'replace', s: CAP, gap: 0, desc: 'The button takes the A’s place at capital height. Most ownable, but you must already know the name.' },
+  { id: 'l5', name: 'Stacked', pill: 'splash · store', kind: 'stack', s: 2.2, gap: .34, desc: 'Big button centred above the words, for the startup screen and store art. Headers fall back to L1.' },
+  { id: 'l6', name: 'Capital height', pill: 'small button', kind: 'after', s: CAP, gap: .3, desc: 'The button is exactly as tall as the letters and sits on the baseline, like one more character.' },
+  { id: 'l7', name: 'Oversized button', pill: 'big button', kind: 'after', s: 1.7, gap: .3, desc: 'The button is much taller than the letters, so it leads and the words act as its label.' },
+  { id: 'l8', name: 'Tight gap', pill: 'gap .12', kind: 'after', s: 1.2, gap: .12, desc: 'Like L1 but the button almost touches the S, so it reads as one unit.' },
+  { id: 'l9', name: 'Roomy gap', pill: 'gap .72', kind: 'after', s: 1.2, gap: .72, desc: 'Like L1 with more than a full letter of air, so the button stands apart.' },
+];
+
+function wordHTML(w, from, to, iconAt = -1, icon = '') {
+  let out = '';
+  for (let i = from; i < to; i++) {
+    if (i === iconAt) { out += icon; continue; }
+    out += `<span class="ch${w.split && i >= 4 ? ' o' : ''}">${w.text[i]}</span>`;
+  }
+  return out;
+}
+function lockup(st, compact = false) {
+  let L = LAYOUTS.find(l => l.id === st.L); if (compact && L.kind === 'stack') L = LAYOUTS[0];
+  const w = WMS.find(x => x.id === st.W), fs = FS[w.id];
+  const wmStyle = `font:${w.font};font-size:${fs}em;letter-spacing:${w.ls}`;
+  const centred = s => `width:${s}em;height:${s}em;margin-bottom:${-(s - CAP) / 2}em`;
+  const wm = inner => `<span class="wm" style="${wmStyle}">${inner}</span>`;
+  let body;
+  if (L.kind === 'replace') {
+    const s = CAP / fs, icon = iconSvg(st.B, 0, `width:${s}em;height:${s}em;margin:0 ${.05 / fs}em`);
+    body = wm(wordHTML(w, 0, 8, 2, icon));
+  } else if (L.kind === 'stack') {
+    body = iconSvg(st.B, 0, `width:${L.s}em;height:${L.s}em`) + wm(wordHTML(w, 0, 8));
+  } else {
+    const icon = iconSvg(st.B, 0, centred(L.s));
+    if (L.kind === 'after') body = wm(wordHTML(w, 0, 8)) + icon;
+    else if (L.kind === 'before') body = icon + wm(wordHTML(w, 0, 8));
+    else body = wm(wordHTML(w, 0, 4)) + icon + wm(wordHTML(w, 4, 8));
+  }
+  return `<span class="lk${L.kind === 'stack' ? ' stack' : ''}" style="--gap:${L.gap}em">${body}</span>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Animation engine
+   ════════════════════════════════════════════════════════════════════ */
+let ALL_TIMERS = [];
+const SLOW = +(new URLSearchParams(location.search).get('slow')) || 1; // ?slow=4 plays everything 4× slower, for review
+const reduced = () => state.rm || matchMedia('(prefers-reduced-motion: reduce)').matches;
+function later(root, ms, fn) { const t = setTimeout(fn, ms * SLOW); (root._t ||= []).push(t); ALL_TIMERS.push(t); return t; }
+function stop(root) {
+  (root._t || []).forEach(clearTimeout); root._t = [];
+  root.getAnimations({ subtree: true }).forEach(a => a.cancel());
+  root.querySelectorAll('.tmp').forEach(n => n.remove());
+  root.querySelectorAll('.ch[data-t]').forEach(ch => { ch.textContent = ch.dataset.t; });
+}
+const ani = (el, kf, o) => { o = Object.assign({ fill: 'none' }, o); if (o.duration) o.duration *= SLOW; if (o.delay) o.delay *= SLOW; return el.animate(kf, o); };
+const show = (el, t) => ani(el, [{ opacity: 0 }, { opacity: 0 }], { duration: Math.max(1, t) }); // hidden until t
+const pix = svg => [...svg.querySelectorAll('.glyph .p')].map(el => ({ el, x: +el.dataset.x, y: +el.dataset.y, k: el.dataset.k, f: el.dataset.f }));
+const cell = svg => 100 / +svg.dataset.n;
+function bounds(ps) { const xs = ps.map(p => p.x), ys = ps.map(p => p.y); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; }
+
+function ctxOf(root) {
+  const lk = root.querySelector('.lk');
+  return { root, lk, icons: [...root.querySelectorAll('svg.ic')], chars: [...root.querySelectorAll('.ch')], tokens: [...root.querySelectorAll('.ch, svg.ic')] };
+}
+// Positions in the lockup's own (untransformed) pixel space.
+function geo(c) {
+  const L = c.lk.getBoundingClientRect(), k = (L.width / c.lk.offsetWidth) || 1, em = parseFloat(getComputedStyle(c.lk).fontSize);
+  const loc = r => ({ x: (r.left - L.left) / k, y: (r.top - L.top) / k, r: (r.right - L.left) / k, b: (r.bottom - L.top) / k, w: r.width / k });
+  const w = c.lk.querySelector('.wm'), m = document.createElement('span'); m.className = 'blm'; w.appendChild(m);
+  const base = loc(m.getBoundingClientRect()).y; m.remove();
+  return { loc, base, em, k, L };
+}
+function cursorFor(c) {
+  if (!c.lk || !c.chars.length) return null;
+  const g = geo(c), cur = document.createElement('span'); cur.className = 'tmp tcur'; cur.style.opacity = 0; c.lk.appendChild(cur);
+  const capPx = CAP * g.em;
+  const spots = c.tokens.map(t => { const r = g.loc(t.getBoundingClientRect()); return { before: { x: r.x, y: Math.min(g.base, r.b) - capPx }, after: { x: t.tagName === 'svg' ? r.r + .12 * g.em : r.r, y: Math.min(g.base, r.b) - capPx } }; });
+  return { el: cur, at(i, where) { const p = spots[i][where]; cur.style.left = p.x + 'px'; cur.style.top = p.y + 'px'; cur.style.opacity = 1; }, hide() { cur.style.opacity = 0; } };
+}
+
+// Building blocks
+function buildColumns(svg, t, dur) {
+  const ps = pix(svg), b = bounds(ps), per = dur / (b.x1 - b.x0 + 1);
+  svg.querySelectorAll('.tile, .base').forEach(g => show(g, t));
+  ps.forEach(p => show(p.el, t + (p.x - b.x0 + 1) * per));
+}
+function press(svg, t = 0) {
+  const lip = +svg.dataset.lip, dur = 520;
+  if (lip) {
+    ani(svg.querySelector('.cap'), [
+      { transform: 'translateY(0)', easing: 'cubic-bezier(.5,0,.9,.4)' },
+      { transform: `translateY(${lip}px)`, offset: .26, easing: 'cubic-bezier(.2,.9,.3,1)' },
+      { transform: `translateY(${lip}px)`, offset: .38, easing: 'cubic-bezier(.3,1.6,.5,1)' },
+      { transform: 'translateY(0)' }], { duration: dur, delay: t });
+  } else {
+    const h = svg.getBoundingClientRect().height || 20, s = Math.max(1, h * .13);
+    ani(svg, [
+      { transform: 'translateY(0) scale(1)', filter: `drop-shadow(0 ${s}px 0 rgba(0,0,0,0))`, easing: 'cubic-bezier(.5,0,.9,.4)' },
+      { transform: 'translateY(0) scale(1)', filter: `drop-shadow(0 ${s}px 0 rgba(0,0,0,.55))`, offset: .08, easing: 'cubic-bezier(.5,0,.9,.4)' },
+      { transform: `translateY(${s}px) scale(.93)`, filter: `drop-shadow(0 ${s * .15}px 0 rgba(0,0,0,.55))`, offset: .3, easing: 'cubic-bezier(.2,.9,.3,1.4)' },
+      { transform: `translateY(${-s * .25}px) scale(1.01)`, filter: `drop-shadow(0 ${s * 1.1}px 0 rgba(0,0,0,.4))`, offset: .66, easing: 'ease-in-out' },
+      { transform: 'translateY(0) scale(1)', filter: `drop-shadow(0 ${s}px 0 rgba(0,0,0,0))` }], { duration: dur, delay: t });
+  }
+  if (+svg.dataset.swap) svg.querySelectorAll('.d[data-sh]').forEach(d => {
+    const other = d.dataset.sh === 'hi' ? COL.o2 : COL.amber, own = d.dataset.f;
+    ani(d, [{ fill: other }, { fill: other }], { duration: dur * .34, delay: t + dur * .1 });
+    void own;
+  });
+}
+function pop(svg, t) {
+  ani(svg, [{ transform: 'scale(.25)', opacity: 0, easing: 'cubic-bezier(.2,.8,.3,1)' }, { transform: 'scale(1.14)', opacity: 1, offset: .55, easing: 'ease-in-out' }, { transform: 'scale(1)' }], { duration: 260, delay: t, fill: 'backwards' });
+}
+function blinkOut(cur, t) { if (!cur) return; ani(cur.el, [{ opacity: 1 }, { opacity: 0, offset: .25 }, { opacity: 1, offset: .5 }, { opacity: 0, offset: .75 }, { opacity: 0 }], { duration: 560, delay: t, easing: 'steps(1,end)', fill: 'forwards' }); }
+function scramble(c, ch, settle) {
+  const set = 'ABCDEFGHJKLMNPRSTUVWXYZ#%&$@', lower = ch.dataset.t ? ch.dataset.t : ch.textContent;
+  ch.dataset.t = lower;
+  const isLower = lower === lower.toLowerCase();
+  show(ch, 60 + Math.random() * 120);
+  const tick = () => { ch.textContent = isLower ? set[Math.random() * set.length | 0].toLowerCase() : set[Math.random() * set.length | 0]; };
+  tick();
+  for (let t = 50; t < settle; t += 50) later(c.root, t, tick);
+  later(c.root, settle, () => { ch.textContent = lower; });
+}
+function xTimer(c, span, lead = 60) { // maps a screen x to a delay across the whole lockup
+  const R = (c.lk || c.icons[0]).getBoundingClientRect();
+  return x => lead + Math.max(0, Math.min(1, (x - R.left) / (R.width || 1))) * span;
+}
+
+const ANIMS = [
+  { id: 'a1', name: 'Static', pill: 'baseline', base: true, trigger: 'None', timing: 'No motion', rm: 'Same', dur: 0,
+    desc: 'T1 as-is: no animation anywhere. The control for judging the others.', run() {} },
+  { id: 'a2', name: 'Type and build', pill: 'launch', trigger: 'App launch (once)', timing: '1.25 s · 55 ms per letter, pixel columns in steps', rm: 'Static end state',
+    desc: 'A block cursor types SNAGTHIS; when it reaches the button, the pixels build column by column, left to right.', dur: 1250,
+    run(c) {
+      const cur = cursorFor(c); let t = 160;
+      if (cur) cur.at(0, 'before');
+      c.tokens.forEach((tok, i) => {
+        if (tok.tagName === 'svg') { if (cur) later(c.root, t, () => cur.hide()); buildColumns(tok, t, 460); t += 500; if (cur) later(c.root, t, () => cur.at(i, 'after')); }
+        else { show(tok, t); if (cur) later(c.root, t, () => cur.at(i, 'after')); t += 55; }
+      });
+      blinkOut(cur, t + 60);
+    } },
+  { id: 'a3', name: 'Noise resolve', pill: 'launch', trigger: 'App launch (once)', timing: '0.9 s · random pixel steps', rm: 'Static end state',
+    desc: 'Random static flickers on the tile and settles into the triangle, while the letters scramble and lock in one by one.', dur: 900,
+    run(c) {
+      c.chars.forEach((ch, i) => scramble(c, ch, 260 + i * 60 + Math.random() * 120));
+      c.icons.forEach(svg => {
+        const n = +svg.dataset.n, C = cell(svg), fx = svg.querySelector('.fx'), ps = pix(svg);
+        const glyphFill = ps.find(p => p.k === '#').f;
+        for (let i = 0; i < n * n * .22; i++) {
+          const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          r.setAttribute('class', 'tmp'); r.setAttribute('x', (Math.random() * n | 0) * C); r.setAttribute('y', (Math.random() * n | 0) * C);
+          r.setAttribute('width', C); r.setAttribute('height', C); r.setAttribute('clip-path', `url(#${svg.dataset.clip})`);
+          r.style.fill = Math.random() < .2 ? COL.cream : glyphFill; r.style.opacity = 0; fx.appendChild(r);
+          ani(r, [{ opacity: .9 }, { opacity: .9 }], { duration: 50 + Math.random() * 110, delay: Math.random() * 560 });
+        }
+        ps.forEach(p => {
+          const t = 140 + Math.random() * 600;
+          show(p.el, t);
+          if (Math.random() < .3) ani(p.el, [{ opacity: 0 }, { opacity: 0 }], { duration: 60, delay: t + 60 + Math.random() * 80 });
+        });
+      });
+    } },
+  { id: 'a4', name: 'Arcade press', pill: 'click · hover', trigger: 'Click on the logo, hover, or a new download starting', timing: '0.52 s · press ease-in, spring back with overshoot', rm: 'No movement',
+    desc: 'The button goes down 3–4 px, its shadow shrinks under it, then it springs back up. With B5 the cap really sinks onto its base.', dur: 600,
+    run(c) { c.icons.forEach(svg => press(svg, 80)); } },
+  { id: 'a5', name: 'Shine sweep', pill: 'hover · idle', trigger: 'Hover, or once after 30 s idle', timing: '0.8 s · diagonal band, 260 ms per pixel', rm: 'No sweep',
+    desc: 'A stepped band of light crosses the letters and then the button, pixel by pixel, from left to right.', dur: 900,
+    run(c) {
+      const at = xTimer(c, 620);
+      c.chars.forEach(ch => { const r = ch.getBoundingClientRect(), col = getComputedStyle(ch).color;
+        ani(ch, [{ color: col }, { color: '#ffe0b0', textShadow: '0 0 .35em rgba(255,178,56,.6)', offset: .4 }, { color: col }], { duration: 300, delay: at(r.left + r.width / 2) }); });
+      c.icons.forEach(svg => {
+        const R = svg.getBoundingClientRect(), n = +svg.dataset.n, C = cell(svg), fx = svg.querySelector('.fx');
+        pix(svg).forEach(p => ani(p.el, [{ fill: p.f }, { fill: COL.cream, offset: .35 }, { fill: p.f }], { duration: 260, delay: at(R.left + (p.x + .5 + (n - p.y) * .35) / n * R.width) }));
+        for (let x = 0; x < n; x++) {
+          const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          r.setAttribute('class', 'tmp'); r.setAttribute('x', x * C); r.setAttribute('y', 0); r.setAttribute('width', C); r.setAttribute('height', 100);
+          r.setAttribute('clip-path', `url(#${svg.dataset.clip})`); r.style.fill = '#fff'; r.style.opacity = 0; fx.prepend(r);
+          ani(r, [{ opacity: 0 }, { opacity: .28, offset: .4 }, { opacity: 0 }], { duration: 240, delay: at(R.left + (x + .5) / n * R.width) });
+        }
+      });
+    } },
+  { id: 'a6', name: 'Loading fill', pill: 'launch · download done', trigger: 'App launch, or when a download finishes', timing: '1.1 s · 0.8 s stepped fill, 0.3 s flash', rm: 'Static end state',
+    desc: 'Everything starts dim; a progress front fills the letters and pixel columns left to right, then the button flashes.', dur: 1150,
+    run(c) {
+      const at = xTimer(c, 760, 80), flash = 900;
+      c.chars.forEach(ch => { const r = ch.getBoundingClientRect(); ani(ch, [{ opacity: .22 }, { opacity: .22 }], { duration: at(r.left + r.width * .6) }); });
+      c.icons.forEach(svg => {
+        const R = svg.getBoundingClientRect(), n = +svg.dataset.n;
+        pix(svg).forEach(p => {
+          ani(p.el, [{ opacity: .22 }, { opacity: .22 }], { duration: at(R.left + (p.x + 1) / n * R.width) });
+          ani(p.el, [{ fill: COL.cream }, { fill: COL.cream }], { duration: 120, delay: flash });
+        });
+        ani(svg, [{ filter: 'brightness(1)' }, { filter: 'brightness(1.45)', offset: .3 }, { filter: 'brightness(1)' }], { duration: 320, delay: flash });
+      });
+      c.chars.forEach(ch => ani(ch, [{ textShadow: '0 0 0 rgba(255,178,56,0)' }, { textShadow: '0 0 .4em rgba(255,178,56,.55)', offset: .3 }, { textShadow: '0 0 0 rgba(255,178,56,0)' }], { duration: 320, delay: flash }));
+    } },
+  { id: 'a7', name: 'Snag in', pill: 'launch', trigger: 'App launch (once)', timing: '0.95 s · each pixel 520 ms, overshoot snap, then 260 ms recoil', rm: 'Static end state',
+    desc: 'The triangle’s pixels fly in from the right and snap into place, centre rows first; the whole logo gives a small tug when they land.', dur: 1000,
+    run(c) {
+      c.icons.forEach(svg => {
+        const ps = pix(svg), n = +svg.dataset.n, C = cell(svg), b = bounds(ps), cy = (b.y0 + b.y1) / 2;
+        ps.forEach(p => {
+          const dist = ((n - p.x) + 3 + Math.random() * 7) * C, delay = Math.abs(p.y + .5 - cy - .5) / (b.y1 - b.y0 + 1) * 280 + Math.random() * 90;
+          ani(p.el, [{ transform: `translateX(${dist}px)`, opacity: 0, easing: 'cubic-bezier(.2,.75,.3,1.25)' }, { opacity: 1, offset: .2 }, { transform: 'translateX(0)', opacity: 1 }], { duration: 520, delay, fill: 'backwards' });
+        });
+      });
+      const tug = c.lk || c.icons[0];
+      ani(tug, [{ transform: 'translateX(0)' }, { transform: 'translateX(.05em)', offset: .35 }, { transform: 'translateX(0)' }], { duration: 260, delay: 720, easing: 'ease-out' });
+    } },
+  { id: 'a8', name: 'Play nudge', pill: 'hover', trigger: 'Hover over the logo or a video row', timing: '0.52 s · one grid cell forward, ease-out, back', rm: 'No movement',
+    desc: 'The triangle steps one pixel forward, like pressing play, and leaves a faint ghost where it was, then settles back.', dur: 600,
+    run(c) {
+      c.icons.forEach(svg => {
+        const g = svg.querySelector('.glyph'), C = cell(svg), ghost = g.cloneNode(true);
+        ghost.classList.add('tmp'); ghost.classList.remove('glyph'); ghost.style.opacity = 0; g.before(ghost);
+        ani(g, [{ transform: 'translateX(0)', easing: 'cubic-bezier(.2,.9,.2,1)' }, { transform: `translateX(${C}px)`, offset: .3 }, { transform: `translateX(${C}px)`, offset: .55, easing: 'cubic-bezier(.6,0,.3,1)' }, { transform: 'translateX(0)' }], { duration: 520, delay: 80 });
+        ani(ghost, [{ opacity: 0 }, { opacity: .38, offset: .25 }, { opacity: 0, offset: .7 }, { opacity: 0 }], { duration: 520, delay: 80 });
+      });
+    } },
+  { id: 'a9', name: 'Glitch', pill: 'launch · click', trigger: 'App launch or click (once)', timing: '0.52 s · 8 hard-cut frames', rm: 'Static end state',
+    desc: 'A short burst of RGB split and row slips on the button and a colour fringe on the letters, then it snaps clean.', dur: 600,
+    run(c) {
+      const T = [0, 50, 100, 170, 240, 310, 390, 470, 520], RED = [2, -1, 1, 0, -2, 1, 0, 0, 0], CYA = [-2, 1, -1, 1, 2, 0, -1, 0, 0], SLIP = [0, 1, 0, -1, 1, 0, 1, 0, 0];
+      const frames = (arr, fn) => arr.map((v, i) => Object.assign(fn(v), { offset: T[i] / 520, easing: 'steps(1,end)' }));
+      c.icons.forEach(svg => {
+        const g = svg.querySelector('.glyph'), C = cell(svg), ps = pix(svg), b = bounds(ps), cy = Math.round((b.y0 + b.y1) / 2);
+        [['#ff3366', RED], ['#37e3ff', CYA]].forEach(([color, offs]) => {
+          const k = g.cloneNode(true); k.classList.add('tmp'); k.classList.remove('glyph'); k.querySelectorAll('rect').forEach(r => { r.style.fill = color; r.classList.remove('p'); });
+          k.style.opacity = 0; k.style.mixBlendMode = 'screen'; g.before(k);
+          ani(k, frames(offs, v => ({ transform: `translateX(${v * C}px)`, opacity: v ? .9 : 0 })), { duration: 520, delay: 60 });
+        });
+        ps.filter(p => Math.abs(p.y - cy) <= Math.max(1, (b.y1 - b.y0) / 6)).forEach(p => ani(p.el, frames(SLIP, v => ({ transform: `translateX(${v * C}px)` })), { duration: 520, delay: 60 }));
+      });
+      c.root.querySelectorAll('.wm').forEach(w => ani(w, frames(RED, v => ({ textShadow: v ? `${v * .04}em 0 #ff3366, ${-v * .04}em 0 #37e3ff` : 'none', transform: `translateX(${v === 2 ? .04 : v === -2 ? -.04 : 0}em)` })), { duration: 520, delay: 60 }));
+    } },
+  { id: 'a10', name: 'Type, then press', pill: 'launch', trigger: 'App launch (once); the press alone on click', timing: '1.4 s · 50 ms per letter, 260 ms pop, 520 ms press', rm: 'Static end state',
+    desc: 'The cursor types SNAGTHIS, the button pops in where the cursor lands, and then presses itself like hitting play.', dur: 1400,
+    run(c) {
+      const cur = cursorFor(c); let t = 150; const icons = [];
+      if (cur) cur.at(0, 'before');
+      c.tokens.forEach((tok, i) => {
+        if (tok.tagName === 'svg') { if (cur) later(c.root, t, () => cur.at(i, 'before')); t += 70; if (cur) later(c.root, t, () => cur.hide()); pop(tok, t); icons.push(tok); t += 260; if (cur && i < c.tokens.length - 1) later(c.root, t, () => cur.at(i, 'after')); }
+        else { show(tok, t); if (cur) later(c.root, t, () => cur.at(i, 'after')); t += 50; }
+      });
+      if (cur && c.tokens[c.tokens.length - 1].tagName !== 'svg') blinkOut(cur, t); else if (cur) later(c.root, t, () => cur.hide());
+      icons.forEach(svg => press(svg, t + 80));
+    } },
+  { id: 'a11', name: 'Idle heartbeat', pill: 'optional loop', trigger: 'While idle, after the launch animation', timing: '2.8 s loop · 450 ms amber pulse, then a long rest', rm: 'No loop',
+    desc: 'Only the tip column of the triangle (or the cursor, on B10) glows amber once every few seconds, like a playhead. Nothing moves.', dur: 600,
+    run(c) {
+      c.icons.forEach(svg => {
+        const ps = pix(svg), cur = ps.filter(p => p.k === 'c'), main = ps.filter(p => p.k === '#'), x1 = Math.max(...main.map(p => p.x));
+        const target = cur.length ? cur : main.filter(p => p.x === x1);
+        target.forEach(p => ani(p.el, [{ fill: p.f }, { fill: p.f, offset: .62 }, { fill: cur.length ? COL.o2 : COL.amber, offset: .72 }, { fill: p.f, offset: .84 }, { fill: p.f }], { duration: 2800, delay: 300, iterations: Infinity, easing: 'ease-in-out' }));
+      });
+    } },
+];
+const aById = id => ANIMS.find(a => a.id === id);
+function play(root, id) {
+  stop(root);
+  if (reduced()) return;
+  const a = aById(id); if (!a) return;
+  try { a.run(ctxOf(root)); } catch (e) { console.error(e); }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Page
+   ════════════════════════════════════════════════════════════════════ */
+const state = { B: 'b1', A: 'a10', L: 'l1', W: 'w1', rm: false };
+const GROUPS = { B: BUTTONS, A: ANIMS, L: LAYOUTS, W: WMS };
+const num = (g, i) => g + (i + 1);
+const pillHTML = o => `<span class="pill${o.base ? ' base' : ''}">${o.pill}</span>`;
+const cardHead = (g, o, i) => `<header><span class="num">${num(g, i)}</span><span class="name">${o.name}</span>${pillHTML(o)}</header><p>${o.desc}</p>`;
+const strip = (st, anim) => `<div class="strip"><span data-play="${anim || ''}" data-lockup="22" data-ctx="compact" data-st='${JSON.stringify(st)}'></span><span class="stub"></span><span class="tb">All · Downloading · Saved</span></div>`;
+
+function appWindow(withSplash) {
+  const link = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"/></svg>';
+  const rows = [
+    ['linear-gradient(135deg,#40506a,#1c222c)', 'Conference keynote (full)', '<span>Downloading · 42%</span><span class="bar"><i style="width:42%"></i></span>', '2.1 MB/s'],
+    ['linear-gradient(135deg,#6a4a3a,#231a16)', 'Drone footage — coastline at dusk', '<span>Saved · 212 MB · 4K</span>', '⋯'],
+    ['linear-gradient(135deg,#3a5a4c,#16211c)', 'How to restore a cast iron pan', '<span>Saved · 88 MB · 1080p</span>', '⋯'],
+    ['linear-gradient(135deg,#4d3a5e,#1b1622)', 'Lo-fi mix — 2 hours', '<span>Saved · 164 MB · audio</span>', '⋯'],
+  ];
+  return `<div class="win">
+    <div class="topbar"><div class="lights"><i></i><i></i><i></i></div><div class="brand" data-play data-lockup="22" data-ctx="compact"></div><div class="paste">${link}Paste a video link<kbd>⌘V</kbd></div><nav class="tabs"><span class="on">All</span><span>Downloading</span><span>Saved</span></nav></div>
+    ${rows.map(r => `<div class="vrow"><div class="vthumb" style="background:${r[0]}"></div><div><div class="t">${r[1]}</div><div class="s">${r[2]}</div></div><span class="act">${r[3]}</span></div>`).join('')}
+    ${withSplash ? '<div class="splash"><div class="bg"></div><div class="fg"></div></div>' : ''}
+  </div>`;
+}
+
+function fillLockups(scope = document) {
+  scope.querySelectorAll('[data-lockup]').forEach(el => {
+    const st = el.dataset.st ? JSON.parse(el.dataset.st) : state;
+    el.innerHTML = `<span style="font-size:${+el.dataset.lockup / 1.2}px;display:inline-flex">${lockup(st, el.dataset.ctx === 'compact')}</span>`;
+  });
+  scope.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = iconSvg(el.dataset.st ? JSON.parse(el.dataset.st).B : state.B, +el.dataset.icon); });
+}
+
+function render() {
+  ALL_TIMERS.forEach(clearTimeout); ALL_TIMERS = [];
+  document.querySelectorAll('[data-play]').forEach(stop);
+  document.getElementById('win-app').innerHTML = appWindow(false);
+  document.getElementById('win-splash').innerHTML = appWindow(true);
+
+  const card = (g, o, i, body) => `<div class="card" role="button" tabindex="0" data-g="${g}" data-v="${o.id}" aria-pressed="${state[g] === o.id}">${cardHead(g, o, i)}${body}</div>`;
+  const st = over => Object.assign({ B: state.B, L: state.L, W: state.W }, over);
+
+  document.getElementById('grid-B').innerHTML = BUTTONS.map((o, i) => card('B', o, i, `
+    <div class="panel dark stage" data-play data-lockup="40" data-st='${JSON.stringify(st({ B: o.id }))}'></div>
+    ${strip(st({ B: o.id }))}
+    <div class="tiles">${[128, 48, 32, 16].map(px => `<div>${iconSvg(o.id, px)}<small>${px}</small></div>`).join('')}
+      <div class="chip">${[32, 16].map(px => `<div>${iconSvg(o.id, px)}<small>${px}</small></div>`).join('')}</div></div>`)).join('');
+
+  document.getElementById('grid-A').innerHTML = ANIMS.map((o, i) => card('A', o, i, `
+    <div class="panel dark stage hov" data-play="${o.id}" data-lockup="40" data-st='${JSON.stringify(st({}))}'></div>
+    ${strip(st({}), o.id)}
+    <dl class="meta"><dt>Trigger</dt><dd>${o.trigger}</dd><dt>Timing</dt><dd>${o.timing}</dd><dt>Reduced motion</dt><dd>${o.rm}</dd></dl>
+    <div class="cardfoot"><button class="rp" data-replay-card>Replay</button><span class="note">or hover the preview</span></div>`)).join('');
+
+  document.getElementById('grid-L').innerHTML = LAYOUTS.map((o, i) => card('L', o, i, `
+    <div class="panel dark stage" data-play data-lockup="40" data-st='${JSON.stringify(st({ L: o.id }))}' style="min-height:${o.kind === 'stack' ? 170 : 116}px"></div>
+    ${strip(st({ L: o.id }))}`)).join('');
+
+  document.getElementById('grid-W').innerHTML = WMS.map((o, i) => card('W', o, i, `
+    <div class="pair"><div class="panel dark stage" data-play data-lockup="36" data-st='${JSON.stringify(st({ W: o.id }))}'></div><div class="panel light stage" data-play data-lockup="36" data-st='${JSON.stringify(st({ W: o.id }))}'></div></div>
+    ${strip(st({ W: o.id }))}`)).join('');
+
+  document.getElementById('live-icons').innerHTML = [128, 56, 32, 16].map(px => `<div><span data-play data-icon="${px}" style="display:block"></span><small>${px}</small></div>`).join('');
+  fillLockups();
+
+  const label = g => { const i = GROUPS[g].findIndex(o => o.id === state[g]); return `${num(g, i)} ${GROUPS[g][i].name}`; };
+  const code = ['B', 'A', 'L', 'W'].map(g => num(g, GROUPS[g].findIndex(o => o.id === state[g]))).join(' · ');
+  document.getElementById('combo').innerHTML = code.replace(/([BALW])/g, '<span>$1</span>');
+  document.getElementById('ctx-combo').textContent = code;
+  document.querySelectorAll('[data-sel]').forEach(el => { el.textContent = label(el.dataset.sel); });
+  const a = aById(state.A);
+  document.getElementById('summary').innerHTML = ['B', 'A', 'L', 'W'].map(g => `<div><b>${label(g)}</b> · ${GROUPS[g].find(o => o.id === state[g]).desc}</div>`).join('') +
+    `<div><b>Motion</b> · ${a.trigger} · ${a.timing} · reduced motion: ${a.rm}</div>`;
+}
+
+function playAll() {
+  document.querySelectorAll('[data-play]').forEach(el => { if (!el.closest('#win-splash')) play(el, el.dataset.play || state.A); });
+  runSplash();
+}
+
+/* Startup: play big in the middle, then FLIP each part (icon, word pieces) into the top bar. */
+function runSplash() {
+  const host = document.getElementById('win-splash'), win = host.querySelector('.win');
+  stop(win);
+  const sp = win.querySelector('.splash'), bg = sp.querySelector('.bg'), fg = sp.querySelector('.fg'), hdr = win.querySelector('.brand');
+  fg.innerHTML = `<span data-splash style="font-size:40px;display:inline-flex">${lockup(state, false)}</span>`;
+  hdr.style.visibility = '';
+  if (reduced()) { sp.style.display = 'none'; return; }
+  sp.style.display = ''; hdr.style.visibility = 'hidden';
+  const big = fg.firstElementChild, a = aById(state.A);
+  play(big, state.A); (win._t ||= []).push(...(big._t || []));
+  later(win, Math.max(500, a.dur) + 350, () => {
+    const pairs = [], bw = [...big.querySelectorAll('.wm')], hw = [...hdr.querySelectorAll('.wm')];
+    bw.forEach((w, i) => hw[i] && pairs.push([w, hw[i]]));
+    const bi = big.querySelector('svg.ic'), hi = hdr.querySelector('svg.ic');
+    if (!bi.closest('.wm')) pairs.push([bi, hi]);
+    if (a.id !== 'a11') big.getAnimations({ subtree: true }).forEach(x => x.finish());
+    pairs.forEach(([from, to]) => {
+      const r1 = from.getBoundingClientRect(), r2 = to.getBoundingClientRect(), s = r2.height / r1.height;
+      from.style.transformOrigin = '0 0';
+      ani(from, [{ transform: 'translate(0,0) scale(1)' }, { transform: `translate(${r2.left - r1.left}px, ${r2.top - r1.top}px) scale(${s})` }], { duration: 620, easing: 'cubic-bezier(.65,0,.2,1)', fill: 'forwards' });
+    });
+    ani(bg, [{ opacity: 1 }, { opacity: 0 }], { duration: 420, delay: 140, easing: 'ease-out', fill: 'forwards' });
+    later(win, 640, () => {
+      hdr.style.visibility = ''; sp.style.display = 'none';
+      if (a.id === 'a11') play(hdr, 'a11');
+    });
+  });
+}
+
+function replay(which) {
+  if (which === 'all') return playAll();
+  if (which === 'splash') return runSplash();
+  const scope = { app: '#win-app', popup: '#popup-wrap', icons: '#icons-ctx' }[which];
+  document.querySelectorAll(`${scope} [data-play]`).forEach(el => play(el, el.dataset.play || state.A));
+}
+
+document.addEventListener('click', e => {
+  const r = e.target.closest('[data-replay]');
+  if (r) { replay(r.dataset.replay); return; }
+  const rc = e.target.closest('[data-replay-card]');
+  if (rc) { e.stopPropagation(); rc.closest('.card').querySelectorAll('[data-play]').forEach(el => play(el, el.dataset.play)); return; }
+  const brand = e.target.closest('#win-app .brand, #popup-lk');
+  if (brand) { play(brand, state.A); return; }
+  const c = e.target.closest('.card');
+  if (c) choose(c.dataset.g, c.dataset.v);
+});
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest('.hov, #win-app .brand, #popup-lk');
+  if (!t || t.contains(e.relatedTarget)) return;
+  if (t._busyUntil > performance.now()) return;
+  const id = t.dataset.play || state.A;
+  t._busyUntil = performance.now() + Math.max(400, aById(id).dur);
+  play(t, id);
+});
+document.addEventListener('keydown', e => {
+  const c = e.target.closest?.('.card');
+  if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); choose(c.dataset.g, c.dataset.v); return; }
+  const sec = document.querySelector('section[data-group]:hover');
+  if (!sec || !/^[0-9]$/.test(e.key)) return;
+  const list = GROUPS[sec.dataset.group], i = e.key === '0' ? 9 : +e.key - 1;
+  if (list[i]) choose(sec.dataset.group, list[i].id);
+});
+document.getElementById('rm').addEventListener('change', e => { state.rm = e.target.checked; render(); playAll(); });
+function choose(g, v) { state[g] = v; render(); playAll(); }
+
+/* Measure capital heights so every wordmark has .73em capitals. */
+function measure() {
+  const cv = document.createElement('canvas').getContext('2d');
+  WMS.forEach(w => {
+    cv.font = w.font.replace('1em', '200px');
+    const m = cv.measureText('H').actualBoundingBoxAscent / 200;
+    if (m > .3) FS[w.id] = +(CAP / m).toFixed(3);
+  });
+}
+render();
+const fontsReady = Promise.all(["800 40px 'JetBrains Mono'", "400 40px 'Silkscreen'", "40px 'Press Start 2P'"].map(s => document.fonts.load(s))).catch(() => {});
+Promise.race([fontsReady, new Promise(r => setTimeout(r, 2500))]).then(() => { measure(); render(); requestAnimationFrame(playAll); });
+</script>
+</body>
+</html>
