@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Chrome popup settings with tabs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;550;570;600;620;700&family=Jersey+15&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Token values are copied from apps/extension/src/input.css (@theme) and shared/accents.js; do not fork them. */
+:root {
+  --color-background: hsl(215 22% 3.5%);
+  --color-background-raised: hsl(215 22% 8%);
+  --color-background-hover: hsl(215 22% 10.5%);
+  --color-background-active: hsl(215 22% 13.5%);
+  --color-surface-chrome: hsl(215 22% 4%);
+  --color-surface-row: hsl(215 22% 8%);
+  --color-foreground: hsl(20 20% 93%);
+  --color-foreground-muted: hsl(20 6% 60%);
+  --color-foreground-subtle: hsl(20 5% 52%);
+  --color-border: hsl(215 15% 18%);
+  --color-border-subtle: hsl(215 14% 15.5%);
+  --color-primary: hsl(18 96% 40%);
+  --color-primary-strong: hsl(18 96% 36%);
+  --color-primary-hover: hsl(20 96% 52%);
+  --color-primary-muted: hsl(16 58% 16%);
+  --color-destructive: hsl(0 80% 64%);
+  --color-status-paused: hsl(44 84% 58%);
+  --color-status-completed: hsl(145 62% 46%);
+  --color-status-cancelled: hsl(220 8% 52%);
+  --accent-logo: #fa5d0e; --accent-bevel-face: #fa5d0e; --accent-bevel-light: #ffb238; --accent-bevel-dark: #bd3f00;
+  --sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --pix: "Jersey 15", "JetBrains Mono", monospace; --mono: "JetBrains Mono", "SF Mono", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #07080a; color: var(--color-foreground); font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+button, select, input { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; padding: 0; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: 2px; }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.logo-snag { fill: #fff; } .logo-this { fill: var(--accent-logo); } .logo-face { fill: var(--accent-bevel-face); } .logo-light { fill: var(--accent-bevel-light); } .logo-dark { fill: var(--accent-bevel-dark); } .logo-glyph { fill: #0c0e11; }
+.logo-wordmark { display: block; width: 120px; height: 22px; flex: none; }
+[hidden] { display: none !important; }
+code { font: 11.5px var(--mono); color: var(--color-foreground); }
+
+/* ── Hub, following ui-refresh/controls.html ── */
+.hub { max-width: 1340px; margin: 0 auto; padding: 36px 28px 56px; }
+.eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--color-foreground-subtle); }
+.eyebrow span { color: var(--color-primary-hover); font-weight: 600; margin-right: 10px; }
+.intro h1 { font-size: 28px; line-height: 1.2; font-weight: 620; margin: 10px 0 8px; letter-spacing: -.01em; }
+.intro h1 em { font: 400 38px/1 var(--pix); font-style: normal; color: var(--accent-logo); letter-spacing: .03em; }
+.intro p { color: var(--color-foreground-muted); max-width: 860px; margin: 0; font-size: 14px; }
+kbd { font: 600 11px/16px var(--sans); padding: 1px 6px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground); }
+.picker { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 22px -8px 10px; padding: 8px; background: #07080aee; backdrop-filter: blur(8px); }
+.picker button { text-align: left; padding: 10px 12px; border-radius: 9px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
+.picker button:hover { background: var(--color-background-hover); }
+.picker button[aria-pressed="true"] { border-color: var(--color-primary-hover); background: color-mix(in srgb, var(--color-primary-muted) 35%, transparent); }
+.picker span { display: block; font-size: 13px; font-weight: 600; }
+.picker span b { font: 400 17px/1 var(--pix); color: var(--accent-logo); margin-right: 6px; }
+.picker small { display: block; color: var(--color-foreground-muted); font-size: 11px; line-height: 15px; margin-top: 2px; }
+.picker .meta { display: flex; gap: 5px; margin-top: 7px; }
+.chip { display: inline-block; padding: 1px 7px; border-radius: 5px; background: var(--color-background-active); color: var(--color-foreground); font-size: 10.5px; font-weight: 550; }
+.chip.good { background: hsl(145 40% 20% / .6); color: hsl(145 55% 70%); } .chip.warn { background: hsl(44 50% 18% / .7); color: hsl(44 80% 72%); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 6px 0 14px; }
+.tgroup { display: flex; align-items: center; gap: 4px; }
+.tgroup > span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--color-foreground-subtle); margin-right: 6px; }
+.tgroup button.t { height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--color-border-subtle); font-size: 12px; color: var(--color-foreground-muted); }
+.tgroup button.t:hover { color: var(--color-foreground); background: var(--color-background-hover); }
+.tgroup button.t[aria-pressed="true"] { color: var(--color-foreground); border-color: var(--color-primary-hover); background: color-mix(in srgb, var(--color-primary-muted) 35%, transparent); }
+.tgroup .sw { width: 22px; height: 22px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14); }
+.tgroup .sw[aria-pressed="true"] { box-shadow: 0 0 0 2px #07080a, 0 0 0 4px var(--swatch); }
+.tgroup button.walk { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 8px; background: var(--color-background-raised); border: 1px solid var(--color-border); font-weight: 600; font-size: 12.5px; }
+.tgroup button.walk:hover { background: var(--color-background-hover); }
+
+.stage { display: grid; grid-template-columns: 480px 1fr; gap: 28px; align-items: start; }
+.flabel { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--color-foreground-subtle); margin-bottom: 7px; }
+.flabel .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-primary-hover); box-shadow: 0 0 8px var(--color-primary-hover); }
+.notes { padding: 16px 18px; border-radius: 11px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); font-size: 13px; }
+.notes h2 { margin: 0 0 4px; font-size: 17px; font-weight: 620; }
+.notes h2 b { font: 400 22px/1 var(--pix); color: var(--accent-logo); margin-right: 8px; }
+.notes > p { margin: 0 0 12px; color: var(--color-foreground-muted); }
+.notes dl { display: grid; grid-template-columns: 132px 1fr; gap: 7px 14px; margin: 0; }
+.notes dt { color: var(--color-foreground-subtle); font-size: 12px; }
+.notes dd { margin: 0; }
+.fit { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--mono); }
+.fit.ok { color: hsl(145 55% 70%); } .fit.bad { color: hsl(44 80% 72%); }
+.walklog { margin-top: 14px; min-height: 40px; padding: 9px 12px; border-radius: 8px; background: var(--color-background); border: 1px solid var(--color-border-subtle); font: 12px/1.5 var(--mono); color: var(--color-foreground-muted); }
+.walklog b { color: var(--color-foreground); font-weight: 600; }
+.minis-title { margin: 30px 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--color-foreground-subtle); }
+.minis { display: flex; gap: 18px; flex-wrap: wrap; }
+.mini { width: 288px; }
+.mini .mframe { width: 288px; height: 336px; overflow: hidden; border-radius: 8px; box-shadow: 0 0 0 1px rgb(255 255 255 / .06); }
+.mini .mframe > .pop { transform: scale(.6); transform-origin: 0 0; }
+.mini .mlabel { margin-top: 6px; font-size: 11.5px; color: var(--color-foreground-muted); }
+section.basis { margin-top: 34px; padding: 18px 20px; border: 1px dashed var(--color-border); border-radius: 11px; }
+section.basis.rec { border-style: solid; border-color: var(--color-primary-hover); }
+section.basis h2 { margin: 0 0 8px; font-size: 16px; font-weight: 620; }
+section.basis p, section.basis li { color: var(--color-foreground-muted); font-size: 13px; } section.basis strong { color: var(--color-foreground); }
+section.basis ul { margin: 0; padding-left: 18px; } section.basis li { margin: 4px 0; }
+table.glance { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 30px; }
+table.glance th, table.glance td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--color-border-subtle); vertical-align: top; }
+table.glance th { color: var(--color-foreground-subtle); font-weight: 550; font-size: 11.5px; }
+table.glance td:first-child { white-space: nowrap; font-weight: 600; }
+table.glance tr.sel td { background: color-mix(in srgb, var(--color-primary-muted) 25%, transparent); }
+.hub-footer { margin-top: 30px; color: var(--color-foreground-subtle); font-size: 12px; }
+
+/* ── The popup (apps/extension/popup.html at its 480 × 560 maximum), showing the Settings sheet ── */
+.pop { position: relative; width: 480px; height: 560px; display: flex; flex-direction: column; overflow: hidden; background: var(--color-background-raised); border-radius: 8px; box-shadow: 0 14px 40px rgb(0 0 0 / .6), 0 0 0 1px rgb(255 255 255 / .07); font-size: 13px; }
+.pop .sheet-header { height: 42px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--color-border-subtle); flex: none; }
+.pop .sheet-header h2 { font-size: 13.5px; font-weight: 570; margin: 0; flex: 1; }
+.act { height: 30px; min-width: 30px; padding: 0 9px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--color-foreground-muted); font-size: 12.5px; flex: none; white-space: nowrap; }
+.act:hover:not(:disabled) { color: var(--color-foreground); background: var(--color-background-active); }
+.act.primary { padding: 0 14px; color: #fff; background: var(--color-primary); font-weight: 600; }
+.act.primary:hover:not(:disabled) { background: var(--color-primary-strong); color: #fff; }
+.act.bordered { color: var(--color-foreground); border: 1px solid var(--color-border); }
+.act.danger { color: var(--color-destructive); border: 1px solid color-mix(in srgb, var(--color-destructive) 40%, transparent); }
+.act:disabled { opacity: .5; cursor: default; }
+.act.small { height: 26px; padding: 0 10px; font-size: 12px; }
+.sheet-header .act { height: 24px; }
+.sheet-header .act.hdr-link { height: 26px; font-size: 12px; gap: 5px; padding: 0 8px; }
+.sheet-header .act.hdr-link svg { width: 13px; height: 13px; }
+.pane { flex: 1; min-height: 0; overflow: auto; background: hsl(215 22% 6.5%); padding-bottom: 12px; scrollbar-width: thin; }
+.pane:focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: -2px; }
+.pane-title { margin: 16px 16px 2px; font-size: 15px; font-weight: 620; }
+.pane-desc { margin: 0 16px 12px; font-size: 12px; color: var(--color-foreground-muted); }
+/* Grouped card and row, as in input.css (setting-group / setting-row) and desktop settings.css. */
+.group-title { margin: 18px 16px 2px; font-size: 14px; font-weight: 620; }
+.group-desc { margin: 0 16px 10px; font-size: 12px; color: var(--color-foreground-muted); }
+.group + .group-title { margin-top: 20px; margin-bottom: 10px; }
+.group { margin: 0 12px; border: 1px solid var(--color-border); border-radius: 11px; overflow: hidden; background: var(--color-surface-row); }
+.row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 50px; border-top: 1px solid var(--color-border-subtle); }
+.row:first-child { border-top: 0; }
+.row.top { align-items: flex-start; }
+.ricon { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 8px; background: var(--color-background-active); color: #c4cad3; }
+.ricon.warm { background: color-mix(in srgb, var(--color-primary-hover) 16%, transparent); color: color-mix(in oklab, var(--color-primary-hover) 70%, white); }
+.ricon.ok { color: var(--color-status-completed); } .ricon.amber { color: var(--color-status-paused); } .ricon.grey { color: var(--color-status-cancelled); }
+.rtext { flex: 1; min-width: 0; }
+.rtext .rt { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 550; }
+.rtext small { display: block; font-size: 12px; color: var(--color-foreground-muted); }
+.rtext small.mono { font: 11.5px var(--mono); color: var(--color-foreground-subtle); }
+select.ctl { appearance: none; width: 132px; height: 28px; padding: 0 26px 0 8px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-background) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a39d99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center; font-size: 12.5px; cursor: pointer; }
+select.ctl:hover:not(:disabled) { border-color: hsl(215 15% 26%); }
+select.ctl:disabled { opacity: .55; cursor: default; }
+.switch { appearance: none; width: 40px; height: 24px; border-radius: 12px; background: var(--color-background-active); position: relative; cursor: pointer; flex: none; margin: 0; }
+.switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left 160ms ease; }
+.switch:checked { background: var(--color-primary); } .switch:checked::after { left: 19px; }
+.row.off .rtext, .row.off .ricon { opacity: .55; }
+.row.off .switch:disabled { opacity: .45; cursor: default; }
+.saved { display: inline-flex; align-items: center; gap: 3px; color: var(--color-status-completed); font-size: 11.5px; font-weight: 500; animation: saved-in 160ms ease-out; }
+.saved svg { width: 12px; height: 12px; stroke-width: 2.25; }
+@keyframes saved-in { from { opacity: 0; transform: translateX(-3px); } }
+.link-card { display: flex; align-items: center; gap: 10px; width: calc(100% - 24px); margin: 12px; padding: 11px 12px; border: 1px solid var(--color-border); border-radius: 11px; color: var(--color-foreground-muted); font-size: 12.5px; text-align: left; transition: border-color 180ms ease, color 180ms ease; }
+.link-card:hover, .link-card:focus-visible { border-color: var(--color-primary-hover); color: var(--color-foreground); }
+.link-card > span { flex: 1; }
+.hint { margin: 8px 16px 0; font-size: 12px; color: var(--color-foreground-muted); }
+.connect-btn { margin: 0 12px; }
+/* One explanation for every disabled row, at the top of the card (never per row). */
+.gate { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: hsl(44 60% 12% / .7); border-bottom: 1px solid hsl(44 40% 20%); color: hsl(44 80% 78%); font-size: 12px; }
+.gate.neutral { background: var(--color-background-active); border-color: var(--color-border-subtle); color: var(--color-foreground); }
+.gate > span { flex: 1; }
+.gate .act { height: 26px; font-size: 12px; }
+.gate.neutral .act.primary { height: 26px; padding: 0 12px; }
+/* Accent swatches (desktop AccentPicker). */
+.swatches { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 0 -6px; }
+.swatch { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; width: 58px; padding: 6px 0 5px; border-radius: 8px; color: var(--color-foreground-muted); font-size: 11.5px; cursor: pointer; }
+.swatch:hover { background: var(--color-background-hover); color: var(--color-foreground); }
+.swatch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.swatch .dot { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14); color: #fff; }
+.swatch .dot svg { width: 14px; height: 14px; stroke-width: 2.75; opacity: 0; }
+.swatch:has(input:checked) { color: var(--color-foreground); }
+.swatch:has(input:checked) .dot { box-shadow: 0 0 0 2px var(--color-surface-row), 0 0 0 4px var(--swatch); }
+.swatch:has(input:checked) .dot svg { opacity: 1; }
+.swatch:has(input:focus-visible) { outline: 2px solid var(--color-primary-hover); }
+/* About brand block (pixel wordmark + terminal version). */
+.brand { display: flex; align-items: center; gap: 12px; margin: 4px 12px 12px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 11px; background: var(--color-surface-chrome) repeating-linear-gradient(0deg, rgb(255 255 255 / .018) 0 1px, transparent 1px 3px); }
+.brand .ver { margin-left: auto; font: 12px var(--mono); color: var(--color-foreground-muted); }
+.brand .ver b { color: var(--color-status-completed); font-weight: 400; }
+
+/* Tab status marker (Connection): colour plus words in the accessible name; never colour alone in the pane. */
+.stat { width: 6px; height: 6px; flex: none; background: var(--c); box-shadow: 0 0 0 1px rgb(0 0 0 / .4); }
+.stat.ok { --c: var(--color-status-completed); } .stat.amber { --c: var(--color-status-paused); } .stat.grey { --c: var(--color-status-cancelled); }
+[role="tab"] { position: relative; }
+[role="tab"] .stat { position: absolute; }
+
+/* 2 · Segmented tabs */
+.seg { flex: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin: 10px 12px 0; padding: 3px; border-radius: 9px; background: var(--color-background); border: 1px solid var(--color-border-subtle); }
+.seg [role="tab"] { height: 28px; border-radius: 6px; font-size: 12.5px; color: var(--color-foreground-muted); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.seg [role="tab"]:hover { color: var(--color-foreground); }
+.seg [role="tab"][aria-selected="true"] { background: var(--color-background-active); color: var(--color-foreground); font-weight: 550; box-shadow: inset 0 0 0 1px var(--color-border), 0 1px 0 rgb(0 0 0 / .4); }
+.seg [role="tab"] .stat { position: static; }
+.seg [role="tab"]:focus-visible { outline-offset: -2px; }
+.opt-seg .pane-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; background: hsl(215 22% 6.5%); }
+.opt-seg .sheet-body { flex: 1; min-height: 0; display: flex; flex-direction: column; background: hsl(215 22% 6.5%); }
+
+/* 3 · Icon tab bar under the sheet header */
+.bar { flex: none; display: flex; height: 40px; padding: 0 8px; background: var(--color-background-raised); border-bottom: 1px solid var(--color-border-subtle); }
+.bar [role="tab"] { flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.bar [role="tab"] svg { width: 15px; height: 15px; }
+.bar [role="tab"]:hover { color: var(--color-foreground); background: var(--color-background-hover); }
+.bar [role="tab"][aria-selected="true"] { color: var(--color-foreground); font-weight: 550; }
+.bar [role="tab"][aria-selected="true"] svg { color: var(--color-primary-hover); }
+/* Pixel-stepped underline: a 2px bar with 2px shoulders, like the logo's stepped corners. */
+.bar [role="tab"][aria-selected="true"]::after { content: ""; position: absolute; left: 16px; right: 16px; bottom: -1px; height: 2px; background: var(--color-primary-hover); box-shadow: 0 -2px 0 -0px transparent; }
+.bar [role="tab"][aria-selected="true"]::before { content: ""; position: absolute; left: 18px; right: 18px; bottom: 1px; height: 2px; background: var(--color-primary-hover); opacity: .45; }
+.bar [role="tab"] .stat { position: static; margin-left: -2px; }
+.bar [role="tab"]:focus-visible { outline-offset: -3px; border-radius: 6px; }
+
+/* 4 · Compact left rail */
+.split { flex: 1; min-height: 0; display: flex; }
+.rail { width: 80px; flex: none; display: flex; flex-direction: column; padding: 8px 6px; gap: 2px; border-right: 1px solid var(--color-border-subtle); background: var(--color-background-raised); }
+.rail [role="tablist"] { display: flex; flex-direction: column; gap: 2px; }
+.rail [role="tab"], .rail .rail-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 54px; border-radius: 7px; font-size: 11px; color: var(--color-foreground-muted); }
+.rail [role="tab"] svg, .rail .rail-link svg { width: 16px; height: 16px; }
+.rail [role="tab"]:hover, .rail .rail-link:hover { background: var(--color-background-hover); color: var(--color-foreground); }
+.rail [role="tab"][aria-selected="true"] { background: var(--color-background-active); color: var(--color-foreground); box-shadow: inset 2px 0 0 var(--color-primary-hover); font-weight: 550; }
+.rail [role="tab"][aria-selected="true"] svg { color: var(--color-primary-hover); }
+.rail [role="tab"] .stat { top: 12px; left: calc(50% + 6px); }
+.rail [role="tab"]:focus-visible, .rail .rail-link:focus-visible { outline-offset: -2px; }
+.rail .rail-foot { margin-top: auto; border-top: 1px solid var(--color-border-subtle); padding-top: 6px; }
+.rail .rail-link { height: 50px; }
+.rail .rail-ver { text-align: center; font: 10.5px var(--mono); color: var(--color-foreground-subtle); padding: 6px 0 2px; }
+.opt-rail .pane .pane-title { margin-top: 14px; }
+.opt-rail select.ctl { width: 112px; }
+.opt-rail .swatches .swatch { width: 52px; }
+
+/* 5 · Bottom tab bar */
+.bottom { flex: none; display: flex; height: 52px; padding: 4px 6px; background: var(--color-surface-chrome); border-top: 1px solid var(--color-border-subtle); }
+.bottom [role="tab"] { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 7px; font-size: 11px; color: var(--color-foreground-muted); }
+.bottom [role="tab"] svg { width: 17px; height: 17px; }
+.bottom [role="tab"]:hover { color: var(--color-foreground); background: var(--color-background-hover); }
+.bottom [role="tab"][aria-selected="true"] { color: var(--color-foreground); font-weight: 550; }
+.bottom [role="tab"][aria-selected="true"] svg { color: var(--color-primary-hover); }
+.bottom [role="tab"][aria-selected="true"]::before { content: ""; position: absolute; top: -5px; left: 50%; width: 16px; height: 2px; margin-left: -8px; background: var(--color-primary-hover); }
+.bottom [role="tab"] .stat { top: 9px; left: calc(50% + 6px); }
+.bottom [role="tab"]:focus-visible { outline-offset: -2px; }
+
+/* Keyboard walk: show focus as keyboard focus would. */
+.kbd .pop :focus { outline: 2px solid var(--color-primary-hover); outline-offset: -2px; }
+.kbd .pop .seg [role="tab"]:focus, .kbd .pop .bar [role="tab"]:focus { outline-offset: -3px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .saved { animation: none; } .switch::after { transition: none; } }
+</style>
+</head>
+<body>
+<template id="wordmark"><svg class="logo-wordmark" role="img" aria-label="SnagThis" width="120" height="22" viewBox="0 0 120 22" shape-rendering="crispEdges" focusable="false"><path class="logo-snag" d="M2 3.5h7v1h-7zM14 3.5h4v1h-4zM22 3.5h3v1h-3zM32 3.5h2v1h-2zM43 3.5h6v1h-6zM1 4.5h9v1h-9zM14 4.5h4v1h-4zM22 4.5h3v1h-3zM31 4.5h4v1h-4zM42 4.5h8v1h-8zM0 5.5h11v1h-11zM14 5.5h5v1h-5zM22 5.5h3v1h-3zM30 5.5h6v1h-6zM41 5.5h10v1h-10zM0 6.5h4v1h-4zM7 6.5h4v1h-4zM14 6.5h5v1h-5zM22 6.5h3v1h-3zM29 6.5h8v1h-8zM41 6.5h4v1h-4zM48 6.5h3v1h-3zM0 7.5h3v1h-3zM8 7.5h3v1h-3zM14 7.5h6v1h-6zM22 7.5h3v1h-3zM28 7.5h4v1h-4zM34 7.5h4v1h-4zM41 7.5h3v1h-3zM0 8.5h4v1h-4zM14 8.5h6v1h-6zM22 8.5h3v1h-3zM28 8.5h3v1h-3zM35 8.5h3v1h-3zM41 8.5h3v1h-3zM0 9.5h9v1h-9zM14 9.5h7v1h-7zM22 9.5h3v1h-3zM28 9.5h3v1h-3zM35 9.5h3v1h-3zM41 9.5h3v1h-3zM46 9.5h5v1h-5zM1 10.5h9v1h-9zM14 10.5h3v1h-3zM18 10.5h3v1h-3zM22 10.5h3v1h-3zM28 10.5h3v1h-3zM35 10.5h3v1h-3zM41 10.5h3v1h-3zM46 10.5h5v1h-5zM2 11.5h9v1h-9zM14 11.5h3v1h-3zM18 11.5h7v1h-7zM28 11.5h10v1h-10zM41 11.5h3v1h-3zM46 11.5h5v1h-5zM7 12.5h4v1h-4zM14 12.5h3v1h-3zM19 12.5h6v1h-6zM28 12.5h10v1h-10zM41 12.5h3v1h-3zM48 12.5h3v1h-3zM0 13.5h3v1h-3zM8 13.5h3v1h-3zM14 13.5h3v1h-3zM19 13.5h6v1h-6zM28 13.5h10v1h-10zM41 13.5h3v1h-3zM48 13.5h3v1h-3zM0 14.5h4v1h-4zM7 14.5h4v1h-4zM14 14.5h3v1h-3zM20 14.5h5v1h-5zM28 14.5h3v1h-3zM35 14.5h3v1h-3zM41 14.5h4v1h-4zM47 14.5h4v1h-4zM0 15.5h11v1h-11zM14 15.5h3v1h-3zM20 15.5h5v1h-5zM28 15.5h3v1h-3zM35 15.5h3v1h-3zM41 15.5h10v1h-10zM1 16.5h9v1h-9zM14 16.5h3v1h-3zM21 16.5h4v1h-4zM28 16.5h3v1h-3zM35 16.5h3v1h-3zM42 16.5h8v1h-8zM2 17.5h7v1h-7zM14 17.5h3v1h-3zM21 17.5h4v1h-4zM28 17.5h3v1h-3zM35 17.5h3v1h-3zM43 17.5h6v1h-6z"/><path class="logo-this" d="M54 3.5h9v1h-9zM66 3.5h3v1h-3zM73 3.5h3v1h-3zM79 3.5h3v1h-3zM87 3.5h7v1h-7zM54 4.5h9v1h-9zM66 4.5h3v1h-3zM73 4.5h3v1h-3zM79 4.5h3v1h-3zM86 4.5h9v1h-9zM54 5.5h9v1h-9zM66 5.5h3v1h-3zM73 5.5h3v1h-3zM79 5.5h3v1h-3zM85 5.5h11v1h-11zM57 6.5h3v1h-3zM66 6.5h3v1h-3zM73 6.5h3v1h-3zM79 6.5h3v1h-3zM85 6.5h4v1h-4zM92 6.5h4v1h-4zM57 7.5h3v1h-3zM66 7.5h3v1h-3zM73 7.5h3v1h-3zM79 7.5h3v1h-3zM85 7.5h3v1h-3zM93 7.5h3v1h-3zM57 8.5h3v1h-3zM66 8.5h3v1h-3zM73 8.5h3v1h-3zM79 8.5h3v1h-3zM85 8.5h4v1h-4zM57 9.5h3v1h-3zM66 9.5h10v1h-10zM79 9.5h3v1h-3zM85 9.5h9v1h-9zM57 10.5h3v1h-3zM66 10.5h10v1h-10zM79 10.5h3v1h-3zM86 10.5h9v1h-9zM57 11.5h3v1h-3zM66 11.5h10v1h-10zM79 11.5h3v1h-3zM87 11.5h9v1h-9zM57 12.5h3v1h-3zM66 12.5h3v1h-3zM73 12.5h3v1h-3zM79 12.5h3v1h-3zM92 12.5h4v1h-4zM57 13.5h3v1h-3zM66 13.5h3v1h-3zM73 13.5h3v1h-3zM79 13.5h3v1h-3zM85 13.5h3v1h-3zM93 13.5h3v1h-3zM57 14.5h3v1h-3zM66 14.5h3v1h-3zM73 14.5h3v1h-3zM79 14.5h3v1h-3zM85 14.5h4v1h-4zM92 14.5h4v1h-4zM57 15.5h3v1h-3zM66 15.5h3v1h-3zM73 15.5h3v1h-3zM79 15.5h3v1h-3zM85 15.5h11v1h-11zM57 16.5h3v1h-3zM66 16.5h3v1h-3zM73 16.5h3v1h-3zM79 16.5h3v1h-3zM86 16.5h9v1h-9zM57 17.5h3v1h-3zM66 17.5h3v1h-3zM73 17.5h3v1h-3zM79 17.5h3v1h-3zM87 17.5h7v1h-7z"/><g transform="translate(104 3)"><path class="logo-face" d="M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v1h-16zM0 4h16v1h-16zM0 5h16v1h-16zM0 6h16v1h-16zM0 7h16v1h-16zM0 8h16v1h-16zM0 9h16v1h-16zM0 10h16v1h-16zM0 11h16v1h-16zM0 12h16v1h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z"/><path class="logo-light" d="M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM0 6h1v1h-1zM0 7h1v1h-1zM0 8h1v1h-1zM0 9h1v1h-1zM0 10h1v1h-1zM0 11h1v1h-1zM0 12h1v1h-1zM1 13h1v1h-1z"/><path class="logo-dark" d="M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v1h-1zM15 4h1v1h-1zM15 5h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1zM15 8h1v1h-1zM15 9h1v1h-1zM15 10h1v1h-1zM15 11h1v1h-1zM15 12h1v1h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z"/><path class="logo-dark" d="M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z"/><path class="logo-glyph" d="M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z"/></g></svg></template>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>SnagThis</span>DESIGN STUDIES / POPUP SETTINGS</div>
+    <h1>Chrome popup Settings in <em>TABS</em>, like the desktop, without the scroll.</h1>
+    <p>Five layouts for the popup’s Settings sheet, each at the popup’s real maximum size (480 × 560). Option 1 is today. Choose an option (or press <kbd>1</kbd>–<kbd>5</kbd>), switch the connection state, try an accent, and use <kbd>←</kbd> <kbd>→</kbd> (<kbd>↑</kbd> <kbd>↓</kbd> in the rail), <kbd>Home</kbd> and <kbd>End</kbd> on the tabs. Every control works; nothing is saved.</p>
+  </header>
+  <nav class="picker" id="picker" aria-label="Layout options"></nav>
+  <div class="toolbar">
+    <div class="tgroup" id="conn"><span>Desktop</span></div>
+    <div class="tgroup" id="accents"><span>Accent</span></div>
+    <div class="tgroup"><button type="button" class="walk" id="walk"><svg class="i" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>Keyboard walk</button></div>
+  </div>
+  <div class="stage" id="stage">
+    <div><div class="flabel"><span class="dot"></span><span>Chrome · extension popup, Settings (480 × 560)</span></div><div id="frame"></div></div>
+    <div class="notes" id="notes"></div>
+  </div>
+  <div class="minis-title" id="minis-title">Every tab of this option</div>
+  <div class="minis" id="minis"></div>
+  <table class="glance" id="glance"></table>
+  <section class="basis rec">
+    <h2>Recommendation: 3 · Icon tab bar</h2>
+    <p style="margin:0 0 10px">Build <strong>3 · Icon tab bar</strong>. It stays closest to the desktop’s sidebar (the same section names, the same Lucide icons, the same accent marker on the chosen section, and the same arrow-key tablist) and still gives every row the full 480&nbsp;px, so today’s grouped cards, 132&nbsp;px selects and swatches move over unchanged. Every tab fits in the 478&nbsp;px under the tabs in every connection state, so nothing scrolls.</p>
+    <ul>
+      <li><strong>Tabs:</strong> Downloads · Appearance · Connection · About. Settings opens on Downloads and reopens on the last tab used while the popup is open. <strong>Connect</strong> entry points open Connection.</li>
+      <li><strong>Disabled rows:</strong> one line at the top of the Downloads card says why and offers the fix (<strong>Open SnagThis</strong> or <strong>Connect</strong>). The rows only dim. The Connection tab’s small status square repeats the state, and its label reads it aloud (for example, “Connection, SnagThis not open”).</li>
+      <li><strong>Desktop settings:</strong> a labelled <strong>SnagThis settings ↗</strong> button in the sheet header, visible from every tab. It replaces the link card, so it never competes with rows.</li>
+      <li><strong>Keyboard:</strong> <code>role="tablist"</code>, roving <code>tabindex</code>, automatic activation, <kbd>←</kbd>/<kbd>→</kbd>, <kbd>Home</kbd>/<kbd>End</kbd>, and <kbd>Tab</kbd> into the focusable panel, matching desktop <code>SettingsSheet</code>.</li>
+      <li><strong>Height:</strong> keep the popup at the tallest tab’s height while Settings is open, so switching tabs never resizes Chrome’s window.</li>
+    </ul>
+    <p style="margin:10px 0 0"><strong>4 · Compact rail</strong> copies the desktop most literally, but at 480&nbsp;px it squeezes rows to 368&nbsp;px, which narrows the selects and wraps the notification label. <strong>2 · Segmented</strong> is a fine lighter alternative with text-only tabs and no icon echo. <strong>5 · Bottom bar</strong> reads as app navigation and sits where the popup’s own footer is.</p>
+  </section>
+  <section class="basis">
+    <h2>What stays the same</h2>
+    <ul>
+      <li>Only browser-relevant settings stay in Chrome (spec §8): Preferred quality, Subtitles, and Tell me when desktop downloads finish, which need a paired and running app. Accent colour works offline. Save folder, speed and the rest remain in SnagThis. There is still no browser-side folder picker and no empty Advanced section.</li>
+      <li>The desktop’s group and row styling (<code>setting-group</code>/<code>setting-row</code>), the green inline <strong>Saved</strong>, the swatch radio group and the Connection card copy are reused unchanged.</li>
+      <li>Today’s sheet has no version or help. The proposed About tab adds <code>Version 1.0.0</code>, <strong>Update Chrome extension</strong> (today’s update sheet) and <strong>Troubleshooting</strong> (the footer’s <em>No video?</em> link).</li>
+    </ul>
+  </section>
+  <footer class="hub-footer"><p>Prototype only. Nothing connects, saves or opens. Content and copy come from <code>apps/extension/popup.js</code> (showSettings), <code>apps/desktop/src/components/settings/**</code> and <code>docs/design/ui-design-spec.md</code> §5, §8 and §10.</p></footer>
+</main>
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const WM = document.getElementById('wordmark').innerHTML;
+const P = {
+  download: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
+  palette: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>',
+  plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  next: '<path d="m9 18 6-6-6-6"/>', check: '<path d="M20 6 9 17l-5-5"/>', x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  screen: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
+  captions: '<rect width="18" height="14" x="3" y="5" rx="2" ry="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>',
+  bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>',
+  app: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+};
+const ic = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+const ACCENTS = [['orange', 'Orange', '#fa5d0e'], ['cobalt', 'Cobalt', '#3b7bff'], ['violet', 'Violet', '#8b5cf6'], ['mint', 'Mint', '#1fbf8a'], ['magenta', 'Magenta', '#e8388e']];
+const TOKENS = {
+  orange: ['hsl(18 96% 40%)', 'hsl(18 96% 36%)', 'hsl(20 96% 52%)', 'hsl(16 58% 16%)', '#fa5d0e', '#fa5d0e', '#ffb238', '#bd3f00'],
+  cobalt: ['hsl(220 80% 50%)', 'hsl(220 80% 45%)', 'hsl(218 95% 63%)', 'hsl(220 50% 18%)', '#4a88ff', '#3b7bff', '#a3c6ff', '#1d44b0'],
+  violet: ['hsl(262 70% 54%)', 'hsl(262 70% 48%)', 'hsl(262 90% 70%)', 'hsl(262 45% 20%)', '#9b78ff', '#8b5cf6', '#d0bcff', '#5528b8'],
+  mint: ['hsl(160 84% 28%)', 'hsl(160 84% 24%)', 'hsl(158 70% 50%)', 'hsl(160 50% 13%)', '#26d996', '#1fbf8a', '#a4f3cc', '#0d7a57'],
+  magenta: ['hsl(330 75% 46%)', 'hsl(330 75% 41%)', 'hsl(330 90% 64%)', 'hsl(330 50% 18%)', '#f550a0', '#e8388e', '#ffb3d6', '#9c1558'],
+};
+const VARS = ['--color-primary', '--color-primary-strong', '--color-primary-hover', '--color-primary-muted', '--accent-logo', '--accent-bevel-face', '--accent-bevel-light', '--accent-bevel-dark'];
+const TABS = [['downloads', 'Downloads', 'download'], ['appearance', 'Appearance', 'palette'], ['connection', 'Connection', 'plug'], ['about', 'About', 'info']];
+const CONN = { paired: ['ok', 'Connected'], offline: ['amber', 'SnagThis not open'], unpaired: ['grey', 'Not connected'] };
+const OPTIONS = [
+  { key: 'today', name: 'Today', desc: 'One scrolling sheet: This browser, Appearance, a link, then Connection', chips: [['Baseline', ''], ['Scrolls', 'warn']],
+    how: 'Today’s showSettings(): two titled cards, the desktop link card and the Connection card in one list. At 560 px the Connection card sits below the fold, and offline rows go grey without saying why.',
+    link: 'A link card between Appearance and Connection.', keys: 'Tab through every control. There are no sections to jump between.',
+    good: 'Everything in one place. No new component.', bad: 'Scrolls about 136 px in the real popup, so Connection is hidden. Disabled rows are not explained, and there is no version or help.' },
+  { key: 'seg', name: 'Segmented tabs', desc: 'A four-part segmented control under the header; text labels only', chips: [['No scroll', 'good'], ['Lightest', '']],
+    how: 'A pill-shaped segmented control (Downloads · Appearance · Connection · About) inset under the sheet header. The chosen segment is lifted like a pressed key.',
+    link: 'Link card under the Downloads card and in About.', keys: '←/→ and Home/End move between tabs and select them. Tab moves into the panel.',
+    good: 'Compact (38 px) and familiar. Full-width rows.', bad: 'Text-only, so no visual echo of the desktop’s icons. The link repeats on two tabs.' },
+  { key: 'bar', name: 'Icon tab bar', desc: 'Icon + label tabs flush under the header, stepped accent underline', chips: [['Recommended', 'good'], ['No scroll', 'good']],
+    how: 'A 40 px strip of icon + label tabs flush under the sheet header, with the desktop rail’s icons and a pixel-stepped accent underline. Connection carries a status square.',
+    link: 'A labelled “SnagThis settings ↗” button in the sheet header, reachable from every tab.', keys: '←/→ and Home/End move between tabs and select them. Tab moves into the panel.',
+    good: 'Mirrors the desktop’s sections and icons. Full-width rows, one fixed place for the desktop link.', bad: 'Uses 40 px of height (every tab still fits).' },
+  { key: 'rail', name: 'Compact rail', desc: 'An 80 px left rail, icon over label, version at its foot, like desktop', chips: [['Closest to desktop', ''], ['Narrow rows', 'warn']],
+    how: 'The desktop’s 172 px sidebar shrunk to 80 px: icons over labels, the accent inset bar on the chosen section, version at the foot, and the desktop link as a separate item below a rule.',
+    link: '“In app ↗” at the foot of the rail, set apart from the tabs.', keys: '↑/↓ and Home/End, as in desktop Settings.',
+    good: 'Literally the desktop pattern. Room for more sections later.', bad: 'Rows drop to 368 px: selects shrink to 112 px and the notification label wraps.' },
+  { key: 'bottom', name: 'Bottom tab bar', desc: 'Mobile-style icon tabs along the bottom of the sheet', chips: [['No scroll', 'good'], ['Thumb-style', '']],
+    how: 'Icon-over-label tabs in a 52 px chrome-coloured bar at the bottom, where the popup’s own footer sits when Settings is closed.',
+    link: 'Link card under the Downloads card and in About.', keys: '←/→ and Home/End move between tabs and select them. Tab moves into the panel.',
+    good: 'Big targets, and the header stays clean.', bad: 'Reads as app navigation (as in a phone app) rather than settings sections, and it doubles up with the popup’s footer bar.' },
+];
+const S = { opt: 'bar', conn: 'paired', accent: 'orange', tab: 'downloads', prefs: { preferredQuality: 'best', subtitleLanguage: 'en', notifyOnComplete: true } };
+const Q = [['best', 'Best'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']];
+const SUBS = [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']];
+
+function applyAccent(id) { const t = TOKENS[id]; VARS.forEach((v, i) => document.documentElement.style.setProperty(v, t[i])); S.accent = id; }
+
+// ── Content builders (copy from popup.js showSettings) ──
+const sel = (key, vals, on) => `<select class="ctl" data-pref="${key}" aria-label="${key === 'preferredQuality' ? 'Preferred quality' : 'Subtitles'}"${on ? '' : ' disabled'}>${vals.map(([v, t]) => `<option value="${v}"${S.prefs[key] === v ? ' selected' : ''}>${t}</option>`).join('')}</select>`;
+const row = (glyph, title, note, control, off) => `<div class="row${off ? ' off' : ''}"><span class="ricon" aria-hidden="true">${ic(glyph)}</span><div class="rtext"><span class="rt">${title}</span>${note ? `<small>${note}</small>` : ''}</div>${control}</div>`;
+function browserRows(on, explain) {
+  const off = explain && !on;
+  return row('screen', 'Preferred quality', 'Used when a video offers it', sel('preferredQuality', Q, on), off)
+    + row('captions', 'Subtitles', 'Included when available', sel('subtitleLanguage', SUBS, on), off)
+    + row('bell', 'Tell me when desktop downloads finish', '', `<input class="switch" type="checkbox" role="switch" aria-label="Tell me when desktop downloads finish" data-pref="notifyOnComplete"${S.prefs.notifyOnComplete ? ' checked' : ''}${on ? '' : ' disabled'}>`, off);
+}
+function gate() {
+  if (S.conn === 'offline') return `<div class="gate" role="note">${ic('alert')}<span>SnagThis isn’t open, so these can’t change right now.</span><button type="button" class="act bordered" data-do="open">Open SnagThis</button></div>`;
+  if (S.conn === 'unpaired') return `<div class="gate neutral" role="note">${ic('plug')}<span>Connect Chrome to SnagThis to choose these.</span><button type="button" class="act primary" data-do="connect">Connect</button></div>`;
+  return '';
+}
+function accentRow() {
+  return `<div class="row top"><span class="ricon warm" aria-hidden="true">${ic('palette')}</span><div class="rtext"><span class="rt" id="acc-l">Accent colour</span><small>Buttons, focus, the logo and the toolbar icon. Shared with the desktop app.</small><div class="swatches" role="radiogroup" aria-labelledby="acc-l">${ACCENTS.map(([id, name, sw]) => `<label class="swatch" style="--swatch:${sw}"><input type="radio" name="acc-${uid}" value="${id}"${S.accent === id ? ' checked' : ''}><span class="dot" aria-hidden="true">${ic('check')}</span><span>${name}</span></label>`).join('')}</div></div></div>`;
+}
+const linkCard = () => `<button type="button" class="link-card" data-do="desktop">${ic('external')}<span>Desktop folder, speed and more in SnagThis</span>${ic('next')}</button>`;
+function connectionCard(tabbed) {
+  if (S.conn === 'unpaired') {
+    if (!tabbed) return `<button type="button" class="act bordered connect-btn" data-do="connect">Connect Chrome</button>`;
+    return `<div class="group"><div class="row"><span class="ricon grey" aria-hidden="true">${ic('plug')}</span><div class="rtext"><span class="rt">Not connected</span><small>Supported files still save in Chrome. Connect for streams and more.</small></div><button type="button" class="act primary" data-do="connect">Connect</button></div></div><p class="hint">SnagThis shows four digits to check, then you choose Allow there. <button type="button" class="act small" style="padding:0 4px;text-decoration:underline;text-underline-offset:3px" data-do="code">Use a code instead</button></p>`;
+  }
+  const offline = S.conn === 'offline';
+  const card = `<div class="group" style="padding:2px 2px"><div class="row"><span class="ricon ${offline ? 'amber' : 'ok'}" aria-hidden="true">${ic(offline ? 'alert' : 'check')}</span><div class="rtext"><span class="rt">Connected to SnagThis</span><small>${offline && tabbed ? 'SnagThis isn’t open right now' : 'This browser · downloads, library and accent'}</small></div><button type="button" class="act danger" data-do="disconnect"${offline ? ' disabled' : ''}>Disconnect</button></div>${offline && tabbed ? `<div class="row"><span class="ricon" aria-hidden="true">${ic('app')}</span><div class="rtext"><span class="rt">Open SnagThis</span><small>Needed to send downloads, change download settings or disconnect</small></div><button type="button" class="act bordered" data-do="open">Open</button></div>` : ''}</div>`;
+  const hint = `<p class="hint">${offline ? 'Open SnagThis to disconnect this browser.' : 'Disconnecting here forgets this browser in SnagThis too. You can reconnect any time.'}</p>`;
+  return tabbed ? card + hint : `<h3 class="group-title">Connection</h3>${card}${hint}`;
+}
+
+function panel(tab, opt) {
+  const on = S.conn === 'paired';
+  const linkInTabs = opt === 'seg' || opt === 'bottom';
+  if (tab === 'downloads') return `<h3 class="pane-title">Downloads</h3><p class="pane-desc">Used for downloads you send to SnagThis from Chrome.</p><div class="group">${gate()}${browserRows(on, true)}</div>${linkInTabs ? linkCard() : ''}`;
+  if (tab === 'appearance') return `<h3 class="pane-title">Appearance</h3><p class="pane-desc">How SnagThis looks in Chrome. Works without the app.</p><div class="group">${accentRow()}</div>${on ? '' : `<p class="hint">${S.conn === 'offline' ? 'Saved in Chrome now. SnagThis picks it up the next time it’s open.' : 'Saved in Chrome. Connect to share it with the desktop app.'}</p>`}`;
+  if (tab === 'connection') return `<h3 class="pane-title">Connection</h3><p class="pane-desc">How this browser reaches the SnagThis app.</p>${connectionCard(true)}`;
+  return `<h3 class="pane-title">About</h3><p class="pane-desc">Version, updates and help.</p><div class="brand">${WM}<span class="ver">for Chrome <b>v1.0.0</b></span></div><div class="group">${row('refresh', 'Update Chrome extension', 'Chrome updates it from the Web Store on its own', `<span class="act" aria-hidden="true">${ic('next')}</span>`)}${row('help', 'Troubleshooting', 'Some sites protect their videos', `<span class="act" aria-hidden="true">${ic('external')}</span>`)}</div>${linkInTabs ? linkCard() : ''}`;
+}
+
+let uid = 0;
+function tablist(opt, fid, cls, vertical) {
+  const [stCls, stText] = CONN[S.conn];
+  return `<div class="${cls}" role="tablist" aria-label="Settings sections"${vertical ? ' aria-orientation="vertical"' : ''}>${TABS.map(([id, label, glyph]) => {
+    const sel = S.tab === id;
+    const status = id === 'connection' ? `<span class="stat ${stCls}" aria-hidden="true"></span>` : '';
+    const name = id === 'connection' ? ` aria-label="Connection, ${stText}"` : '';
+    return `<button type="button" role="tab" id="${fid}-t-${id}" aria-controls="${fid}-p" aria-selected="${sel}" tabindex="${sel ? 0 : -1}" data-tab="${id}"${name}>${opt === 'seg' ? '' : ic(glyph)}<span>${label}</span>${status}</button>`;
+  }).join('')}</div>`;
+}
+function frameHTML(opt, fid) {
+  uid++;
+  const head = extra => `<header class="sheet-header"><h2>Settings</h2>${extra || ''}<button type="button" class="act" aria-label="Close">${ic('x')}</button></header>`;
+  const pane = `<div class="pane" id="${fid}-p" role="tabpanel" tabindex="0" aria-labelledby="${fid}-t-${S.tab}">${panel(S.tab, opt)}</div>`;
+  if (opt === 'today') {
+    const on = S.conn === 'paired';
+    return `<div class="pop opt-today">${head()}<div class="pane"><h3 class="group-title">This browser</h3><p class="group-desc">Used for downloads you send to SnagThis from Chrome.</p><div class="group">${browserRows(on, false)}</div><h3 class="group-title">Appearance</h3><div class="group">${accentRow()}</div>${linkCard()}${connectionCard(false)}</div></div>`;
+  }
+  if (opt === 'seg') return `<div class="pop opt-seg">${head()}<div class="sheet-body">${tablist(opt, fid, 'seg')}${pane}</div></div>`;
+  if (opt === 'bar') return `<div class="pop opt-bar">${head(`<button type="button" class="act hdr-link" data-do="desktop">${ic('app')}SnagThis settings${ic('external')}</button>`)}${tablist(opt, fid, 'bar')}${pane}</div>`;
+  if (opt === 'rail') return `<div class="pop opt-rail">${head()}<div class="split"><nav class="rail">${tablist(opt, fid, '', true)}<div class="rail-foot"><button type="button" class="rail-link" data-do="desktop" aria-label="Desktop folder, speed and more in SnagThis">${ic('external')}<span>In app</span></button><div class="rail-ver">v1.0.0</div></div></nav>${pane}</div></div>`;
+  return `<div class="pop opt-bottom">${head()}${pane}${tablist(opt, fid, 'bottom')}</div>`;
+}
+
+// ── Rendering and behaviour ──
+function renderFrame(focusTab) {
+  $('#frame').innerHTML = frameHTML(S.opt, 'main');
+  if (focusTab) $(`#main-t-${S.tab}`)?.focus();
+}
+function renderMinis() {
+  const keep = S.tab;
+  if (S.opt === 'today') {
+    $('#minis').innerHTML = ['Top', 'Scrolled to the end'].map((l, i) => `<div class="mini"><div class="mframe" inert>${frameHTML('today', 'm' + i)}</div><div class="mlabel">${l}</div></div>`).join('');
+    const last = $('#minis .mini:last-child .pane'); last.scrollTop = last.scrollHeight;
+  } else {
+    $('#minis').innerHTML = TABS.map(([id, label]) => { S.tab = id; return `<div class="mini"><div class="mframe" inert>${frameHTML(S.opt, 'm-' + id)}</div><div class="mlabel">${label}</div></div>`; }).join('');
+  }
+  S.tab = keep;
+}
+function measure() {
+  const panes = [...document.querySelectorAll('#minis .pane')];
+  // Content height from layout (the minis are scaled, so use offsets, not rects).
+  const content = p => { const last = p.lastElementChild; return last.offsetTop + last.offsetHeight + (parseFloat(getComputedStyle(last).marginBottom) || 0) + 12 - p.offsetTop; };
+  const worst = Math.max(...panes.map(content)); const room = panes[0].clientHeight;
+  return { worst, room, fits: worst <= room };
+}
+function renderNotes() {
+  const o = OPTIONS.find(x => x.key === S.opt); const i = OPTIONS.indexOf(o) + 1; const m = measure();
+  $('#notes').innerHTML = `<h2><b>${i}</b>${o.name}</h2><p>${o.how}</p><dl>
+    <dt>Fits in 560 px?</dt><dd><span class="fit ${m.fits ? 'ok' : 'bad'}">${m.fits ? '✓' : '↕'} tallest ${S.opt === 'today' ? 'content' : 'tab'} ${m.worst} px of ${m.room} px ${m.fits ? '· no scrolling' : '· scrolls ' + (m.worst - m.room) + ' px'}</span></dd>
+    <dt>Desktop settings</dt><dd>${o.link}</dd>
+    <dt>Disabled rows</dt><dd>${S.opt === 'today' ? 'Greyed out with no reason given.' : 'Explained once, at the top of the Downloads card, with the fix as a button (switch Desktop to “SnagThis not open” or “Not connected”).'}</dd>
+    <dt>Keyboard</dt><dd>${o.keys}</dd>
+    <dt>Good</dt><dd>${o.good}</dd>
+    <dt>Watch out</dt><dd>${o.bad}</dd></dl><div class="walklog" id="walklog" aria-live="polite">Press <b>Keyboard walk</b> to see focus move through the tabs and into the panel.</div>`;
+}
+function renderGlance() {
+  $('#glance').innerHTML = `<tr><th>Option</th><th>Tabs cost</th><th>Row width</th><th>Desktop link</th><th>Scrolls?</th><th>Desktop likeness</th></tr>` + [
+    ['1 · Today', '—', '456 px', 'Link card mid-list', 'Yes, ~136 px', 'Grouped cards only'],
+    ['2 · Segmented', '41 px', '456 px', 'Card in Downloads + About', 'No', 'Sections, no icons'],
+    ['3 · Icon tab bar', '40 px', '456 px', 'Header button, every tab', 'No', 'Sections + icons + accent marker'],
+    ['4 · Compact rail', '80 px wide', '376 px', 'Rail foot, with version', 'No', 'Closest: vertical rail'],
+    ['5 · Bottom bar', '52 px', '456 px', 'Card in Downloads + About', 'No', 'Sections + icons, mobile-style'],
+  ].map((r, i) => `<tr class="${OPTIONS[i].key === S.opt ? 'sel' : ''}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('');
+}
+function renderAll(focusTab) { renderFrame(focusTab); renderMinis(); renderNotes(); renderGlance(); $('#minis-title').textContent = S.opt === 'today' ? 'Today, top and bottom of the scroll' : 'Every tab of this option'; }
+
+function pick(key) { S.opt = key; document.querySelectorAll('#picker button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.key === key))); renderAll(); }
+$('#picker').innerHTML = OPTIONS.map((o, i) => `<button type="button" data-key="${o.key}" aria-pressed="${o.key === S.opt}"><span><b>${i + 1}</b>${o.name}</span><small>${o.desc}</small><span class="meta">${o.chips.map(([t, c]) => `<span class="chip ${c}">${t}</span>`).join('')}</span></button>`).join('');
+$('#picker').addEventListener('click', e => { const b = e.target.closest('button'); if (b) pick(b.dataset.key); });
+addEventListener('keydown', e => { if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('.pop') || e.target.matches('input, select')) return; const o = OPTIONS[Number(e.key) - 1]; if (o) pick(o.key); });
+
+$('#conn').insertAdjacentHTML('beforeend', [['paired', 'Connected'], ['offline', 'SnagThis not open'], ['unpaired', 'Not connected']].map(([k, l]) => `<button type="button" class="t" data-conn="${k}" aria-pressed="${S.conn === k}">${l}</button>`).join(''));
+function setConn(k) { S.conn = k; document.querySelectorAll('#conn button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.conn === k))); renderAll(); }
+$('#conn').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setConn(b.dataset.conn); });
+$('#accents').insertAdjacentHTML('beforeend', ACCENTS.map(([id, name, sw]) => `<button type="button" class="sw" style="--swatch:${sw}" data-accent="${id}" aria-label="${name}" aria-pressed="${S.accent === id}"></button>`).join(''));
+function setAccent(id, rerender) { applyAccent(id); document.querySelectorAll('#accents button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.accent === id))); if (rerender) renderAll(); else { renderMinis(); } }
+$('#accents').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setAccent(b.dataset.accent, true); });
+
+function selectTab(id, focus) { S.tab = id; renderFrame(focus); }
+const frame = $('#frame');
+frame.addEventListener('click', e => {
+  const t = e.target.closest('[role="tab"]'); if (t) return selectTab(t.dataset.tab, true);
+  const d = e.target.closest('[data-do]'); if (!d) return;
+  const act = d.dataset.do;
+  if (act === 'connect') { setConn('paired'); if (S.opt !== 'today') selectTab('connection'); return; }
+  if (act === 'disconnect') { setConn('unpaired'); return; }
+  if (act === 'open') { setConn('paired'); return; }
+  const log = $('#walklog'); if (log) log.innerHTML = act === 'desktop' ? 'Opens <b>snagthis://open/settings</b> (desktop Settings, on Chrome extension).' : 'Opens the six-digit code form (showCodePairing).';
+});
+frame.addEventListener('keydown', e => {
+  const t = e.target.closest('[role="tab"]'); if (!t) return;
+  const list = [...t.parentElement.querySelectorAll('[role="tab"]')]; const i = list.indexOf(t);
+  const vertical = t.parentElement.getAttribute('aria-orientation') === 'vertical';
+  const prev = vertical ? 'ArrowUp' : 'ArrowLeft', next = vertical ? 'ArrowDown' : 'ArrowRight';
+  let j = null;
+  if (e.key === next) j = (i + 1) % list.length; else if (e.key === prev) j = (i - 1 + list.length) % list.length; else if (e.key === 'Home') j = 0; else if (e.key === 'End') j = list.length - 1;
+  if (j === null) return; e.preventDefault(); selectTab(list[j].dataset.tab, true);
+});
+function flashSaved(el, label) {
+  const title = el.closest('.row').querySelector('.rt'); title.querySelector('.saved')?.remove();
+  const m = document.createElement('span'); m.className = 'saved'; m.innerHTML = ic('check') + 'Saved'; title.append(m); setTimeout(() => m.remove(), 2000);
+}
+frame.addEventListener('change', e => {
+  const el = e.target;
+  if (el.name?.startsWith('acc-')) { applyAccent(el.value); document.querySelectorAll('#accents button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.accent === el.value))); flashSaved(el); renderMinis(); return; }
+  const k = el.dataset.pref; if (!k) return; S.prefs[k] = el.type === 'checkbox' ? el.checked : el.value; flashSaved(el); renderMinis();
+});
+
+// Keyboard walk: real key events on the real tablist.
+$('#walk').addEventListener('click', () => {
+  if (S.opt === 'today') { pick('bar'); }
+  const hub = $('#hub'); hub.classList.add('kbd'); S.tab = 'downloads'; renderFrame(true);
+  const vertical = S.opt === 'rail'; const nextKey = vertical ? 'ArrowDown' : 'ArrowRight';
+  const steps = [['Tab', 'Focus lands on the chosen tab, <b>Downloads</b> (roving tabindex: one Tab stop for the whole tablist).'], [nextKey, `<b>${vertical ? '↓' : '→'}</b> moves to Appearance and shows it.`], [nextKey, `<b>${vertical ? '↓' : '→'}</b> Connection: its name includes the status, “Connection, ${CONN[S.conn][1]}”.`], ['End', '<b>End</b> jumps to About.'], ['Home', '<b>Home</b> jumps back to Downloads.'], ['TabPanel', '<b>Tab</b> moves into the panel, then to its first control.']];
+  let n = 0; const log = $('#walklog');
+  const tick = () => {
+    if (n >= steps.length) { setTimeout(() => hub.classList.remove('kbd'), 1600); return; }
+    const [key, text] = steps[n++]; log.innerHTML = text;
+    if (key === 'TabPanel') { const p = $('#main-p'); p.focus(); setTimeout(() => p.querySelector('select, input, button')?.focus(), 700); }
+    else if (key !== 'Tab') document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    setTimeout(tick, 1300);
+  };
+  tick();
+});
+frame.addEventListener('pointerdown', () => $('#hub').classList.remove('kbd'));
+
+applyAccent('orange');
+if (location.hash) { const h = new URLSearchParams(location.hash.slice(1)); if (h.get('opt')) S.opt = h.get('opt'); if (h.get('conn')) S.conn = h.get('conn'); if (h.get('tab')) S.tab = h.get('tab'); if (h.get('accent')) applyAccent(h.get('accent')); document.querySelectorAll('#picker button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.key === S.opt))); document.querySelectorAll('#conn button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.conn === S.conn))); document.querySelectorAll('#accents button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.accent === S.accent))); }
+renderAll();
+})();
+</script>
+</body>
+</html>

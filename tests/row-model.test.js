@@ -218,3 +218,29 @@ test('a dead rendition is a quality problem, not an expired link, and a fallback
   assert.equal(row.qualityNote, '1080p — 2160p unavailable');
   assert.match(row.statusLine, /1080p — 2160p unavailable/);
 });
+
+test('DRM-protected rows use plain shared copy naming the site, never a download', () => {
+  const { strings, interpolate } = require('../packages/contracts/src/strings');
+  const { withProtectedRow, markProtected, protectedSiteName } = require('../apps/extension/js/detection');
+  assert.equal(interpolate('drmProtected', { site: 'HBO Max' }), "Protected by HBO Max (DRM) — SnagThis can't save it");
+  assert.equal(strings.drmWhy, 'Why?');
+  assert.match(interpolate('drmHelpBody', { site: 'HBO Max' }), /never records, unlocks or saves protected video/);
+
+  // A protected frame's script-fed pieces and unparsed manifest join one row;
+  // a parsed clear playlist and a directly played file stay their own rows.
+  const contexts = { 0: { sourcePageUrl: 'https://play.example/watch/1', sourcePageTitle: 'Episode', protection: { keySystem: 'widevine', siteName: 'Example+', durationSeconds: 3000 } } };
+  const items = markProtected([
+    { id: 'mpd', url: 'https://cdn.example/m.mpd', type: 'file', mediaKind: 'dash-manifest', streamType: 'dash', frameId: 0 },
+    { id: 'piece', url: 'https://cdn.example/v/12.mp4', mediaKind: 'video', delivery: 'script', frameId: 0 },
+    { id: 'trailer', url: 'https://cdn.example/t.m3u8', type: 'hls', mediaKind: 'hls-manifest', streamType: 'hls', frameId: 0, manifest: { isMaster: false, isDrm: false, segmentUrls: [] } },
+    { id: 'clip', url: 'https://cdn.example/clip.mp4', mediaKind: 'video', delivery: 'element', frameId: 0 },
+  ], contexts);
+  assert.deepEqual(items.map(item => Boolean(item.drm)), [true, true, false, false]);
+  const rows = withProtectedRow(items.map(item => ({ ...item, detectedStreams: [item] })), { contexts, url: 'https://play.example/watch/1' });
+  assert.deepEqual(rows.map(row => row.id), ['protected:0', 'trailer', 'clip']);
+  assert.equal(rows[0].durationSeconds, 3000);
+  assert.equal(protectedSiteName(rows[0]), 'Example+');
+  assert.deepEqual(rows[0].detectedStreams.map(stream => stream.id), ['mpd', 'piece']);
+  // Rows on the desktop surface are unaffected: DRM errors stay "unsupported".
+  assert.equal(toRowModel({ id: 'j', queueStatus: 'failed', error: { code: 'DRM_PROTECTED' } }).problem.code, 'unsupported');
+});

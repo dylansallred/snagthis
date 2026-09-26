@@ -1,8 +1,8 @@
 /* SnagThis media normalization. No inferred playlist names or guessed fallback files. */
 (function(root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.SnagThisDetection = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function() {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('../../../packages/contracts/src/hls'));
+  else root.SnagThisDetection = factory(root.SnagThisHls);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function(hls) {
   'use strict';
   function httpUrl(value, base) {
     if (!value) return '';
@@ -12,7 +12,7 @@
     const path = (() => { try { return new URL(url).pathname; } catch { return ''; } })();
     if (/\.(?:ts|m4s|m4f|cmfa|cmfv|vtt|srt)$/i.test(path) || /(?:mp2t|webvtt)/i.test(contentType)) return null;
     if (/\.m3u8$/i.test(path) || /mpegurl/i.test(contentType) || /^\uFEFF?\s*#EXTM3U(?:\s|$)/.test(body)) return 'hls';
-    if (/\.mpd$/i.test(path) || /dash\+xml/i.test(contentType)) return 'dash';
+    if (/\.mpd$/i.test(path) || /dash\+xml/i.test(contentType) || (body && hls.isDashManifest(body))) return 'dash';
     if (/\.(?:mp4|m4v|mov|webm|mkv|avi|flv|ogv|mp3|m4a|ogg|wav)$/i.test(path) || /^(?:video|audio)\//i.test(contentType)) return 'file';
     return null;
   }
@@ -52,13 +52,106 @@
   }
   function manifestComponent(url, items) {
     return items.some(({ manifest }) => manifest && ((manifest.segmentUrls || []).includes(url)
-      || (manifest.initializationUrls || []).includes(url) || inSegmentBase(url, manifest.segmentBases || [])));
+      || (manifest.initializationUrls || []).includes(url) || inSegmentBase(url, manifest.segmentBases || [])
+      || hls.matchesSegmentTemplate(url, manifest.segmentTemplates)));
   }
   function withoutManifestSegments(items) {
     const segments = new Set(items.flatMap(item => (item.manifest?.segmentUrls || []).concat(item.manifest?.initializationUrls || [])));
     const bases = items.flatMap(item => item.manifest?.segmentBases || []);
+    // DASH SegmentTemplate: pieces are named by pattern, not listed.
+    const templates = items.flatMap(item => item.manifest?.segmentTemplates || []);
     return items.filter(item => !segments.has(item.url) && !(bases.length && item.mediaKind === 'video' && inSegmentBase(item.url, bases))
+      && !(templates.length && item.mediaKind === 'video' && hls.matchesSegmentTemplate(item.url, templates))
       && !isYoutubeAuxiliaryResource(item.url, item.sourcePageUrl, item.mediaKind));
+  }
+  // Pieces of an adaptive stream (fMP4/CMAF fragments, init segments, byte
+  // ranges) look like small MP4 files. Without their manifest they are not a
+  // video anyone can save; with it, withoutManifestSegments() folds them in.
+  // Only requests the page's scripts made count: a <video src> or a direct
+  // media load is always a standalone file, however short.
+  const INIT_NAME = /(?:^|[\W_])init(?:iali[sz]ation)?(?:[\W_]|\d|$)/i;
+  const FRAGMENT_PATH = /\/(?:range|bytes)[/=]\d+-\d+|\/Fragments\(|\/QualityLevels\(|(?:^|[/_.-])(?:seg(?:ment)?|chunk|frag(?:ment)?)[-_]?\d+(?:[/_.-]|$)/i;
+  const FRAGMENT_QUERY = /[?&](?:range|bytes|seg(?:ment)?|chunk|frag(?:ment)?|sq)=\d/i;
+  function numberedTemplate(value) {
+    try {
+      const url = new URL(value); const parts = url.pathname.split('/');
+      const name = parts.pop();
+      if (!/\d/.test(name)) return '';
+      return `${url.host}${parts.join('/')}/${name.replace(/\d+/g, '#')}`;
+    } catch { return ''; }
+  }
+  function isStreamFragment(item, items = [], mappings = {}) {
+    if (!item || item.mediaKind !== 'video' || item.manifest || item.streamType || mappings[item.id] || item.delivery === 'element') return false;
+    let url; try { url = new URL(item.url); } catch { return false; }
+    let name = url.pathname.split('/').pop() || '';
+    try { name = decodeURIComponent(name); } catch { /* Keep the encoded name. */ }
+    if (INIT_NAME.test(name) || FRAGMENT_PATH.test(url.pathname) || FRAGMENT_QUERY.test(url.search)) return true;
+    if (item.delivery !== 'script') return false;
+    if (item.rangeRequested) return true;
+    // Numbered siblings (seg-1.mp4, seg-2.mp4 …) fetched by one player.
+    const template = numberedTemplate(item.url);
+    if (template && items.filter(other => other !== item && other.delivery === 'script' && other.mediaKind === 'video' && numberedTemplate(other.url) === template).length >= 2) return true;
+    const duration = Number(item.durationSeconds) > 0 ? Number(item.durationSeconds) : 0;
+    const size = Number(item.contentLength) > 0 ? Number(item.contentLength) : 0;
+    // "N/A" or "<1 MB" with no duration of its own, or a size far too small
+    // for the duration it borrowed from the page's player.
+    if (!duration) return size < 1e6;
+    return duration >= 60 && size > 0 && size < duration * 4000;
+  }
+  // DRM: a manifest that declares protection, or a frame whose player uses
+  // Encrypted Media Extensions. Detection only; nothing is ever decrypted.
+  function markProtected(items, contexts = {}) {
+    return items.map(item => {
+      if (item.mediaKind === 'youtube-page') return item;
+      const manifest = item.manifest;
+      const frame = contexts?.[item.frameId || 0]?.protection || null;
+      let locked = Boolean(manifest?.isDrm);
+      if (!locked && frame) {
+        const stream = item.streamType === 'hls' || item.streamType === 'dash';
+        // A parsed manifest without keys proves that stream is clear (a
+        // trailer beside the protected film); an HLS master defers to its renditions.
+        if (stream) locked = !manifest;
+        else if (item.mediaKind === 'video') locked = item.delivery === 'script' || Boolean(frame.mediaSourceUrl && frame.mediaSourceUrl === item.url);
+      }
+      if (!locked) return item;
+      return { ...item, drm: true, keySystem: manifest?.keySystems?.[0] || frame?.keySystem || item.keySystem || '' };
+    });
+  }
+  // One row for the page's protected title instead of its many pieces.
+  // Unprotected media on the same page keeps its own rows.
+  function withProtectedRow(groups, page = {}) {
+    const frames = Object.entries(page.contexts || {}).filter(([, context]) => context?.protection)
+      .map(([frameId, context]) => ({ frameId: Number(frameId), context })).sort((a, b) => a.frameId - b.frameId);
+    const isLocked = group => Boolean(group.drm || (group.detectedStreams || []).some(stream => stream.drm));
+    const locked = groups.filter(isLocked);
+    const frame = frames[0];
+    const id = frame ? `protected:${frame.frameId}` : '';
+    if (!locked.length && (!frame || (page.hidden || []).includes(id))) return groups;
+    const clear = groups.filter(group => !isLocked(group));
+    const duration = group => Number(group.durationSeconds) > 0 ? Number(group.durationSeconds) : 0;
+    const main = locked.slice().sort((a, b) => duration(b) - duration(a))[0] || null;
+    const streams = locked.flatMap(group => group.detectedStreams || [group]);
+    const context = frame?.context || {};
+    const protection = context.protection || {};
+    const pageUrl = main?.sourcePageUrl || context.sourcePageUrl || page.url || '';
+    const row = {
+      id: id || main.id, url: main?.url || pageUrl, type: 'protected', mediaKind: 'protected', frameId: frame ? frame.frameId : main.frameId,
+      sourcePageUrl: pageUrl, sourcePageTitle: main?.sourcePageTitle || context.sourcePageTitle || '',
+      pageTitleCandidates: main?.pageTitleCandidates || context.pageTitleCandidates || [],
+      pageEpisodeHint: main?.pageEpisodeHint || context.pageEpisodeHint || null,
+      durationSeconds: Number(protection.durationSeconds) > 0 ? Number(protection.durationSeconds) : main ? duration(main) || null : null,
+      thumbnailUrl: main?.thumbnailUrl || protection.poster || '',
+      drm: true, keySystem: protection.keySystem || streams.map(stream => stream.keySystem).find(Boolean) || '',
+      drmSite: protection.siteName || '', detectedAt: main?.detectedAt || 0,
+      variants: [], audio: [], subtitles: [], detectedStreams: streams, collapsedCount: streams.length,
+    };
+    return [row, ...clear];
+  }
+  // Plain-language name for "Protected by …": the site's own name when it
+  // declares one, else its host without www.
+  function protectedSiteName(item) {
+    if (item?.drmSite) return item.drmSite;
+    try { return new URL(item.sourcePageUrl || item.url).hostname.replace(/^www\./, ''); } catch { return ''; }
   }
   // Page noise that is not a video anyone came for: notification sounds, ad
   // creatives and tiny looping banners. Playlists and started downloads stay.
@@ -88,5 +181,5 @@
     if (error?.name === 'TypeError' || /failed to fetch|networkerror|load failed|network request failed|err_connection|err_network/i.test(text)) return "SnagThis desktop isn't running. Open it, then try again.";
     return text || fallback;
   }
-  return { httpUrl, mediaType, sanitizeHeaders, thumbnailUrl, youtubeId, isYoutubeAuxiliaryResource, manifestComponent, withoutManifestSegments, isJunkMedia, friendlyError };
+  return { httpUrl, mediaType, sanitizeHeaders, thumbnailUrl, youtubeId, isYoutubeAuxiliaryResource, manifestComponent, withoutManifestSegments, isJunkMedia, isStreamFragment, markProtected, withProtectedRow, protectedSiteName, friendlyError };
 });

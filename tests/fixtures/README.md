@@ -17,3 +17,5 @@ Media routes:
 Each file in `pages/` exercises an embedding technique; `player.js` supplies common controls. Call the actual Play button for `click.html`. `spa.html` provides `#navigate` to remove playback and change history without reloading. `external.html` is only for explicitly selected public developer test streams.
 
 `engine.js` runs the production JobProcessor and ffprobe. A passing fixture means the saved file has real streams and expected duration/height, not merely that the right FFmpeg argument was assembled.
+
+`drm/` holds text-only manifests for extension detection tests: a DASH MPD with Widevine/PlayReady `ContentProtection`, an HLS playlist with `SAMPLE-AES` Widevine/FairPlay keys, and an ordinary AES-128 HLS playlist (not DRM). They reference no real media or keys.

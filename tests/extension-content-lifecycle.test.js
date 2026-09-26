@@ -95,7 +95,7 @@ function loadContent({ pageUrl = 'https://example.test/watch', poster = '', page
     } : {}),
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../apps/extension/js/content.js'), 'utf8'), context);
-  return { sent, timers, runtimeListeners, window, video, videos, location, observer, get frameReads() { return frameReads; },
+  return { sent, timers, runtimeListeners, window, document, video, videos, location, observer, get frameReads() { return frameReads; },
     setPlaybackTime(value) { playbackTime = value; },
     resourceTimings(entries) { resourceObserver.callback({ getEntries: () => entries }); },
     get resourceObserver() { return resourceObserver; },
@@ -322,4 +322,40 @@ test('media answered by the frame Service Worker is reported once; ordinary resp
   page.fail(new Error('Extension context invalidated.'));
   page.emitMedia();
   assert.equal(page.resourceObserver.disconnected, true);
+});
+
+test('an EME player is reported as protected without reading its frames or touching playback', () => {
+  const frame = Uint8ClampedArray.from({ length: 208 * 116 * 4 }, (_, index) => index % 4 === 3 ? 255 : Math.floor(index / 4) % 2 ? 190 : 60);
+  const page = loadContent({ frame, atTime: 10, pageMeta: { 'meta[property="og:site_name"]': 'Stream Service' } });
+  const context = () => page.sent.filter(message => message.cmd === 'PAGE_CONTEXT').at(-1).context;
+  assert.equal(context().protection, null, 'an ordinary player is not protected');
+
+  // The page asks for Widevine (page-world hint), then attaches MediaKeys to an MSE player.
+  page.window.dispatch('message', { source: page.window, data: { source: 'snagthis:media', protection: { signal: 'access', keySystem: 'com.widevine.alpha' } } });
+  page.video.currentSrc = 'blob:https://example.test/5f0c';
+  page.video.mediaKeys = {};
+  const readsBefore = page.frameReads;
+  page.video.dispatch('playing');
+  page.advance(200);
+  assert.deepEqual({ ...context().protection }, { keySystem: 'widevine', signal: 'mediakeys', siteName: 'Stream Service', mediaSourceUrl: 'blob:', durationSeconds: 20, poster: '' });
+
+  // An 'encrypted' event alone (no MediaKeys yet) is enough; its pssh names the key system.
+  const other = loadContent({ frame, atTime: 10 });
+  const pssh = new Uint8Array(32);
+  pssh.set([0, 0, 0, 32, 0x70, 0x73, 0x73, 0x68, 0, 0, 0, 0]);
+  pssh.set([0x9a, 0x04, 0xf0, 0x79, 0x98, 0x40, 0x42, 0x86, 0xab, 0x92, 0xe6, 0x5b, 0xe0, 0x88, 0x5f, 0x95], 12);
+  other.document.dispatch('encrypted', { target: other.video, initDataType: 'cenc', initData: pssh.buffer });
+  other.advance(200);
+  const locked = other.sent.filter(message => message.cmd === 'PAGE_CONTEXT').at(-1).context.protection;
+  assert.equal(locked.signal, 'encrypted');
+  assert.equal(locked.keySystem, 'playready');
+  assert.equal(locked.siteName, 'example.test');
+
+  // Protected frames are never drawn, even in the representative scene range.
+  page.setPlaybackTime(12);
+  page.video.readyState = 2;
+  page.video.dispatch('timeupdate');
+  page.advance(200);
+  assert.equal(page.frameReads, readsBefore);
+  assert.equal(context().sourcePreviewPoster, undefined);
 });

@@ -10,7 +10,8 @@
   const POSTER_BYTES = 2 * 1024 * 1024;
   const blockedHeaders = /^(?:origin|referer|host|user-agent|cookie|content-length|connection|range|sec-|proxy-)/i;
   function sourceFor(item) {
-    if (!item || item.mediaKind === 'youtube-page' || item.mediaKind === 'dash-manifest' || /^audio\//i.test(item.contentType || '')) return null;
+    // DRM-protected media is never fetched or played for a preview.
+    if (!item || item.drm || item.mediaKind === 'protected' || item.mediaKind === 'youtube-page' || item.mediaKind === 'dash-manifest' || /^audio\//i.test(item.contentType || '')) return null;
     try {
       const primary = new URL(item.url);
       if (!/^https?:$/.test(primary.protocol) || primary.username || primary.password) return null;

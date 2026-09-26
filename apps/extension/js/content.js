@@ -13,6 +13,11 @@
   const events = new AbortController();
   const watchedVideos = new WeakMap();
   const reportedWorkerMedia = new Set();
+  // DRM (EME) observation: which players decrypt, and the key system the page
+  // asked for. Observed only; SnagThis never records or decrypts protected video.
+  const encryptedVideos = new WeakMap();
+  let requestedKeySystem = '';
+  let encryptedInit = '';
   let resourceObserver = null;
   globalThis.__snagthisContent = { live: () => { try { return !retired && Boolean(chrome.runtime?.id); } catch { return false; } } };
   function retire() {
@@ -56,8 +61,54 @@
       && video.currentTime >= video.duration * .35 && video.currentTime <= video.duration * .8
       && video.readyState >= 2 && video.videoWidth > 0;
   }
+  function isProtectedVideo(video) {
+    try { return Boolean(video && (video.mediaKeys || encryptedVideos.has(video))); } catch { return false; }
+  }
+  // Key-system IDs inside the 'encrypted' event's init data (pssh boxes).
+  function keySystemFromInitData(data) {
+    try {
+      const bytes = new Uint8Array(data || new ArrayBuffer(0)); let hex = '';
+      for (let index = 0; index + 28 <= bytes.length; index++) {
+        if (bytes[index] !== 0x70 || bytes[index + 1] !== 0x73 || bytes[index + 2] !== 0x73 || bytes[index + 3] !== 0x68) continue;
+        for (let offset = index + 8; offset < index + 24; offset++) hex += bytes[offset].toString(16).padStart(2, '0');
+        hex += ' ';
+      }
+      return keySystemName(hex);
+    } catch { return ''; }
+  }
+  function keySystemName(value) {
+    const text = String(value || '');
+    if (/edef8ba979d64acea3c827dcd51d21ed|edef8ba9-79d6|widevine/i.test(text)) return 'widevine';
+    if (/9a04f07998404286ab92e65be0885f95|9a04f079-9840|playready/i.test(text)) return 'playready';
+    if (/94ce86fb07ff4f43adb893d2fa968ca2|94ce86fb-07ff|fairplay|com\.apple\.fps/i.test(text)) return 'fairplay';
+    if (/e2719d58a985b3c9781ab030af78d30e|1077efecc0b24d02ace33c1e52e2fb4b|clearkey/i.test(text)) return 'clearkey';
+    return '';
+  }
+  function onEncrypted(event) {
+    const video = event.target;
+    if (retired || !/^(?:VIDEO|AUDIO)$/i.test(String(video?.tagName || ''))) return;
+    encryptedVideos.set(video, keySystemFromInitData(event.initData) || encryptedVideos.get(video) || '');
+    scheduleScan();
+  }
+  function siteName() {
+    const named = meta('meta[property="og:site_name"]') || meta('meta[name="application-name"]') || meta('meta[name="apple-mobile-web-app-title"]');
+    let host = ''; try { host = new URL(location.href).hostname.replace(/^www\./, ''); } catch { /* No usable page URL. */ }
+    return (named || host).slice(0, 80);
+  }
+  function protectionState(videos) {
+    const video = videos.find(isProtectedVideo);
+    if (!video && !encryptedInit) return null;
+    const source = String(video?.currentSrc || video?.src || '');
+    return {
+      keySystem: requestedKeySystem || (video && encryptedVideos.get(video)) || encryptedInit || '',
+      signal: video?.mediaKeys ? 'mediakeys' : video ? 'encrypted' : 'init', siteName: siteName(),
+      mediaSourceUrl: source.startsWith('blob:') ? 'blob:' : absolute(source),
+      durationSeconds: video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null,
+      poster: absolute(video?.poster),
+    };
+  }
   function preparePagePoster(video) {
-    if (retired || document.hidden || video.isConnected === false || !representativeFrameAvailable(video)) return;
+    if (retired || document.hidden || video.isConnected === false || isProtectedVideo(video) || !representativeFrameAvailable(video)) return;
     const state = videoState(video);
     if (state.prepared || state.attempts >= 3 || (state.attemptedAt >= 0 && Math.abs(video.currentTime - state.attemptedAt) < 1)) return;
     const source = absolute(video.currentSrc || video.src);
@@ -69,7 +120,8 @@
     if (context.sourcePreviewPoster) send({ cmd: 'PAGE_CONTEXT', context });
   }
   function frameGrab(video) {
-    if (!video || video.readyState < 2 || !video.videoWidth) return '';
+    // Protected (DRM) frames are never read, drawn or recorded.
+    if (!video || isProtectedVideo(video) || video.readyState < 2 || !video.videoWidth) return '';
     try {
       const canvas = document.createElement('canvas'); canvas.width = 208; canvas.height = 116;
       const context = canvas.getContext('2d'); if (!context) return '';
@@ -225,6 +277,7 @@
         ...(frame ? { sourcePreviewPoster: frame, sourcePreviewSceneStart: video.currentTime, sourcePreviewSceneScope: 'source' } : {}),
       } : {}),
       youtubeMetadata: youtube, pageEpisodeHint, pageIsTvContext: Boolean(pageEpisodeHint), pageContextCollectedAt: Date.now(),
+      protection: protectionState(videos),
     };
   }
   // How the element is shown: a tiny looping or muted autoplay clip is a
@@ -259,6 +312,7 @@
     if (lastPage === location.href) return;
     cancelPagePreview();
     reportedWorkerMedia.clear();
+    encryptedInit = '';
     lastPage = location.href;
     send({ cmd: 'PAGE_NAVIGATED', pageUrl: lastPage });
     scheduleScan();
@@ -285,7 +339,7 @@
       }
       const sources = [video.currentSrc, video.getAttribute('src'), ...Array.from(video.querySelectorAll('source')).map(source => source.src)];
       for (const candidate of new Set(sources.map(absolute).filter(Boolean))) {
-        if (!publish({ cmd: 'STORE_DETECTED_MEDIA', media: { ...collectPageContext(candidate), url: candidate, contentType: video.querySelector('source')?.type || 'video/unknown', detectedAt: Date.now() } })) return;
+        if (!publish({ cmd: 'STORE_DETECTED_MEDIA', media: { ...collectPageContext(candidate), url: candidate, delivery: 'element', contentType: video.querySelector('source')?.type || 'video/unknown', detectedAt: Date.now() } })) return;
       }
     }
     return Promise.all(updates).then(results => ({ ok: !retired && results.every(result => result?.ok !== false) }));
@@ -306,6 +360,15 @@
     if (retired || event.source !== window || event.data?.source !== CHANNEL) return;
     if (event.data.navigation) { navigation(); return; }
     if (event.data.pageUrl && event.data.pageUrl !== location.href) return;
+    // A page-world hint: which key system EME granted, or an encrypted init
+    // segment the page's player fetched. It can only mark this page protected.
+    const drm = event.data.protection;
+    if (drm && typeof drm === 'object') {
+      const keySystem = keySystemName(drm.keySystem);
+      if (drm.signal === 'access' && keySystem) requestedKeySystem = keySystem;
+      if (drm.signal === 'init') encryptedInit = keySystem || encryptedInit || 'unknown';
+      scheduleScan(); return;
+    }
     const incoming = event.data.media;
     if (!incoming || typeof incoming.url !== 'string' || !absolute(incoming.url)) return;
     const manifestText = typeof incoming.manifestText === 'string' ? incoming.manifestText : '';
@@ -316,7 +379,7 @@
     const url = absolute(incoming.url);
     const method = /^[A-Z]{3,7}$/.test(String(incoming.method || '')) ? incoming.method : 'GET';
     send({ cmd: 'STORE_DETECTED_MEDIA', media: { url, contentType: String(incoming.contentType || '').slice(0, 200),
-      contentLength: Number(incoming.contentLength) || 0, manifestText, method, ...collectPageContext(url) } });
+      contentLength: Number(incoming.contentLength) || 0, manifestText, method, delivery: 'script', ...collectPageContext(url) } });
   }, { signal: events.signal });
   function onRuntimeMessage(message, sender, respond) {
     if (message?.cmd === 'SCAN_PAGE') {
@@ -338,6 +401,8 @@
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
   window.addEventListener('popstate', navigation, { signal: events.signal }); window.addEventListener('hashchange', navigation, { signal: events.signal });
   window.addEventListener('pagehide', () => cancelPagePreview(), { signal: events.signal });
+  // 'encrypted' does not bubble; a capturing listener still sees every player.
+  document.addEventListener('encrypted', onEncrypted, { capture: true, passive: true, signal: events.signal });
   const observer = new MutationObserver(mutations => { if (!retired && mutations.some(affectsContext)) scheduleScan(); });
   function start() {
     if (retired) return;

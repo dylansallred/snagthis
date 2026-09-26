@@ -95,8 +95,9 @@ test('offline YouTube hover records a quick loop, upgrades to a silent excerpt, 
     await expect(clip).toHaveJSProperty('muted', true);
     await expect(clip).toHaveJSProperty('loop', true);
     await expect.poll(() => clip.evaluate(video => video.currentTime)).toBeGreaterThan(1);
-    // Observe a natural wrap, without seeking either the source or its preview.
-    await expect.poll(() => clip.evaluate(video => video.currentTime < 0.75)).toBe(true);
+    // Observe a natural wrap, without seeking either the source or its preview. Sample often:
+    // the default 1s poll can alias with the ~2s loop and keep landing past the wrap point.
+    await expect.poll(() => clip.evaluate(video => video.currentTime < 0.75), { intervals: [100], timeout: 8_000 }).toBe(true);
     await expect(clip).toHaveAttribute('data-preview-phase', 'full', { timeout: 15_000 });
     await expect.poll(() => clip.evaluate(video => video.currentTime)).toBeGreaterThan(0.2);
     await expect(row.locator('.thumb-poster')).toHaveAttribute('src', posterUrl);

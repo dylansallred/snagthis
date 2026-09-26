@@ -2,7 +2,7 @@
 
 SnagThis has no required cloud account, telemetry service or paid tier. Video downloads and processing happen on your device.
 
-The Chrome extension observes media requests and page video metadata so it can identify a video. This can include the page title, source URL, poster image and request context needed by a source server. It may need access inside embedded frames. Broad site permissions support that detection; they are not permission to bypass a login or DRM.
+The Chrome extension observes media requests and page video metadata so it can identify a video. This can include the page title, source URL, poster image and request context needed by a source server. It may need access inside embedded frames. Broad site permissions support that detection; they are not permission to bypass a login or DRM. SnagThis never captures, records, decrypts or saves DRM-protected (EME) media: it only notices that a page uses DRM so it can say so, and it does not read, record or screen-capture that video's frames.
 
 The extension uses Chrome's `scripting` permission only to add its own detection script to tabs that were already open when it was installed or updated, so those pages can be checked without a refresh. It does not use the `tabs` permission. Request headers are only taken from Chrome's own network events, never from page scripts, and are captured only for media and data requests.
 

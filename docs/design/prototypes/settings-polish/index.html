@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Settings polish: type, sections and rows</title>
+<style>
+/* Token values copied from apps/desktop/src/globals.css (@theme) and packages/contracts/src/accents.js. */
+:root {
+  --color-background: hsl(215 22% 3.5%);
+  --color-background-raised: hsl(215 22% 8%);
+  --color-background-hover: hsl(215 22% 10.5%);
+  --color-background-active: hsl(215 22% 13.5%);
+  --color-surface-chrome: hsl(215 22% 4%);
+  --color-surface-row: hsl(215 22% 8%);
+  --color-surface-row-hover: hsl(215 22% 11.5%);
+  --color-foreground: hsl(20 20% 93%);
+  --color-foreground-muted: hsl(20 6% 60%);
+  --color-foreground-subtle: hsl(20 5% 52%);
+  --color-border: hsl(215 15% 18%);
+  --color-border-subtle: hsl(215 14% 15.5%);
+  --color-primary: hsl(18 96% 40%);
+  --color-primary-strong: hsl(18 96% 36%);
+  --color-primary-hover: hsl(20 96% 52%);
+  --color-primary-muted: hsl(16 58% 16%);
+  --color-destructive: hsl(0 80% 64%);
+  --color-status-paused: hsl(44 84% 58%);
+  --color-status-completed: hsl(145 62% 46%);
+  --color-segment-pending: hsl(215 14% 24%);
+  --color-segment-completed: #80bfa6;
+  --color-segment-downloading: #f4c38a;
+  --accent-logo: #fa5d0e; --accent-bevel-light: #ffb238; --accent-bevel-dark: #bd3f00;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --sheet-bg: hsl(215 22% 6.5%);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #07080a; color: var(--color-foreground); font: 13px/1.45 "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; padding: 0; }
+:focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: 2px; }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+code { font-family: var(--font-mono); font-size: .92em; }
+
+/* ── Hub (ui-refresh/controls.html conventions) ── */
+.hub { max-width: 1340px; margin: 0 auto; padding: 40px 28px 56px; }
+.eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--color-foreground-subtle); }
+.eyebrow span { color: var(--color-primary-hover); font-weight: 600; margin-right: 10px; }
+.intro h1 { font-size: 28px; line-height: 1.2; font-weight: 620; margin: 10px 0 8px; letter-spacing: -.01em; }
+.intro p { color: var(--color-foreground-muted); max-width: 820px; margin: 0; font-size: 14px; }
+kbd { font: 600 11px/16px inherit; padding: 1px 6px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground); }
+.diag { margin: 22px 0 0; border: 1px solid var(--color-border-subtle); border-radius: 12px; background: var(--color-background-raised); }
+.diag > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; font-size: 14px; list-style: none; display: flex; gap: 10px; align-items: baseline; }
+.diag > summary::-webkit-details-marker { display: none; }
+.diag > summary small { color: var(--color-foreground-muted); font-weight: 400; font-size: 12.5px; }
+.diag > summary::before { content: "▸"; color: var(--color-foreground-subtle); transition: transform 160ms; }
+.diag[open] > summary::before { transform: rotate(90deg); }
+.diag ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px 22px; margin: 0; padding: 4px 16px 16px; list-style: none; counter-reset: d; }
+.diag li { counter-increment: d; font-size: 12.5px; color: var(--color-foreground-muted); line-height: 1.5; }
+.diag li b { display: block; color: var(--color-foreground); font-weight: 600; font-size: 13px; }
+.diag li b::before { content: "D" counter(d) "  "; color: var(--color-primary-hover); font-family: var(--font-mono); font-size: 11.5px; }
+.picker { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 22px -8px 10px; padding: 8px; background: #07080aee; backdrop-filter: blur(8px); }
+.picker button { text-align: left; padding: 10px 12px; border-radius: 9px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
+.picker button:hover { background: var(--color-background-hover); }
+.picker button[aria-pressed="true"] { border-color: var(--color-primary-hover); background: color-mix(in srgb, var(--color-primary-muted) 45%, transparent); }
+.picker span { display: block; font-size: 13px; font-weight: 600; }
+.picker span em { font-style: normal; color: var(--color-primary-hover); margin-right: 6px; font-family: var(--font-mono); }
+.picker small { display: block; color: var(--color-foreground-muted); font-size: 11.5px; line-height: 15px; margin-top: 3px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 0 0 14px; font-size: 12px; color: var(--color-foreground-muted); }
+.toolbar .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
+.toolbar .seg button { height: 26px; padding: 0 9px; border-radius: 6px; font-size: 12px; color: var(--color-foreground-muted); white-space: nowrap; }
+.toolbar .seg button:hover { color: var(--color-foreground); }
+.toolbar .seg button[aria-pressed="true"] { background: var(--color-background-active); color: var(--color-foreground); }
+.toolbar .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; vertical-align: -2px; background: var(--s); margin-right: 5px; }
+.toolbar label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.stage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
+.notes { flex: 1; min-width: 260px; max-width: 330px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.notes h2 { margin: 0 0 6px; font-size: 16px; color: var(--color-foreground); }
+.notes h3 { margin: 14px 0 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-foreground-subtle); }
+.notes ul { padding-left: 18px; margin: 6px 0; } .notes li + li { margin-top: 4px; }
+.notes .rw { display: grid; gap: 2px; padding: 7px 0; border-top: 1px solid var(--color-border-subtle); }
+.notes .rw s { color: var(--color-foreground-subtle); text-decoration-color: hsl(0 50% 50% / .6); }
+.notes .rw ins { text-decoration: none; color: var(--color-foreground); }
+.notes .rec { margin-top: 12px; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--color-primary-hover); background: color-mix(in srgb, var(--color-primary-muted) 35%, transparent); color: var(--color-foreground); }
+.hub-footer { margin-top: 26px; color: var(--color-foreground-subtle); font-size: 12px; }
+
+/* ── The desktop window at 960×660 ── */
+.win { position: relative; width: 960px; height: 660px; flex: none; border-radius: 10px; overflow: hidden; background: var(--color-background-raised); box-shadow: 0 30px 80px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .06); display: flex; flex-direction: column; }
+.top { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 53px; background: var(--color-surface-chrome); border-bottom: 1px solid; border-image: linear-gradient(90deg, var(--color-primary-hover), color-mix(in srgb, var(--color-primary-hover) 25%, transparent) 45%, var(--color-border-subtle) 80%) 1; }
+.lights { display: flex; gap: 7px; } .lights i { width: 11px; height: 11px; border-radius: 50%; background: #33363c; }
+.wordmark { height: 22px; width: 120px; object-fit: contain; }
+.paste { flex: 1; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-foreground-subtle); }
+.list { flex: 1; overflow: hidden; }
+.vrow { display: flex; height: 85px; border-bottom: 1px solid var(--color-border-subtle); }
+.vrow .thumb { width: 128px; flex: none; }
+.vrow .txt { padding: 12px; min-width: 0; flex: 1; }
+.vrow b { display: block; font-size: 13.5px; font-weight: 570; white-space: nowrap; }
+.vrow span { font-size: 12px; color: var(--color-foreground-muted); }
+.vrow .lane { display: flex; gap: 3px; margin-top: 10px; } .vrow .lane i { flex: 1; height: 5px; border-radius: 2px; background: var(--color-segment-pending); } .vrow .lane i.d { background: var(--color-segment-completed); opacity: .65; }
+.foot { display: flex; align-items: center; padding: 0 14px; height: 42px; background: var(--color-surface-chrome); border-top: 1px solid var(--color-border-subtle); color: var(--color-foreground-subtle); font-size: 12px; }
+.scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .5); }
+.toast { position: absolute; left: 20px; bottom: 16px; z-index: 5; padding: 9px 13px; border-radius: 8px; background: var(--color-background-active); border: 1px solid var(--color-border); font-size: 12.5px; opacity: 0; transform: translateY(8px); transition: opacity 200ms, transform 200ms; pointer-events: none; }
+.toast.show { opacity: 1; transform: none; }
+[hidden] { display: none !important; }
+
+/* Shared control pieces */
+.sheet { position: absolute; top: 0; right: 0; bottom: 0; width: 640px; display: flex; flex-direction: column; background: var(--color-background-raised); border-left: 1px solid var(--color-border); }
+.saved { display: inline-flex; align-items: center; gap: 3px; color: var(--color-status-completed); font-size: 11.5px; font-weight: 500; white-space: nowrap; animation: pop 160ms ease-out; }
+.saved svg { width: 12px; height: 12px; stroke-width: 2.4; }
+@keyframes pop { from { opacity: 0; translate: 0 3px; } }
+.sw { position: relative; flex: none; width: 32px; height: 18.4px; border-radius: 99px; background: hsl(215 16% 16.5%); box-shadow: inset 0 0 0 1px hsl(215 15% 22%); transition: background 150ms; }
+.sw::after { content: ""; position: absolute; left: 1.2px; top: 1.2px; width: 16px; height: 16px; border-radius: 50%; background: var(--color-foreground); transition: translate 150ms; }
+.sw[aria-checked="true"] { background: var(--color-primary); box-shadow: none; } .sw[aria-checked="true"]::after { translate: 13.6px 0; }
+.sw:hover { filter: brightness(1.15); }
+.stepper { display: inline-flex; align-items: center; flex: none; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-background); }
+.stepper button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--color-foreground-muted); }
+.stepper button:hover:not(:disabled) { background: var(--color-background-active); color: var(--color-foreground); }
+.stepper button:disabled { opacity: .35; cursor: default; }
+.stepper button svg { width: 13px; height: 13px; }
+.stepper output { width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+select.sel { flex: none; height: 28px; padding: 0 26px 0 8px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-background) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a39d99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center; appearance: none; font-size: 12.5px; cursor: pointer; }
+select.sel:hover { border-color: hsl(215 15% 26%); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 7px; font-size: 12.5px; white-space: nowrap; color: var(--color-foreground); }
+.btn:hover:not(:disabled) { background: var(--color-background-active); border-color: hsl(215 15% 24%); }
+.btn:disabled { color: var(--color-foreground-subtle); cursor: default; }
+.btn.danger { color: var(--color-destructive); border-color: hsl(0 45% 32%); } .btn.danger:hover { background: hsl(0 40% 16%); }
+.btn.primary { background: var(--color-primary); border-color: transparent; color: #fff; font-weight: 600; } .btn.primary:hover { background: var(--color-primary-strong); }
+.btn svg { width: 13px; height: 13px; }
+.keyf { display: flex; align-items: center; gap: 4px; }
+.keyf input { height: 28px; padding: 0 8px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-background); font-size: 12.5px; min-width: 0; }
+.keyf input::placeholder { color: var(--color-foreground-subtle); }
+.keyf input:hover { border-color: hsl(215 15% 26%); }
+.eye { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; color: var(--color-foreground-muted); } .eye:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatch { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; width: 60px; padding: 7px 0 6px; border-radius: 8px; color: var(--color-foreground-muted); font-size: 11.5px; cursor: pointer; }
+.swatch:hover { background: var(--color-background-hover); color: var(--color-foreground); }
+.swatch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.swatch .d { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--s); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14); color: #fff; }
+.swatch .d svg { width: 14px; height: 14px; stroke-width: 2.75; opacity: 0; }
+.swatch:has(input:checked) { color: var(--color-foreground); }
+.swatch:has(input:checked) .d { box-shadow: 0 0 0 2px var(--color-background-raised), 0 0 0 4px var(--s); }
+.swatch:has(input:checked) .d svg { opacity: 1; }
+.swatch:has(input:focus-visible), .swatch.demo-focus { outline: 2px solid var(--color-primary-hover); outline-offset: 0; }
+.digits { display: inline-flex; gap: 4px; }
+.digits i { font-style: normal; display: grid; place-items: center; width: 24px; height: 32px; font: 600 15px var(--font-mono); background: var(--color-background); border: 1px solid var(--color-border); box-shadow: inset 1px 1px 0 hsl(215 15% 24%), inset -1px -1px 0 #000; }
+.gdot { display: inline-block; vertical-align: 1px; margin-right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--color-status-completed); box-shadow: 0 0 0 3px hsl(145 62% 46% / .18); flex: none; }
+.gdot.off { background: var(--color-foreground-subtle); box-shadow: 0 0 0 3px hsl(20 5% 52% / .15); }
+.demo-focus { outline: 2px solid var(--color-primary-hover) !important; outline-offset: 2px; }
+
+/* ═════ 1 · Current (a faithful copy of settings.css + globals.css rules) ═════ */
+.v1 .head { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 10px 16px; min-height: 51px; border-bottom: 1px solid var(--color-border-subtle); }
+.v1 .head h2 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.xbtn { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; color: var(--color-foreground-muted); } .xbtn:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.split { flex: 1; display: flex; min-height: 0; }
+.v1 .rail { width: 172px; flex: none; display: flex; flex-direction: column; padding: 10px 8px; border-right: 1px solid var(--color-border-subtle); background: var(--color-background-raised); gap: 2px; }
+.v1 .rail [role=tab] { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 7px; color: var(--color-foreground-muted); font-size: 12.5px; text-align: left; white-space: nowrap; }
+.v1 .rail [role=tab]:hover { background: var(--color-background-hover); color: var(--color-foreground); }
+.v1 .rail [role=tab][aria-selected=true] { background: var(--color-background-active); color: var(--color-foreground); box-shadow: inset 2px 0 0 var(--color-primary-hover); }
+.v1 .rail [role=tab]:focus-visible, .v1 .rail .demo-focus { outline: 2px solid var(--color-primary-hover); outline-offset: -2px; }
+.v1 .ver { margin-top: auto; padding: 6px 10px; color: var(--color-foreground-subtle); font-size: 11px; }
+.v1 .pane { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 16px; background: var(--sheet-bg); }
+.v1 .ptitle { margin: 18px 16px 2px; font-size: 16px; font-weight: 620; }
+.v1 .pdesc { margin: 0 16px 14px; color: var(--color-foreground-muted); font-size: 12px; }
+.v1 .card { margin: 0 12px; border: 1px solid var(--color-border); border-radius: 11px; overflow: hidden; background: var(--color-surface-row); }
+.v1 .prow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--color-border-subtle); }
+.v1 .card > .prow:first-child, .v1 .sub > h4 + .prow { border-top: 0; }
+.v1 .tile { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 8px; background: var(--color-background-active); color: #c4cad3; }
+.v1 .tile.warm { background: color-mix(in srgb, var(--color-primary-hover) 16%, transparent); color: color-mix(in oklab, var(--color-primary-hover) 70%, white); }
+.v1 .st { flex: 1; min-width: 0; }
+.v1 .stitle { display: flex; align-items: center; gap: 8px; font-weight: 550; font-size: 13px; line-height: 1.4; }
+.v1 .st small { display: block; color: var(--color-foreground-muted); font-size: 12px; margin-top: 3px; }
+.v1 select.sel { width: 132px; }
+.v1 .folder { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 12px; row-gap: 8px; align-items: start; }
+.v1 .folder .tile { grid-row: span 2; } .v1 .folder .acts { grid-column: 2; }
+.v1 .path { color: var(--color-foreground-muted); font-size: 12px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 2px; }
+.v1 .acts { display: flex; flex-wrap: wrap; gap: 6px; } .v1 .btn { height: 30px; padding: 0 9px; }
+.v1 .sub { padding: 12px; border-top: 1px solid var(--color-border-subtle); } .v1 .sub:first-child { border-top: 0; }
+.v1 .sub > h4 { margin: 0 0 4px; font-size: 12.5px; font-weight: 600; }
+.v1 .sub > .prow { padding: 9px 0; } .v1 .sub > h4 + .prow { padding-top: 2px; }
+.v1 .sub > .prow.stack { display: block; } .v1 .prow.stack small { margin: 0 0 7px; } .v1 .prow.stack .keyf input { flex: 1; }
+.v1 .sub p { font-size: 12px; color: var(--color-foreground-muted); margin: 8px 0 10px; }
+.v1 .inset { padding: 4px 0 !important; border: 0; } .v1 .inset .stitle { font-size: 12px; font-weight: 400; }
+.v1 .tlink { display: block; margin-top: 12px; color: var(--color-foreground-muted); font-size: 12px; text-align: left; } .v1 .tlink:hover { color: var(--color-foreground); } .v1 .tlink:disabled { color: var(--color-foreground-subtle); cursor: default; }
+.v1 .pair { padding: 14px; } .v1 .pair > p, .v1 .pair ol { margin: 0 0 12px; color: var(--color-foreground-muted); font-size: 12px; line-height: 1.6; } .v1 .pair ol { padding-left: 20px; } .v1 .pair li + li { margin-top: 6px; }
+.v1 .ext { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--color-border-subtle); background: var(--color-background); }
+.v1 .ext b { display: block; font-weight: 550; } .v1 .ext small { display: block; color: var(--color-foreground-muted); font-size: 11.5px; }
+.v1 .ext .ok { color: var(--color-status-completed); } .v1 .ext > div { flex: 1; min-width: 0; }
+.v1 .fallback { border-top: 1px solid var(--color-border-subtle); padding-top: 12px; } .v1 .fallback p { margin: 0 0 10px; color: var(--color-foreground-muted); font-size: 12px; line-height: 2; }
+.v1 .code { margin: 0 0 10px; padding: 12px; background: var(--color-background-hover); border-radius: 7px; } .v1 .code output { display: block; font-family: var(--font-mono); font-size: 24px; letter-spacing: .25em; margin: 4px 0; } .v1 .code small { color: var(--color-foreground-muted); font-size: 11px; }
+.v1 .accent-row { align-items: flex-start; } .v1 .swatches { margin-top: 10px; }
+.v1 .swatch:has(input:checked) .d { box-shadow: 0 0 0 2px var(--color-surface-row), 0 0 0 4px var(--s); }
+
+/* ═════ 2–5 · Shared improved structure ═════ */
+.nx .rail { width: 172px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 0 8px 10px; border-right: 1px solid var(--color-border-subtle); background: var(--color-background-raised); }
+.nx .rail-title { display: flex; align-items: center; height: 52px; padding: 0 10px; margin-bottom: 4px; font-size: 13.5px; font-weight: 600; }
+.nx .rail [role=tab] { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; color: var(--color-foreground-muted); font-size: 13px; text-align: left; white-space: nowrap; transition: background 120ms, color 120ms; }
+.nx .rail [role=tab] svg { width: 15px; height: 15px; }
+.nx .rail [role=tab]:hover { background: var(--color-background-hover); color: var(--color-foreground); }
+.nx .rail [role=tab]:focus-visible, .nx .rail .demo-focus { outline: 2px solid var(--color-primary-hover); outline-offset: -2px; }
+.nx .ver { margin-top: auto; padding: 6px 10px; color: var(--color-foreground-subtle); font-size: 11.5px; }
+.nx .col { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--sheet-bg); }
+.nx .phead { display: flex; align-items: center; gap: 10px; height: 52px; flex: none; padding: 0 10px 0 24px; }
+.nx .phead h3 { flex: 1; margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.005em; }
+.nx .pbody { flex: 1; overflow-y: auto; padding: 0 24px 16px; display: flex; flex-direction: column; }
+.nx .pdesc { margin: 0 0 18px; max-width: 52ch; color: hsl(20 6% 66%); font-size: 13px; line-height: 1.5; }
+.nx .pfoot { margin-top: auto; padding-top: 22px; color: var(--color-foreground-subtle); font-size: 11.5px; display: flex; align-items: center; gap: 6px; }
+.nx .pfoot svg { width: 13px; height: 13px; }
+.nx .grp + .grp { margin-top: 20px; }
+.nx .cap { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; margin: 0 0 7px; padding: 0 2px; }
+.nx .cap > span { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: hsl(20 5% 58%); }
+.nx .cap .mini { height: 22px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--color-foreground-muted); border: 1px solid transparent; }
+.nx .cap .mini:hover:not(:disabled) { color: var(--color-foreground); background: var(--color-background-active); }
+.nx .cap .mini:disabled { cursor: default; color: var(--color-foreground-subtle); }
+.nx .card2 { border-radius: 10px; background: var(--color-surface-row); border: 1px solid var(--color-border-subtle); }
+.nx .row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: center; min-height: 46px; padding: 10px 14px; }
+.nx .row + .row { border-top: 1px solid var(--color-border-subtle); }
+.nx .row.click { cursor: pointer; } .nx .row.click:hover { background: var(--color-surface-row-hover); }
+.nx .card2 > .row:first-child { border-top-left-radius: 9px; border-top-right-radius: 9px; } .nx .card2 > .row:last-child { border-bottom-left-radius: 9px; border-bottom-right-radius: 9px; }
+.nx .rt { min-width: 0; }
+.nx .lab { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 520; line-height: 1.4; color: var(--color-foreground); }
+.nx .lab label { cursor: inherit; }
+.nx .hint { margin-top: 2px; max-width: 60ch; color: hsl(20 6% 62%); font-size: 12.5px; line-height: 1.45; }
+.nx .hint.err { color: var(--color-status-paused); }
+.nx .ctl { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.nx .below { grid-column: 1 / -1; margin-top: 10px; }
+.nx .row.folder .ctl { grid-row: 1; }
+.nx .row.folder .below { margin-top: 4px; }
+.nx .row.folder .val { margin: 0; padding: 7px 10px; border-radius: 7px; background: var(--color-background); border: 1px solid var(--color-border-subtle); }
+.v2 .row.folder .val, .v4 .row.folder .val { background: none; border: 0; padding: 0; }
+.nx select.sel { width: 150px; }
+.nx .keyf input { width: 156px; }
+.nx .stepwrap { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.nx .range { font-size: 10.5px; color: var(--color-foreground-subtle); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.nx .val { font-family: var(--font-mono); font-size: 12px; color: hsl(20 10% 78%); overflow-wrap: anywhere; line-height: 1.5; margin-top: 3px; }
+.nx .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 500 10.5px/17px inherit; font-family: "Inter Variable", Inter, sans-serif; vertical-align: 1px; }
+.nx .gfoot { margin: 7px 2px 0; max-width: 60ch; color: var(--color-foreground-subtle); font-size: 12px; line-height: 1.45; }
+.nx .steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 8px; }
+.nx .steps li { counter-increment: s; display: grid; grid-template-columns: 20px 1fr; gap: 10px; font-size: 12.5px; line-height: 1.5; color: hsl(20 8% 76%); }
+.nx .steps li::before { content: counter(s); display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--color-background-active); color: var(--color-foreground); font-size: 11px; font-weight: 600; }
+.nx .codebox { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: var(--color-background); border: 1px solid var(--color-border-subtle); }
+.nx .codebox output { font: 600 20px var(--font-mono); letter-spacing: .2em; flex: 1; }
+.nx .codebox small { color: var(--color-foreground-muted); font-size: 12px; }
+.nx .pending { display: flex; align-items: center; gap: 12px; }
+
+/* ═════ 2 · Clean list: no tiles, no cards, hairlines, stronger headers ═════ */
+.v2 .rail [role=tab][aria-selected=true] { color: var(--color-foreground); font-weight: 560; background: none; box-shadow: inset 2px 0 0 var(--color-primary-hover); border-radius: 0 7px 7px 0; }
+.v2 .rail [role=tab] svg { opacity: .8; }
+.v2 .phead h3 { font-size: 20px; }
+.v2 .pdesc { margin-bottom: 8px; }
+.v2 .grp + .grp, .v2 .grp { margin-top: 22px; }
+.v2 .cap { margin: 0; padding: 0 0 8px; border-bottom: 1px solid var(--color-border); }
+.v2 .cap > span { font-size: 14px; font-weight: 620; letter-spacing: 0; text-transform: none; color: var(--color-foreground); }
+.v2 .card2 { background: none; border: 0; border-radius: 0; }
+.v2 .row { padding: 13px 0; min-height: 56px; }
+.v2 .row.click:hover { background: none; } .v2 .row.click:hover .lab { color: #fff; }
+.v2 .row + .row { border-top-color: hsl(215 14% 13%); }
+.v2 .lab { font-size: 13.5px; font-weight: 540; }
+.v2 .gfoot { margin-left: 0; }
+
+/* ═════ 3 · Grouped with captions: compact rows, values right-aligned ═════ */
+.v3 .rail [role=tab][aria-selected=true] { background: var(--color-background-active); color: var(--color-foreground); }
+.v3 .rail [role=tab][aria-selected=true] svg { color: var(--color-primary-hover); }
+.v3 .row { min-height: 44px; padding: 9px 14px; }
+.v3 select.sel { width: auto; min-width: 0; max-width: 170px; border-color: transparent; background-color: transparent; text-align: right; direction: rtl; padding: 0 24px 0 8px; color: hsl(20 12% 84%); }
+.v3 select.sel option { direction: ltr; }
+.v3 select.sel:hover { background-color: var(--color-background-active); border-color: transparent; }
+
+/* ═════ 4 · macOS System Settings-like: inset grouped, filled selection ═════ */
+.v4 { --sheet-bg: hsl(215 22% 5.5%); }
+.v4 .rail { background: hsl(215 22% 7%); }
+.v4 .rail [role=tab] { gap: 9px; height: 30px; padding: 0 6px; font-size: 13px; color: hsl(20 12% 80%); }
+.v4 .rail [role=tab] .rt-ic { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; background: hsl(215 14% 22%); color: #fff; flex: none; }
+.v4 .rail [role=tab] .rt-ic svg { width: 12.5px; height: 12.5px; stroke-width: 2; }
+.v4 .rail [role=tab][aria-selected=true] { background: var(--color-primary); color: #fff; }
+.v4 .rail [role=tab][aria-selected=true] .rt-ic { background: rgb(255 255 255 / .22); }
+.v4 .phead { justify-content: flex-start; }
+.v4 .phead h3 { font-size: 15px; font-weight: 650; }
+.v4 .pdesc { font-size: 12.5px; }
+.v4 .cap { margin-bottom: 6px; padding-left: 12px; }
+.v4 .cap > span { font-size: 12px; letter-spacing: 0; text-transform: none; color: hsl(20 10% 74%); font-weight: 600; }
+.v4 .card2 { background: hsl(215 18% 10.5%); border: 0; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .035); }
+.v4 .row { min-height: 42px; padding: 9px 12px; }
+.v4 .row + .row { border-top: 0; }
+.v4 .row + .row::before { content: ""; position: absolute; left: 12px; right: 12px; top: 0; height: 1px; background: rgb(255 255 255 / .07); }
+.v4 .row.click:hover { background: hsl(215 18% 12.5%); }
+.v4 .lab { font-weight: 500; }
+.v4 .hint { font-size: 12px; color: hsl(20 6% 60%); }
+.v4 .gfoot { padding-left: 10px; font-size: 11.5px; }
+.v4 select.sel { width: auto; max-width: 170px; border: 0; background-color: hsl(215 14% 18%); box-shadow: 0 1px 0 rgb(255 255 255 / .05) inset; height: 24px; border-radius: 6px; padding: 0 24px 0 9px; }
+.v4 .btn { height: 24px; border: 0; background: hsl(215 14% 18%); border-radius: 6px; box-shadow: 0 1px 0 rgb(255 255 255 / .05) inset; }
+.v4 .btn:hover:not(:disabled) { background: hsl(215 14% 22%); }
+.v4 .btn.danger { background: hsl(0 30% 18%); }
+.v4 .keyf input { border: 0; background: hsl(215 14% 15%); height: 24px; border-radius: 6px; }
+.v4 .stepper { border: 0; background: hsl(215 14% 16%); } .v4 .stepper button { width: 24px; height: 24px; }
+
+/* ═════ 5 · Terminal accents: pixel/mono headers and rail, calm rows ═════ */
+.v5 .rail-title { font: 700 12px var(--font-mono); letter-spacing: .12em; text-transform: uppercase; gap: 8px; }
+.v5 .rail-title::before { content: ""; width: 8px; height: 12px; background: var(--color-primary-hover); }
+.v5 .rail [role=tab] { font: 500 11.5px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; border-radius: 3px; height: 32px; gap: 8px; }
+.v5 .rail [role=tab] svg { display: none; }
+.v5 .rail [role=tab]::before { content: "·"; width: 10px; color: var(--color-foreground-subtle); }
+.v5 .rail [role=tab][aria-selected=true] { background: color-mix(in srgb, var(--color-primary-muted) 55%, transparent); color: var(--color-foreground); box-shadow: inset 3px 0 0 var(--color-primary-hover); }
+.v5 .rail [role=tab][aria-selected=true]::before { content: "▸"; color: var(--color-primary-hover); }
+.v5 .rail [role=tab]:focus-visible, .v5 .rail .demo-focus { outline-style: dashed; }
+.v5 .ver { font: 11px var(--font-mono); }
+.v5 .phead h3 { display: flex; align-items: center; gap: 10px; font: 700 14px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.v5 .phead h3::before { content: ""; width: 12px; height: 12px; background: var(--accent-logo); box-shadow: inset 2px 2px 0 var(--accent-bevel-light), inset -2px -2px 0 var(--accent-bevel-dark); }
+.v5 .cap { justify-content: flex-start; margin-bottom: 8px; }
+.v5 .cap > span { font: 600 10.5px var(--font-mono); letter-spacing: .12em; color: hsl(20 6% 62%); }
+.v5 .cap > span::before { content: "// "; color: var(--color-primary-hover); }
+.v5 .cap::after { content: ""; flex: 1; height: 0; border-top: 1px dashed var(--color-border); order: 1; }
+.v5 .cap .mini { order: 2; font-family: var(--font-mono); font-size: 11px; }
+.v5 .card2 { border-radius: 4px; }
+.v5 .card2 > .row:first-child, .v5 .card2 > .row:last-child { border-radius: 3px; }
+.v5 .btn, .v5 select.sel, .v5 .keyf input, .v5 .stepper { border-radius: 4px; }
+.v5 .stepper output, .v5 select.sel { font-family: var(--font-mono); font-size: 12px; }
+.v5 .steps li::before { border-radius: 2px; font-family: var(--font-mono); }
+.v5 .range { font-family: var(--font-mono); }
+.v5 :focus-visible, .v5 .demo-focus { outline-offset: 1px; }
+.v5 .pfoot { font: 11px var(--font-mono); }
+</style>
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>SnagThis</span>DESIGN STUDIES / SETTINGS POLISH</div>
+    <h1>Make desktop Settings easier to read.</h1>
+    <p>Same sidebar sheet, same settings. These options change only the type, section headers, rows and rail. Option 1 is the sheet as it ships. Options 2 to 5 share the same copy rewrites, so you can compare the visual treatment on its own. Click an option or press <kbd>1</kbd>–<kbd>5</kbd>. Change sections with the rail or the buttons above the window. Every control works.</p>
+  </header>
+  <details class="diag" open>
+    <summary>What reads badly today <small>measured from the running app at <code>?gallery&amp;sheet=settings&amp;section=…</code></small></summary>
+    <ol>
+      <li><b>Two titles, 100px before content</b>The 51px “Settings” bar (13.5px/600) sits above the section title (16px/620). The first setting starts about 135px down the sheet, and the bar crosses above the rail.</li>
+      <li><b>Group headings are smaller than the labels under them</b>In Advanced and Updates, “Speed”, “File names” and “Online lookups” are 12.5px/600. The row labels under them are 13px/550 in the same colour, so the headings look like one more setting.</li>
+      <li><b>Icon tiles compete with the text</b>28px filled tiles appear on Downloads, App and Appearance, but not on Advanced, Updates or Chrome. The orange folder tile is the strongest colour in the sheet. The tiles push every label 40px to the right and repeat what the label already says.</li>
+      <li><b>Helper text is too close to label text</b>Labels are 13px and hints are 12px. Only weight and a 60% grey separate them. The Chrome pane sets status, steps, notes and the fallback in the same 12px grey at a 1.6–2 line height, so nothing stands out.</li>
+      <li><b>Controls sit in three different places</b>Folder buttons sit on the left under the path. Selects are 132px on the right. API key fields run the full width with the eye button outside. Update buttons sit on the left. Your eye has to jump between three columns.</li>
+      <li><b>Some actions look like helper text</b>“Report a site…”, “Clear temporary download data” and “Restore default speed and file names” are 12px grey text with no button styling. When disabled, the last one becomes a stray sentence (“Speed and file names use the defaults”).</li>
+      <li><b>Status lines have no labels</b>“You’re up to date.” sits between a switch and a button with nothing to say what it describes. “Chrome is connected…” is a paragraph, not a status. The version appears in both the rail footer and Updates.</li>
+      <li><b>Chrome pane shows setup when it is done</b>The pairing steps still show after Chrome is connected. “last seen just now” wraps onto its own line, and the fallback sentence wraps so “instead.” sits alone.</li>
+      <li><b>Short sections leave a lot of empty space</b>Downloads, App and Appearance end 35–55% of the way down the pane. Nothing sits at the bottom. “Changes save automatically” exists only for screen readers.</li>
+      <li><b>Paths look like helper text</b>The folder shows in 12px grey, the same as a hint, and is cut off after two lines. The default reads “Downloads/SnagThis (default)”, which looks like an explanation, not a value.</li>
+      <li><b>Steppers put the range first</b>“1–16 · more downloads share your connection” leads with the range. People read the numbers before the reason.</li>
+      <li><b>The rail looks heavier than the content</b>The rail and cards share the 8% surface, but the pane is 6.5%. Rail labels are 12.5px and content is 13px. The selected tab’s 2px bar is the only use of the accent.</li>
+    </ol>
+  </details>
+  <div class="picker" id="picker" role="group" aria-label="Settings polish options"></div>
+  <div class="toolbar">
+    <span>Section</span><div class="seg" id="secs"></div>
+    <span>Accent</span><div class="seg" id="accents"></div>
+    <span>Chrome</span><div class="seg" id="chromeState"></div>
+    <label><input type="checkbox" id="showFocus"> Show keyboard focus</label>
+  </div>
+  <div class="stage">
+    <div class="win" id="win">
+      <div class="top"><div class="lights"><i></i><i></i><i></i></div><img class="wordmark" src="../../../../apps/desktop/src/assets/snagthis-logo-title.svg" alt="SnagThis"><div class="paste"><svg class="i" viewBox="0 0 24 24"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8"/></svg>Paste a video link</div></div>
+      <div class="list" id="list"></div>
+      <div class="foot">2 downloading · 6.96 MB/s</div>
+      <div class="scrim"></div>
+      <div id="sheet"></div>
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+    <aside class="notes" id="notes" aria-live="polite"></aside>
+  </div>
+  <footer class="hub-footer"><p>Prototype only; nothing is saved. Settings, order and current copy come from <code>apps/desktop/src/components/settings/SettingsSheet.tsx</code>, <code>settingsSections.ts</code> and <code>apps/desktop/src/lib/strings.ts</code>. Tokens come from <code>apps/desktop/src/globals.css</code> and <code>packages/contracts/src/accents.js</code>.</p></footer>
+</main>
+<script>
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const P = {
+  folder: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4M8 21h8M10 7.5v5l4-2.5z"/>',
+  captions: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>',
+  bell: '<path d="M10.27 21a2 2 0 0 0 3.46 0M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"/>',
+  power: '<path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+  palette: '<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z"/>',
+  sliders: '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+  puzzle: '<path d="M15.39 4.39a1 1 0 0 0 1.68-.47 2.5 2.5 0 1 1 3.02 3.02 1 1 0 0 0-.47 1.68l1.67 1.67a2.41 2.41 0 0 1 0 3.42l-1.6 1.6a1 1 0 0 1-1.7-.48 2.5 2.5 0 1 0-3.21 3.21 1 1 0 0 1 .48 1.7l-1.6 1.6a2.41 2.41 0 0 1-3.42 0l-1.67-1.67a1 1 0 0 0-1.68.47 2.5 2.5 0 1 1-3.02-3.02 1 1 0 0 0 .47-1.68l-1.67-1.67a2.41 2.41 0 0 1 0-3.42l1.6-1.6a1 1 0 0 1 1.7.48 2.5 2.5 0 1 0 3.21-3.21 1 1 0 0 1-.48-1.7l1.6-1.6a2.41 2.41 0 0 1 3.42 0z"/>',
+  download: '<path d="M12 15V3M7 10l5 5 5-5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
+  app: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>', check: '<path d="M20 6 9 17l-5-5"/>', minus: '<path d="M5 12h14"/>', plus: '<path d="M5 12h14M12 5v14"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', eyeoff: '<path d="M10.7 5.1A10 10 0 0 1 22 12a13 13 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20M14.1 14.1a3 3 0 1 1-4.2-4.2"/>',
+  external: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>', cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/><path d="m9 14 2 2 4-4"/>',
+};
+const ic = (n, c = 'i') => `<svg class="${c}" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const ACCENTS = {
+  orange: { name: 'Orange', swatch: '#fa5d0e', primary: 'hsl(18 96% 40%)', strong: 'hsl(18 96% 36%)', hover: 'hsl(20 96% 52%)', muted: 'hsl(16 58% 16%)', logo: '#fa5d0e', light: '#ffb238', dark: '#bd3f00' },
+  cobalt: { name: 'Cobalt', swatch: '#3b7bff', primary: 'hsl(220 80% 50%)', strong: 'hsl(220 80% 45%)', hover: 'hsl(218 95% 63%)', muted: 'hsl(220 50% 18%)', logo: '#4a88ff', light: '#a3c6ff', dark: '#1d44b0' },
+  violet: { name: 'Violet', swatch: '#8b5cf6', primary: 'hsl(262 70% 54%)', strong: 'hsl(262 70% 48%)', hover: 'hsl(262 90% 70%)', muted: 'hsl(262 45% 20%)', logo: '#9b78ff', light: '#d0bcff', dark: '#5528b8' },
+  mint: { name: 'Mint', swatch: '#1fbf8a', primary: 'hsl(160 84% 28%)', strong: 'hsl(160 84% 24%)', hover: 'hsl(158 70% 50%)', muted: 'hsl(160 50% 13%)', logo: '#26d996', light: '#a4f3cc', dark: '#0d7a57' },
+  magenta: { name: 'Magenta', swatch: '#e8388e', primary: 'hsl(330 75% 46%)', strong: 'hsl(330 75% 41%)', hover: 'hsl(330 90% 64%)', muted: 'hsl(330 50% 18%)', logo: '#f550a0', light: '#ffb3d6', dark: '#9c1558' },
+};
+const SECTIONS = [
+  { id: 'chrome', title: 'Chrome extension', icon: 'puzzle', desc: 'Send videos from Chrome to this app.', desc2: 'Send videos from Chrome to SnagThis with one click.' },
+  { id: 'downloads', title: 'Downloads', icon: 'download', desc: 'Where videos go and which version you get.', desc2: 'Where videos are saved, and which version SnagThis picks.' },
+  { id: 'app', title: 'App', icon: 'app', desc: 'Notifications and start-up.', desc2: 'Notifications, and whether SnagThis opens when you log in.' },
+  { id: 'appearance', title: 'Appearance', icon: 'palette', desc: 'How SnagThis looks.', desc2: 'How SnagThis looks here and in the Chrome extension.' },
+  { id: 'advanced', title: 'Advanced', icon: 'sliders', desc: 'Speed, file names and online lookups.', desc2: 'Speed, file names and online lookups. The defaults suit most people.' },
+  { id: 'about', title: 'Updates & support', icon: 'info', desc: 'Version, updates and diagnostics.', desc2: 'Keep SnagThis up to date, and get help when a site doesn’t work.' },
+];
+const OPTIONS = [
+  { id: 'v1', name: 'Current', blurb: 'The sheet as it ships today: baseline' },
+  { id: 'v2', name: 'Clean list', blurb: 'No tiles or cards; hairlines, strong headers' },
+  { id: 'v3', name: 'Grouped with captions', blurb: 'Small caps captions, compact rows, values right' },
+  { id: 'v4', name: 'macOS Settings-like', blurb: 'Inset grouped rows, filled rail selection' },
+  { id: 'v5', name: 'Terminal accents', blurb: 'Pixel/mono headers and rail, calm rows' },
+];
+const LANGS = [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']];
+const QUALITY = [['best', 'Best'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']];
+const NAMING = [['title', 'Video title'], ['resource', 'Name from link'], ['custom', 'My own name']];
+const NAMING_HINT = { title: 'Uses the video’s title from the page', resource: 'Uses the file name in the video link', custom: 'Uses the name below for every new download' };
+const FOLDERS = [null, '/Volumes/Media Archive/Videos/Saved from the web/SnagThis', '~/Movies/SnagThis'];
+const DEFAULTS = { atonce: 1, conns: 8, autostart: true, naming: 'title', custom: '' };
+const S = { v: 'v1', sec: 'downloads', accent: 'orange', chrome: 'connected', focus: false, folderIx: 0, quality: 'best', subs: 'none', notify: true, login: false, atonce: 1, conns: 8, autostart: true, naming: 'title', custom: '', tmdb: '', subdl: '', reveal: {}, upd: true, code: false, confirm: false, saved: '' };
+let savedTimer = 0, toastTimer = 0;
+
+/* ── Controls ── */
+const savedMark = k => S.saved === k ? `<span class="saved">${ic('check')}Saved</span>` : '';
+const sel = (k, opts) => `<select class="sel" id="f-${k}" data-k="${k}">${opts.map(([v, l]) => `<option value="${v}"${S[k] === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+const sw = (k, label) => `<button type="button" class="sw" role="switch" id="f-${k}" data-k="${k}" aria-checked="${!!S[k]}" aria-label="${esc(label)}"></button>`;
+const stepper = (k, label) => `<div class="stepper" role="group" aria-label="${label}"><button type="button" data-step="-1" data-k="${k}" id="f-${k}-dn" aria-label="Decrease ${label}"${S[k] <= 1 ? ' disabled' : ''}>${ic('minus')}</button><output id="f-${k}">${S[k]}</output><button type="button" data-step="1" data-k="${k}" id="f-${k}-up" aria-label="Increase ${label}"${S[k] >= 16 ? ' disabled' : ''}>${ic('plus')}</button></div>`;
+const keyField = (k, label, placeholder = 'Not set', secret = true) => `<div class="keyf"><input id="f-${k}" data-k="${k}" type="${secret && !S.reveal[k] ? 'password' : 'text'}" placeholder="${placeholder}" value="${esc(S[k])}" autocomplete="off" spellcheck="false" aria-label="${label}">${secret ? `<button type="button" class="eye" data-act="reveal" data-k="${k}" id="f-${k}-eye" aria-label="${S.reveal[k] ? 'Hide' : 'Show'} key: ${label}" aria-pressed="${!!S.reveal[k]}">${ic(S.reveal[k] ? 'eyeoff' : 'eye')}</button>` : ''}</div>`;
+const btn = (label, act, cls = '', extra = '') => `<button type="button" class="btn ${cls}" data-act="${act}" id="b-${act}"${extra}>${label}</button>`;
+const swatches = () => `<div class="swatches" role="radiogroup" aria-label="Accent colour">${Object.entries(ACCENTS).map(([id, a]) => `<label class="swatch" style="--s:${a.swatch}"><input type="radio" name="acc" value="${id}" id="f-acc-${id}"${S.accent === id ? ' checked' : ''}><span class="d">${ic('check')}</span><span>${a.name}</span></label>`).join('')}</div>`;
+const folderPath = () => FOLDERS[S.folderIx];
+const advDefaults = () => Object.entries(DEFAULTS).every(([k, v]) => S[k] === v);
+const ext = { name: 'SnagThis for Chrome', meta: 'Web Store build · connected Sep 25 · seen just now' };
+
+/* ── 1 · Current: same markup order and copy as SettingsSheet.tsx ── */
+function currentPane(sec) {
+  const prow = (inner, cls = '') => `<div class="prow ${cls}">${inner}</div>`;
+  const st = (k, title, hint, forId = true) => `<div class="st"><span class="stitle">${forId ? `<label for="f-${k}">${title}</label>` : title}${savedMark(k)}</span>${hint ? `<small>${hint}</small>` : ''}</div>`;
+  const tile = (n, warm) => `<span class="tile${warm ? ' warm' : ''}">${ic(n)}</span>`;
+  if (sec === 'chrome') {
+    const on = S.chrome === 'connected';
+    return `<div class="card pair"><p>${on ? 'Chrome is connected. Keep SnagThis open while downloading.' : 'Connect the extension once to send videos from Chrome to this app.'}</p>
+      ${on ? (S.confirm ? `<div class="ext"><div><b>Disconnect SnagThis for Chrome?</b><small>Chrome will stop sending downloads here until you connect it again. Finished files and your library stay.</small></div>${btn('Cancel', 'cancel-disc')}${btn('Disconnect', 'disconnect', 'danger')}</div>` : `<div class="ext"><span class="ok">${ic('check')}</span><div><b>${ext.name}</b><small>${ext.meta}</small></div>${btn('Disconnect', 'ask-disc', 'danger')}</div>`) + '<p>Each browser gets its own key, so disconnecting one leaves the others.</p>' : ''}
+      <ol><li>In Chrome, click Extensions (the puzzle icon) → SnagThis → Connect.</li><li>SnagThis comes forward with four digits. If Chrome shows the same four, choose Allow.</li></ol>
+      <div class="fallback"><p>Another browser, or SnagThis didn’t come forward? Connect with a code instead.</p>${S.code ? `<div class="code"><small>Paste this code in the SnagThis extension.</small><output>483921</output><small>Expires in 4:52. Keep SnagThis open.</small></div>${btn('Copy code', 'copy-code')}` : btn('Show connection code', 'show-code')}</div>
+      ${on ? '' : '<button type="button" class="tlink" data-act="install">Need the extension? Add to Chrome</button>'}</div>`;
+  }
+  if (sec === 'downloads') return `<div class="card">
+      ${prow(`${tile('folder', true)}<div class="st"><span class="stitle">Save videos to${savedMark('folder')}</span><span class="path">${esc(folderPath() || 'Downloads/SnagThis (default)')}</span></div><div class="acts">${btn('Change…', 'change-folder')}${btn('Open', 'open-folder')}</div>`, 'folder')}
+      ${prow(`${tile('monitor')}${st('quality', 'Preferred quality', 'When a video offers a choice')}${sel('quality', QUALITY)}`)}
+      ${prow(`${tile('captions')}${st('subs', 'Subtitles', 'Saved with the video if offered')}${sel('subs', LANGS)}`)}</div>`;
+  if (sec === 'app') return `<div class="card">${prow(`${tile('bell')}${st('notify', 'Tell me when a download finishes')}${sw('notify', 'Tell me when a download finishes')}`)}${prow(`${tile('power')}${st('login', 'Start SnagThis when I log in')}${sw('login', 'Start SnagThis when I log in')}`)}</div>`;
+  if (sec === 'appearance') return `<div class="card">${prow(`${tile('palette')}<div class="st"><span class="stitle">Accent colour${savedMark('accent')}</span><small>Buttons, focus and highlights use this colour.</small>${swatches()}</div>`, 'accent-row')}</div>`;
+  if (sec === 'advanced') {
+    const d = advDefaults();
+    return `<div class="card">
+      <div class="sub"><h4>Speed</h4>
+        ${prow(`${st('atonce', 'Downloads at once', '1–16 · more downloads share your connection', false)}${stepper('atonce', 'Downloads at once')}`)}
+        ${prow(`${st('conns', 'Connections per download', '1–16 · more can speed up segmented videos', false)}${stepper('conns', 'Connections per download')}`)}
+        ${prow(`${st('autostart', 'Start new downloads right away', 'When off, new downloads wait until you start them')}${sw('autostart', 'Start new downloads right away')}`)}</div>
+      <div class="sub"><h4>File names</h4>
+        ${prow(`${st('naming', 'File naming', NAMING_HINT[S.naming])}${sel('naming', NAMING)}`)}
+        ${S.naming === 'custom' ? prow(`<span class="stitle"><label for="f-custom">Name for new downloads</label>${savedMark('custom')}</span><small>Repeats get (2), (3)… Existing files are not renamed.</small>${keyField('custom', 'Name for new downloads', 'e.g. Lecture', false)}`, 'stack') : ''}
+        <button type="button" class="tlink" data-act="restore"${d ? ' disabled' : ''}>${d ? 'Speed and file names use the defaults' : 'Restore default speed and file names'}</button></div>
+      <div class="sub"><h4>Online lookups</h4>
+        ${prow(`<span class="stitle"><label for="f-tmdb">TMDB API key</label>${savedMark('tmdb')}</span><small>Optional · adds posters and movie or TV names to files</small>${keyField('tmdb', 'TMDB API key')}`, 'stack')}
+        ${prow(`<span class="stitle"><label for="f-subdl">SubDL API key</label>${savedMark('subdl')}</span><small>Optional · finds subtitles a site doesn’t provide</small>${keyField('subdl', 'SubDL API key')}`, 'stack')}</div></div>`;
+  }
+  return `<div class="card">
+    <div class="sub"><h4>Updates</h4>${prow(`${st('upd', 'Check for updates on startup')}${sw('upd', 'Check for updates on startup')}`, 'inset')}<p>You’re up to date.</p><div class="acts">${btn('Check for updates', 'check-updates')}</div></div>
+    <div class="sub"><h4>Diagnostics</h4><div class="acts">${btn('Export support bundle', 'export')}${btn('Copy diagnostics', 'copy-diag')}</div>
+      <button type="button" class="tlink" data-act="report">Report a site that didn’t work</button><button type="button" class="tlink" data-act="clear">Clear temporary download data</button></div></div>`;
+}
+
+/* ── 2–5 · Improved: same structure, rewritten copy ── */
+function row({ k, label, hint, ctl = '', below = '', cls = '', forId = true, err }) {
+  return `<div class="row ${cls}"${cls.includes('click') ? ` data-row="${k}"` : ''}><div class="rt"><div class="lab">${forId ? `<label for="f-${k}">${label}</label>` : `<span>${label}</span>`}${savedMark(k)}</div>${hint ? `<div class="hint${err ? ' err' : ''}">${hint}</div>` : ''}</div>${ctl ? `<div class="ctl">${ctl}</div>` : ''}${below ? `<div class="below">${below}</div>` : ''}</div>`;
+}
+const grp = (cap, rows, { action = '', foot = '' } = {}) => `<section class="grp"><div class="cap"><span>${cap}</span>${action}</div><div class="card2">${rows}</div>${foot ? `<p class="gfoot">${foot}</p>` : ''}</section>`;
+const wbr = p => esc(p).replace(/\//g, '/<wbr>');
+function improvedPane(sec) {
+  if (sec === 'chrome') {
+    const on = S.chrome === 'connected', waiting = S.chrome === 'waiting';
+    const status = on
+      ? (S.confirm
+        ? row({ k: 'ext', forId: false, label: 'Disconnect SnagThis for Chrome?', hint: 'Chrome stops sending downloads here until you connect it again. Finished files and your library stay.', ctl: btn('Cancel', 'cancel-disc') + btn('Disconnect', 'disconnect', 'danger') })
+        : row({ k: 'ext', forId: false, label: `<span class="gdot"></span>Connected to ${ext.name}`, hint: ext.meta, ctl: btn('Disconnect', 'ask-disc', 'danger') }))
+      : waiting
+        ? row({ k: 'ext', forId: false, label: 'Chrome is asking to connect', hint: 'Check that Chrome shows the same four digits · expires in 1:42', ctl: '<span class="digits"><i>4</i><i>7</i><i>1</i><i>9</i></span>' + btn('Review', 'review', 'primary') })
+        : row({ k: 'ext', forId: false, label: '<span class="gdot off"></span>Chrome isn’t connected', hint: 'Connect once, then send any video from Chrome with one click.', ctl: btn(`Add to Chrome ${ic('external')}`, 'install') });
+    const steps = `<ol class="steps"><li>In Chrome, click Extensions (the puzzle icon), then SnagThis, then Connect.</li><li>SnagThis comes forward with four digits. If Chrome shows the same four, choose Allow.</li></ol>`;
+    const codeRow = row({ k: 'code', forId: false, label: 'Use a code instead', hint: 'For another browser, or if SnagThis didn’t come forward.', ctl: S.code ? btn('Copy code', 'copy-code') : btn('Show code', 'show-code'),
+      below: S.code ? '<div class="codebox"><output>483 921</output><small>Paste it in the SnagThis popup · expires in 4:52</small></div>' : '' });
+    return grp('Status', status, { foot: on ? 'Each browser gets its own key, so disconnecting one leaves the others connected.' : '' })
+      + grp(on ? 'Connect another browser' : 'Connect Chrome', row({ k: 'steps', forId: false, label: 'One-click connect', hint: '', below: steps }) + codeRow);
+  }
+  if (sec === 'downloads') {
+    const p = folderPath();
+    return grp('Saving', row({ k: 'folder', forId: false, label: 'Save videos to', cls: 'folder', ctl: btn('Change…', 'change-folder') + btn('Open folder', 'open-folder'), below: `<div class="val" id="save-path">${p ? wbr(p) : '~/Downloads/<wbr>SnagThis<span class="tag">Default</span>'}</div>` }))
+      + grp('Quality', row({ k: 'quality', label: 'Preferred quality', hint: 'Used when a video comes in more than one size.', ctl: sel('quality', QUALITY) })
+        + row({ k: 'subs', label: 'Subtitles', hint: 'Saved next to the video when the site has them.', ctl: sel('subs', LANGS) }));
+  }
+  if (sec === 'app') return grp('Notifications', row({ k: 'notify', label: 'Tell me when a download finishes', hint: 'Shows a system notification with the video’s name.', ctl: sw('notify', 'Tell me when a download finishes'), cls: 'click' }))
+    + grp('Start-up', row({ k: 'login', label: 'Start SnagThis when I log in', hint: 'Chrome can only send videos while SnagThis is open.', ctl: sw('login', 'Start SnagThis when I log in'), cls: 'click' }));
+  if (sec === 'appearance') return grp('Accent colour', row({ k: 'accent', forId: false, label: ACCENTS[S.accent].name, hint: 'Used for buttons, focus rings and highlights. The Chrome extension follows it too.', below: swatches() }));
+  if (sec === 'advanced') {
+    const d = advDefaults();
+    return grp('Speed', row({ k: 'atonce', forId: false, label: 'Downloads at once', hint: 'Others wait their turn. More at once share your bandwidth.', ctl: `<div class="stepwrap">${stepper('atonce', 'Downloads at once')}<span class="range">1–16</span></div>` })
+        + row({ k: 'conns', forId: false, label: 'Connections per download', hint: 'More can speed up videos that arrive in segments.', ctl: `<div class="stepwrap">${stepper('conns', 'Connections per download')}<span class="range">1–16</span></div>` })
+        + row({ k: 'autostart', label: 'Start new downloads right away', hint: 'When off, new downloads wait until you start them.', ctl: sw('autostart', 'Start new downloads right away'), cls: 'click' }))
+      + grp('File names', row({ k: 'naming', label: 'Name new files by', hint: NAMING_HINT[S.naming] + '.', ctl: sel('naming', NAMING) })
+        + (S.naming === 'custom' ? row({ k: 'custom', label: 'Name for new downloads', hint: 'Repeats get (2), (3)… Existing files are not renamed.', ctl: keyField('custom', 'Name for new downloads', 'e.g. Lecture', false) }) : ''),
+        { action: `<button type="button" class="mini" data-act="restore" id="b-restore"${d ? ' disabled' : ''}>${d ? 'Using defaults' : 'Restore defaults'}</button>`, foot: d ? '' : 'Restore defaults resets speed and file names. Your API keys stay.' })
+      + grp('Online lookups', row({ k: 'tmdb', label: 'TMDB key', hint: 'Optional. Adds posters and proper movie or TV names.', ctl: keyField('tmdb', 'TMDB key') })
+        + row({ k: 'subdl', label: 'SubDL key', hint: 'Optional. Finds subtitles when a site has none.', ctl: keyField('subdl', 'SubDL key') }));
+  }
+  return grp('Updates', row({ k: 'version', forId: false, label: 'SnagThis 2.0.44', hint: 'Up to date · checked just now', ctl: btn('Check now', 'check-updates') })
+      + row({ k: 'upd', label: 'Check automatically', hint: 'Looks for a new version each time SnagThis starts.', ctl: sw('upd', 'Check automatically'), cls: 'click' }))
+    + grp('Support', row({ k: 'bundle', forId: false, label: 'Support bundle', hint: 'Logs and settings for a bug report. Keys are left out.', ctl: btn('Export…', 'export') + btn('Copy', 'copy-diag') })
+      + row({ k: 'report', forId: false, label: 'A site didn’t work?', hint: 'Opens a GitHub issue with a summary. No links or file names.', ctl: btn(`Report ${ic('external')}`, 'report') })
+      + row({ k: 'clear', forId: false, label: 'Temporary download data', hint: 'Parts left behind by cancelled or failed downloads.', ctl: btn('Clear', 'clear') }));
+}
+
+function renderSheet() {
+  const cur = SECTIONS.find(s => s.id === S.sec);
+  const tabs = SECTIONS.map(s => `<button type="button" role="tab" id="tab-${s.id}" aria-selected="${s.id === S.sec}" tabindex="${s.id === S.sec ? 0 : -1}" data-sec="${s.id}">${S.v === 'v4' ? `<span class="rt-ic">${ic(s.icon)}</span>` : ic(s.icon)}${s.title}</button>`).join('');
+  const x = `<button type="button" class="xbtn" aria-label="Close settings" data-act="close">${ic('x')}</button>`;
+  if (S.v === 'v1') {
+    $('#sheet').innerHTML = `<div class="sheet v1"><div class="head"><h2>Settings</h2>${x}</div><div class="split"><nav class="rail" role="tablist" aria-orientation="vertical">${tabs}<span class="ver">SnagThis 2.0.44</span></nav>
+      <div class="pane" role="tabpanel"><h3 class="ptitle">${cur.title}</h3><p class="pdesc">${cur.desc}</p>${currentPane(S.sec)}</div></div></div>`;
+  } else {
+    const foot = `<p class="pfoot">${ic('check')}Changes save as you make them.</p>`;
+    $('#sheet').innerHTML = `<div class="sheet nx ${S.v}"><div class="split"><nav class="rail" role="tablist" aria-orientation="vertical"><div class="rail-title">Settings</div>${tabs}<span class="ver">SnagThis 2.0.44</span></nav>
+      <div class="col"><div class="phead"><h3>${cur.title}</h3>${x}</div><div class="pbody" role="tabpanel"><p class="pdesc">${cur.desc2}</p>${improvedPane(S.sec)}${foot}</div></div></div></div>`;
+  }
+  if (S.focus) {
+    $(`#tab-${S.sec}`)?.classList.add('demo-focus');
+    const first = $('#sheet [role=tabpanel] :is(select, .sw, .btn, input:not([type=radio]), .stepper button:not(:disabled))') || $('#sheet .swatch');
+    (first?.matches('input') && first.closest('.swatch') ? first.closest('.swatch') : first)?.classList.add('demo-focus');
+    $('#sheet .swatch:has(input:checked)')?.classList.add('demo-focus');
+  }
+}
+
+const COPY = {
+  chrome: [['Chrome is connected. Keep SnagThis open while downloading.', 'Status row: ● Connected to SnagThis for Chrome'], ['Setup steps always shown', 'Moved under “Connect another browser”'], ['Another browser, or SnagThis didn’t come forward? Connect with a code instead.', 'Use a code instead: “For another browser, or if SnagThis didn’t come forward.”'], ['Show connection code', 'Show code']],
+  downloads: [['Downloads/SnagThis (default)', '~/Downloads/SnagThis  [Default]'], ['Open', 'Open folder'], ['When a video offers a choice', 'Used when a video comes in more than one size.'], ['Saved with the video if offered', 'Saved next to the video when the site has them.']],
+  app: [['(no hint)', 'Shows a system notification with the video’s name.'], ['(no hint)', 'Chrome can only send videos while SnagThis is open.'], ['Notifications and start-up.', 'Notifications, and whether SnagThis opens when you log in.']],
+  appearance: [['How SnagThis looks.', 'How SnagThis looks here and in the Chrome extension.'], ['Buttons, focus and highlights use this colour.', 'Used for buttons, focus rings and highlights. The Chrome extension follows it too.']],
+  advanced: [['1–16 · more downloads share your connection', 'Others wait their turn. More at once share your bandwidth.  (1–16 under the stepper)'], ['File naming', 'Name new files by'], ['Restore default speed and file names (text link)', 'Restore defaults, a button beside the File names caption'], ['Speed and file names use the defaults', 'Using defaults (disabled button)'], ['TMDB API key · Optional · adds posters and movie or TV names to files', 'TMDB key · Optional. Adds posters and proper movie or TV names.']],
+  about: [['Check for updates on startup', 'Check automatically'], ['You’re up to date.', 'SnagThis 2.0.44 · Up to date · checked just now'], ['Check for updates', 'Check now'], ['Export support bundle / Copy diagnostics', 'Support bundle: Export… / Copy'], ['Report a site that didn’t work (text link)', 'A site didn’t work? · Report ↗'], ['Clear temporary download data (text link)', 'Temporary download data · Clear']],
+};
+const ISSUES = { chrome: [4, 7, 8], downloads: [1, 3, 5, 9, 10], app: [3, 9], appearance: [3, 9], advanced: [2, 5, 6, 11], about: [2, 6, 7] };
+const NOTES = {
+  v1: { h: '1 · Current', p: 'Sidebar sections with Grouped-cards rows, as in settings.css and globals.css today.', li: [] },
+  v2: { h: '2 · Clean list', p: 'Removes all the boxes. Rows sit straight on the pane, separated by hairlines, with the label on the left and one control column on the right.', li: ['No icon tiles and no cards; group headers are 14px/620 over a full-width rule', 'Section title 20px; one merged header row (no separate “Settings” bar)', 'Rail: selected tab is text plus accent bar, no fill', 'Most open; groups rely on whitespace alone, so long sections (Advanced) lose some structure'] },
+  v3: { h: '3 · Grouped with captions', p: 'Small uppercase captions name each group. Rows are compact, hints are 12.5px under the labels, and values line up on the right.', li: ['Every section is grouped the same way, so Downloads and Advanced read alike', 'Selects show just the value, right-aligned, with a chevron; a box appears on hover', 'Restore defaults becomes a small button in the File names caption', 'Rail: filled selection with an accent icon', '“Changes save as you make them” anchors the empty space at the bottom'] },
+  v4: { h: '4 · macOS System Settings-like', p: 'Inset grouped rows on a slightly lighter fill, with inset separators. The rail shows small icon squares, and the selected tab is filled with the accent.', li: ['Feels native on macOS; compact 24px controls', 'Uses the accent most strongly (rail fill), which suits Cobalt or Violet more than Orange', 'Group captions in sentence case; notes under a group read like macOS footers', 'Can feel borrowed next to the pixel logo and the extension popup'] },
+  v5: { h: '5 · Terminal accents', p: 'Option 3’s calm rows, with the brand’s pixel and mono style in the rail, section title and group captions.', li: ['Rail and captions use mono uppercase; the section title has a bevelled pixel square (the logo’s play tile)', 'Values like the path, step numbers and select values use mono', 'Radius drops to 4px; focus rings are dashed in the rail', 'Most “SnagThis”, but mono uppercase is harder to scan than sentence case'] },
+};
+
+function renderNotes() {
+  const n = NOTES[S.v];
+  const rewrites = S.v === 'v1'
+    ? `<h3>Issues visible in this section</h3><ul>${ISSUES[S.sec].map(i => `<li>D${i} · ${$$('.diag li b')[i - 1].firstChild.textContent}</li>`).join('')}</ul>`
+    : `<h3>Copy rewrites in this section (options 2–5)</h3>${(COPY[S.sec] || []).map(([a, b]) => `<div class="rw"><s>${esc(a)}</s><ins>${esc(b)}</ins></div>`).join('')}`;
+  $('#notes').innerHTML = `<h2>${n.h}</h2><p>${n.p}</p>${n.li.length ? `<ul>${n.li.map(l => `<li>${l}</li>`).join('')}</ul>` : ''}${rewrites}
+    <div class="rec"><b>Recommendation: 3 · Grouped with captions</b>, plus the mono values from option 5 (path, numbers). It fixes D1–D12 with the fewest new ideas: one header row, consistent groups, a single control column, real buttons and labelled status rows.</div>`;
+}
+function renderHub() {
+  $('#picker').innerHTML = OPTIONS.map((o, i) => `<button type="button" data-v="${o.id}" aria-pressed="${S.v === o.id}"><span><em>${i + 1}</em>${o.name}</span><small>${o.blurb}</small></button>`).join('');
+  $('#secs').innerHTML = SECTIONS.map(s => `<button type="button" data-sec="${s.id}" aria-pressed="${S.sec === s.id}">${s.title}</button>`).join('');
+  $('#accents').innerHTML = Object.entries(ACCENTS).map(([id, a]) => `<button type="button" data-accent="${id}" aria-pressed="${S.accent === id}"><i class="dot" style="--s:${a.swatch}"></i>${a.name}</button>`).join('');
+  $('#chromeState').innerHTML = [['connected', 'Connected'], ['waiting', 'Request waiting'], ['off', 'Not connected']].map(([id, l]) => `<button type="button" data-chrome="${id}" aria-pressed="${S.chrome === id}">${l}</button>`).join('');
+}
+function applyAccent() {
+  const a = ACCENTS[S.accent], r = document.documentElement.style;
+  [['--color-primary', a.primary], ['--color-primary-strong', a.strong], ['--color-primary-hover', a.hover], ['--color-primary-muted', a.muted], ['--accent-logo', a.logo], ['--accent-bevel-light', a.light], ['--accent-bevel-dark', a.dark]].forEach(([k, v]) => r.setProperty(k, v));
+}
+function render(keepFocus) {
+  const id = keepFocus ? document.activeElement?.id : '';
+  applyAccent(); renderHub(); renderSheet(); renderNotes();
+  if (id && document.getElementById(id)) document.getElementById(id).focus();
+}
+function flash(k) { S.saved = k; clearTimeout(savedTimer); savedTimer = setTimeout(() => { S.saved = ''; render(true); }, 1800); }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1800); }
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, [data-row], label.swatch');
+  if (!t) return;
+  if (t.dataset.v) { S.v = t.dataset.v; return render(); }
+  if (t.dataset.sec) { S.sec = t.dataset.sec; S.confirm = false; return render(t.getAttribute('role') === 'tab'); }
+  if (t.dataset.accent) { S.accent = t.dataset.accent; return render(); }
+  if (t.dataset.chrome) { S.chrome = t.dataset.chrome; S.confirm = false; S.sec = 'chrome'; return render(); }
+  if (t.dataset.step) { const k = t.dataset.k; S[k] = Math.max(1, Math.min(16, S[k] + Number(t.dataset.step))); flash(k); return render(true); }
+  if (t.classList.contains('sw')) { e.stopPropagation(); S[t.dataset.k] = !S[t.dataset.k]; flash(t.dataset.k); return render(true); }
+  if (t.dataset.row) { if (e.target.closest('.ctl')) return; const k = t.dataset.row; S[k] = !S[k]; flash(k); return render(); }
+  const act = t.dataset.act;
+  const acts = {
+    'change-folder': () => { S.folderIx = (S.folderIx + 1) % FOLDERS.length; flash('folder'); },
+    'open-folder': () => toast('Opens the folder in Finder'), 'show-code': () => { S.code = true; }, 'copy-code': () => toast('Code copied'),
+    'ask-disc': () => { S.confirm = true; }, 'cancel-disc': () => { S.confirm = false; }, disconnect: () => { S.chrome = 'off'; S.confirm = false; toast('Chrome disconnected. Its key no longer works.'); },
+    install: () => toast('Opens the Chrome Web Store'), review: () => toast('Opens “Chrome wants to connect”'), 'check-updates': () => toast('You’re up to date.'), export: () => toast('Support bundle saved'), 'copy-diag': () => toast('Diagnostics copied'),
+    report: () => toast('Opens a GitHub issue in your browser'), clear: () => toast('Temporary download data cleared'), close: () => toast('Closes Settings (Esc)'),
+    restore: () => { Object.assign(S, DEFAULTS); flash('restore'); toast('Speed and file names restored'); }, reveal: () => { S.reveal[t.dataset.k] = !S.reveal[t.dataset.k]; },
+  };
+  if (acts[act]) { acts[act](); render(true); }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.name === 'acc') { S.accent = t.value; flash('accent'); return render(true); }
+  if (t.id === 'showFocus') { S.focus = t.checked; return render(); }
+  if (t.dataset.k) { S[t.dataset.k] = t.value; flash(t.dataset.k); render(true); }
+});
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, select')) return;
+  if (e.target.getAttribute('role') === 'tab' && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+    e.preventDefault(); const i = SECTIONS.findIndex(s => s.id === S.sec), L = SECTIONS.length - 1;
+    S.sec = SECTIONS[{ ArrowDown: i === L ? 0 : i + 1, ArrowUp: i === 0 ? L : i - 1, Home: 0, End: L }[e.key]].id; render(); $(`#tab-${S.sec}`).focus(); return;
+  }
+  const n = Number(e.key); if (n >= 1 && n <= OPTIONS.length && !e.metaKey && !e.ctrlKey) { S.v = OPTIONS[n - 1].id; render(); }
+});
+
+const THUMBS = ['linear-gradient(135deg,#3c5a2a,#9bb56a 60%,#2d3b22)', 'linear-gradient(135deg,#5a3a1c,#c08a3e 55%,#2a1a10)', 'linear-gradient(135deg,#2a3440,#7c8a96 55%,#1a2028)', 'linear-gradient(135deg,#1c2230,#3a4660)', 'linear-gradient(135deg,#3c5a2a,#b9c98a 60%,#2d3b22)', 'linear-gradient(135deg,#5a3a1c,#e0b070 55%,#2a1a10)'];
+$('#list').innerHTML = [['Big Buck Bunny — director’s cut', 'Link expired. Reopen the page'], ['Sintel — an open movie by Blender', '34% · 5 min left'], ['Tears of Steel', 'Finishing up…'], ['Behind the scenes — the art of Sintel', '18% · 1 min left'], ['Big Buck Bunny — full film', 'Waiting · starts next'], ['Sintel — concept art', 'Waiting']]
+  .map(([t, s], i) => `<div class="vrow"><div class="thumb" style="background:${THUMBS[i]}"></div><div class="txt"><b>${t}</b><span>${s}</span><div class="lane">${Array.from({ length: 12 }, (_, j) => `<i class="${j < 12 - i * 2 ? 'd' : ''}"></i>`).join('')}</div></div></div>`).join('');
+const q = new URLSearchParams(location.search);
+if (q.get('v')) S.v = q.get('v'); if (q.get('section')) S.sec = q.get('section'); if (q.has('focus')) { S.focus = true; $('#showFocus').checked = true; } if (q.get('accent')) S.accent = q.get('accent'); if (q.get('chrome')) S.chrome = q.get('chrome');
+render();
+</script>
+</body>
+</html>

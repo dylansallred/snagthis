@@ -1,36 +1,133 @@
-/* Settings · Sidebar sections (owner choice: settings-refresh option 2). */
-.settings-sheet.settings-sidebar { width: 640px; max-width: 100vw; }
+/*
+ * Settings · Sidebar sections (settings-refresh option 2) with the owner-chosen macOS Settings-like
+ * polish (docs/design/prototypes/settings-polish option 4): one header row, a rail whose selected
+ * section is filled with the accent, captioned inset-grouped cards, one right-hand control column.
+ */
+.settings-sheet.settings-sidebar {
+  --settings-pane: hsl(215 22% 5.5%);
+  --settings-card: hsl(215 18% 10.5%);
+  --settings-card-hover: hsl(215 18% 12.5%);
+  --settings-control: hsl(215 14% 18%);
+  --settings-control-hover: hsl(215 14% 22%);
+  --settings-hint: hsl(20 6% 60%);
+  width: 640px; max-width: 100vw;
+}
 .settings-split { flex: 1; display: flex; min-height: 0; }
 
-.settings-rail { width: 172px; flex: none; display: flex; flex-direction: column; padding: 10px 8px; border-right: 1px solid var(--color-border-subtle); background: var(--color-background-raised); overflow-y: auto; }
+/* Rail: the "Settings" title shares the pane header's 52px row. */
+.settings-rail { width: 172px; flex: none; display: flex; flex-direction: column; padding: 0 8px 10px; border-right: 1px solid var(--color-border-subtle); background: hsl(215 22% 7%); overflow-y: auto; }
+.settings-rail-title { display: flex; align-items: center; height: 52px; flex: none; margin: 0 0 4px; padding: 0 6px; font-size: 13.5px; font-weight: 600; }
 .settings-rail [role="tablist"] { display: flex; flex-direction: column; gap: 2px; }
-.settings-rail [role="tab"] { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border: 0; border-radius: 7px; background: none; color: var(--color-foreground-muted); font-size: 12.5px; text-align: left; white-space: nowrap; cursor: pointer; }
-.settings-rail [role="tab"] svg { width: 15px; height: 15px; flex: none; stroke-width: 1.75; }
+.settings-rail [role="tab"] { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 6px; border: 0; border-radius: 7px; background: none; color: hsl(20 12% 80%); font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; transition: background-color 120ms, color 120ms; }
+.settings-tab-icon { display: grid; place-items: center; width: 20px; height: 20px; flex: none; border-radius: 5px; background: hsl(215 14% 22%); color: #fff; transition: background-color 120ms; }
+.settings-tab-icon svg { width: 12.5px; height: 12.5px; stroke-width: 2; }
 .settings-rail [role="tab"]:hover { background: var(--color-background-hover); color: var(--color-foreground); }
-.settings-rail [role="tab"][aria-selected="true"] { background: var(--color-background-active); color: var(--color-foreground); box-shadow: inset 2px 0 0 var(--color-primary-hover); }
+.settings-rail [role="tab"][aria-selected="true"] { background: var(--color-primary); color: #fff; }
+.settings-rail [role="tab"][aria-selected="true"] .settings-tab-icon { background: rgb(255 255 255 / .22); }
 .settings-rail [role="tab"]:focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: -2px; }
-.settings-version { margin-top: auto; padding: 6px 10px; color: var(--color-foreground-subtle); font-size: 11px; }
+.settings-rail [role="tab"][aria-selected="true"]:focus-visible { outline-color: #fff; }
+.settings-version { margin-top: auto; padding: 6px; color: var(--color-foreground-subtle); font-size: 11.5px; }
 
-.settings-pane { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 16px; background: hsl(215 22% 6.5%); }
+/* Pane: section title and close button in one header row, then a scrolling body. */
+.settings-column { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--settings-pane); }
+.settings-pane-head { display: flex; align-items: center; gap: 10px; height: 52px; flex: none; padding: 0 10px 0 24px; }
+.settings-pane-title { flex: 1; min-width: 0; margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.005em; }
+.settings-close { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border: 0; border-radius: 7px; background: none; color: var(--color-foreground-muted); }
+.settings-close:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.settings-close svg { width: 15px; height: 15px; stroke-width: 1.75; }
+.settings-pane { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 0 24px 16px; }
 .settings-pane:focus-visible { outline-offset: -2px; }
-.settings-pane-title { margin: 18px 16px 2px; font-size: 16px; font-weight: 620; }
-.settings-pane-description { margin: 0 16px 14px; color: var(--color-foreground-muted); font-size: 12px; }
+.settings-pane-description { margin: 0 0 18px; max-width: 52ch; color: hsl(20 6% 66%); font-size: 12.5px; line-height: 1.5; }
+.settings-autosave { display: flex; align-items: center; gap: 6px; margin: auto 0 0; padding-top: 22px; color: var(--color-foreground-subtle); font-size: 11.5px; }
+.settings-autosave svg { width: 13px; height: 13px; stroke-width: 2; }
 
-/* Titled sub-groups inside one card (Advanced, Updates & support). */
-.settings-pane .settings-group > .advanced-group { padding: 12px; }
-.settings-pane .settings-group > .advanced-group:first-child { border-top: 0; }
-.settings-pane .advanced-group h4 { margin: 0 0 4px; font-size: 12.5px; font-weight: 600; }
-.settings-pane .advanced-group > h4 + .preference-row { border-top: 0; padding-top: 2px; }
+/* Captioned groups of inset rows. */
+.settings-set + .settings-set { margin-top: 20px; }
+.settings-set-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; margin: 0 0 6px; padding: 0 2px 0 12px; }
+.settings-set-head h4 { margin: 0; font-size: 12px; font-weight: 600; color: hsl(20 10% 74%); }
+.settings-set-head > :last-child:not(h4) { margin-left: auto; }
+.settings-set-head .saved-mark { margin-left: auto; }
+.settings-set-foot { margin: 7px 2px 0; padding-left: 10px; max-width: 60ch; color: var(--color-foreground-subtle); font-size: 11.5px; line-height: 1.45; }
+.settings-card { margin: 0; padding: 0; list-style: none; border-radius: 10px; background: var(--settings-card); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .035); }
+.settings-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: center; min-height: 42px; padding: 9px 12px; }
+.settings-row + .settings-row::before { content: ""; position: absolute; left: 12px; right: 12px; top: 0; height: 1px; background: rgb(255 255 255 / .07); }
+.settings-card > .settings-row:first-child { border-top-left-radius: 10px; border-top-right-radius: 10px; }
+.settings-card > .settings-row:last-child { border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }
+.settings-row.clickable { cursor: pointer; }
+.settings-row.clickable:hover { background: var(--settings-card-hover); }
+.settings-row-text { min-width: 0; }
+.settings-row .setting-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 500; line-height: 1.4; color: var(--color-foreground); }
+.settings-row .setting-title label, .settings-row .setting-title > span:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; font: inherit; cursor: inherit; }
+.settings-row-hint { margin: 2px 0 0; max-width: 60ch; color: var(--settings-hint); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.settings-row-hint.field-error { color: var(--color-status-paused); }
+.settings-row-control { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.settings-row-below { grid-column: 1 / -1; margin-top: 10px; min-width: 0; }
+
+/* Controls: compact 24px fills, one right-aligned column. */
+.settings-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: var(--settings-control); box-shadow: inset 0 1px 0 rgb(255 255 255 / .05); color: var(--color-foreground); font-size: 12.5px; white-space: nowrap; flex: none; cursor: pointer; }
+.settings-button:hover:not(:disabled) { background: var(--settings-control-hover); }
+.settings-button:disabled { color: var(--color-foreground-subtle); cursor: default; }
+.settings-button svg { width: 13px; height: 13px; stroke-width: 1.75; }
+.settings-button.danger { background: hsl(0 30% 18%); color: var(--color-destructive); }
+.settings-button.danger:hover:not(:disabled) { background: hsl(0 34% 22%); }
+.settings-button.primary { background: var(--color-primary); color: #fff; font-weight: 600; }
+.settings-button.primary:hover:not(:disabled) { background: var(--color-primary-strong); }
+.settings-button.mini { height: 22px; padding: 0 8px; background: none; box-shadow: none; color: var(--color-foreground-muted); font-size: 12px; }
+.settings-button.mini:hover:not(:disabled) { background: var(--color-background-active); color: var(--color-foreground); }
+.settings-button.mini:disabled { background: none; }
+.settings-row select { height: 24px; width: auto; max-width: 170px; padding: 0 24px 0 9px; border: 0; border-radius: 6px; background: var(--settings-control) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a39d99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center; box-shadow: inset 0 1px 0 rgb(255 255 255 / .05); appearance: none; color: var(--color-foreground); font-size: 12.5px; cursor: pointer; }
+.settings-row select:hover { background-color: var(--settings-control-hover); }
+.settings-row .key-field { display: flex; align-items: center; gap: 4px; }
+.settings-row .key-field input { width: 156px; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: hsl(215 14% 15%); color: var(--color-foreground); font-size: 12.5px; min-width: 0; }
+.settings-row .key-field input::placeholder { color: var(--color-foreground-subtle); }
+.settings-row .key-field input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--color-status-paused); }
+.key-reveal { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--color-foreground-muted); }
+.key-reveal:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.key-reveal svg { width: 14px; height: 14px; stroke-width: 1.75; }
+.settings-stepper { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.settings-row .stepper { border: 0; background: hsl(215 14% 16%); border-radius: 6px; }
+.settings-row .stepper:has(input[aria-invalid="true"]) { box-shadow: inset 0 0 0 1px var(--color-status-paused); }
+.settings-row .stepper button { width: 24px; height: 24px; }
+.settings-row .stepper button:disabled { opacity: .35; cursor: default; }
+.settings-row .stepper input { width: 32px; height: 24px; padding: 0; border: 0; background: none; color: var(--color-foreground); text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.settings-range { font-size: 10.5px; line-height: 1; letter-spacing: .02em; color: var(--color-foreground-subtle); font-variant-numeric: tabular-nums; }
+.settings-sheet :is(.settings-button, .settings-close, .key-reveal, .settings-row select, .settings-row input):focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: 2px; }
+.settings-row .stepper input:focus-visible { outline: none; }
+.settings-row .stepper:has(input:focus-visible) { outline: 2px solid var(--color-primary-hover); outline-offset: 2px; }
+
+/* Downloads: the folder is a value, in mono, with a Default tag. */
+.settings-row.settings-folder .settings-row-control { grid-row: 1; }
+.settings-row.settings-folder .settings-row-below { margin-top: 4px; }
+.settings-path { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: hsl(20 10% 78%); overflow-wrap: anywhere; }
+.settings-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 500 10.5px/17px var(--font-sans, "Inter Variable", Inter, sans-serif); vertical-align: 1px; }
+
+/* Chrome extension: status rows, steps and the code fallback. */
+.status-dot { display: inline-block; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--color-status-completed); box-shadow: 0 0 0 3px hsl(145 62% 46% / .18); }
+.status-dot.off { background: var(--color-foreground-subtle); box-shadow: 0 0 0 3px hsl(20 5% 52% / .15); }
+.settings-pairing-waiting .settings-row-control { gap: 10px; }
+/* The Review banner steps aside while its Approve dialog is up. */
+body:has(.pairing-dialog[data-state="open"]) .settings-pairing-waiting { display: none; }
+.settings-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.settings-steps li { counter-increment: step; display: grid; grid-template-columns: 20px 1fr; gap: 10px; color: hsl(20 8% 76%); font-size: 12.5px; line-height: 1.5; }
+.settings-steps li::before { content: counter(step); display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--color-background-active); color: var(--color-foreground); font-size: 11px; font-weight: 600; }
+.settings-code { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: var(--color-background); border: 1px solid var(--color-border-subtle); }
+.settings-code output { flex: none; font: 600 20px var(--font-mono); letter-spacing: .2em; user-select: all; }
+.settings-code small { color: var(--color-foreground-muted); font-size: 12px; line-height: 1.45; }
+.settings-row progress { width: 100%; height: 4px; accent-color: var(--color-primary); }
+.settings-row .release-notes { margin-top: 6px; }
 
 /* Accent colour swatches. */
-.preference-row.accent-row { align-items: flex-start; }
-.accent-swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.accent-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
 .accent-swatch { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; width: 58px; padding: 6px 0 5px; border-radius: 8px; color: var(--color-foreground-muted); font-size: 11.5px; cursor: pointer; }
-.accent-swatch:hover { background: var(--color-background-hover); color: var(--color-foreground); }
+.accent-swatch:hover { background: var(--settings-card-hover); color: var(--color-foreground); }
 .accent-swatch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
 .accent-dot { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14); color: #fff; }
 .accent-dot svg { width: 14px; height: 14px; stroke-width: 2.75; opacity: 0; }
 .accent-swatch:has(input:checked) { color: var(--color-foreground); }
-.accent-swatch:has(input:checked) .accent-dot { box-shadow: 0 0 0 2px var(--color-surface-row), 0 0 0 4px var(--swatch); }
+.accent-swatch:has(input:checked) .accent-dot { box-shadow: 0 0 0 2px var(--settings-card), 0 0 0 4px var(--swatch); }
 .accent-swatch:has(input:checked) .accent-dot svg { opacity: 1; }
 .accent-swatch:has(input:focus-visible) { outline: 2px solid var(--color-primary-hover); outline-offset: 0; }
+
+/* The sheet itself takes focus when it opens; its outline drew a stray accent line down the
+   left edge. Keyboard focus is shown on the controls inside instead. */
+.settings-sheet:focus, .settings-sheet:focus-visible { outline: none; }

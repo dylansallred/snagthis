@@ -39,8 +39,17 @@
     close: '<path d="m5 5 10 10M15 5 5 15"/>', more: '<circle cx="4.5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/>', down: '<path d="m5 8 5 5 5-5"/>', check: '<path d="m4 10 4 4 8-8"/>',
     // Lucide Palette, matching the desktop's Appearance icon.
     palette: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>',
+    // Lucide icons for the Settings tabs and rows, matching the desktop's sections.
+    section: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
+    plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+    info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+    app: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>',
+    alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+    refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+    lifebuoy: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>',
   };
-  function icon(name) { const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); node.setAttribute('viewBox', ['gear', 'palette'].includes(name) ? '0 0 24 24' : '0 0 20 20'); node.setAttribute('aria-hidden', 'true'); node.classList.add('icon'); node.innerHTML = icons[name] || icons.play; return node; }
+  const lucide = new Set(['gear', 'palette', 'section', 'plug', 'info', 'app', 'alert', 'refresh', 'lifebuoy']);
+  function icon(name) { const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); node.setAttribute('viewBox', lucide.has(name) ? '0 0 24 24' : '0 0 20 20'); node.setAttribute('aria-hidden', 'true'); node.classList.add('icon'); node.innerHTML = icons[name] || icons.play; return node; }
   function el(tag, className = '', text = '') { const node = document.createElement(tag); if (className) node.className = className; if (text) node.textContent = text; return node; }
   function qualityMark(label) {
     const quality = rows.formatQualityBadge(label);
@@ -115,6 +124,7 @@
       const badge = el('span', 'count-badge', String(activeCount)); badge.setAttribute('aria-hidden', 'true'); openButton.append(badge);
       openButton.setAttribute('aria-label', `Open SnagThis, ${activeCount} active download${activeCount === 1 ? '' : 's'}`);
     } else openButton.removeAttribute('aria-label');
+    syncSettings();
   }
   function updateThumb(thumb, row) {
     const localPoster = model.resolveThumbnailUrl(row.thumbnailUrl, apiBase);
@@ -268,7 +278,16 @@
     }
     // Its URL only works inside the page's own Service Worker; a download would fail as "expired".
     if (result && !job && (item.serviceWorkerServed || choice.serviceWorkerServed)) Object.assign(result, { state: 'external', tone: 'muted', statusLine: 'This video only plays inside its own player', action: null });
+    // DRM-protected: never a download, desktop handoff or preview; only an explanation.
+    if (result && (item.drm || choice.drm)) Object.assign(result, { state: 'protected', tone: 'muted', statusLine: SnagThisStrings.interpolate('drmProtected', { site: protectedSite(item) }), action: { id: 'drm-why', label: strings.drmWhy, style: '' } });
     return { row: result, choice, jobId };
+  }
+  function protectedSite(item) { return SnagThisDetection.protectedSiteName(item) || strings.drmThisSite; }
+  function showProtectedHelp(item) {
+    const content = openSheet(strings.drmHelpTitle); const pad = el('div', 'sheet-pad');
+    pad.append(el('p', '', SnagThisStrings.interpolate('drmHelpBody', { site: protectedSite(item) })), el('p', '', strings.drmHelpOthers));
+    const link = el('button', 'text-link', 'Troubleshooting'); link.type = 'button'; link.addEventListener('click', () => external(HELP));
+    pad.append(link); content.append(pad);
   }
   function youtubeItem(item) { return item.mediaKind === 'youtube-page' || Boolean(SnagThisDetection.youtubeId(item.url)); }
   function youtubeLink(item) { const id = SnagThisDetection.youtubeId(item.url) || SnagThisDetection.youtubeId(item.sourcePageUrl); return id ? `https://www.youtube.com/watch?v=${id}` : item.url; }
@@ -503,6 +522,7 @@
   async function handleAction(current) {
     const { item, row, jobId } = current;
     if (row.action.id === 'copy-link') { await copyLink(item); return; }
+    if (row.action.id === 'drm-why') { showProtectedHelp(item); return; }
     if (isDemo) { if (row.action.id === 'play') { showDemoVideo(item); return; } SnagThisDemo.act(item.id, row.action.id); queue = SnagThisDemo.state.queue; renderRows(); return; }
     if (row.action.id === 'use-desktop') { useDesktop(item); return; }
     if (row.source.backend === 'browser') {
@@ -567,7 +587,8 @@
     pad.append(action('Open Chrome downloads', () => external('chrome://downloads/'), 'primary')); content.append(pad);
   }
   // A short popup grows while a menu or sheet is open so neither is clipped.
-  function syncPopupHeight(menuNeed = 0) { $('popup').style.minHeight = $('sheet').open ? '430px' : menuNeed ? `${Math.min(560, Math.max(300, menuNeed))}px` : ''; }
+  // Settings keeps the height of its tallest tab so switching tabs never resizes Chrome's popup.
+  function syncPopupHeight(menuNeed = 0) { $('popup').style.minHeight = $('sheet').open ? `${$('sheet').dataset.view === 'settings' && settingsHeight ? settingsHeight : 430}px` : menuNeed ? `${Math.min(560, Math.max(300, menuNeed))}px` : ''; }
   function closeMenu(restoreFocus = true) {
     stopSample('close');
     const menu = $('menu');
@@ -605,10 +626,12 @@
     syncPopupHeight(anchor.bottom + height + 6 - popupTop);
     const bounds = $('popup').getBoundingClientRect();
     const minTop = Math.max(0, bounds.top) + 6; const bottom = bounds.bottom - 6;
-    menu.style.maxHeight = `${Math.max(0, bottom - minTop)}px`;
     const below = anchor.bottom + height <= bottom; const above = anchor.top - height >= minTop;
     const top = below || !above ? Math.max(minTop, Math.min(anchor.bottom, bottom - height)) : anchor.top - height;
     menu.style.top = `${top}px`;
+    // Cap the menu at the space below where it actually opens, so a long menu (quality plus
+    // many audio tracks) scrolls inside the popup instead of running past its bottom edge.
+    menu.style.maxHeight = `${Math.max(0, bottom - top)}px`;
     menu.style.transformOrigin = `${Math.max(0, anchor.x - Number.parseFloat(menu.style.left))}px ${!below && above ? '100%' : '0'}`;
     menu.animate(reducedMotion.matches ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: reducedMotion.matches ? 80 : 140, easing: 'ease-out' });
     menu.querySelector('button')?.focus({ preventScroll: true });
@@ -733,7 +756,8 @@
     const storeYoutube = storeBuild && youtubeItem(item);
     if (storeYoutube) menuItem(menu, 'Copy link', () => copyLink(item));
     menuItem(menu, 'Rename', () => showRename(item));
-    menuItem(menu, 'Hide', async () => { const ids = (item.detectedStreams || [item]).map(value => value.id); if (isDemo) mediaItems = mediaItems.filter(value => value.id !== item.id); else await message({ cmd: 'HIDE_MEDIA', tabId: activeTab.id, mediaIds: ids }); renderRows(); await refresh(); });
+    menuItem(menu, 'Hide', async () => { const ids = [...new Set([item.id, ...(item.detectedStreams || []).map(value => value.id)])]; if (isDemo) mediaItems = mediaItems.filter(value => value.id !== item.id); else await message({ cmd: 'HIDE_MEDIA', tabId: activeTab.id, mediaIds: ids }); renderRows(); await refresh(); });
+    if (item.drm) { menu.append(el('hr')); menuItem(menu, 'Show all detected streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); }); fitMenu(menu); return; }
     menuItem(menu, 'Preview', () => preview(item));
     if (!item.serviceWorkerServed && (!jobId || (job?.backend === 'browser' && ['failed', 'completed', 'cancelled'].includes(job.queueStatus))) && browserSupported(model.selectMedia(item, preferences, selected.get(item.id)))) menuItem(menu, 'Download with desktop', () => useDesktop(item));
     if (!jobId && !storeYoutube) {
@@ -773,7 +797,7 @@
     $('sheet').addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); }, { once: true });
     video.play().catch(() => {});
   }
-  function openSheet(title) { closeMenu(); clearInterval(pairingTick); delete $('sheet').dataset.view; $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); if (!$('sheet').open) $('sheet').showModal(); syncPopupHeight(); syncThumbPreviews(); return $('sheet-content'); }
+  function openSheet(title) { closeMenu(); clearInterval(pairingTick); delete $('sheet').dataset.view; $('sheet-link').hidden = true; $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); if (!$('sheet').open) $('sheet').showModal(); syncPopupHeight(); syncThumbPreviews(); return $('sheet-content'); }
   function showProblem(row) {
     const content = openSheet('Video details'); const pad = el('div', 'sheet-pad');
     const youtube = SnagThisDetection.youtubeId(row.source.sourcePageUrl) || SnagThisDetection.youtubeId(row.source.url || row.source.mediaUrl);
@@ -800,31 +824,56 @@
     const note = el('p', 'help-note', 'Some sites protect their videos. See '); note.append(link, '.');
     help.querySelector('p').after(note); content.append(help);
   }
-  /* ── One-click pairing (docs/design/prototypes/pairing option 2). The worker owns the request;
-   * this sheet shows its public state and the same four digits SnagThis shows. ── */
+  /* ── One-click pairing (owner pick: docs/design/prototypes/pairing-polish option 4 · Cartridge).
+   * The worker owns the request; this sheet shows its public state and the same four digits
+   * SnagThis shows, in one pixel-bevel housing with a 12-pip countdown (one pip per 10 s). ── */
   const PAIRING_KEY = 'snagthis:pairing';
   let pairingTick = null; let disconnectedNotice = false;
+  const PAIR_PIPS = 12; const PAIR_PIP_MS = 10000;
   const pairingCopy = {
-    expired: 'No one allowed this in SnagThis within 2 minutes, so nothing was connected.',
-    denied: 'SnagThis chose Deny. Chrome is not connected.',
-    conflict: 'Something else asked to connect at the same moment, so SnagThis cancelled both requests.',
-    cancelled: 'This connection request was cancelled. Nothing was connected.',
-    blocked: 'SnagThis denied this browser less than an hour ago, so it can’t ask again yet. Use a code to connect now.',
-    limited: 'Too many connection requests. Wait a few minutes, or use a code instead.',
-    offline: 'Could not reach SnagThis. Open the desktop app, then try again.',
-    failed: 'SnagThis couldn’t finish connecting. Try again, or use a code instead.',
+    expired: ['Timed out', 'Nothing was connected.'],
+    denied: ['Not connected', 'SnagThis chose Deny. Chrome can ask again in an hour.'],
+    blocked: ['Not connected', 'SnagThis chose Deny less than an hour ago, so Chrome can’t ask again yet.'],
+    conflict: ['Two requests at once', 'Something else asked to connect at the same moment, so SnagThis cancelled both.'],
+    cancelled: ['Cancelled', 'Nothing was connected.'],
+    limited: ['Too many requests', 'Wait a few minutes, then try again.'],
+    offline: ['SnagThis isn’t reachable', 'Open the desktop app, then try again.'],
+    failed: ['Couldn’t connect', 'SnagThis couldn’t finish connecting.'],
   };
+  /** The four digits in one frame built like the logo's bevel button; `code` empty draws a blank housing. */
   function pairingDigits(code, tone = 'hot') {
-    const box = el('div', `pair-digits ${tone}`); box.setAttribute('role', 'img'); box.setAttribute('aria-label', `Match code ${[...code].join(' ')}`); box.dataset.code = code;
-    for (const digit of code) { const cell = el('span', 'pair-digit'); cell.setAttribute('aria-hidden', 'true'); cell.append(pixel.text(digit, 6)); box.append(cell); }
+    const box = el('div', `pair-cart ${tone}`);
+    if (code) { box.classList.add('pair-digits'); box.dataset.code = code; box.setAttribute('role', 'img'); box.setAttribute('aria-label', `Match code ${[...code].join(' ')}`); } else box.setAttribute('aria-hidden', 'true');
+    (code ? [...code] : ['', '', '', '']).forEach((digit, index) => { const cell = el('span', 'pair-digit'); cell.setAttribute('aria-hidden', 'true'); cell.style.setProperty('--i', index); if (digit) cell.append(pixel.text(digit, 6)); box.append(cell); });
     return box;
   }
+  const pipsGone = remaining => Math.min(PAIR_PIPS, Math.max(0, PAIR_PIPS - Math.ceil(Math.max(0, remaining) / PAIR_PIP_MS)));
+  function pairingPips(tone = '') {
+    const row = el('div', `pair-pips ${tone}`); row.setAttribute('aria-hidden', 'true');
+    for (let index = 0; index < PAIR_PIPS; index++) row.append(el('i', 'pair-pip'));
+    return row;
+  }
+  function drawPips(row, remaining) { const gone = pipsGone(remaining); [...row.children].forEach((pip, index) => { pip.className = `pair-pip${index < gone ? ' gone' : index === gone ? ' now' : ''}`; }); }
+  // Screen readers hear the countdown only at 1:00 and 0:15; the ticking clock is hidden from them.
+  const countdownNote = seconds => (seconds <= 15 ? '15 seconds left to choose Allow in SnagThis.' : seconds <= 60 ? '1 minute left to choose Allow in SnagThis.' : '');
   const clock = ms => { const seconds = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; };
   function pairingSheetOpen() { return $('sheet').open && $('sheet').dataset.view === 'pairing'; }
-  function pairingSheet() { const content = openSheet('Connect SnagThis'); $('sheet').dataset.view = 'pairing'; clearInterval(pairingTick); return content; }
-  function codeLink() { const link = el('button', 'text-link pair-code-link', 'Use a code instead'); link.type = 'button'; link.addEventListener('click', () => { if (!isDemo) message({ cmd: 'PAIR_CANCEL' }).catch(() => {}); showCodePairing(); }); return link; }
+  // Unpacked copies get a quiet header chip instead of a leading note; the store build shows none.
+  function devBuild() { return isDemo ? new URLSearchParams(location.search).get('build') !== 'store' : !chrome.runtime.getManifest().update_url; }
+  function pairingDevChip() {
+    const header = $('sheet').querySelector('.sheet-header'); header.querySelector('.pair-devchip')?.remove();
+    if (!devBuild()) return;
+    const chip = el('span', 'pair-devchip', 'DEV BUILD'); chip.title = 'Unpacked copy. SnagThis will label it Not Web Store.'; header.querySelector('h2').after(chip);
+  }
+  function pairingSheet() { const content = openSheet('Connect SnagThis'); $('sheet').dataset.view = 'pairing'; clearInterval(pairingTick); pairingDevChip(); return content; }
+  function codeLink() { const link = el('button', 'text-link pair-code-link', 'Use a code instead'); link.type = 'button'; link.addEventListener('click', useCode); return link; }
+  function useCode() { if (!isDemo) message({ cmd: 'PAIR_CANCEL' }).catch(() => {}); showCodePairing(); }
+  function pairingFoot(lead, label) {
+    const foot = el('div', 'pair-foot'); const link = el('button', 'pair-foot-link', label); link.type = 'button'; link.addEventListener('click', useCode);
+    foot.append(lead, link); return foot;
+  }
   async function showPairing() {
-    if (isDemo) { renderPairing({ status: 'waiting', matchCode: '4719', expiresAt: Date.now() + 118000 }); return; }
+    if (isDemo) { renderPairing({ status: 'waiting', matchCode: '4719', expiresAt: Date.now() + 112000 }); return; }
     disconnectedNotice = false;
     renderPairing({ status: 'starting' });
     try { const result = await message({ cmd: 'PAIR_START', tabId: activeTab?.id, apiBase }); renderPairing(result?.state || { status: 'failed' }); }
@@ -832,41 +881,63 @@
   }
   function renderPairing(state) {
     if (state?.status === 'connected') { celebrateConnection(); return; }
-    const content = pairingSheet(); const pad = el('div', 'sheet-pad pair-pad'); const status = state?.status || 'failed';
-    if (!isDemo && !chrome.runtime.getManifest().update_url) pad.append(el('p', 'pair-hint', 'Developer copy (unpacked). SnagThis will say it isn’t the Web Store build.'));
-    if (status === 'starting') {
-      pad.append(el('p', '', 'Asking SnagThis to connect…'), el('div', 'pair-wait', '')); pad.lastChild.append(el('span', 'pair-spin'), document.createTextNode('Getting your four digits'));
-    } else if (status === 'waiting') {
-      const opening = Date.now() - (state.startedAt || 0) < 1500;
-      const lead = el('p', ''); lead.append(opening ? 'Opening SnagThis… ' : 'SnagThis opened on this computer. ', 'Check that it shows ', el('strong', '', [...state.matchCode].join(' ')), ', then choose ', el('strong', '', 'Allow'), ' there.');
-      const wait = el('div', 'pair-wait'); wait.setAttribute('role', 'status'); const tick = el('span', 'pair-tick', clock(state.expiresAt - Date.now()));
-      wait.append(el('span', 'pair-spin'), document.createTextNode('Waiting for you to allow it in SnagThis… '), tick);
-      pairingTick = setInterval(() => { tick.textContent = clock(state.expiresAt - Date.now()); }, 1000);
-      const shield = el('div', 'pair-shield'); shield.append(icon('check'), el('span', '', 'No code to type. Nothing connects until you choose Allow in the SnagThis window.'));
-      const actions = el('div', 'sheet-actions pair-actions');
-      actions.append(action('Open SnagThis again', () => { if (!isDemo) message({ cmd: 'PAIR_OPEN_APP' }).catch(() => {}); }, 'bordered'), action('Cancel', async () => { if (!isDemo) await message({ cmd: 'PAIR_CANCEL' }).catch(() => {}); $('sheet').close(); }));
-      pad.append(lead, pairingDigits(state.matchCode), wait, shield, actions, codeLink());
+    const status = state?.status || 'failed';
+    // The same waiting request can arrive twice (reply + storage change); keep the sheet steady.
+    if (status === 'waiting' && state.requestId && pairingSheetOpen() && $('sheet').dataset.pairRequest === state.requestId) return;
+    const content = pairingSheet(); const pad = el('div', 'sheet-pad pair-pad'); const center = el('div', 'pair-center'); pad.append(center);
+    if (status === 'waiting' && state.requestId) $('sheet').dataset.pairRequest = state.requestId; else delete $('sheet').dataset.pairRequest;
+    if (status === 'starting' || status === 'waiting') {
+      const say = el('p', 'pair-say'); say.append('Then choose ', el('b', '', 'Allow'), ' there.');
+      const live = el('div', 'sr-only'); live.setAttribute('role', 'status');
+      const line = el('div', 'pair-status'); const lead = el('span', '');
+      if (status === 'starting') {
+        lead.textContent = 'Asking SnagThis for four digits…'; live.textContent = 'Asking SnagThis to connect.'; line.append(lead);
+        center.append(el('p', 'pair-kicker', 'Match in SnagThis'), pairingDigits('', 'off'), say, live, pairingPips('idle'), line);
+      } else {
+        const opening = () => Date.now() - (state.startedAt || 0) < 1500;
+        const sep = el('span', '', '·'); sep.setAttribute('aria-hidden', 'true'); const tick = el('span', 'pair-tick'); tick.setAttribute('aria-hidden', 'true'); line.append(lead, sep, tick);
+        const pips = pairingPips();
+        live.textContent = opening() ? 'Opening SnagThis. Check that it shows the same digits.' : 'Waiting for you to choose Allow in SnagThis.';
+        const actions = el('div', 'sheet-actions pair-actions');
+        actions.append(action('Show SnagThis', () => { if (!isDemo) message({ cmd: 'PAIR_OPEN_APP' }).catch(() => {}); }, 'bordered'), action('Cancel', async () => { if (!isDemo) await message({ cmd: 'PAIR_CANCEL' }).catch(() => {}); $('sheet').close(); }));
+        center.append(el('p', 'pair-kicker', 'Match in SnagThis'), pairingDigits(state.matchCode), say, live, pips, line, actions);
+        let note = '';
+        const update = () => {
+          const remaining = state.expiresAt - Date.now();
+          lead.textContent = opening() ? 'Opening SnagThis…' : 'Waiting for Allow'; tick.textContent = clock(remaining); drawPips(pips, remaining);
+          const next = countdownNote(Math.ceil(remaining / 1000)); if (next !== note) { if (note || next) live.textContent = next; note = next; }
+        };
+        note = countdownNote(Math.ceil((state.expiresAt - Date.now()) / 1000)); update();
+        pairingTick = setInterval(update, 1000);
+      }
+      pad.append(pairingFoot('SnagThis didn’t open? ', 'Use a code'));
     } else {
-      if (state.matchCode) pad.append(pairingDigits(state.matchCode, status === 'expired' ? 'plain' : 'bad'));
-      const errorText = el('p', 'sheet-error pair-error', pairingCopy[status] || pairingCopy.failed); errorText.setAttribute('role', 'alert'); pad.append(errorText);
-      if (status === 'denied') pad.append(el('p', '', 'If the digits didn’t match, something else may have asked. To connect now, use a code instead.'));
-      if (status === 'conflict') pad.append(el('p', '', 'Try again. If it keeps happening, check the extensions installed in Chrome.'));
+      const [title, body] = pairingCopy[status] || pairingCopy.failed;
+      const refused = ['blocked', 'denied'].includes(status);
+      center.append(pairingDigits(state.matchCode || '', 'off'));
+      const heading = el('p', 'pair-state-title', title); heading.setAttribute('role', 'alert');
       const actions = el('div', 'sheet-actions pair-actions');
-      if (!['blocked', 'denied'].includes(status)) actions.append(action('Try again', async () => { if (!isDemo) await message({ cmd: 'PAIR_ACK' }).catch(() => {}); showPairing(); }, 'primary'));
-      actions.append(codeLink()); pad.append(actions);
+      // One clear primary: a refused extension can only connect with a code for now; anything else can try again.
+      if (refused) actions.append(action('Use a code', useCode, 'primary'));
+      else actions.append(action('Try again', async () => { if (!isDemo) await message({ cmd: 'PAIR_ACK' }).catch(() => {}); showPairing(); }, 'primary'));
+      actions.append(action('Close', () => $('sheet').close()));
+      center.append(heading, el('p', 'pair-state-body', body), actions);
+      if (!refused) pad.append(pairingFoot('Or ', 'use a code'));
       if (!isDemo) message({ cmd: 'PAIR_ACK' }).catch(() => {});
     }
     content.append(pad);
   }
   // Chrome closes this popup when SnagThis takes focus, so the next opening celebrates once.
   async function celebrateConnection() {
-    const content = openSheet('Connected'); $('sheet').dataset.view = 'connected'; clearInterval(pairingTick);
-    const pad = el('div', 'sheet-pad pair-yay'); const art = el('div', 'pair-yay-art'); const burst = el('div', 'pair-burst'); burst.setAttribute('aria-hidden', 'true');
+    const content = openSheet('Connect SnagThis'); $('sheet').dataset.view = 'connected'; clearInterval(pairingTick); delete $('sheet').dataset.pairRequest;
+    const pad = el('div', 'sheet-pad pair-pad'); const center = el('div', 'pair-center pair-yay'); const art = el('div', 'pair-yay-art'); const burst = el('div', 'pair-burst'); burst.setAttribute('aria-hidden', 'true');
     [0, 45, 90, 135, 180, 225, 270, 315, 20, 200].forEach((angle, index) => { const dot = el('i'); dot.style.setProperty('--a', `${angle}deg`); dot.style.setProperty('--d', `${index > 7 ? 40 : 58}px`); dot.style.setProperty('--c', ['var(--accent-bevel-face)', 'var(--accent-bevel-light)', '#80bfa6', '#fff4e6'][index % 4]); burst.append(dot); });
     const mark = pixel.button(64); art.append(burst, mark);
-    const title = el('strong', 'pair-yay-title'); title.setAttribute('role', 'status'); title.append('Connected');
-    const done = action('Done', () => $('sheet').close(), 'primary'); const actions = el('div', 'sheet-actions pair-actions'); actions.append(done);
-    pad.append(art, title, el('small', '', 'Play a video in Chrome, then choose Download. Streams go to SnagThis.'), actions); content.append(pad);
+    const title = el('h3', 'pair-yay-title'); title.setAttribute('role', 'status'); title.append(el('span', 'sr-only', 'Connected'), pixel.word('Connected', 3));
+    const done = action('Done', () => $('sheet').close(), 'primary');
+    center.append(art, title, el('p', 'pair-say', 'Play a video, then choose Download.'), pairingPips('good'), done); pad.append(center); content.append(pad);
+    // Focus Done rather than the close button; the ring still shows only for keyboard users.
+    done.focus({ focusVisible: false });
     requestAnimationFrame(() => pixel.press(mark));
     if (isDemo) return;
     await message({ cmd: 'PAIR_ACK' }).catch(() => {});
@@ -954,35 +1025,119 @@
     description.append(title, hint, group); row.append(description);
     return row;
   }
-  function showSettings() {
-    const content = openSheet('Settings');
-    // Browser preferences and Appearance fit without scrolling.
-    $('popup').style.minHeight = '540px';
-    function setting(label, note, control) { const row = el('div', 'setting-row'); const description = el('div', 'setting-description'); const labelNode = el('label', '', label); if (control.id) labelNode.htmlFor = control.id; description.append(labelNode); if (note) description.append(el('small', '', note)); row.append(description, control); content.append(row); }
+  /* ── Settings: Downloads · Appearance · Connection · About, an icon tab bar under the header
+   * (docs/design/prototypes/popup-settings option 3). The last tab is kept while the popup is open. ── */
+  const SETTINGS_TABS = [['downloads', 'Downloads', 'section'], ['appearance', 'Appearance', 'palette'], ['connection', 'Connection', 'plug'], ['about', 'About', 'info']];
+  const CONNECTION_STATES = { paired: ['ok', 'Connected'], offline: ['amber', 'SnagThis not open'], unpaired: ['grey', 'Not connected'] };
+  let settingsTab = 'downloads'; let settingsHeight = 0; let settingsState = '';
+  function settingsConnection() { return !appToken ? 'unpaired' : !reachable ? 'offline' : 'paired'; }
+  function settingsOpen() { return $('sheet').open && $('sheet').dataset.view === 'settings'; }
+  function settingIcon(glyph, tone = '') { const badge = el('span', `setting-icon${tone ? ` ${tone}` : ''}`); badge.setAttribute('aria-hidden', 'true'); badge.append(icon(glyph)); return badge; }
+  function paneHeading(title, description) { return [el('h3', 'settings-pane-title', title), el('p', 'settings-pane-description', description)]; }
+  // One explanation for every disabled row, at the top of the card, with the fix as a button.
+  function settingsGate(state) {
+    if (state === 'paired') return null;
+    const gate = el('div', `settings-gate${state === 'unpaired' ? ' neutral' : ''}`); gate.setAttribute('role', 'note'); gate.id = 'settings-gate';
+    const text = el('span', '', state === 'offline' ? 'SnagThis isn’t open, so these can’t change right now.' : 'Connect Chrome to SnagThis to choose these.'); text.id = 'settings-gate-text';
+    gate.append(icon(state === 'offline' ? 'alert' : 'plug'), text, state === 'offline' ? action(getAppFallback ? 'Get the app' : 'Open SnagThis', () => openDesktop(), 'bordered') : action('Connect', showPairing, 'primary'));
+    return gate;
+  }
+  function downloadsPanel(state) {
+    const on = state === 'paired'; const group = el('div', 'setting-group');
     const confirmSaved = (control, label) => () => { const row = control.closest('.setting-row'); if (row) savedConfirmation(row, label)(); };
-    function select(key, values, label) { const control = el('select', 'setting-control'); control.disabled = !reachable || !appToken; control.id = `setting-${key}`; for (const [value, text] of values) { const option = el('option', '', text); option.value = value; control.append(option); } control.value = preferences[key]; control.addEventListener('change', () => savePreference(key, control.value, confirmSaved(control, label))); return control; }
-    function toggle(key, label) { const control = el('input', 'switch'); control.disabled = !reachable || !appToken; control.type = 'checkbox'; control.id = `setting-${key}`; control.setAttribute('role', 'switch'); control.checked = Boolean(preferences[key]); control.addEventListener('change', () => savePreference(key, control.checked, confirmSaved(control, label))); return control; }
-    // Only what makes sense from the browser lives here; everything else is one link into the app.
-    const group = el('div', 'setting-group'); const list = content; const title = el('h3', 'setting-group-title', 'This browser');
-    list.append(title, el('p', 'setting-group-description', 'Used for downloads you send to SnagThis from Chrome.'), group);
-    const into = (label, note, control, glyph) => { setting(label, note, control); const row = list.lastElementChild; const badge = el('span', 'setting-icon'); badge.setAttribute('aria-hidden', 'true'); badge.append(icon(glyph)); row.prepend(badge); group.append(row); };
-    into('Preferred quality', 'Used when a video offers it', select('preferredQuality', [['best', 'Best'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']], 'Preferred quality'), 'screen');
-    into('Subtitles', 'Included when available', select('subtitleLanguage', [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']], 'Subtitles'), 'captions');
-    into('Tell me when desktop downloads finish', '', toggle('notifyOnComplete', 'Tell me when desktop downloads finish'), 'bell');
-    // Appearance works without the app; it is shared with the desktop once they are connected.
-    const appearance = el('div', 'setting-group'); const accentRow = accentPicker();
-    const badge = el('span', 'setting-icon warm'); badge.setAttribute('aria-hidden', 'true'); badge.append(icon('palette')); accentRow.prepend(badge); appearance.append(accentRow);
-    list.append(el('h3', 'setting-group-title', 'Appearance'), appearance);
-    const more = el('button', 'setting-link'); more.type = 'button'; more.append(icon('external'), el('span', '', 'Desktop folder, speed and more in SnagThis'), icon('next')); more.addEventListener('click', () => openDesktop('settings')); list.append(more);
-    if (!appToken) { const connect = action('Connect Chrome', showPairing, 'bordered'); connect.classList.add('setting-connect'); list.append(connect); }
-    else {
-      const card = el('div', 'setting-group connection-card'); const row = el('div', 'connection-card-row'); const text = el('div', 'connection-card-text');
-      const badge = el('span', 'setting-icon connected'); badge.setAttribute('aria-hidden', 'true'); badge.append(icon('check'));
-      text.append(el('b', '', 'Connected to SnagThis'), el('small', '', 'This browser · downloads, library and accent'));
-      const disconnect = action('Disconnect', () => disconnectBrowser(disconnect), 'danger'); disconnect.disabled = !reachable && !isDemo;
-      row.append(badge, text, disconnect); card.append(row);
-      list.append(el('h3', 'setting-group-title', 'Connection'), card, el('p', 'setting-group-description connection-hint', reachable || isDemo ? 'Disconnecting here forgets this browser in SnagThis too. You can reconnect any time.' : 'Open SnagThis to disconnect this browser.'));
+    const describe = control => { control.disabled = !on; if (!on) control.setAttribute('aria-describedby', 'settings-gate-text'); return control; };
+    function select(key, values, label) { const control = describe(el('select', 'setting-control')); control.id = `setting-${key}`; for (const [value, text] of values) { const option = el('option', '', text); option.value = value; control.append(option); } control.value = preferences[key]; control.addEventListener('change', () => savePreference(key, control.value, confirmSaved(control, label))); return control; }
+    function toggle(key, label) { const control = describe(el('input', 'switch')); control.type = 'checkbox'; control.id = `setting-${key}`; control.setAttribute('role', 'switch'); control.checked = Boolean(preferences[key]); control.addEventListener('change', () => savePreference(key, control.checked, confirmSaved(control, label))); return control; }
+    function row(label, note, control, glyph) {
+      const node = el('div', `setting-row${on ? '' : ' is-off'}`); const description = el('div', 'setting-description'); const labelNode = el('label', '', label); labelNode.htmlFor = control.id;
+      description.append(labelNode); if (note) description.append(el('small', '', note)); node.append(settingIcon(glyph), description, control); group.append(node);
     }
+    const gate = settingsGate(state); if (gate) group.append(gate);
+    row('Preferred quality', 'Used when a video offers it', select('preferredQuality', [['best', 'Best'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']], 'Preferred quality'), 'screen');
+    row('Subtitles', 'Included when available', select('subtitleLanguage', [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']], 'Subtitles'), 'captions');
+    row('Tell me when desktop downloads finish', '', toggle('notifyOnComplete', 'Tell me when desktop downloads finish'), 'bell');
+    return [...paneHeading('Downloads', 'Used for downloads you send to SnagThis from Chrome.'), group];
+  }
+  // Appearance works without the app; it is shared with the desktop once they are connected.
+  function appearancePanel(state) {
+    const group = el('div', 'setting-group'); const row = accentPicker(); row.prepend(settingIcon('palette', 'warm')); group.append(row);
+    const nodes = [...paneHeading('Appearance', 'How SnagThis looks in Chrome. Works without the app.'), group];
+    if (state !== 'paired') nodes.push(el('p', 'settings-hint', state === 'offline' ? 'Saved in Chrome now. SnagThis picks it up the next time it’s open.' : 'Saved in Chrome. Connect to share it with the desktop app.'));
+    return nodes;
+  }
+  function connectionPanel(state) {
+    const nodes = paneHeading('Connection', 'How this browser reaches the SnagThis app.'); const group = el('div', 'setting-group connection-card');
+    const row = (glyph, tone, title, note, control) => { const node = el('div', 'setting-row'); const text = el('div', 'setting-description'); text.append(el('span', 'setting-title', title), el('small', '', note)); node.append(settingIcon(glyph, tone), text, control); group.append(node); };
+    if (state === 'unpaired') {
+      row('plug', 'grey', 'Not connected', 'Supported files still save in Chrome. Connect for streams and more.', action(disconnectedNotice ? 'Connect again' : 'Connect', showPairing, 'primary'));
+      const hint = el('p', 'settings-hint', 'SnagThis shows four digits to check, then you choose Allow there. '); hint.append(codeLink());
+      return [...nodes, group, hint];
+    }
+    const offline = state === 'offline';
+    const disconnect = action('Disconnect', () => disconnectBrowser(disconnect), 'danger'); disconnect.disabled = offline;
+    row(offline ? 'alert' : 'check', offline ? 'amber' : 'connected', 'Connected to SnagThis', offline ? 'SnagThis isn’t open right now' : 'This browser · downloads, library and accent', disconnect);
+    if (offline) row('app', '', 'Open SnagThis', 'Needed to send downloads, change settings or disconnect', action(getAppFallback ? 'Get the app' : 'Open', () => openDesktop(), 'bordered'));
+    return [...nodes, group, el('p', 'settings-hint', offline ? 'Open SnagThis to disconnect this browser.' : 'Disconnecting here forgets this browser in SnagThis too. You can reconnect any time.')];
+  }
+  function aboutPanel() {
+    const brand = el('div', 'settings-brand'); const version = el('span', 'settings-version', 'for Chrome '); version.append(el('b', '', `v${runtimeVersion}`));
+    brand.append(document.querySelector('.popup-header .logo-wordmark').cloneNode(true), version);
+    const group = el('div', 'setting-group');
+    const link = (glyph, title, note, trailing, handler) => { const node = el('button', 'setting-row setting-row-link'); node.type = 'button'; const text = el('span', 'setting-description'); text.append(el('span', 'setting-title', title), el('small', '', note)); node.append(settingIcon(glyph), text, icon(trailing)); node.addEventListener('click', handler); group.append(node); };
+    const fromStore = !isDemo && Boolean(chrome.runtime.getManifest().update_url);
+    link('refresh', 'Update Chrome extension', fromStore || isDemo ? 'Chrome updates it from the Web Store on its own' : 'Replace this unpacked copy with the latest ZIP', 'next', showExtensionUpdate);
+    link('lifebuoy', 'Troubleshooting', 'Some sites protect their videos', 'external', () => external(HELP));
+    return [...paneHeading('About', 'Version, updates and help.'), brand, group];
+  }
+  function settingsPanel(tab, state) { return { downloads: downloadsPanel, appearance: appearancePanel, connection: connectionPanel, about: aboutPanel }[tab](state); }
+  function selectSettingsTab(tab, focus = false) {
+    settingsTab = tab;
+    for (const node of $('sheet-content').querySelectorAll('[role="tab"]')) { const selected = node.dataset.tab === tab; node.setAttribute('aria-selected', String(selected)); node.tabIndex = selected ? 0 : -1; if (selected && focus) node.focus({ preventScroll: true }); }
+    const pane = $('settings-panel'); pane.setAttribute('aria-labelledby', `settings-tab-${tab}`); pane.replaceChildren(...settingsPanel(tab, settingsState)); pane.scrollTop = 0;
+  }
+  // Measures every tab once so the sheet (and Chrome's window) stays at the tallest one's height.
+  function measureSettings() {
+    const pane = $('settings-panel'); const fixed = $('sheet').querySelector('.sheet-header').offsetHeight + $('sheet-content').querySelector('.settings-tabs').offsetHeight;
+    const padding = Number.parseFloat(getComputedStyle(pane).paddingBottom) || 0; let tallest = 0;
+    for (const [tab] of SETTINGS_TABS) { const body = el('div', 'settings-measure'); body.append(...settingsPanel(tab, settingsState)); pane.replaceChildren(body); tallest = Math.max(tallest, body.offsetHeight); }
+    settingsHeight = Math.min(560, Math.max(430, Math.ceil(fixed + tallest + padding)));
+    syncPopupHeight();
+  }
+  function renderSettingsTabs() {
+    const list = el('div', 'settings-tabs'); list.setAttribute('role', 'tablist'); list.setAttribute('aria-label', 'Settings sections');
+    const [tone, stateText] = CONNECTION_STATES[settingsState];
+    for (const [id, label, glyph] of SETTINGS_TABS) {
+      const tab = el('button'); tab.type = 'button'; tab.id = `settings-tab-${id}`; tab.dataset.tab = id; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', 'settings-panel');
+      tab.append(icon(glyph), el('span', '', label));
+      // The square repeats the connection state; the tab's name says it in words.
+      if (id === 'connection') { const status = el('span', `settings-tab-status ${tone}`); status.setAttribute('aria-hidden', 'true'); tab.append(status); tab.setAttribute('aria-label', `Connection, ${stateText}`); }
+      tab.addEventListener('click', () => selectSettingsTab(id, true)); list.append(tab);
+    }
+    list.addEventListener('keydown', event => {
+      const tabs = [...list.querySelectorAll('[role="tab"]')]; const index = tabs.indexOf(event.target.closest('[role="tab"]'));
+      if (index < 0) return;
+      const next = { ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index - 1 + tabs.length) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
+      if (next === undefined) return;
+      event.preventDefault(); selectSettingsTab(tabs[next].dataset.tab, true);
+    });
+    return list;
+  }
+  function showSettings(tab) {
+    const content = openSheet('Settings'); $('sheet').dataset.view = 'settings'; $('sheet-link').hidden = false;
+    if (SETTINGS_TABS.some(([id]) => id === tab)) settingsTab = tab;
+    settingsState = settingsConnection();
+    const pane = el('div', 'settings-pane'); pane.id = 'settings-panel'; pane.setAttribute('role', 'tabpanel'); pane.tabIndex = 0;
+    content.append(renderSettingsTabs(), pane);
+    measureSettings(); selectSettingsTab(settingsTab, true);
+  }
+  // A connection change while Settings is open redraws it in place, keeping the tab and tab focus.
+  function syncSettings() {
+    if (!settingsOpen() || settingsConnection() === settingsState) return;
+    const tabFocused = document.activeElement?.getAttribute('role') === 'tab'; const paneFocused = $('settings-panel')?.contains(document.activeElement);
+    settingsState = settingsConnection();
+    const list = $('sheet-content').querySelector('.settings-tabs'); list.replaceWith(renderSettingsTabs());
+    measureSettings(); selectSettingsTab(settingsTab, tabFocused);
+    if (paneFocused) $('settings-panel').focus({ preventScroll: true });
   }
   async function loadPreferences() {
     if (!appToken || !reachable || isDemo) return;
@@ -1043,7 +1198,7 @@
     logo.addEventListener('pointerenter', () => { const now = performance.now(); if (now - lastShine < 1000) return; lastShine = now; logo.classList.remove('shining'); void logo.offsetWidth; logo.classList.add('shining'); });
     logo.addEventListener('animationend', () => logo.classList.remove('shining'));
     $('settings-button').append(icon('gear')); $('close-sheet').append(icon('close'));
-    $('settings-button').addEventListener('click', showSettings); $('close-sheet').addEventListener('click', () => $('sheet').close()); $('help-button').addEventListener('click', showHelp);
+    $('settings-button').addEventListener('click', () => showSettings()); $('sheet-link').prepend(icon('app')); $('sheet-link').append(icon('external')); $('sheet-link').addEventListener('click', () => openDesktop('settings')); $('close-sheet').addEventListener('click', () => $('sheet').close()); $('help-button').addEventListener('click', showHelp);
     $('open-app').addEventListener('click', () => { $('open-app').classList.remove('snag-pip'); if (!reachable) external(RELEASES); else if (!appToken) showPairing(); else openDesktop(); });
     loadingMascot($('video-list').querySelector('.discovery-state'));
     document.addEventListener('pointerdown', event => { if (!$('menu').hidden && !$('menu').contains(event.target) && !menuTrigger?.contains(event.target)) closeMenu(false); });
@@ -1052,7 +1207,7 @@
       SnagThisSpeedTrace.record(speedJobs(queue)); renderRows();
       // Sample speeds keep moving so the gallery shows live traces; 'snag' also finishes a download.
       SnagThisDemo.live?.(() => { queue = SnagThisDemo.state.queue; SnagThisSpeedTrace.record(speedJobs(queue)); renderRows(); });
-      if (params.get('demo') === 'pairing') { if (params.get('pair') === 'connected') celebrateConnection(); else if (params.get('pair') === 'code') showCodePairing(); else if (params.get('pair')) renderPairing({ status: params.get('pair'), matchCode: '4719' }); else showPairing(); } if (params.get('demo') === 'settings') showSettings(); if (['quality', 'audio'].includes(params.get('demo'))) showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
+      if (params.get('demo') === 'pairing') { if (params.get('pair') === 'connected') celebrateConnection(); else if (params.get('pair') === 'code') showCodePairing(); else if (params.get('pair')) renderPairing({ status: params.get('pair'), matchCode: params.get('pair') === 'starting' ? '' : '4719', expiresAt: Date.now() + 112000 }); else showPairing(); } if (params.get('demo') === 'settings') { if (params.get('conn') === 'offline') reachable = false; if (params.get('conn') === 'unpaired') appToken = ''; renderConnection(); showSettings(params.get('tab')); } if (['quality', 'audio'].includes(params.get('demo'))) showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
       return;
     }
     const stored = await chrome.storage.local.get(['appToken', 'appTokenVersion', 'preferences']); appToken = stored.appToken || ''; preferences = { ...preferences, ...(stored.preferences || {}) };

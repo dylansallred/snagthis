@@ -12,6 +12,12 @@ window.SnagThisPixel = (() => {
     4: ['#.#', '#.#', '###', '..#', '..#'], 5: ['###', '#..', '###', '..#', '###'], 6: ['###', '#..', '###', '#.#', '###'], 7: ['###', '..#', '..#', '.#.', '.#.'],
     8: ['###', '#.#', '###', '#.#', '###'], 9: ['###', '#.#', '###', '..#', '###'], '+': ['...', '.#.', '###', '.#.', '...'], z: ['###', '..#', '.#.', '#..', '###'],
   };
+  // A 5 × 7 capital face for the one pixel title ("CONNECTED"); only the letters it needs.
+  const CAPS = {
+    C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'], O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'], E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+    T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'], D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  };
   const COLORS = ['var(--accent-bevel-face, #fa5d0e)', 'var(--accent-bevel-light, #ffb238)', '#80bfa6', '#fff4e6', 'var(--accent-bevel-dark, #bd3f00)'];
 
   function svg(width, height, viewBox, className) {
@@ -61,6 +67,17 @@ window.SnagThisPixel = (() => {
     chars.forEach((char, index) => FONT[char].forEach((row, y) => [...row].forEach((cell, x) => { if (cell === '#') d += `M${index * 4 + x} ${y}h1v1h-1z`; })));
     const width = Math.max(1, chars.length * 4 - 1);
     const node = svg(width * scale, 5 * scale, `0 0 ${width} 5`);
+    path(node, '', d, 'currentColor');
+    return node;
+  }
+
+  /** A short pixel title in 5 × 7 capitals (no pixel font ships). Decorative; label it in text. */
+  function word(value, scale) {
+    const chars = [...String(value).toUpperCase()].filter(char => CAPS[char]);
+    let d = '';
+    chars.forEach((char, index) => CAPS[char].forEach((row, y) => [...row].forEach((cell, x) => { if (cell === '#') d += `M${index * 6 + x} ${y}h1v1h-1z`; })));
+    const width = Math.max(1, chars.length * 6 - 1);
+    const node = svg(width * scale, 7 * scale, `0 0 ${width} 7`);
     path(node, '', d, 'currentColor');
     return node;
   }
@@ -133,5 +150,5 @@ window.SnagThisPixel = (() => {
     setTimeout(() => { rise(fx, target, moment); }, 240);
   }
 
-  return { button, press, text, mascot, snag };
+  return { button, press, text, word, mascot, snag };
 })();

@@ -65,7 +65,8 @@ test('popup accent: stored choice, desktop sync both ways, offline choice pushed
     expect(await page.evaluate(() => accentFixture.store.accent.accent)).toBe('violet');
 
     // Settings ▸ Appearance: the same five swatches as the desktop, usable while connected or not.
-    await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('tab', { name: 'Appearance', exact: true }).click();
     const swatches = page.getByRole('radiogroup', { name: 'Accent colour' });
     await expect(swatches.getByRole('radio')).toHaveCount(5);
     await expect(swatches.getByRole('radio', { name: 'Violet' })).toBeChecked();

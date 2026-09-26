@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LoaderCircle, X, FolderOpen, MonitorPlay, Captions, Bell, Power, Check } from 'lucide-react';
+import { Check, ExternalLink, LoaderCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { Switch } from '@/components/ui/switch';
 import type { DesktopSettings } from '@/types/settings';
 import type { AppInfo, ConnectedExtension, PairingRequest } from '@/types/desktop-bridge';
 import type { UpdaterState } from '@/types/updater';
@@ -10,7 +9,7 @@ import type { ApiClient } from '@/lib/api';
 import { ui } from '@/lib/strings';
 import { buildSiteReportUrl } from '@/lib/siteReport';
 import { defaultSettings } from '@/hooks/useAppInit';
-import { NumberSetting, SettingTitle, SettingsFormContext, TextSetting, type Draft, type SettingsForm } from './settingsFields';
+import { NumberSetting, SavedMark, SettingRow, SettingsFormContext, SettingsGroup, SwitchRow, TextSetting, type Draft, type SettingsForm } from './settingsFields';
 import { AccentPicker } from './AccentPicker';
 import { PairingDigits, countdown, reviewPairing, shortExtensionId } from './PairingApproval';
 import { settingsSections, type SettingsSectionId } from './settingsSections';
@@ -25,11 +24,13 @@ const shortDate = (time: number) => new Date(time).toLocaleDateString(undefined,
 function lastSeen(time: number | null) {
   if (!time) return 'not used yet';
   const minutes = Math.floor((Date.now() - time) / 60_000);
-  if (minutes < 1) return 'last seen just now';
-  if (minutes < 60) return `last seen ${minutes} min ago`;
-  if (minutes < 24 * 60) return `last seen ${Math.floor(minutes / 60)} hr ago`;
-  return `last seen ${shortDate(time)}`;
+  if (minutes < 1) return 'seen just now';
+  if (minutes < 60) return `seen ${minutes} min ago`;
+  if (minutes < 24 * 60) return `seen ${Math.floor(minutes / 60)} hr ago`;
+  return `seen ${shortDate(time)}`;
 }
+/** Lets a long path wrap after each separator instead of mid-name. */
+const breakablePath = (path: string) => path.split(/(?<=[/\\])/).flatMap((part, index) => index ? [<wbr key={index} />, part] : [part]);
 const galleryExtensions: ConnectedExtension[] = [{ id: 'gallery', extensionId: 'kpldfbnhcgkemcoimbeoeialgfajmeno', createdAt: Date.now() - 86_400_000, lastSeenAt: Date.now(), legacy: false, identity: 'store' }];
 
 /**
@@ -184,7 +185,10 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     onSectionChange(id);
     tabs.current.get(id)?.focus();
   };
-  const sub = (id: string, title: string, children: React.ReactNode) => <div className="advanced-group" role="group" aria-labelledby={id}><h4 id={id}>{title}</h4>{children}</div>;
+  const busyUpdater = ['checking', 'downloading', 'installing'].includes(updater.phase);
+  const updateStatus = !updatesAvailable ? ui.updatesInstalledOnly : updater.message || ui.updatesNotChecked;
+  const button = (label: React.ReactNode, onClick: () => void, extra: { className?: string; disabled?: boolean; label?: string; describedBy?: string } = {}) =>
+    <button type="button" className={`settings-button ${extra.className || ''}`.trim()} disabled={extra.disabled} aria-label={extra.label} aria-describedby={extra.describedBy} onClick={onClick}>{label}</button>;
   const panes: Record<SettingsSectionId, () => React.ReactNode> = {
     chrome: () => {
       const connected = extensions.length > 0;
@@ -196,104 +200,127 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
         setExtensions(await window.desktop.listExtensions());
         setConfirmDisconnect(''); setDisconnected(true);
       });
-      return <section className="settings-group pairing-settings" aria-label="Chrome extension setup">
-        <p role="status">{connected ? 'Chrome is connected. Keep SnagThis open while downloading.' : disconnected ? 'Chrome is disconnected. Its key no longer works.' : 'Connect the extension once to send videos from Chrome to this app.'}</p>
-        {waiting && <div className="pairing-pending" role="status">
-          <span className="pairing-spinner" aria-hidden="true" />
-          <div className="pairing-pending-text"><b>{ui.pairingWaiting}</b><small>{ui.pairingExpiresIn.replace('{time}', countdown(waiting.expiresAt - pairingNow))}</small></div>
-          <PairingDigits code={waiting.matchCode} size="sm" />
-          <button type="button" className="row-action primary-action" onClick={() => reviewPairing(waiting)}>{ui.pairingReview}</button>
-        </div>}
-        {connected && <ul className="connected-extensions" aria-label="Connected browsers">{extensions.map((entry) => <li key={entry.id} className="connected-extension">
-          {confirmDisconnect === entry.id ? <>
-            <b>Disconnect {entry.identity === 'store' ? ui.pairingStoreName : 'this Chrome extension'}?</b>
-            <small className="pairing-note">Chrome will stop sending downloads here until you connect it again. Finished files and your library stay.</small>
-            <div className="connected-extension-actions"><button type="button" className="row-action labelled" onClick={() => setConfirmDisconnect('')}>{ui.cancel}</button><button type="button" className="row-action danger-action" disabled={!!busy} onClick={() => disconnect(entry)}>Disconnect</button></div>
-          </> : <div className="connected-extension-row">
-            <Check aria-hidden="true" />
-            <div className="connected-extension-text"><b>{entry.identity === 'store' ? ui.pairingStoreName : 'Chrome extension'} <span className="sr-only">{entry.extensionId}</span></b><small title={entry.extensionId}>{entry.identity === 'store' ? 'Web Store build' : shortExtensionId(entry.extensionId)} · connected {shortDate(entry.createdAt)} · {lastSeen(entry.lastSeenAt)}</small></div>
-            <button type="button" className="row-action danger-action" aria-label={`Disconnect ${shortExtensionId(entry.extensionId)}`} onClick={() => setConfirmDisconnect(entry.id)}>Disconnect</button>
-          </div>}
-        </li>)}</ul>}
-        {connected && <p className="pairing-note">Each browser gets its own key, so disconnecting one leaves the others.</p>}
-        {!waiting && <ol className="pairing-steps">{ui.pairingSteps.map((step) => <li key={step}>{step}</li>)}</ol>}
-        <div className="pairing-code-fallback">
-          <p>Another browser, or SnagThis didn’t come forward? Connect with a code instead.</p>
-          {pairing && <ol className="pairing-steps">{ui.pairingCodeSteps.map((step) => <li key={step}>{step}</li>)}</ol>}
-          {pairing && pairingSeconds > 0 ? <div className="pairing-code"><label htmlFor="chrome-connection-code">{ui.pairingHelp}</label><div className="pairing-code-actions"><output id="chrome-connection-code" aria-label="Connection code">{pairing.code}</output><button type="button" className="row-action labelled" disabled={!!busy} onClick={() => run('copy-code', async () => { await navigator.clipboard.writeText(pairing.code); setCodeCopied(true); })}>{codeCopied ? 'Copied' : 'Copy code'}</button></div><small>Expires in {Math.floor(pairingSeconds / 60)}:{String(pairingSeconds % 60).padStart(2, '0')}. Keep SnagThis open.</small></div>
-            : <>{pairing && <p className="tone-attention" role="status">This code expired. Get a new code and try again.</p>}<button type="button" className="row-action labelled" disabled={!!busy || (!gallery && !apiReady)} onClick={showPairing}>{busy === 'pairing' ? 'Getting code…' : pairing ? 'Get a new code' : 'Show connection code'}</button></>}
-        </div>
-        {!appInfo?.extensionConnected && !connected && <button type="button" className="detail-refresh pairing-install" onClick={() => run('install-extension', async () => { if (!gallery) await window.desktop.openExternal('https://github.com/dylansallred/snagthis#run-locally'); })}>Need the extension? Add to Chrome</button>}
+      const name = (entry: ConnectedExtension) => entry.identity === 'store' ? ui.pairingStoreName : 'Chrome extension';
+      const legacyConnected = !connected && !disconnected && !!appInfo?.extensionConnected;
+      const codeLive = pairing && pairingSeconds > 0;
+      return <section className="settings-chrome" aria-label="Chrome extension setup">
+        <SettingsGroup id="chrome-status" title={ui.chromeStatus} list={connected} listLabel="Connected browsers" footer={connected ? ui.chromeKeysNote : undefined}>
+          {waiting && <SettingRow as={connected ? 'li' : 'div'} id="chrome-waiting" className="settings-pairing-waiting" label={<><span className="pairing-spinner" aria-hidden="true" />{ui.pairingWaiting}</>} hintRole="status"
+            hint={ui.pairingWaitingHint.replace('{time}', countdown(waiting.expiresAt - pairingNow))}
+            control={<><PairingDigits code={waiting.matchCode} size="sm" />{button(ui.pairingReview, () => reviewPairing(waiting), { className: 'primary' })}</>} />}
+          {connected ? extensions.map((entry) => confirmDisconnect === entry.id
+            ? <SettingRow as="li" key={entry.id} id={`extension-${entry.id}`} className="settings-confirm" label={ui.chromeDisconnectTitle.replace('{name}', entry.identity === 'store' ? ui.pairingStoreName : 'this Chrome extension')} hint={ui.chromeDisconnectBody}
+              control={<>{button(ui.cancel, () => setConfirmDisconnect(''))}{button('Disconnect', () => disconnect(entry), { className: 'danger', disabled: !!busy })}</>} />
+            : <SettingRow as="li" key={entry.id} id={`extension-${entry.id}`} label={<><span className="status-dot" aria-hidden="true" />{ui.chromeConnectedTo.replace('{name}', name(entry))} <span className="sr-only">{entry.extensionId}</span></>}
+              hint={<span title={entry.extensionId}>{entry.identity === 'store' ? 'Web Store build' : shortExtensionId(entry.extensionId)} · connected {shortDate(entry.createdAt)} · {lastSeen(entry.lastSeenAt)}</span>}
+              control={button('Disconnect', () => setConfirmDisconnect(entry.id), { className: 'danger', label: `Disconnect ${shortExtensionId(entry.extensionId)}` })} />)
+            : legacyConnected ? <SettingRow id="chrome-connected" label={<><span className="status-dot" aria-hidden="true" />{ui.chromeIsConnected}</>} hint={ui.chromeConnectedFallbackHint} hintRole="status" />
+            : <SettingRow id="chrome-off" label={<><span className="status-dot off" aria-hidden="true" />{ui.chromeNotConnected}</>} hint={disconnected ? ui.chromeDisconnectedHint : ui.chromeNotConnectedHint} hintRole="status"
+              control={!appInfo?.extensionConnected && button(<>{ui.chromeAddToChrome}<ExternalLink aria-hidden="true" /></>, () => run('install-extension', async () => { if (!gallery) await window.desktop.openExternal('https://github.com/dylansallred/snagthis#run-locally'); }))} />}
+        </SettingsGroup>
+        <SettingsGroup id="chrome-connect" title={connected || legacyConnected ? ui.chromeConnectAnother : ui.chromeConnectGroup}>
+          {!connected && !legacyConnected && !waiting && <SettingRow id="chrome-one-click" label={ui.chromeOneClick} below={<ol className="settings-steps">{ui.pairingSteps.map((step) => <li key={step}>{step}</li>)}</ol>} />}
+          <SettingRow id="chrome-code" label={ui.chromeUseCode} hint={pairing && !codeLive ? ui.chromeCodeExpired : ui.chromeUseCodeHint} error={!!pairing && !codeLive} hintRole={pairing && !codeLive ? 'status' : undefined}
+            control={codeLive
+              ? button(codeCopied ? 'Copied' : 'Copy code', () => run('copy-code', async () => { await navigator.clipboard.writeText(pairing.code); setCodeCopied(true); }), { disabled: !!busy })
+              : button(busy === 'pairing' ? 'Getting code…' : pairing ? 'Get a new code' : 'Show connection code', showPairing, { disabled: !!busy || (!gallery && !apiReady) })}
+            below={codeLive && <div className="settings-code"><output id="chrome-connection-code" aria-label="Connection code">{pairing.code}</output><small>{ui.chromeCodeHint.replace('{time}', countdown(pairingSeconds * 1000))}</small></div>} />
+        </SettingsGroup>
       </section>;
     },
-    downloads: () => <div className="settings-group">
-      <div className="preference-row folder-row">
-        <span className="setting-icon warm" aria-hidden="true"><FolderOpen /></span>
-        <div className="setting-text"><SettingTitle id="save-folder">{ui.saveVideosTo}</SettingTitle><span className="folder-path" id="save-folder-path" title={folderPath}>{folderPath}</span></div>
-        <div className="settings-actions folder-actions">
-          <button type="button" className="row-action labelled" aria-describedby="save-folder-path" aria-label={ui.changeFolderLabel} disabled={!!busy} onClick={chooseFolder}>{busy === 'folder' ? <LoaderCircle className="spin" /> : ui.changeFolder}</button>
-          <button type="button" className="row-action labelled" aria-describedby="save-folder-path" aria-label={ui.saveFolder} disabled={!!busy} onClick={openFolder}>{ui.openFolderShort}</button>
-        </div>
-      </div>
-      <div className="preference-row"><span className="setting-icon" aria-hidden="true"><MonitorPlay /></span><div className="setting-text"><SettingTitle id="preferred-quality" htmlFor="preferred-quality">{ui.preferredQuality}</SettingTitle><small>{ui.qualityHint}</small></div><select id="preferred-quality" value={settings.preferredQuality} onChange={(event) => save({ preferredQuality: event.target.value as DesktopSettings['preferredQuality'] }, 'preferred-quality', ui.preferredQuality)}><option value="best">{ui.best}</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></div>
-      <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Captions /></span><div className="setting-text"><SettingTitle id="subtitle-language" htmlFor="subtitle-language">{ui.subtitles}</SettingTitle><small>{ui.subtitlesHint}</small></div><select id="subtitle-language" value={settings.subtitleLanguage} onChange={(event) => save({ subtitleLanguage: event.target.value }, 'subtitle-language', ui.subtitles)}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
-    </div>,
-    app: () => <div className="settings-group">
-      <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Bell /></span><div className="setting-text"><SettingTitle id="notify-complete" htmlFor="notify-complete">{ui.notify}</SettingTitle></div><Switch id="notify-complete" checked={settings.notifyOnComplete} onCheckedChange={(value) => save({ notifyOnComplete: value }, 'notify-complete', ui.notify)} /></div>
-      <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Power /></span><div className="setting-text"><SettingTitle id="launch-login" htmlFor="launch-login">{ui.login}</SettingTitle></div><Switch id="launch-login" checked={settings.launchAtLogin} onCheckedChange={(value) => save({ launchAtLogin: value }, 'launch-login', ui.login)} /></div>
-    </div>,
-    appearance: () => <div className="settings-group"><AccentPicker onSaved={() => flashSaved('accent-colour', ui.accentColour)} /></div>,
-    advanced: () => <div className="settings-group">
-      {sub('advanced-speed', ui.advancedSpeed, <>
+    downloads: () => <>
+      <SettingsGroup id="downloads-saving" title={ui.groupSaving}>
+        <SettingRow id="save-folder" className="settings-folder" label={ui.saveVideosTo}
+          control={<>
+            {button(busy === 'folder' ? <LoaderCircle className="spin" /> : ui.changeFolder, chooseFolder, { disabled: !!busy, label: ui.changeFolderLabel, describedBy: 'save-folder-path' })}
+            {button(ui.openFolderShort, openFolder, { disabled: !!busy, describedBy: 'save-folder-path' })}
+          </>}
+          below={<p className="settings-path" id="save-folder-path" title={folderPath}>{breakablePath(folderPath)}{!settings.outputDirectory && <span className="settings-tag">{ui.defaultTag}</span>}</p>} />
+      </SettingsGroup>
+      <SettingsGroup id="downloads-quality" title={ui.groupQuality}>
+        <SettingRow id="preferred-quality" htmlFor="preferred-quality" label={ui.preferredQuality} hint={ui.qualityHint} hintId="preferred-quality-hint"
+          control={<select id="preferred-quality" aria-describedby="preferred-quality-hint" value={settings.preferredQuality} onChange={(event) => save({ preferredQuality: event.target.value as DesktopSettings['preferredQuality'] }, 'preferred-quality', ui.preferredQuality)}><option value="best">{ui.best}</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select>} />
+        <SettingRow id="subtitle-language" htmlFor="subtitle-language" label={ui.subtitles} hint={ui.subtitlesHint} hintId="subtitle-language-hint"
+          control={<select id="subtitle-language" aria-describedby="subtitle-language-hint" value={settings.subtitleLanguage} onChange={(event) => save({ subtitleLanguage: event.target.value }, 'subtitle-language', ui.subtitles)}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>} />
+      </SettingsGroup>
+    </>,
+    app: () => <>
+      <SettingsGroup id="app-notifications" title={ui.groupNotifications}>
+        <SwitchRow id="notify-complete" label={ui.notify} hint={ui.notifyHint} checked={settings.notifyOnComplete} onChange={(value) => save({ notifyOnComplete: value }, 'notify-complete', ui.notify)} />
+      </SettingsGroup>
+      <SettingsGroup id="app-startup" title={ui.groupStartup}>
+        <SwitchRow id="launch-login" label={ui.login} hint={ui.loginHint} checked={settings.launchAtLogin} onChange={(value) => save({ launchAtLogin: value }, 'launch-login', ui.login)} />
+      </SettingsGroup>
+    </>,
+    appearance: () => <SettingsGroup id="appearance-accent" title={ui.accentColour}><AccentPicker onSaved={() => flashSaved('accent-colour', ui.accentColour)} /></SettingsGroup>,
+    advanced: () => <>
+      <SettingsGroup id="advanced-speed" title={ui.advancedSpeed}>
         <NumberSetting id="downloads-at-once" settingKey="queueMaxConcurrent" label={ui.atOnce} hint={ui.atOnceHint} value={settings.queueMaxConcurrent} min={1} max={16} />
         <NumberSetting id="download-connections" settingKey="downloadThreads" label={ui.connections} hint={ui.connectionsHint} value={settings.downloadThreads} min={1} max={16} />
-        <div className="preference-row"><div className="setting-text"><SettingTitle id="auto-start" htmlFor="auto-start">{ui.autoStart}</SettingTitle><small>{ui.autoStartHint}</small></div><Switch id="auto-start" checked={settings.queueAutoStart} onCheckedChange={(value) => save({ queueAutoStart: value }, 'auto-start', ui.autoStart)} /></div>
-      </>)}
-      {sub('advanced-names', ui.advancedNames, <>
-        <div className="preference-row"><div className="setting-text"><SettingTitle id="file-naming" htmlFor="file-naming">{ui.naming}</SettingTitle><small id="file-naming-hint">{namingHints[settings.fileNaming]}</small></div><select id="file-naming" aria-describedby="file-naming-hint" value={settings.fileNaming} onChange={(event) => { const next = event.target.value as DesktopSettings['fileNaming']; focusCustomName.current = next === 'custom'; save({ fileNaming: next }, 'file-naming', ui.naming); }}><option value="title">{ui.titleNaming}</option><option value="resource">{ui.resourceNaming}</option><option value="custom">{ui.customNaming}</option></select></div>
+        <SwitchRow id="auto-start" label={ui.autoStart} hint={ui.autoStartHint} checked={settings.queueAutoStart} onChange={(value) => save({ queueAutoStart: value }, 'auto-start', ui.autoStart)} />
+      </SettingsGroup>
+      <SettingsGroup id="advanced-names" title={ui.advancedNames} footer={advancedAreDefaults ? undefined : ui.restoreDefaultsNote}
+        action={<><SavedMark id="restore-defaults" />{button(advancedAreDefaults ? ui.usingDefaults : ui.restoreDefaults, restoreDefaults, { className: 'mini', disabled: advancedAreDefaults, label: advancedAreDefaults ? ui.usingDefaultsLabel : ui.restoreDefaultsLabel })}</>}>
+        <SettingRow id="file-naming" htmlFor="file-naming" label={ui.naming} hint={`${namingHints[settings.fileNaming]}.`} hintId="file-naming-hint"
+          control={<select id="file-naming" aria-describedby="file-naming-hint" value={settings.fileNaming} onChange={(event) => { const next = event.target.value as DesktopSettings['fileNaming']; focusCustomName.current = next === 'custom'; save({ fileNaming: next }, 'file-naming', ui.naming); }}><option value="title">{ui.titleNaming}</option><option value="resource">{ui.resourceNaming}</option><option value="custom">{ui.customNaming}</option></select>} />
         {settings.fileNaming === 'custom' && <TextSetting id="custom-filename" settingKey="customFilename" label={ui.customFilename} hint={ui.customFilenameHint} value={settings.customFilename} placeholder={ui.customFilenamePlaceholder} inputRef={customNameRef}
           validate={(draft) => /[/\\]/.test(draft) ? ui.customFilenameSlash : draft.length > 200 ? ui.customFilenameLong : ''} />}
-        <div className="settings-actions restore-defaults"><button type="button" className="detail-refresh" disabled={advancedAreDefaults} onClick={restoreDefaults}>{advancedAreDefaults ? ui.usingDefaults : ui.restoreDefaults}</button></div>
-      </>)}
-      {sub('advanced-lookups', ui.advancedLookups, <>
+      </SettingsGroup>
+      <SettingsGroup id="advanced-lookups" title={ui.advancedLookups}>
         <TextSetting id="tmdb-key" settingKey="tmdbApiKey" label={ui.tmdbKey} hint={ui.tmdbHint} value={settings.tmdbApiKey || ''} placeholder={ui.keyPlaceholder} secret />
         <TextSetting id="subdl-key" settingKey="subdlApiKey" label={ui.subdlKey} hint={ui.subdlHint} value={settings.subdlApiKey || ''} placeholder={ui.keyPlaceholder} secret />
-      </>)}
-    </div>,
-    about: () => <div className="settings-group">
-      {sub('advanced-updates', ui.updates, <>
-        <div className="preference-row inset"><SettingTitle id="update-startup" htmlFor="update-startup">{ui.checkStartup}</SettingTitle><Switch id="update-startup" checked={settings.checkUpdatesOnStartup} onCheckedChange={(value) => save({ checkUpdatesOnStartup: value }, 'update-startup', ui.checkStartup)} /></div>
-        <p>{updater.message || `Version ${appInfo?.version || 'development'}`}</p>{!updatesAvailable && <p>{ui.updatesInstalledOnly}</p>}{updater.error && <p className="tone-attention">{updater.error}</p>}{updater.phase === 'downloading' && <progress value={updater.progress} max={100} aria-label="Update download" />}
-        <div className="settings-actions"><button type="button" className="row-action labelled" disabled={!!busy || !updatesAvailable || ['checking', 'downloading', 'installing'].includes(updater.phase)} onClick={() => run('update', async () => { if (gallery) { toast.success('You’re up to date.'); return; } const result = await window.desktop.checkForUpdates(); if (!result.ok) throw new Error('Could not check for updates'); })}>{ui.checkUpdates}</button>{updater.phase === 'downloaded' && <><button type="button" className="row-action labelled" onClick={() => run('install', async () => { if (!gallery) { const result = await window.desktop.installUpdateNow(); if (!result.ok) throw new Error(result.error); } })}>{ui.install}</button><button type="button" className="row-action" onClick={() => run('later', async () => { if (!gallery) await window.desktop.remindLater(30); })}>{ui.later}</button></>}</div>
-        {notes.length > 0 && <details className="release-notes" onToggle={onDisclosureToggle}><summary onClick={markReveal}>What’s new</summary>{notes.map((note, index) => <p key={index}>{note}</p>)}</details>}
-      </>)}
-      {sub('advanced-diagnostics', ui.diagnostics, <>
-        <div className="settings-actions"><button type="button" className="row-action labelled" onClick={() => run('diagnostics', () => diagnostics())}>{ui.exportDiagnostics}</button><button type="button" className="row-action labelled" onClick={() => run('copy', () => diagnostics(true))}>{ui.copyDiagnostics}</button></div>
-        <button type="button" className="detail-refresh" onClick={() => run('report', reportSite)}>{ui.reportSite}</button>
-        <button type="button" className="detail-refresh" onClick={() => run('temporary', async () => { if (!gallery) await api?.clearTempDownloads(); toast.success('Stale temporary download data cleared'); })}>{ui.clearTemp}</button>
-      </>)}
-    </div>,
+      </SettingsGroup>
+    </>,
+    about: () => <>
+      <SettingsGroup id="about-updates" title={ui.updates}>
+        <SettingRow id="update-status" label={ui.appVersion.replace('{version}', appInfo?.version || 'development')} hintRole="status"
+          hint={updater.error ? <span className="tone-attention">{updater.error}</span> : updateStatus}
+          control={<>
+            {updater.phase === 'downloaded' && <>{button(ui.later, () => run('later', async () => { if (!gallery) await window.desktop.remindLater(30); }))}{button(ui.install, () => run('install', async () => { if (!gallery) { const result = await window.desktop.installUpdateNow(); if (!result.ok) throw new Error(result.error); } }), { className: 'primary' })}</>}
+            {updater.phase !== 'downloaded' && button(ui.checkUpdates, () => run('update', async () => { if (gallery) { toast.success('You’re up to date.'); return; } const result = await window.desktop.checkForUpdates(); if (!result.ok) throw new Error('Could not check for updates'); }), { disabled: !!busy || !updatesAvailable || busyUpdater })}
+          </>}
+          below={(updater.phase === 'downloading' || notes.length > 0) && <>
+            {updater.phase === 'downloading' && <progress value={updater.progress} max={100} aria-label="Update download" />}
+            {notes.length > 0 && <details className="release-notes" onToggle={onDisclosureToggle}><summary onClick={markReveal}>What’s new</summary>{notes.map((note, index) => <p key={index}>{note}</p>)}</details>}
+          </>} />
+        <SwitchRow id="update-startup" label={ui.checkStartup} hint={ui.checkStartupHint} checked={settings.checkUpdatesOnStartup} onChange={(value) => save({ checkUpdatesOnStartup: value }, 'update-startup', ui.checkStartup)} />
+      </SettingsGroup>
+      <SettingsGroup id="about-support" title={ui.diagnostics}>
+        <SettingRow id="support-bundle" label={ui.supportBundle} hint={ui.supportBundleHint}
+          control={<>{button(ui.exportDiagnostics, () => run('diagnostics', () => diagnostics()), { label: ui.exportDiagnosticsLabel })}{button(ui.copyDiagnostics, () => run('copy', () => diagnostics(true)), { label: ui.copyDiagnosticsLabel })}</>} />
+        <SettingRow id="report-site" label={ui.reportSiteTitle} hint={ui.reportSiteHint}
+          control={button(<>{ui.reportSite}<ExternalLink aria-hidden="true" /></>, () => run('report', reportSite), { label: ui.reportSiteLabel })} />
+        <SettingRow id="temporary-data" label={ui.tempData} hint={ui.tempDataHint}
+          control={button(ui.clearTemp, () => run('temporary', async () => { if (!gallery) await api?.clearTempDownloads(); toast.success('Stale temporary download data cleared'); }), { label: ui.clearTempLabel })} />
+      </SettingsGroup>
+    </>,
   };
   return <Dialog open={open} onOpenChange={close}>
     <DialogContent ref={contentRef} className="settings-sheet settings-sidebar top-0 left-auto translate-x-0 translate-y-0" showCloseButton={false} onEscapeKeyDown={escape}
       // Start on the sheet itself rather than lighting up the close button; Tab reaches it first.
       onOpenAutoFocus={(event) => { event.preventDefault(); contentRef.current?.focus({ preventScroll: true }); }}>
-      <div className="sheet-heading"><DialogTitle>{ui.settings}</DialogTitle><button type="button" className="row-action" aria-label={ui.closeSettings} title={ui.closeSettingsHint} onClick={() => close(false)}><X /></button></div>
       <DialogDescription className="sr-only">{ui.settingsDescription}</DialogDescription>
       <p className="sr-only" role="status" aria-live="polite">{saved.announcement}</p>
       <SettingsFormContext.Provider value={form}>
       <div className="settings-split">
         <div className="settings-rail">
+          <DialogTitle className="settings-rail-title">{ui.settings}</DialogTitle>
           <div role="tablist" aria-orientation="vertical" aria-label={ui.settingsSections} onKeyDown={onRailKey}>
             {settingsSections.map(({ id, title, icon: Icon }) => <button key={id} type="button" role="tab" id={`settings-tab-${id}`} aria-controls="settings-pane" aria-selected={id === section} tabIndex={id === section ? 0 : -1}
-              ref={(element) => { if (element) tabs.current.set(id, element); else tabs.current.delete(id); }} onClick={() => onSectionChange(id)}><Icon aria-hidden="true" />{title}</button>)}
+              ref={(element) => { if (element) tabs.current.set(id, element); else tabs.current.delete(id); }} onClick={() => onSectionChange(id)}><span className="settings-tab-icon" aria-hidden="true"><Icon /></span>{title}</button>)}
           </div>
           <span className="settings-version">{ui.appVersion.replace('{version}', appInfo?.version || 'development')}</span>
         </div>
-        <div className="settings-pane" id="settings-pane" role="tabpanel" aria-labelledby={`settings-tab-${current.id}`} ref={scrollRef}>
-          <h3 className="settings-pane-title">{current.title}</h3>
-          <p className="settings-pane-description">{current.description}</p>
-          {panes[current.id]()}
+        <div className="settings-column">
+          <div className="settings-pane-head">
+            <h3 className="settings-pane-title">{current.title}</h3>
+            <button type="button" className="settings-close" aria-label={ui.closeSettings} title={ui.closeSettingsHint} onClick={() => close(false)}><X /></button>
+          </div>
+          <div className="settings-pane" id="settings-pane" role="tabpanel" aria-labelledby={`settings-tab-${current.id}`} ref={scrollRef}>
+            <p className="settings-pane-description">{current.description}</p>
+            {panes[current.id]()}
+            <p className="settings-autosave"><Check aria-hidden="true" />{ui.autosaveNote}</p>
+          </div>
         </div>
       </div>
       </SettingsFormContext.Provider>

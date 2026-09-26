@@ -19,6 +19,12 @@
     unknownProblem: 'Something went wrong at {pct}%',
     qualityUnavailable: "This quality isn't available from the source. Choose another quality.",
     qualityFallback: '{to}p — {from}p unavailable', saveFolder: 'your save folder',
+    // DRM-protected streaming: SnagThis never records, decrypts or saves it.
+    drmProtected: "Protected by {site} (DRM) — SnagThis can't save it", drmWhy: 'Why?',
+    drmHelpTitle: 'Protected video',
+    drmHelpBody: '{site} locks this video with DRM (digital rights management), so it only plays inside its own player. SnagThis respects that: it never records, unlocks or saves protected video.',
+    drmHelpOthers: 'Other videos on this page that are not protected are still listed and can be saved.',
+    drmThisSite: 'this site',
     download: 'Download', pause: 'Pause', resume: 'Resume', resumeDownload: 'Resume download', play: 'Play',
     openPage: 'Open page', retry: 'Try again', chooseFolder: 'Choose folder', locate: 'Locate', details: 'Details',
     weekdays: Object.freeze(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']),

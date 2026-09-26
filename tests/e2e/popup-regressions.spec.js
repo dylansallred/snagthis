@@ -46,7 +46,7 @@ async function loadPopup(page, flags = { storeBuild: false }) {
   const source = fs.readFileSync(path.join(extension, 'popup.js'), 'utf8');
   expect(source).toContain(startup);
   await page.addScriptTag({ content: source.replace(startup,
-    `window.popupFixture = { load(items, jobs, links) { mediaItems = items; queue = jobs; mappings = links; reachable = true; compatible = true; appToken = 'fixture'; selected.clear(); renderRows(); }, pair: () => showCodePairing() };`,
+    `window.popupFixture = { load(items, jobs, links) { mediaItems = items; queue = jobs; mappings = links; reachable = true; compatible = true; appToken = 'fixture'; selected.clear(); renderRows(); }, pair: () => showCodePairing(), settings: () => showSettings(), connection(isReachable, token) { reachable = isReachable; appToken = token; renderConnection(); } };`,
   ) });
   return errors;
 }
@@ -226,6 +226,76 @@ test('a pasted connection code with spaces or dashes is normalised and submits i
   expect(errors).toEqual([]);
 });
 
+test('popup Settings tabs: arrow keys, Home/End and Tab into the panel; every tab fits without scrolling at a stable height', async ({ page }) => {
+  const errors = await loadPopup(page);
+  await page.setViewportSize({ width: 480, height: 560 });
+  // The harness skips startup wiring, so the fixture opens Settings as the gear button does.
+  await page.evaluate(() => { window.popupFixture.load([], [], {}); window.popupFixture.settings(); });
+  const sheet = page.locator('#sheet');
+  const tabs = sheet.getByRole('tablist', { name: 'Settings sections' });
+  const tab = name => tabs.getByRole('tab', { name, exact: true });
+  const panel = sheet.getByRole('tabpanel');
+  await expect(tabs.getByRole('tab')).toHaveCount(4);
+  await expect(tab('Downloads')).toHaveAttribute('aria-selected', 'true');
+  await expect(tab('Downloads')).toBeFocused();
+  await expect(sheet.getByRole('button', { name: 'SnagThis settings', exact: true })).toBeVisible();
+  await expect(panel).toHaveAttribute('aria-labelledby', 'settings-tab-downloads');
+  // Roving tabindex: only the chosen tab is in the Tab order; arrows move and select.
+  await expect(tabs.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
+  await page.keyboard.press('ArrowRight');
+  await expect(tab('Appearance')).toBeFocused();
+  await expect(tab('Appearance')).toHaveAttribute('aria-selected', 'true');
+  await expect(panel.getByRole('radiogroup', { name: 'Accent colour' })).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(tab('Connection, Connected')).toBeFocused();
+  await expect(panel).toContainText('Connected to SnagThis');
+  await page.keyboard.press('End');
+  await expect(tab('About')).toBeFocused();
+  await expect(panel).toContainText('for Chrome v2.0.0');
+  await page.keyboard.press('ArrowRight');
+  await expect(tab('Downloads')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(tab('About')).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(tab('Downloads')).toHaveAttribute('aria-selected', 'true');
+  await expect(tabs.locator('[role="tab"][tabindex="0"]')).toHaveAttribute('id', 'settings-tab-downloads');
+  await page.keyboard.press('Tab');
+  await expect(panel).toBeFocused();
+  // Reopening in the same popup session returns to the last tab used.
+  await tab('Connection, Connected').click();
+  await page.evaluate(() => { document.getElementById('sheet').close(); window.popupFixture.settings(); });
+  await expect(tab('Connection, Connected')).toHaveAttribute('aria-selected', 'true');
+
+  for (const [reachable, token, status] of [[true, 'fixture', 'Connected'], [false, 'fixture', 'SnagThis not open'], [true, '', 'Not connected']]) {
+    await page.evaluate(([isReachable, value]) => window.popupFixture.connection(isReachable, value), [reachable, token]);
+    await expect(tabs.getByRole('tab', { name: `Connection, ${status}`, exact: true })).toBeVisible();
+    const heights = new Set();
+    for (const name of ['Downloads', 'Appearance', `Connection, ${status}`, 'About']) {
+      await tab(name).click();
+      const fit = await page.evaluate(() => { const pane = document.getElementById('settings-panel'); return { overflow: pane.scrollHeight - pane.clientHeight, popup: document.getElementById('popup').getBoundingClientRect().height }; });
+      expect(fit.overflow, `${status} · ${name} scrolls`).toBeLessThanOrEqual(0);
+      expect(fit.popup).toBeLessThanOrEqual(560);
+      heights.add(fit.popup);
+    }
+    expect(heights.size, `${status}: switching tabs keeps the popup height`).toBe(1);
+    await tab('Downloads').click();
+    const quality = panel.getByLabel('Preferred quality', { exact: true });
+    if (status === 'Connected') { await expect(quality).toBeEnabled(); await expect(sheet.getByRole('note')).toHaveCount(0); }
+    else {
+      // One explanation with the fix replaces per-row notes; disabled controls point at it.
+      await expect(quality).toBeDisabled();
+      await expect(quality).toHaveAttribute('aria-describedby', 'settings-gate-text');
+      await expect(sheet.getByRole('note')).toContainText(reachable ? 'Connect Chrome to SnagThis' : 'SnagThis isn’t open');
+      await expect(sheet.getByRole('note').getByRole('button', { name: reachable ? 'Connect' : 'Open SnagThis', exact: true })).toBeVisible();
+    }
+  }
+  await tab('Connection, Not connected').click();
+  await expect(panel.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: 'Use a code instead', exact: true }).click();
+  await expect(page.getByLabel('Connection code', { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('audio tracks: plain-language labels, DEFAULT preselected, hover to hear, Esc stops first, choosing updates the trigger', async ({ page }) => {
   const errors = await loadPopup(page);
   // cinejoy.pk shape: four nameless renditions, only Track 1 DEFAULT=YES.
@@ -299,6 +369,25 @@ test('audio tracks: plain-language labels, DEFAULT preselected, hover to hear, E
   expect(errors).toEqual([]);
 });
 
+test('a quality menu taller than the popup scrolls inside it, so every audio track is reachable', async ({ page }) => {
+  const errors = await loadPopup(page);
+  const tracks = { ...item, audio: [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ url: `https://fixture.invalid/audio_${n}.m3u8`, groupId: 'audio', name: `Track ${n}`, language: null, default: n === 1 })) };
+  await page.evaluate(value => window.popupFixture.load([value], [], {}), tracks);
+  await page.locator('.quality-button').click();
+  const menu = page.locator('#menu');
+  await expect(menu.locator('.atrack')).toHaveCount(8);
+  const fit = await page.evaluate(() => {
+    const node = document.getElementById('menu'); const box = node.getBoundingClientRect(); const popup = document.getElementById('popup').getBoundingClientRect();
+    return { bottom: box.bottom, popup: popup.bottom, scrolls: node.scrollHeight > node.clientHeight };
+  });
+  expect(fit.bottom).toBeLessThanOrEqual(fit.popup);
+  expect(fit.scrolls).toBe(true);
+  const last = menu.locator('.atrack').last();
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport();
+  expect(await last.evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(fit.popup);
+  expect(errors).toEqual([]);
+});
 test('a video only its page Service Worker can serve says so and offers no download', async ({ page }) => {
   const errors = await loadPopup(page);
   const served = { id: 'sw', url: 'https://storage.fixture.invalid/132201720.mp4#mp4/chunk/1', type: 'file', mediaKind: 'video', contentType: 'video/mp4',
@@ -340,5 +429,31 @@ test('desktop rows show a speed trace; a watched save leaves a quiet dot under r
   // Still checking this page: the first skeleton thumbnail holds the pixel button, hidden from assistive tech.
   await expect(page.locator('.discovery-state .skeleton-mascot .pixel-button')).toBeVisible();
   await expect(page.locator('.discovery-state .skeleton-mascot')).toHaveAttribute('aria-hidden', 'true');
+  expect(errors).toEqual([]);
+});
+
+test('a DRM-protected title is one explanatory row with no download; unprotected media keeps its Download', async ({ page }) => {
+  const errors = await loadPopup(page);
+  const locked = { id: 'protected:0', url: 'https://play.fixture.invalid/video/watch/1', type: 'protected', mediaKind: 'protected', drm: true, keySystem: 'widevine', drmSite: 'Stream Service',
+    sourcePageUrl: 'https://play.fixture.invalid/video/watch/1', sourcePageTitle: 'Bad Optics • Stream Service', durationSeconds: 3206, variants: [], audio: [], subtitles: [],
+    detectedStreams: [{ id: 'mpd', url: 'https://cdn.fixture.invalid/manifest.mpd', drm: true }] };
+  const trailer = { id: 'trailer', url: 'https://trailers.fixture.invalid/trailer.mp4', type: 'file', mediaKind: 'video', contentType: 'video/mp4',
+    sourcePageUrl: locked.sourcePageUrl, sourcePageTitle: 'Bad Optics trailer', durationSeconds: 120, contentLength: 30000000 };
+  await page.evaluate(values => window.popupFixture.load(values, [], {}), [locked, trailer]);
+  await expect(page.locator('#page-count')).toHaveText('2 videos on this page');
+  const rowsWithDrm = page.locator('.video-row[data-state="protected"]');
+  await expect(rowsWithDrm).toHaveCount(1);
+  const row = rowsWithDrm.first();
+  await expect(row.locator('.row-status')).toHaveText("Protected by Stream Service (DRM) — SnagThis can't save it");
+  await expect(row.getByRole('button', { name: /^(Download|Use desktop app|Starting download)$/ })).toHaveCount(0);
+  await row.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: /Download with desktop|Preview|Quality/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await row.getByRole('button', { name: 'Why?' }).click();
+  await expect(page.locator('#sheet-title')).toHaveText('Protected video');
+  await expect(page.locator('#sheet-content')).toContainText('never records, unlocks or saves protected video');
+  await page.locator('#close-sheet').click();
+  const clear = page.locator('.video-row').filter({ hasText: 'Bad Optics trailer' });
+  await expect(clear.getByRole('button', { name: 'Download' })).toHaveCount(1);
   expect(errors).toEqual([]);
 });

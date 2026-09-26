@@ -40,14 +40,14 @@ test('full loop: actual one-click Chrome pairing and 480p selection → Electron
     const code = await popup.locator('#sheet .pair-digits').getAttribute('data-code');
     expect(code).toMatch(/^\d{4}$/);
     await native.app.evaluate(({ app }) => { app.emit('open-url', { preventDefault() {} }, 'snagthis://open/pair'); });
-    const approve = desktop.getByRole('dialog', { name: 'Chrome wants to connect' });
+    const approve = desktop.getByRole('dialog', { name: 'Connect Chrome?' });
     await expect(approve.getByRole('img', { name: /^Match code/ })).toHaveAttribute('data-code', code);
     // A reloaded window gets the same request back; it is still the only pending one.
     await desktop.reload();
     await expect(approve.getByRole('img', { name: /^Match code/ })).toHaveAttribute('data-code', code);
     await approve.getByRole('button', { name: 'Allow', exact: true }).click();
     await desktop.getByRole('dialog', { name: 'Chrome connected' }).getByRole('button', { name: 'Done', exact: true }).click();
-    await expect(popup.locator('#sheet-title')).toHaveText('Connected');
+    await expect(popup.locator('#sheet .pair-yay-title')).toHaveText('Connected');
     await popup.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(popup.locator('#connection-banner')).toBeHidden();
     await expect.poll(() => desktop.evaluate(async () => (await window.desktop.getConnectionState()).extensionConnected)).toBe(true);

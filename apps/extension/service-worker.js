@@ -18,6 +18,7 @@ const NETWORK_URLS = ['http://*/*', 'https://*/*'];
 // Detection needs media elements, fetch/XHR playlists and plugin-style loads.
 // Pages, scripts, styles, images and fonts never need their headers read.
 const REQUEST_TYPES = ['media', 'xmlhttprequest', 'other'];
+const DRM_MESSAGE = "This video is protected by DRM. SnagThis can't save it.";
 const YOUTUBE_STORE_MESSAGE = 'To save this video, copy its link and paste it into the SnagThis desktop app.';
 const inFlightRequests = new Map();
 const observedRequests = new Map();
@@ -86,7 +87,7 @@ async function writePage(tabId, page, slot = '') {
     await chrome.storage.session.set({ [key]: page });
   }
   if (slot) { if (!prerenderKeys.has(tabId)) prerenderKeys.set(tabId, new Set()); prerenderKeys.get(tabId).add(key); return; }
-  const count = SnagThisHls.collapseDetections(visibleItems(page)).length;
+  const count = listedItems(page).length;
   await chrome.action.setBadgeText({ tabId, text: count ? String(count) : '' });
   await chrome.action.setBadgeBackgroundColor({ tabId, color: SnagThisAccentIcon.badgeColor() });
 }
@@ -101,7 +102,13 @@ function fragmentOnlyChange(previous, next) {
   } catch { return false; }
 }
 function visibleItems(page) {
-  return D.withoutManifestSegments(page.items).filter(item => !page.hidden.includes(item.id) && (page.showAll || !D.isJunkMedia(item, page.mappings)));
+  return D.markProtected(D.withoutManifestSegments(page.items), page.contexts)
+    .filter(item => !page.hidden.includes(item.id) && (page.showAll || (!D.isJunkMedia(item, page.mappings) && !D.isStreamFragment(item, page.items, page.mappings))));
+}
+// Rows as the popup lists them: grouped streams, and one row for a
+// DRM-protected title in place of its manifests and pieces.
+function listedItems(page, items = visibleItems(page)) {
+  return page.showAll ? items : D.withProtectedRow(SnagThisHls.collapseDetections(items), page);
 }
 // The popup polls every second; it learns that a snapshot exists, and the
 // worker attaches the text itself when a job is sent.
@@ -209,6 +216,19 @@ function cleanContext(input = {}, pageUrl = '') {
     if (Object.hasOwn(input, name)) result[name] = D.thumbnailUrl(input[name], input.sourcePageUrl || pageUrl);
   }
   for (const name of ['durationSeconds', 'height']) { const value = Number(input[name]); if (Number.isFinite(value) && value > 0) result[name] = value; }
+  // The frame's player uses DRM (EME). Kept per frame; never copied onto items.
+  const locked = input.protection;
+  if (locked && typeof locked === 'object') {
+    const seconds = Number(locked.durationSeconds);
+    result.protection = {
+      keySystem: ['widevine', 'playready', 'fairplay', 'clearkey'].includes(locked.keySystem) ? locked.keySystem : '',
+      signal: ['mediakeys', 'encrypted', 'init'].includes(locked.signal) ? locked.signal : 'mediakeys',
+      siteName: String(locked.siteName || '').trim().slice(0, 80),
+      mediaSourceUrl: locked.mediaSourceUrl === 'blob:' ? 'blob:' : D.httpUrl(locked.mediaSourceUrl, input.sourcePageUrl || pageUrl),
+      durationSeconds: Number.isFinite(seconds) && seconds > 0 ? seconds : null,
+      poster: D.thumbnailUrl(locked.poster, input.sourcePageUrl || pageUrl),
+    };
+  }
   const shown = input.presentation;
   if (shown && typeof shown === 'object') {
     const size = value => (Number.isFinite(Number(value)) && Number(value) > 0 ? Math.min(100000, Math.round(Number(value))) : 0);
@@ -232,6 +252,7 @@ function cleanContext(input = {}, pageUrl = '') {
 }
 function scopedContext(context = {}, item, sourceSpecific = false) {
   const result = { ...context };
+  delete result.protection;
   const duration = !item.manifest?.isMaster && Number(item.manifest?.durationSeconds) > 0 ? Number(item.manifest.durationSeconds) : null;
   const matches = (sourceSpecific && !Object.hasOwn(context, 'mediaSourceUrl'))
     || context.mediaSourceUrl === item.url
@@ -301,20 +322,34 @@ async function storeMedia(tabId, incoming, frameId = 0, topUrl = '', observed = 
     if (observed.outermost && observed.documentId && !page.documentId) page.documentId = observed.documentId;
     let manifest = existing?.manifest;
     let parsed = false;
-    try { if (type === 'hls' && incoming.manifestText) { manifest = SnagThisHls.parseHlsManifest(incoming.manifestText, url, { durationSeconds: context.durationSeconds }); parsed = true; } } catch { /* Detection still works if a manifest is incomplete. */ }
+    try {
+      if (type === 'hls' && incoming.manifestText) { manifest = SnagThisHls.parseHlsManifest(incoming.manifestText, url, { durationSeconds: context.durationSeconds }); parsed = true; }
+      else if (type === 'dash' && incoming.manifestText) { manifest = SnagThisHls.parseDashManifest(incoming.manifestText, url); parsed = true; }
+    } catch { /* Detection still works if a manifest is incomplete. */ }
     // A newly parsed media playlist can establish which blob player this is.
     source.manifest = manifest;
     context = { ...scopedContext(page.contexts[frameId], source), ...scopedContext(incomingContext, source, true) };
     const incomingContentType = String(incoming.contentType || '').slice(0, 200);
     const contentType = incomingContentType.split(';')[0].trim().toLowerCase() === 'video/unknown'
       ? existing?.contentType || incomingContentType : incomingContentType || existing?.contentType || '';
+    // How the page loaded it: a media element (or a direct load) plays a whole
+    // file; page script fetching it usually feeds pieces to a stream player.
+    const requestType = String(incoming.requestType || '');
+    const reported = ['element', 'script'].includes(incoming.delivery) ? incoming.delivery
+      : ['media', 'main_frame', 'sub_frame', 'object'].includes(requestType) ? 'element' : requestType === 'xmlhttprequest' ? 'script' : '';
+    const delivery = existing?.delivery === 'element' ? 'element' : reported || existing?.delivery || '';
+    // A 206 answer's Content-Length is one byte range; the total follows the slash.
+    const range = /^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i.exec(String(incoming.contentRange || '').trim());
+    const rangeTotal = range && range[3] !== '*' ? Number(range[3]) : 0;
     const item = {
       ...existing, ...context, id: existing?.id || crypto.randomUUID(), url, type: type === 'hls' ? 'hls' : 'file',
       mediaKind: youtube ? 'youtube-page' : type === 'hls' ? 'hls-manifest' : type === 'dash' ? 'dash-manifest' : 'video',
       streamType: type === 'hls' || type === 'dash' ? type : null,
       filename: (() => { try { return decodeURIComponent(new URL(url).pathname.split('/').pop() || ''); } catch { return ''; } })(),
       contentType,
-      contentLength: Number(incoming.contentLength) > 0 ? Number(incoming.contentLength) : existing?.contentLength || 0,
+      contentLength: rangeTotal || (Number(incoming.contentLength) > 0 ? Number(incoming.contentLength) : existing?.contentLength || 0),
+      ...(delivery ? { delivery } : {}),
+      ...(range && delivery === 'script' ? { rangeRequested: true } : {}),
       requestHeaders: { ...(existing?.requestHeaders || {}), ...D.sanitizeHeaders(network?.headers) },
       requestHeadersOrigin: new URL(url).origin,
       networkObserved: Boolean(existing?.networkObserved || network),
@@ -325,7 +360,7 @@ async function storeMedia(tabId, incoming, frameId = 0, topUrl = '', observed = 
     const method = /^[A-Z]{3,7}$/.test(String(incoming.method || '')) ? incoming.method : '';
     if (method) item.requestMethod = method;
     if (method === 'GET') delete item.manifestSnapshot;
-    else if (method && parsed) {
+    else if (method && parsed && type === 'hls') {
       if (incoming.manifestText.length <= MAX_MANIFEST_SNAPSHOT) item.manifestSnapshot = incoming.manifestText;
       else delete item.manifestSnapshot;
     }
@@ -337,7 +372,8 @@ async function storeMedia(tabId, incoming, frameId = 0, topUrl = '', observed = 
     if (parsed) {
       // Pieces seen before their playlist are dropped now, unless downloading.
       const pieces = new Set([...(manifest.segmentUrls || []), ...(manifest.initializationUrls || [])]);
-      page.items = page.items.filter(other => other === existing || other.mediaKind !== 'video' || !pieces.has(other.url) || page.mappings[other.id]);
+      page.items = page.items.filter(other => other === existing || other.mediaKind !== 'video' || page.mappings[other.id]
+        || !(pieces.has(other.url) || SnagThisHls.matchesSegmentTemplate(other.url, manifest.segmentTemplates)));
     }
     if (existing) page.items[page.items.indexOf(existing)] = item;
     else {
@@ -497,6 +533,11 @@ async function downloadMedia(message) {
   if (pendingDownloads.has(key)) return pendingDownloads.get(key);
   const task = (async () => {
     const page = await readPage(message.tabId);
+    // DRM-protected media is never downloaded, handed to the desktop app or
+    // saved by Chrome, whatever the popup asks for.
+    const locked = listedItems({ ...page, showAll: false }, D.markProtected(D.withoutManifestSegments(page.items), page.contexts))
+      .find(row => row.drm && (row.id === message.mediaId || (row.detectedStreams || []).some(stream => stream.id === message.mediaId)));
+    if (locked) throw new Error(DRM_MESSAGE);
     const observed = D.withoutManifestSegments(page.items);
     const item = observed.find(value => value.id === message.mediaId);
     if (!item) throw new Error('This video is no longer on the page.');
@@ -653,7 +694,7 @@ async function handleMessage(message, sender) {
     const page = await readPage(message.tabId);
     const rawItems = visibleItems(page).map(popupItem);
     const browser = await browserDownloads.snapshot(rawItems, page.mappings);
-    return { ok: true, items: page.showAll ? rawItems : SnagThisHls.collapseDetections(rawItems), rawItems, mappings: browser.mappings, browserQueue: browser.queue, visit: page.visit, showAll: Boolean(page.showAll), titles: page.titles || {} };
+    return { ok: true, items: listedItems(page, rawItems), rawItems, mappings: browser.mappings, browserQueue: browser.queue, visit: page.visit, showAll: Boolean(page.showAll), titles: page.titles || {} };
   }
   if (['HIDE_MEDIA', 'SHOW_ALL_MEDIA', 'RENAME_MEDIA'].includes(message.cmd)) return serializeTab(message.tabId, async () => {
     const page = await readPage(message.tabId);
@@ -730,11 +771,11 @@ chrome.webRequest.onBeforeSendHeaders.addListener(details => {
   inFlightRequests.set(details.requestId, { url: details.url, headers: D.sanitizeHeaders(details.requestHeaders), time: details.timeStamp || Date.now(), documentId: details.documentId });
   if (inFlightRequests.size > MAX_IN_FLIGHT) inFlightRequests.delete(inFlightRequests.keys().next().value);
 }, { urls: NETWORK_URLS, types: REQUEST_TYPES }, ['requestHeaders', 'extraHeaders']);
-async function observeNetworkMedia(details, contentType, contentLength, captured) {
+async function observeNetworkMedia(details, contentType, contentLength, captured, headers = {}) {
   const scope = await observationScope(details.tabId, details);
   if (!scope) return;
   const tab = await chrome.tabs.get(details.tabId);
-  await storeMedia(details.tabId, { url: details.url, method: details.method, contentType, contentLength, requestHeaders: captured?.url === details.url ? captured.headers : {}, sourcePageTitle: scope.slot ? '' : tab.title },
+  await storeMedia(details.tabId, { url: details.url, method: details.method, contentType, contentLength, contentRange: details.statusCode === 206 ? headers['content-range'] : '', requestType: details.type, requestHeaders: captured?.url === details.url ? captured.headers : {}, sourcePageTitle: scope.slot ? '' : tab.title },
     details.frameId, scope.slot ? scope.url : tab.url, { documentId: details.documentId || captured?.documentId, startedAt: captured?.time, fromNetwork: true, outermost: scope.outermost, slot: scope.slot });
 }
 chrome.webRequest.onHeadersReceived.addListener(details => {
@@ -753,6 +794,6 @@ chrome.webRequest.onHeadersReceived.addListener(details => {
     }
     return;
   }
-  observeNetworkMedia(details, contentType, Number(headers['content-length']), captured).catch(logFailure);
+  observeNetworkMedia(details, contentType, Number(headers['content-length']), captured, headers).catch(logFailure);
 }, { urls: NETWORK_URLS, types: ['main_frame', 'sub_frame', 'object', ...REQUEST_TYPES] }, ['responseHeaders']);
 for (const event of [chrome.webRequest.onCompleted, chrome.webRequest.onErrorOccurred]) event.addListener(details => { inFlightRequests.delete(details.requestId); }, { urls: NETWORK_URLS, types: REQUEST_TYPES });

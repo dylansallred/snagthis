@@ -59,13 +59,14 @@ function loadWorker() {
     async response(url, contentType, extra = {}) {
       const details = { requestId: randomUUID(), url, tabId: tab.id, frameId: 0, frameType: 'outermost_frame', documentLifecycle: 'active', documentId: tab.documentId, type: 'xmlhttprequest', method: 'GET', timeStamp: Date.now(), ...extra };
       await listeners.beforeHeaders({ ...details, requestHeaders: [] });
-      await listeners.headers({ ...details, statusCode: 200, responseHeaders: [{ name: 'Content-Type', value: contentType }, ...(extra.contentLength ? [{ name: 'Content-Length', value: String(extra.contentLength) }] : [])] });
+      await listeners.headers({ ...details, statusCode: extra.statusCode || 200, responseHeaders: [{ name: 'Content-Type', value: contentType }, ...(extra.contentLength ? [{ name: 'Content-Length', value: String(extra.contentLength) }] : []),
+        ...(extra.contentRange ? [{ name: 'Content-Range', value: extra.contentRange }] : [])] });
       for (let turn = 0; turn < 20; turn++) await new Promise(setImmediate);
     },
   };
 }
 
-function loadDetector(pageUrl = 'https://cinema.example/watch') {
+function loadDetector(pageUrl = 'https://cinema.example/watch', { navigator } = {}) {
   const observations = [];
   const fetchResponses = [];
   class Xhr {
@@ -82,7 +83,7 @@ function loadDetector(pageUrl = 'https://cinema.example/watch') {
   }
   const window = { postMessage: message => observations.push(clone(message)), fetch: async () => fetchResponses.shift() };
   const context = vm.createContext({ window, location: { href: pageUrl }, document: { baseURI: pageUrl }, XMLHttpRequest: Xhr, URL, Headers, TextDecoder, TextEncoder,
-    history: { pushState() {}, replaceState() {} } });
+    history: { pushState() {}, replaceState() {} }, ...(navigator ? { navigator } : {}) });
   vm.runInContext(fs.readFileSync(path.join(extension, 'js/media-detector.js'), 'utf8'), context, { filename: 'media-detector.js' });
   return {
     observations, Xhr,
@@ -91,6 +92,13 @@ function loadDetector(pageUrl = 'https://cinema.example/watch') {
       fetchResponses.push({ ok: true, url, headers: new Headers({ 'content-type': contentType }),
         clone: () => ({ body: { getReader: () => ({ read: async () => (read ? { done: true } : (read = true, { value: bytes, done: false })), cancel: async () => {} }) } }) });
       await window.fetch(input, init);
+      for (let turn = 0; turn < 5; turn++) await new Promise(setImmediate);
+    },
+    // A binary response the page's player already received (an fMP4 init segment).
+    async fetchBytes(url, contentType, bytes) {
+      fetchResponses.push({ ok: true, url, headers: new Headers({ 'content-type': contentType, 'content-length': String(bytes.byteLength) }),
+        clone: () => ({ arrayBuffer: async () => bytes.buffer.slice(0), body: null }) });
+      await window.fetch(url);
       for (let turn = 0; turn < 5; turn++) await new Promise(setImmediate);
     },
   };
@@ -226,4 +234,165 @@ test('junk media: short sounds and ad creatives are hidden unless Show all; vide
   await worker.message({ cmd: 'SHOW_ALL_MEDIA', tabId: 7 });
   listed = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
   assert.equal(listed.rawItems.length, 4);
+});
+
+// DRM: detection only. Protected media is one explanatory row, never a download.
+const DRM_FIXTURES = path.join(__dirname, 'fixtures/drm');
+const WIDEVINE_MPD = fs.readFileSync(path.join(DRM_FIXTURES, 'widevine.mpd'), 'utf8');
+const SAMPLE_AES = fs.readFileSync(path.join(DRM_FIXTURES, 'sample-aes-widevine.m3u8'), 'utf8');
+const AES_128 = fs.readFileSync(path.join(DRM_FIXTURES, 'aes-128.m3u8'), 'utf8');
+const hls = require('../packages/contracts/src/hls');
+const PROTECTED_CONTEXT = { sourcePageUrl: 'https://cinema.example/watch', sourcePageTitle: 'Bad Optics • Stream Service',
+  protection: { keySystem: 'widevine', signal: 'mediakeys', siteName: 'Stream Service', mediaSourceUrl: 'blob:', durationSeconds: 3206.4 } };
+
+test('manifest DRM signals: DASH ContentProtection and HLS SAMPLE-AES are DRM; AES-128 is not', () => {
+  const dash = hls.parseDashManifest(WIDEVINE_MPD, 'https://cinema.example/manifest.mpd');
+  assert.equal(dash.isDrm, true);
+  assert.deepEqual(dash.keySystems, ['widevine', 'playready']);
+  assert.equal(dash.durationSeconds, 3206.4);
+  assert.equal(hls.matchesSegmentTemplate('https://media.stream.example/v1/title-123/video/v640/00012.mp4?sig=1', dash.segmentTemplates), true);
+  assert.equal(hls.matchesSegmentTemplate('https://media.stream.example/v1/title-123/audio/aen/init.mp4', dash.segmentTemplates), true);
+  assert.equal(hls.matchesSegmentTemplate('https://media.stream.example/v1/trailer.mp4', dash.segmentTemplates), false);
+  const clear = hls.parseDashManifest(WIDEVINE_MPD.replace(/<ContentProtection[^>]*\/>|<ContentProtection[\s\S]*?<\/ContentProtection>/g, ''), 'https://cinema.example/clear.mpd');
+  assert.equal(clear.isDrm, false);
+  assert.equal(detection.mediaType('https://cinema.example/api/manifest', 'text/plain', WIDEVINE_MPD), 'dash', 'an MPD body is recognised without a .mpd name');
+
+  const sample = hls.parseHlsManifest(SAMPLE_AES, 'https://cinema.example/drm/index.m3u8');
+  assert.equal(sample.isDrm, true);
+  assert.deepEqual(sample.keySystems, ['widevine', 'fairplay']);
+  const aes = hls.parseHlsManifest(AES_128, 'https://cinema.example/aes/index.m3u8');
+  assert.equal(aes.isDrm, false, 'plain AES-128 HLS is an ordinary key file, not DRM');
+  assert.deepEqual(aes.keySystems, []);
+});
+
+test('a Widevine DASH page lists one protected row; its pieces never become rows and nothing can be downloaded', async () => {
+  const worker = loadWorker();
+  const mpdUrl = 'https://cinema.example/api/playback/manifest.mpd';
+  const mpd = await worker.fromPage({ cmd: 'STORE_DETECTED_MEDIA', media: { url: mpdUrl, contentType: 'application/dash+xml', manifestText: WIDEVINE_MPD, delivery: 'script' } });
+  assert.equal(mpd.item.manifest.isDrm, true);
+  // The player fetches init segments and 15 numbered fragments (video and audio).
+  const base = 'https://media.stream.example/v1/title-123/';
+  await worker.response(`${base}video/v640/init.mp4`, 'video/mp4', { contentLength: 900 });
+  for (let index = 1; index <= 15; index++) await worker.response(`${base}video/v640/${String(index).padStart(5, '0')}.mp4`, 'video/mp4', { contentLength: 400000 });
+  await worker.response(`${base}audio/aen/00001.mp4`, 'audio/mp4', { contentLength: 30000 });
+  // EME is attached to the page's player.
+  await worker.fromPage({ cmd: 'PAGE_CONTEXT', context: PROTECTED_CONTEXT });
+  // A trailer from an unprotected CDN on the same page.
+  await worker.fromPage({ cmd: 'STORE_DETECTED_MEDIA', media: { url: 'https://trailers.example/bad-optics/index.m3u8', manifestText: PLAYLIST, delivery: 'script' } });
+
+  const listed = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  assert.equal(listed.items.length, 2, 'one protected title plus the clear trailer');
+  const locked = listed.items.find(item => item.drm);
+  assert.equal(locked.type, 'protected');
+  assert.equal(locked.keySystem, 'widevine');
+  assert.equal(locked.drmSite, 'Stream Service');
+  assert.equal(locked.durationSeconds, 3206.4);
+  assert.equal(locked.sourcePageTitle, 'Bad Optics • Stream Service');
+  assert.equal(detection.protectedSiteName(locked), 'Stream Service');
+  const trailer = listed.items.find(item => !item.drm);
+  assert.equal(trailer.url, 'https://trailers.example/bad-optics/index.m3u8');
+  assert.equal(listed.rawItems.some(item => /\/(?:init|\d{5})\.mp4$/.test(item.url)), false, 'segments are folded into their manifest');
+
+  for (const mediaId of [locked.id, mpd.item.id]) {
+    const refused = await worker.message({ cmd: 'DOWNLOAD_MEDIA', backend: 'desktop', tabId: 7, mediaId, payload: { mediaUrl: mpdUrl, title: 'Bad Optics' } });
+    assert.equal(refused.ok, false);
+    assert.match(refused.error, /DRM/);
+  }
+  assert.equal(worker.jobs.filter(job => job.path === '/v1/jobs').length, 0, 'nothing reached the desktop app');
+  const clear = await worker.message({ cmd: 'DOWNLOAD_MEDIA', backend: 'desktop', tabId: 7, mediaId: trailer.id, payload: { mediaUrl: trailer.url, mediaType: 'hls', title: 'Trailer' } });
+  assert.equal(clear.ok, true, 'the unprotected trailer stays downloadable');
+
+  // Hiding the protected row hides it for this visit.
+  await worker.message({ cmd: 'HIDE_MEDIA', tabId: 7, mediaIds: [locked.id, ...locked.detectedStreams.map(stream => stream.id)] });
+  assert.equal((await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 })).items.some(item => item.drm), false);
+});
+
+test('EME alone (no manifest seen) still yields one protected row in place of its fragments', async () => {
+  const worker = loadWorker();
+  for (let index = 1; index <= 15; index++) await worker.response(`https://cdn.stream.example/a/b/seg_${index}.mp4`, 'video/mp4', { contentLength: 250000 + index });
+  await worker.response('https://cdn.stream.example/a/b/init.mp4', 'video/mp4', { contentLength: 1200 });
+  await worker.fromPage({ cmd: 'PAGE_CONTEXT', context: PROTECTED_CONTEXT });
+  const listed = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  assert.equal(listed.items.length, 1);
+  assert.equal(listed.items[0].id, 'protected:0');
+  assert.equal(listed.items[0].drm, true);
+  const refused = await worker.message({ cmd: 'DOWNLOAD_MEDIA', backend: 'desktop', tabId: 7, mediaId: 'protected:0', payload: { mediaUrl: 'https://cinema.example/watch' } });
+  assert.equal(refused.ok, false);
+});
+
+test('SAMPLE-AES Widevine HLS is one protected row; plain AES-128 HLS stays downloadable', async () => {
+  const worker = loadWorker();
+  const drm = await worker.fromPage({ cmd: 'STORE_DETECTED_MEDIA', media: { url: 'https://cdn.example/drm/index.m3u8', manifestText: SAMPLE_AES, delivery: 'script' } });
+  const aes = await worker.fromPage({ cmd: 'STORE_DETECTED_MEDIA', media: { url: 'https://cdn.example/aes/index.m3u8', manifestText: AES_128, delivery: 'script' } });
+  const listed = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  assert.equal(listed.items.length, 2);
+  const locked = listed.items.find(item => item.drm);
+  assert.equal(locked.id, drm.item.id);
+  assert.equal(locked.keySystem, 'widevine');
+  assert.equal(detection.protectedSiteName(locked), 'cinema.example');
+  assert.equal(listed.items.find(item => item.id === aes.item.id).drm, undefined);
+  assert.equal((await worker.message({ cmd: 'DOWNLOAD_MEDIA', backend: 'desktop', tabId: 7, mediaId: drm.item.id, payload: { mediaUrl: drm.item.url, mediaType: 'hls' } })).ok, false);
+  const saved = await worker.message({ cmd: 'DOWNLOAD_MEDIA', backend: 'desktop', tabId: 7, mediaId: aes.item.id, payload: { mediaUrl: aes.item.url, mediaType: 'hls', title: 'AES' } });
+  assert.equal(saved.ok, true);
+  assert.equal(worker.jobs.filter(job => job.path === '/v1/jobs').at(-1).body.mediaUrl, aes.item.url);
+});
+
+test('fragment bursts and byte ranges are grouped away on any site; standalone short videos stay', async () => {
+  const worker = loadWorker();
+  // 15 numbered .m4s pieces plus their init segment, fetched by a player script.
+  for (let index = 1; index <= 15; index++) await worker.response(`https://cdn.example/stream/720/chunk-${index}.m4s`, 'video/iso.segment', { contentLength: 800000 });
+  await worker.response('https://cdn.example/stream/720/init.mp4', 'video/mp4', { contentLength: 1100 });
+  // The same pattern as .mp4 fragments large enough to escape the size rule.
+  for (let index = 1; index <= 15; index++) await worker.response(`https://cdn.example/stream/1080/${index}.mp4`, 'video/mp4', { contentLength: 1500000 + index });
+  // Byte-range requests on one URL: the total size comes from Content-Range.
+  await worker.response('https://cdn.example/on-demand/video-1080.mp4', 'video/mp4', { statusCode: 206, contentLength: 65536, contentRange: 'bytes 65536-131071/734003200' });
+  let listed = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  assert.deepEqual(listed.items, [], 'no fragment, init segment or range piece is a row');
+
+  // A real short video the page plays directly keeps its Download.
+  await worker.response('https://cdn.example/clips/intro-2s.mp4', 'video/mp4', { type: 'media', contentLength: 512 });
+  await worker.fromPage({ cmd: 'STORE_DETECTED_MEDIA', media: { url: 'https://cdn.example/clips/intro-2s.mp4', contentType: 'video/mp4', delivery: 'element', mediaSourceUrl: 'https://cdn.example/clips/intro-2s.mp4', durationSeconds: 2 } });
+  listed = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  assert.deepEqual(listed.items.map(item => item.url), ['https://cdn.example/clips/intro-2s.mp4']);
+  assert.equal(listed.items[0].drm, undefined);
+  const saved = await worker.message({ cmd: 'DOWNLOAD_MEDIA', backend: 'desktop', tabId: 7, mediaId: listed.items[0].id, payload: { mediaUrl: listed.items[0].url, title: 'Intro' } });
+  assert.equal(saved.ok, true);
+
+  // Show all still lists every recorded piece, with the range file's real size.
+  await worker.message({ cmd: 'SHOW_ALL_MEDIA', tabId: 7 });
+  listed = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  assert.equal(listed.rawItems.find(item => item.url.endsWith('video-1080.mp4')).contentLength, 734003200);
+  assert.equal(listed.rawItems.length, 18);
+
+  // Unit rules: numbered siblings need a burst; one numbered file is not a fragment.
+  const one = { id: 'x', url: 'https://cdn.example/video/episode-12.mp4', mediaKind: 'video', delivery: 'script', contentLength: 250000000, durationSeconds: 1500 };
+  assert.equal(detection.isStreamFragment(one, [one]), false);
+  assert.equal(detection.isStreamFragment({ ...one, delivery: 'element', url: 'https://cdn.example/init.mp4' }), false, 'a <video src> is never a fragment');
+  assert.equal(detection.isStreamFragment({ ...one, contentLength: 400000 }, [one]), true, '<1 MB for 25 minutes is a piece, not the film');
+});
+
+test('the page detector reads MPD bodies, observes EME key systems and encrypted init segments without altering them', async () => {
+  const requested = [];
+  const access = { keySystem: 'com.widevine.alpha' };
+  const navigator = { requestMediaKeySystemAccess(keySystem) { requested.push([this, keySystem]); return Promise.resolve(access); } };
+  const detector = loadDetector('https://cinema.example/watch', { navigator });
+  await detector.fetch('https://cinema.example/api/playback', undefined, { url: 'https://cinema.example/api/playback', contentType: 'application/xml', body: WIDEVINE_MPD });
+  const dash = detector.observations.filter(message => message.media?.manifestText);
+  assert.equal(dash.length, 1);
+  assert.equal(dash[0].media.type, 'dash');
+
+  const result = navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{}]);
+  assert.equal(await result, access, 'the page receives its own MediaKeySystemAccess');
+  assert.equal(requested[0][0], navigator, 'the original is called on navigator');
+  await new Promise(setImmediate);
+  assert.deepEqual(detector.observations.at(-1).protection, { signal: 'access', keySystem: 'com.widevine.alpha' });
+
+  const init = new Uint8Array(64);
+  init.set([0, 0, 0, 40, 0x70, 0x73, 0x73, 0x68, 0, 0, 0, 0, 0xed, 0xef, 0x8b, 0xa9, 0x79, 0xd6, 0x4a, 0xce, 0xa3, 0xc8, 0x27, 0xdc, 0xd5, 0x1d, 0x21, 0xed], 0);
+  await detector.fetchBytes('https://cdn.example/v/init.mp4', 'video/mp4', init);
+  assert.deepEqual(detector.observations.at(-1).protection, { signal: 'init', keySystem: 'edef8ba979d64acea3c827dcd51d21ed' });
+  const clearInit = new Uint8Array(64); clearInit.set([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70], 0);
+  const before = detector.observations.length;
+  await detector.fetchBytes('https://cdn.example/clear/init.mp4', 'video/mp4', clearInit);
+  assert.equal(detector.observations.slice(before).some(message => message.protection), false);
 });

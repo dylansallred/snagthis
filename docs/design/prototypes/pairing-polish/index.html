@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Pairing polish: popup and desktop approve</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;570;600;700&family=Jersey+15&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Token values copied from apps/extension/src/input.css and apps/desktop/src/globals.css (accent-aware). */
+:root {
+  --color-background: hsl(215 22% 3.5%); --color-background-raised: hsl(215 22% 8%); --color-background-hover: hsl(215 22% 10.5%); --color-background-active: hsl(215 22% 13.5%);
+  --color-surface-chrome: hsl(215 22% 4%); --color-surface-row: hsl(215 22% 8%);
+  --color-foreground: hsl(20 20% 93%); --color-foreground-muted: hsl(20 6% 60%); --color-foreground-subtle: hsl(20 5% 52%);
+  --color-border: hsl(215 15% 18%); --color-border-subtle: hsl(215 14% 15.5%);
+  --color-primary: hsl(18 96% 40%); --color-primary-strong: hsl(18 96% 36%); --color-primary-hover: hsl(20 96% 52%); --color-primary-muted: hsl(16 58% 16%);
+  --color-popover: hsl(215 22% 9.5%); --color-destructive: hsl(0 80% 64%);
+  --color-status-paused: hsl(44 84% 58%); --color-status-completed: hsl(145 62% 46%); --color-status-failed: hsl(0 72% 58%); --color-segment-completed: #80bfa6;
+  --accent-logo: #fa5d0e; --accent-bevel-face: #fa5d0e; --accent-bevel-light: #ffb238; --accent-bevel-dark: #bd3f00;
+  --sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --pix: "Jersey 15", "JetBrains Mono", monospace; --mono: "JetBrains Mono", "SF Mono", monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #07080a; color: var(--color-foreground); font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
+button:focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: 2px; }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.logo-snag { fill: #fff; } .logo-this { fill: var(--accent-logo); } .logo-face, .pb-face { fill: var(--accent-bevel-face); } .logo-light, .pb-light { fill: var(--accent-bevel-light); } .logo-dark, .pb-dark { fill: var(--accent-bevel-dark); } .logo-glyph, .pb-glyph { fill: #0c0e11; }
+.logo-wordmark { display: block; width: 96px; height: 18px; flex: none; }
+
+/* ── Hub (ui-refresh/controls.html conventions) ── */
+.hub { max-width: 1260px; margin: 0 auto; padding: 36px 28px 64px; }
+.eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--color-foreground-subtle); }
+.eyebrow span { color: var(--color-primary-hover); font-weight: 600; margin-right: 10px; }
+.intro h1 { font-size: 28px; line-height: 1.2; font-weight: 620; margin: 10px 0 8px; letter-spacing: -.01em; }
+.intro h1 em { font: 400 38px/1 var(--pix); font-style: normal; color: var(--accent-logo); letter-spacing: .03em; }
+.intro p { color: var(--color-foreground-muted); max-width: 860px; margin: 0; font-size: 14px; }
+kbd { font: 600 11px/16px var(--sans); padding: 1px 6px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground); }
+details.issues { margin: 18px 0 0; border: 1px solid var(--color-border-subtle); border-radius: 10px; background: var(--color-background-raised); }
+details.issues summary { padding: 11px 14px; cursor: pointer; font-weight: 600; font-size: 13px; }
+details.issues summary small { font-weight: 400; color: var(--color-foreground-muted); margin-left: 8px; }
+.issues ol { margin: 0; padding: 2px 14px 14px 36px; columns: 2; column-gap: 36px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.issues li { break-inside: avoid; margin-bottom: 6px; } .issues li b { color: var(--color-foreground); font-weight: 570; }
+
+.picker { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 18px -8px 8px; padding: 8px; background: #07080aee; backdrop-filter: blur(8px); }
+.picker button { position: relative; text-align: left; padding: 10px 12px; border-radius: 9px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); transition: background-color 160ms, border-color 160ms; }
+.picker button:hover { background: var(--color-background-hover); }
+.picker button[aria-pressed="true"] { border-color: var(--color-primary-hover); background: hsl(16 58% 16% / .35); }
+.picker span { display: block; font-size: 13px; font-weight: 600; }
+.picker span b { font: 400 18px/1 var(--pix); color: var(--accent-logo); margin-right: 6px; }
+.picker small { display: block; color: var(--color-foreground-muted); font-size: 11px; line-height: 15px; margin-top: 3px; }
+.picker .rec { position: absolute; top: -8px; right: 8px; padding: 1px 7px; border-radius: 5px; background: var(--color-primary); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+
+.flowbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0 14px; }
+.play { display: inline-flex; align-items: center; gap: 9px; height: 34px; padding: 0 13px 0 8px; border-radius: 8px; background: var(--color-background-raised); border: 1px solid var(--color-border); font-weight: 600; font-size: 12.5px; }
+.play:hover { background: var(--color-background-hover); } .play svg { width: 22px; height: 22px; }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 9px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
+.seg button { height: 26px; padding: 0 10px; border-radius: 6px; font-size: 12px; color: var(--color-foreground-muted); }
+.seg button:hover { color: var(--color-foreground); }
+.seg button[aria-pressed="true"] { background: var(--color-background-active); color: var(--color-foreground); font-weight: 570; }
+.seg-label { font-size: 11px; color: var(--color-foreground-subtle); letter-spacing: .06em; text-transform: uppercase; margin-left: 6px; }
+.grow { flex: 1; }
+
+.stage { display: flex; gap: 22px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+.frame { display: grid; gap: 8px; }
+.flabel { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-foreground-subtle); }
+.flabel .dot { width: 6px; height: 6px; background: var(--color-primary-hover); }
+.notes { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; margin-top: 22px; }
+.card { border: 1px solid var(--color-border-subtle); border-radius: 12px; background: var(--color-background-raised); padding: 16px 18px; }
+.card h3 { margin: 0 0 8px; font-size: 14px; font-weight: 620; } .card h3 em { font: 400 20px/1 var(--pix); font-style: normal; color: var(--accent-logo); margin-right: 6px; }
+.card ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--color-foreground-muted); } .card li { margin-bottom: 5px; } .card li b { color: var(--color-foreground); font-weight: 570; }
+.copy { width: 100%; border-collapse: collapse; font-size: 12px; }
+.copy th { text-align: left; font-weight: 600; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--color-foreground-subtle); padding: 0 8px 6px 0; }
+.copy td { vertical-align: top; padding: 7px 10px 7px 0; border-top: 1px solid var(--color-border-subtle); }
+.copy td:first-child { color: var(--color-foreground-subtle); white-space: nowrap; width: 110px; }
+.copy td.old { color: var(--color-foreground-subtle); text-decoration: line-through; text-decoration-color: hsl(0 50% 45% / .6); width: 40%; }
+.copy td.new { color: var(--color-foreground); }
+.recbox { margin-top: 18px; border-color: hsl(20 96% 52% / .45); background: linear-gradient(180deg, hsl(16 58% 16% / .35), var(--color-background-raised)); }
+.recbox p { margin: 0 0 8px; color: var(--color-foreground-muted); font-size: 13px; max-width: 980px; } .recbox p b { color: var(--color-foreground); }
+.hub-footer { margin-top: 26px; font-size: 12px; color: var(--color-foreground-subtle); }
+
+/* ── Chrome popup frame (480 × 560 sheet, apps/extension/popup.html) ── */
+.pop { position: relative; width: 480px; height: 560px; display: flex; flex-direction: column; overflow: hidden; background: var(--color-background-raised); border-radius: 10px; box-shadow: 0 24px 70px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .07); }
+.sh { height: 42px; flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--color-border-subtle); }
+.sh b { flex: 1; font-size: 13.5px; font-weight: 570; }
+.xb { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--color-foreground-muted); } .xb:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.xb.ring { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.pbody { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 18px 16px; }
+.pfoot { flex: none; height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; border-top: 1px solid var(--color-border-subtle); font-size: 12px; color: var(--color-foreground-subtle); }
+.lnk { color: var(--color-foreground-muted); text-decoration: underline; text-decoration-color: var(--color-border); text-underline-offset: 3px; font-size: 12px; } .lnk:hover { color: var(--color-foreground); text-decoration-color: currentColor; }
+.devchip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 5px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 600 9.5px/20px var(--mono); letter-spacing: .06em; cursor: help; }
+.devchip::before { content: ""; width: 5px; height: 5px; background: var(--color-foreground-subtle); }
+
+/* Buttons shared by both surfaces */
+.b { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 14px; border-radius: 8px; font-size: 12.5px; color: var(--color-foreground-muted); white-space: nowrap; overflow: hidden; transition: background-color 160ms, color 160ms, border-color 160ms, box-shadow 200ms, transform 120ms; }
+.b:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.b.bd { border: 1px solid var(--color-border); color: var(--color-foreground); } .b.bd:hover { border-color: hsl(215 14% 26%); }
+.b.pri { background: var(--color-primary); color: #fff; font-weight: 600; } .b.pri:hover { background: var(--color-primary-strong); }
+.b.pri.hov { background: var(--color-primary-hover); box-shadow: 0 0 18px hsl(20 96% 52% / .45); }
+.b.pri.press { transform: translateY(1px) scale(.98); }
+.b > span { position: relative; }
+.b.arming { background: var(--color-primary-muted); color: hsl(20 40% 72%); cursor: default; }
+.b.arming::before { content: ""; position: absolute; inset: 0; background: var(--color-primary); transform-origin: left; transform: scaleX(0); animation: arm 700ms linear forwards; }
+@keyframes arm { to { transform: scaleX(1); } }
+.b.dis { opacity: .5; cursor: default; }
+.brow { display: flex; gap: 8px; justify-content: center; }
+
+/* Pixel type + digits */
+.pxt { display: block; }
+.dg { display: inline-flex; gap: 6px; }
+.dc { position: relative; display: grid; place-items: center; color: #fff; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ── Desktop window frame (Settings sheet, apps/desktop) ── */
+.desk { position: relative; width: 660px; height: 560px; overflow: hidden; border-radius: 10px; background: var(--color-background); box-shadow: 0 24px 70px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .07); font-size: 12.5px; }
+.dtitle { height: 42px; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--color-surface-chrome); border-bottom: 1px solid var(--color-border-subtle); }
+.lights { display: flex; gap: 7px; } .lights i { width: 11px; height: 11px; border-radius: 50%; background: #3a3d44; }
+.dtitle .ttl { font-weight: 570; font-size: 13px; color: var(--color-foreground-muted); }
+.dset { position: absolute; inset: 42px 0 0; display: grid; grid-template-columns: 180px 1fr; }
+.dset nav { padding: 12px 10px; border-right: 1px solid var(--color-border-subtle); display: grid; align-content: start; gap: 2px; }
+.dset nav a { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 10px; border-radius: 7px; color: var(--color-foreground-muted); font-size: 12.5px; }
+.dset nav a.on { background: var(--color-background-active); color: var(--color-foreground); box-shadow: inset 2px 0 0 var(--color-primary-hover); }
+.dset nav .ver { margin-top: 280px; padding: 0 10px; font-size: 11.5px; color: var(--color-foreground-subtle); }
+.dset section { padding: 20px 22px; min-width: 0; }
+.dset h4 { margin: 0 0 3px; font-size: 16px; font-weight: 620; } .dset .m { margin: 0 0 16px; color: var(--color-foreground-muted); }
+.scard { border: 1px solid var(--color-border); border-radius: 11px; background: var(--color-surface-row); padding: 14px; color: var(--color-foreground-muted); }
+.scard p { margin: 0 0 8px; } .scard ol { margin: 0 0 12px; padding-left: 18px; font-size: 12px; } .scard li { margin-bottom: 4px; }
+.scard .b { height: 28px; font-size: 12px; }
+.scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .55); animation: fade 220ms ease both; }
+.scrim.soft { background: rgb(4 5 7 / .74); backdrop-filter: blur(3px) saturate(.7); }
+@keyframes fade { from { opacity: 0; } }
+.dlg { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: 380px; display: grid; justify-items: center; text-align: center; padding: 22px 22px 16px; border-radius: 14px; background: var(--color-popover); border: 1px solid var(--color-border); box-shadow: 0 30px 80px rgb(0 0 0 / .6); animation: dlgin 320ms var(--ease) both; }
+@keyframes dlgin { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+.dlg h3 { margin: 12px 0 4px; font-size: 16px; font-weight: 620; }
+.dlg > p { margin: 0 0 16px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.dlg .brow { width: 100%; } .dlg .brow .b { flex: 1; height: 36px; }
+.toast { position: absolute; right: 16px; bottom: 16px; max-width: 400px; display: flex; gap: 9px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--color-background-active); border: 1px solid var(--color-border); font-size: 12px; box-shadow: 0 12px 30px rgb(0 0 0 / .5); animation: toastin 300ms var(--ease) both; text-align: left; }
+.toast svg { margin-top: 1px; color: var(--color-foreground-muted); }
+@keyframes toastin { from { opacity: 0; transform: translateY(10px); } }
+
+/* Pixel button, press + burst (PixelButton.tsx / pixel.js) */
+.pb { display: block; }
+.pb.press { animation: press 520ms cubic-bezier(.3, .7, .3, 1); transform-origin: 50% 100%; }
+.pb.press .pb-light { animation: to-dark 520ms steps(1); } .pb.press .pb-dark { animation: to-light 520ms steps(1); }
+@keyframes press { 30% { transform: translateY(6%) scaleY(.9); } 60% { transform: translateY(-4%); } }
+@keyframes to-dark { 0%, 60% { fill: var(--accent-bevel-dark); } } @keyframes to-light { 0%, 60% { fill: var(--accent-bevel-light); } }
+.yay-art { position: relative; }
+.burst i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; background: var(--c); opacity: 0; animation: burst 900ms steps(6) 120ms forwards; }
+@keyframes burst { 0% { opacity: 1; transform: rotate(var(--a)) translateX(10px); } 80% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--d, 54px)); } }
+.yay-title { font: 400 38px/1 var(--pix); letter-spacing: .04em; color: #fff; margin: 16px 0 6px; }
+.yay-title em { font-style: normal; color: var(--accent-logo); }
+.yay p { margin: 0 0 18px; color: var(--color-foreground-muted); font-size: 12.5px; }
+.yay { display: grid; justify-items: center; text-align: center; }
+.yay-in > * { animation: rise 420ms var(--ease) both; } .yay-in > :nth-child(2) { animation-delay: 160ms; } .yay-in > :nth-child(3) { animation-delay: 230ms; } .yay-in > :nth-child(4) { animation-delay: 300ms; } .yay-in > :nth-child(5) { animation-delay: 360ms; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+/* ════════ 1 · TODAY (faithful to popup.js + PairingApproval.tsx) ════════ */
+.o-today .pbody { padding: 18px 16px; }
+.o-today .hint { font-size: 11.5px; color: var(--color-foreground-subtle); margin: 0 0 10px; }
+.o-today .lead { font-size: 12.5px; color: var(--color-foreground-muted); margin: 0 0 14px; max-width: 400px; } .o-today .lead strong { color: var(--color-foreground); }
+.o-today .dc { width: 38px; height: 50px; background: var(--color-background); border: 2px solid var(--color-border); box-shadow: inset 2px 2px 0 hsl(215 15% 24%), inset -2px -2px 0 #000; }
+.o-today .hot .dc { border-color: var(--accent-bevel-dark); box-shadow: inset 2px 2px 0 var(--accent-bevel-light), inset -2px -2px 0 var(--accent-bevel-dark); background: color-mix(in srgb, var(--accent-bevel-dark) 18%, #0b0d10); color: #ffe3cc; }
+.o-today .bad .dc { border-color: hsl(0 50% 40%); color: hsl(0 80% 80%); }
+.o-today .pop .dg { margin: 4px 0 16px; }
+.o-today .wait { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.o-today .tick { font: 500 12px var(--mono); color: var(--color-foreground-subtle); }
+.spin { width: 13px; height: 13px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 700ms linear infinite; display: inline-block; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.o-today .shield { display: flex; gap: 8px; text-align: left; padding: 9px 11px; border-radius: 8px; background: var(--color-background); border: 1px solid var(--color-border-subtle); font-size: 12px; color: var(--color-foreground-muted); margin: 14px auto 0; max-width: 380px; }
+.o-today .shield svg { width: 14px; height: 14px; margin-top: 1px; color: var(--color-segment-completed); }
+.o-today .pop .brow { margin-top: 14px; }
+.o-today .tlink { margin-top: 14px; color: var(--color-primary-hover); text-decoration: underline; text-underline-offset: 2px; font-size: 12px; }
+.o-today .err { color: var(--color-status-paused); font-size: 12.5px; margin: 10px 0 14px; max-width: 380px; } .o-today .more { font-size: 12.5px; color: var(--color-foreground-muted); margin: 0 0 14px; max-width: 400px; }
+.o-today .dlg { width: 400px; gap: 0; padding: 22px 22px 18px; border-radius: 12px; animation: none; }
+.o-today .dlg h3 { margin: 10px 0 4px; } .o-today .dlg > p { margin: 0 0 14px; }
+.o-today .who { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; margin: 14px 0; padding: 9px 11px; border-radius: 8px; background: var(--color-background); border: 1px solid var(--color-border-subtle); font-size: 12px; }
+.o-today .who .pz { width: 22px; height: 22px; color: var(--color-status-paused); }
+.o-today .who .wt { flex: 1; min-width: 0; } .o-today .who b { display: block; font-weight: 570; font-size: 12.5px; }
+.o-today .who small { display: block; margin-top: 2px; color: var(--color-foreground-subtle); font: 10.5px/1.35 var(--mono); overflow-wrap: anywhere; }
+.o-today .who .warn { flex: none; max-width: 96px; font-size: 11px; text-align: right; color: var(--color-status-paused); }
+.o-today .who .ok { flex: none; max-width: 110px; font-size: 11px; text-align: right; color: var(--color-segment-completed); }
+.o-today .dhint { margin: 10px 0 0; font-size: 11.5px; color: var(--color-foreground-subtle); }
+.o-today .dlg .brow .b { height: 34px; }
+.o-today .yay-title { font: 700 22px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; margin: 14px 0 6px; }
+.o-today .pop .yay { padding-top: 34px; } .o-today .pop .yay .yay-title { margin-top: 8px; }
+.o-today .pop .yay .b { height: 30px; }
+.o-today .pend { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--accent-bevel-dark); background: var(--color-background); }
+.o-today .pend .pt { flex: 1; min-width: 0; } .o-today .pend b { display: block; } .o-today .pend small { display: block; color: var(--color-foreground-subtle); font-size: 11.5px; }
+.o-today .pend .dc { width: 22px; height: 30px; border-width: 1px; box-shadow: inset 1px 1px 0 var(--accent-bevel-light), inset -1px -1px 0 var(--accent-bevel-dark); }
+.o-today .pend .dg { gap: 4px; }
+.o-today .pend .b { background: hsl(18 70% 22%); color: hsl(20 80% 70%); font-weight: 600; height: 30px; }
+
+/* ════════ Shared layout for the new directions (2–6) ════════ */
+.nx .kicker { font-size: 10.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--color-foreground-subtle); margin: 0 0 12px; }
+.nx .say { margin: 16px 0 0; font-size: 13px; color: var(--color-foreground-muted); } .nx .say b { color: var(--color-foreground); font-weight: 600; }
+.nx .status { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--color-foreground-subtle); }
+.nx .status .tick { font: 500 11.5px var(--mono); font-variant-numeric: tabular-nums; color: var(--color-foreground-muted); }
+.nx .pop .brow { margin-top: 22px; }
+.nx .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; padding-bottom: 8px; }
+.nx .st-title { margin: 18px 0 4px; font-size: 15px; font-weight: 620; }
+.nx .st-body { margin: 0; font-size: 12.5px; color: var(--color-foreground-muted); max-width: 360px; }
+.nx .who { display: flex; align-items: center; gap: 9px; width: 100%; margin: 18px 0 16px; padding: 9px 11px; border-radius: 9px; background: var(--color-background); border: 1px solid var(--color-border-subtle); text-align: left; font-size: 12px; white-space: nowrap; }
+.nx .who .pz { width: 16px; height: 16px; color: var(--color-foreground-muted); }
+.nx .who .wn { font-weight: 570; color: var(--color-foreground); }
+.nx .who .wid { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11px var(--mono); color: var(--color-foreground-subtle); }
+.nx .who .chip { margin-left: auto; flex: none; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 10.5px; font-weight: 600; line-height: 20px; background: var(--color-background-active); color: var(--color-foreground-muted); }
+.nx .who .chip.good { background: hsl(145 40% 16% / .7); color: hsl(145 50% 70%); }
+.nx .dfoot { display: flex; justify-content: space-between; width: 100%; margin-top: 12px; font-size: 11.5px; color: var(--color-foreground-subtle); }
+.nx .dfoot .tick { font: 500 11.5px var(--mono); font-variant-numeric: tabular-nums; }
+.nx .pend { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 10px 10px 10px 14px; border-radius: 11px; background: var(--color-surface-row); border: 1px solid var(--color-border); box-shadow: inset 3px 0 0 var(--color-primary-hover); animation: rise 360ms var(--ease) both; }
+.nx .pend .pt { flex: 1; min-width: 0; } .nx .pend b { display: block; font-weight: 570; } .nx .pend small { display: block; color: var(--color-foreground-subtle); font-size: 11.5px; }
+.nx .pend small .mono { font-family: var(--mono); color: var(--color-foreground-muted); letter-spacing: .12em; }
+.nx .pend .b { height: 28px; font-size: 12px; }
+.nx .pend .pulse { width: 8px; height: 8px; flex: none; background: var(--color-primary-hover); animation: blink 1.2s steps(1) infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+.nx .yay-in .b { min-width: 120px; }
+.nx .desk .yay { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: 360px; padding: 30px 22px 20px; border-radius: 14px; background: var(--color-popover); border: 1px solid var(--color-border); box-shadow: 0 30px 80px rgb(0 0 0 / .6); animation: dlgin 320ms var(--ease) both; }
+.nx .autoclose { margin-top: 10px; font-size: 11px; color: var(--color-foreground-subtle); }
+.nx .off .dc { opacity: .55; }
+
+/* ════════ 2 · QUIET ════════ */
+.o-quiet .dg { gap: 8px; }
+.o-quiet .dc { width: 46px; height: 60px; padding-bottom: 6px; border-radius: 9px; background: var(--color-background); box-shadow: inset 0 0 0 1px var(--color-border), inset 0 1px 0 hsl(215 20% 15%); animation: rise 380ms var(--ease) both; animation-delay: calc(var(--i) * 70ms + 80ms); }
+.o-quiet .dc::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 8px; height: 2px; background: var(--accent-bevel-face); opacity: .9; }
+.o-quiet .off .dc::after { background: var(--color-border); }
+.o-quiet .bar { width: 180px; height: 2px; margin-top: 16px; background: var(--color-border-subtle); border-radius: 1px; overflow: hidden; }
+.o-quiet .bar i { display: block; height: 100%; width: calc(var(--p, 1) * 100%); background: var(--color-foreground-subtle); transition: width 1s linear; }
+.o-quiet .status { margin-top: 8px; }
+
+/* ════════ 3 · TERMINAL ════════ */
+.o-term .dg { position: relative; gap: 16px; padding: 14px 20px; border-radius: 8px; background: #050607; box-shadow: inset 0 0 0 1px var(--color-border), inset 0 0 28px rgb(0 0 0 / .9); }
+.o-term .dg::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: repeating-linear-gradient(0deg, rgb(255 255 255 / .03) 0 1px, transparent 1px 3px); pointer-events: none; }
+.o-term .dc { color: var(--accent-bevel-light); filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent-bevel-face) 75%, transparent)); }
+.o-term .off .dc { color: var(--color-foreground-subtle); filter: none; }
+.o-term .bad .dc { color: hsl(0 70% 70%); filter: drop-shadow(0 0 5px hsl(0 70% 50% / .6)); }
+.o-term .good .dc { color: hsl(150 50% 72%); filter: drop-shadow(0 0 5px hsl(150 60% 45% / .7)); }
+.o-term .prompt { margin-top: 16px; font: 500 12px var(--mono); color: var(--color-foreground-muted); display: inline-flex; gap: 8px; align-items: center; }
+.o-term .prompt .pr { color: var(--accent-logo); } .o-term .prompt .tick { color: var(--color-foreground-subtle); margin-left: 6px; }
+.o-term .prompt.bad { color: hsl(0 70% 72%); } .o-term .prompt.good { color: hsl(150 50% 70%); }
+.cur { width: 7px; height: 13px; background: currentColor; animation: blink 1s steps(1) infinite; display: inline-block; }
+.o-term .dlg { text-align: left; justify-items: stretch; }
+.o-term .dlg .dhead { font: 600 10px var(--mono); letter-spacing: .14em; color: var(--color-foreground-subtle); display: flex; gap: 8px; align-items: center; }
+.o-term .dlg .dhead .pr { color: var(--accent-logo); }
+.o-term .dlg h3 { margin-top: 10px; } .o-term .dlg .dg { justify-self: center; }
+.o-term .kv { margin: 16px 0 14px; display: grid; grid-template-columns: 58px 1fr; gap: 3px 10px; font: 11.5px/1.5 var(--mono); color: var(--color-foreground-muted); }
+.o-term .kv dt { color: var(--color-foreground-subtle); } .o-term .kv dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.o-term .dfoot { font-family: var(--mono); font-size: 11px; }
+.o-term .yay-title { font-family: var(--pix); }
+
+/* ════════ 4 · CARTRIDGE (pixel bevel housing + pip countdown) ════════ */
+.o-pips .dg { gap: 2px; padding: 5px; background: #000; box-shadow: inset 2px 2px 0 var(--accent-bevel-light), inset -2px -2px 0 var(--accent-bevel-dark), 0 0 0 2px var(--accent-bevel-face); clip-path: polygon(2px -2px, calc(100% - 2px) -2px, calc(100% - 2px) 0, 100% 0, 100% 2px, calc(100% + 2px) 2px, calc(100% + 2px) calc(100% - 2px), 100% calc(100% - 2px), 100% 100%, calc(100% - 2px) 100%, calc(100% - 2px) calc(100% + 2px), 2px calc(100% + 2px), 2px 100%, 0 100%, 0 calc(100% - 2px), -2px calc(100% - 2px), -2px 2px, 0 2px, 0 0, 2px 0); margin: 2px; }
+.o-pips .dc { width: 40px; height: 54px; background: color-mix(in srgb, var(--accent-bevel-dark) 16%, #0b0d10); color: #fff4e6; box-shadow: inset 0 2px 0 rgb(255 255 255 / .04); transform-origin: 50% 50%; animation: flip 300ms steps(3) both; animation-delay: calc(var(--i) * 90ms + 80ms); }
+@keyframes flip { 0% { transform: scaleY(0); } }
+.o-pips .off .dg, .o-pips .dg.off { box-shadow: inset 2px 2px 0 hsl(215 15% 26%), inset -2px -2px 0 #000, 0 0 0 2px var(--color-border); }
+.o-pips .off .dc, .o-pips .dg.off .dc { background: #0b0d10; color: var(--color-foreground-subtle); opacity: 1; }
+.o-pips .dg.good { box-shadow: inset 2px 2px 0 hsl(150 45% 70%), inset -2px -2px 0 hsl(155 40% 28%), 0 0 0 2px hsl(152 38% 48%); }
+.o-pips .dg.good .dc { background: hsl(155 30% 9%); color: hsl(150 60% 88%); }
+.o-pips .pips { display: flex; gap: 4px; margin-top: 16px; }
+.o-pips .pip { width: 6px; height: 6px; background: var(--accent-bevel-face); transition: background-color 300ms; }
+.o-pips .pip.gone { background: var(--color-border); } .o-pips .pip.now { animation: blink 1s steps(1) infinite; }
+.o-pips .pips.good .pip { background: hsl(150 50% 60%); animation: none; }
+.o-pips .status { margin-top: 8px; }
+.o-pips .pend .dg { padding: 3px; gap: 1px; } .o-pips .pend .dc { width: 18px; height: 24px; animation: none; }
+.o-pips .pend .dg { box-shadow: inset 1px 1px 0 var(--accent-bevel-light), inset -1px -1px 0 var(--accent-bevel-dark), 0 0 0 1px var(--accent-bevel-face); clip-path: none; }
+
+/* ════════ 5 · HANDSHAKE ════════ */
+.o-hand .dg { gap: 8px; }
+.o-hand .dc { width: 44px; height: 58px; background: color-mix(in srgb, var(--accent-bevel-dark) 14%, #0d0f12); color: #fff4e6; box-shadow: inset 0 -3px 0 var(--accent-bevel-dark), inset 0 2px 0 color-mix(in srgb, var(--accent-bevel-light) 40%, transparent); clip-path: polygon(3px 0, calc(100% - 3px) 0, calc(100% - 3px) 3px, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 3px calc(100% - 3px), 0 calc(100% - 3px), 0 3px, 3px 3px); animation: drop 320ms steps(4) both; animation-delay: calc(var(--i) * 80ms + 300ms); }
+@keyframes drop { 0% { transform: translateY(-10px); opacity: 0; } }
+.o-hand .off .dc { background: #0d0f12; color: var(--color-foreground-subtle); box-shadow: inset 0 -3px 0 var(--color-border); opacity: 1; }
+.link { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.link .node { display: grid; justify-items: center; gap: 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-foreground-subtle); }
+.link .dots { display: flex; gap: 5px; }
+.link .dots i { width: 4px; height: 4px; background: var(--color-foreground-subtle); opacity: .25; animation: march 1.4s steps(1) infinite; animation-delay: calc(var(--i) * 140ms); }
+@keyframes march { 0%, 30% { opacity: 1; background: var(--accent-bevel-face); } 31% { opacity: .25; } }
+.link.done .dots i { animation: join 500ms steps(3) both; animation-delay: calc(var(--i) * 45ms); opacity: 1; background: hsl(150 50% 60%); }
+@keyframes join { 0% { opacity: .2; transform: scale(.3); } }
+.link.broken .dots i { animation: none; opacity: .35; } .link.broken .dots i:nth-child(4) { opacity: 0; }
+.link .ok { width: 16px; height: 16px; color: hsl(150 50% 62%); stroke-width: 2.6; }
+.o-hand .desk .yay .yay-title, .o-hand .pop .yay .yay-title { margin-top: 6px; }
+
+/* ════════ 6 · FOCUS (desktop takes over the window) ════════ */
+.o-focus .dg { gap: 10px; }
+.o-focus .dc { width: 52px; height: 68px; border-radius: 10px; background: #0b0d10; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-bevel-dark) 60%, var(--color-border)); animation: rise 420ms var(--ease) both, glow 2.8s ease-in-out 600ms infinite; animation-delay: calc(var(--i) * 70ms + 100ms), calc(var(--i) * 120ms + 600ms); }
+@keyframes glow { 50% { box-shadow: inset 0 0 0 1px var(--accent-bevel-face), 0 0 18px color-mix(in srgb, var(--accent-bevel-face) 30%, transparent); } }
+.o-focus .off .dc { animation: none; box-shadow: inset 0 0 0 1px var(--color-border); color: var(--color-foreground-subtle); opacity: 1; }
+.o-focus .take { position: absolute; inset: 42px 0 0; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 45%, hsl(215 22% 9%), var(--color-background) 70%); animation: fade 260ms ease both; }
+.o-focus .take-in { width: 360px; display: grid; justify-items: center; text-align: center; animation: rise 380ms var(--ease) 60ms both; }
+.o-focus .take-in h3 { margin: 14px 0 4px; font: 400 30px/1 var(--pix); letter-spacing: .04em; }
+.o-focus .take-in > p { margin: 0 0 20px; color: var(--color-foreground-muted); }
+.o-focus .take-in .brow { width: 100%; } .o-focus .take-in .brow .b { flex: 1; height: 38px; }
+.o-focus .who { background: transparent; border: 0; border-top: 1px solid var(--color-border-subtle); border-bottom: 1px solid var(--color-border-subtle); border-radius: 0; padding: 10px 2px; }
+.o-focus .bar { width: 100%; height: 2px; margin-top: 14px; background: var(--color-border-subtle); overflow: hidden; } .o-focus .bar i { display: block; height: 100%; width: calc(var(--p, 1) * 100%); background: var(--accent-bevel-dark); transition: width 1s linear; }
+.o-focus .pop .bar { width: 220px; margin-top: 18px; }
+.o-focus .pop .kicker { margin-bottom: 16px; }
+.o-focus .ttl-back { opacity: .5; }
+.o-focus .desk .yay { background: transparent; border: 0; box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+  .burst { display: none; } .spin { border-right-color: currentColor; opacity: .6; }
+}
+.reduce *, .reduce *::before, .reduce *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
+.reduce .burst { display: none; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>SnagThis</span>DESIGN STUDIES / PAIRING POLISH</div>
+    <h1>One-click pairing, <em>polished</em>.</h1>
+    <p>The flow works; the screens feel busy. Each direction shows the Chrome popup and the desktop app side by side. Switch states or press <b>Play flow</b>. Keys: <kbd>1</kbd>–<kbd>6</kbd> pick a direction, <kbd>←</kbd> <kbd>→</kbd> change state, <kbd>P</kbd> plays. Option 1 is today, as built. Directions 2–6 share the shorter copy (table below).</p>
+    <details class="issues"><summary>What's off today <small>14 issues, checked against the current build and the verification screenshots</small></summary><ol id="issues"></ol></details>
+  </header>
+  <nav class="picker" id="picker" aria-label="Directions"></nav>
+  <div class="flowbar">
+    <button class="play" id="play" type="button"><svg class="pb" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"></svg><span>Play flow</span></button>
+    <div class="seg" id="states" role="group" aria-label="State"></div>
+    <span class="grow"></span>
+    <span class="seg-label">Extension</span><div class="seg" id="build" role="group" aria-label="Extension build"><button type="button" data-v="dev" aria-pressed="true">Developer copy</button><button type="button" data-v="store" aria-pressed="false">Web Store</button></div>
+    <div class="seg" id="motion" role="group" aria-label="Motion"><button type="button" data-v="full" aria-pressed="true">Motion</button><button type="button" data-v="reduce" aria-pressed="false">Reduced</button></div>
+  </div>
+  <div class="stage" id="stage">
+    <div class="frame"><div class="flabel"><span class="dot"></span>Chrome · extension popup · 480 × 560</div><div class="pop" id="pop"></div></div>
+    <div class="frame"><div class="flabel"><span class="dot"></span>SnagThis desktop · Settings open</div><div class="desk" id="desk"></div></div>
+  </div>
+  <div class="notes">
+    <div class="card" id="about"></div>
+    <div class="card"><h3>Copy, shorter (directions 2–6)</h3><table class="copy"><thead><tr><th>Where</th><th>Today</th><th>New</th></tr></thead><tbody id="copy"></tbody></table></div>
+  </div>
+  <div class="card recbox" id="rec"></div>
+  <footer class="hub-footer">UI prototype only; nothing connects. Current code: apps/extension/popup.js (renderPairing), apps/extension/src/input.css (.pair-*), apps/desktop/src/components/settings/PairingApproval.tsx + .css, apps/desktop/src/lib/strings.ts.</footer>
+</main>
+<template id="wordmark"><svg class="logo-wordmark" role="img" aria-label="SnagThis" width="120" height="22" viewBox="0 0 120 22" shape-rendering="crispEdges" focusable="false"><path class="logo-snag" d="M2 3.5h7v1h-7zM14 3.5h4v1h-4zM22 3.5h3v1h-3zM32 3.5h2v1h-2zM43 3.5h6v1h-6zM1 4.5h9v1h-9zM14 4.5h4v1h-4zM22 4.5h3v1h-3zM31 4.5h4v1h-4zM42 4.5h8v1h-8zM0 5.5h11v1h-11zM14 5.5h5v1h-5zM22 5.5h3v1h-3zM30 5.5h6v1h-6zM41 5.5h10v1h-10zM0 6.5h4v1h-4zM7 6.5h4v1h-4zM14 6.5h5v1h-5zM22 6.5h3v1h-3zM29 6.5h8v1h-8zM41 6.5h4v1h-4zM48 6.5h3v1h-3zM0 7.5h3v1h-3zM8 7.5h3v1h-3zM14 7.5h6v1h-6zM22 7.5h3v1h-3zM28 7.5h4v1h-4zM34 7.5h4v1h-4zM41 7.5h3v1h-3zM0 8.5h4v1h-4zM14 8.5h6v1h-6zM22 8.5h3v1h-3zM28 8.5h3v1h-3zM35 8.5h3v1h-3zM41 8.5h3v1h-3zM0 9.5h9v1h-9zM14 9.5h7v1h-7zM22 9.5h3v1h-3zM28 9.5h3v1h-3zM35 9.5h3v1h-3zM41 9.5h3v1h-3zM46 9.5h5v1h-5zM1 10.5h9v1h-9zM14 10.5h3v1h-3zM18 10.5h3v1h-3zM22 10.5h3v1h-3zM28 10.5h3v1h-3zM35 10.5h3v1h-3zM41 10.5h3v1h-3zM46 10.5h5v1h-5zM2 11.5h9v1h-9zM14 11.5h3v1h-3zM18 11.5h7v1h-7zM28 11.5h10v1h-10zM41 11.5h3v1h-3zM46 11.5h5v1h-5zM7 12.5h4v1h-4zM14 12.5h3v1h-3zM19 12.5h6v1h-6zM28 12.5h10v1h-10zM41 12.5h3v1h-3zM48 12.5h3v1h-3zM0 13.5h3v1h-3zM8 13.5h3v1h-3zM14 13.5h3v1h-3zM19 13.5h6v1h-6zM28 13.5h10v1h-10zM41 13.5h3v1h-3zM48 13.5h3v1h-3zM0 14.5h4v1h-4zM7 14.5h4v1h-4zM14 14.5h3v1h-3zM20 14.5h5v1h-5zM28 14.5h3v1h-3zM35 14.5h3v1h-3zM41 14.5h4v1h-4zM47 14.5h4v1h-4zM0 15.5h11v1h-11zM14 15.5h3v1h-3zM20 15.5h5v1h-5zM28 15.5h3v1h-3zM35 15.5h3v1h-3zM41 15.5h10v1h-10zM1 16.5h9v1h-9zM14 16.5h3v1h-3zM21 16.5h4v1h-4zM28 16.5h3v1h-3zM35 16.5h3v1h-3zM42 16.5h8v1h-8zM2 17.5h7v1h-7zM14 17.5h3v1h-3zM21 17.5h4v1h-4zM28 17.5h3v1h-3zM35 17.5h3v1h-3zM43 17.5h6v1h-6z"/><path class="logo-this" d="M54 3.5h9v1h-9zM66 3.5h3v1h-3zM73 3.5h3v1h-3zM79 3.5h3v1h-3zM87 3.5h7v1h-7zM54 4.5h9v1h-9zM66 4.5h3v1h-3zM73 4.5h3v1h-3zM79 4.5h3v1h-3zM86 4.5h9v1h-9zM54 5.5h9v1h-9zM66 5.5h3v1h-3zM73 5.5h3v1h-3zM79 5.5h3v1h-3zM85 5.5h11v1h-11zM57 6.5h3v1h-3zM66 6.5h3v1h-3zM73 6.5h3v1h-3zM79 6.5h3v1h-3zM85 6.5h4v1h-4zM92 6.5h4v1h-4zM57 7.5h3v1h-3zM66 7.5h3v1h-3zM73 7.5h3v1h-3zM79 7.5h3v1h-3zM85 7.5h3v1h-3zM93 7.5h3v1h-3zM57 8.5h3v1h-3zM66 8.5h3v1h-3zM73 8.5h3v1h-3zM79 8.5h3v1h-3zM85 8.5h4v1h-4zM57 9.5h3v1h-3zM66 9.5h10v1h-10zM79 9.5h3v1h-3zM85 9.5h9v1h-9zM57 10.5h3v1h-3zM66 10.5h10v1h-10zM79 10.5h3v1h-3zM86 10.5h9v1h-9zM57 11.5h3v1h-3zM66 11.5h10v1h-10zM79 11.5h3v1h-3zM87 11.5h9v1h-9zM57 12.5h3v1h-3zM66 12.5h3v1h-3zM73 12.5h3v1h-3zM79 12.5h3v1h-3zM92 12.5h4v1h-4zM57 13.5h3v1h-3zM66 13.5h3v1h-3zM73 13.5h3v1h-3zM79 13.5h3v1h-3zM85 13.5h3v1h-3zM93 13.5h3v1h-3zM57 14.5h3v1h-3zM66 14.5h3v1h-3zM73 14.5h3v1h-3zM79 14.5h3v1h-3zM85 14.5h4v1h-4zM92 14.5h4v1h-4zM57 15.5h3v1h-3zM66 15.5h3v1h-3zM73 15.5h3v1h-3zM79 15.5h3v1h-3zM85 15.5h11v1h-11zM57 16.5h3v1h-3zM66 16.5h3v1h-3zM73 16.5h3v1h-3zM79 16.5h3v1h-3zM86 16.5h9v1h-9zM57 17.5h3v1h-3zM66 17.5h3v1h-3zM73 17.5h3v1h-3zM79 17.5h3v1h-3zM87 17.5h7v1h-7z"/><g transform="translate(104 3)"><path class="logo-face" d="M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v1h-16zM0 4h16v1h-16zM0 5h16v1h-16zM0 6h16v1h-16zM0 7h16v1h-16zM0 8h16v1h-16zM0 9h16v1h-16zM0 10h16v1h-16zM0 11h16v1h-16zM0 12h16v1h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z"/><path class="logo-light" d="M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM0 6h1v1h-1zM0 7h1v1h-1zM0 8h1v1h-1zM0 9h1v1h-1zM0 10h1v1h-1zM0 11h1v1h-1zM0 12h1v1h-1zM1 13h1v1h-1z"/><path class="logo-dark" d="M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v1h-1zM15 4h1v1h-1zM15 5h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1zM15 8h1v1h-1zM15 9h1v1h-1zM15 10h1v1h-1zM15 11h1v1h-1zM15 12h1v1h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z"/><path class="logo-dark" d="M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z"/><path class="logo-glyph" d="M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z"/></g></svg></template>
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const WM = $('#wordmark').innerHTML.replace('width="120" height="22"', 'width="96" height="18"');
+const PB = { tile: 'M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v10h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z', hi: 'M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v10h-1zM1 13h1v1h-1z', lo: 'M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v10h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z', shadow: 'M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z', glyph: 'M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z' };
+const pbInner = `<path class="pb-face" d="${PB.tile}"/><path class="pb-light" d="${PB.hi}"/><path class="pb-dark" d="${PB.lo}"/><path class="pb-dark" d="${PB.shadow}"/><path class="pb-glyph" d="${PB.glyph}"/>`;
+const pb = (size, cls = '') => `<svg class="pb ${cls}" width="${size}" height="${size}" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">${pbInner}</svg>`;
+$('#play svg').innerHTML = pbInner;
+const browserGlyph = `<svg width="28" height="28" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path fill="#8b929c" d="M1 2h14v12h-14z"/><path fill="#15181d" d="M2 6h12v7h-12z"/><path fill="#15181d" d="M2 3h1v2h-1zM4 3h1v2h-1zM6 3h1v2h-1z"/><path fill="#2a2e35" d="M3 8h6v1h-6zM3 10h9v1h-9z"/></svg>`;
+const I = {
+  x: '<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  check: '<svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
+  ok: '<svg class="i ok" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
+  puzzle: c => `<svg class="i ${c}" viewBox="0 0 24 24"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/></svg>`,
+  dl: '<svg class="i" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>',
+  app: '<svg class="i" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20"/><path d="M6 4v4"/></svg>',
+  pal: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16" cy="10" r="1"/></svg>',
+  sl: '<svg class="i" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></svg>',
+  info: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
+  clock: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  ban: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
+};
+
+// 3 × 5 pixel face from apps/extension/popup/pixel.js (the real digits).
+const FONT = { 0: ['###', '#.#', '#.#', '#.#', '###'], 1: ['.#.', '##.', '.#.', '.#.', '###'], 2: ['###', '..#', '###', '#..', '###'], 3: ['###', '..#', '.##', '..#', '###'], 4: ['#.#', '#.#', '###', '..#', '..#'], 5: ['###', '#..', '###', '..#', '###'], 6: ['###', '#..', '###', '#.#', '###'], 7: ['###', '..#', '..#', '.#.', '.#.'], 8: ['###', '#.#', '###', '#.#', '###'], 9: ['###', '#.#', '###', '..#', '###'] };
+function px(str, s) { let d = ''; [...str].forEach((c, i) => FONT[c].forEach((row, y) => [...row].forEach((b, x) => { if (b === '#') d += `M${i * 4 + x} ${y}h1v1h-1z`; }))); const w = str.length * 4 - 1; return `<svg class="pxt" width="${w * s}" height="${5 * s}" viewBox="0 0 ${w} 5" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`; }
+const CODE = '4719';
+const digits = (tone = 'hot', scale = 6) => `<div class="dg ${tone}" role="img" aria-label="Match code ${[...CODE].join(' ')}">${[...CODE].map((d, i) => `<span class="dc" style="--i:${i}" aria-hidden="true" data-d="${d}">${px(d, scale)}</span>`).join('')}</div>`;
+const clock = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.max(0, s) % 60).padStart(2, '0')}`;
+const burst = () => `<div class="burst" aria-hidden="true">${[0, 45, 90, 135, 180, 225, 270, 315, 20, 200].map((a, i) => `<i style="--a:${a}deg;--d:${i > 7 ? 40 : 58}px;--c:${['var(--accent-bevel-face)', 'var(--accent-bevel-light)', '#80bfa6', '#fff4e6'][i % 4]}"></i>`).join('')}</div>`;
+
+const ISSUES = [
+  ['No focal point.', 'The waiting sheet stacks a dev note, an instruction, the digits, a spinner line, a green-check box, two buttons and a link: seven things of similar weight.'],
+  ['The dev note leads.', '“Developer copy (unpacked)…” is the first line you read, above the actual instruction, and it reads like a warning.'],
+  ['Digits said twice.', 'The lead sentence spells “4 5 4 3” in bold right above the big digits.'],
+  ['The waiting line is long and tense.', 'Spinner + “Waiting for you to allow it in SnagThis…” + a mono 2:00 feels like a timer, and the line is role=status with the ticking clock inside it, so screen readers can re-read it every second.'],
+  ['Heavy digit cells.', 'A 2 px orange outline plus an inset bevel on every cell is loud on both surfaces; “denied” is only a colour swap of the same cells.'],
+  ['Wrong button weights.', '“Open SnagThis again” is the strongest control though it is rarely needed; the orange underlined “Use a code instead” competes with it.'],
+  ['The dialog fights Settings.', 'The scrim is light, so the Settings “Chrome is asking to connect… Review” banner (with its own digits) shows beside the dialog. You see the code twice on one screen.'],
+  ['The extension card wraps.', 'The 32-character ID breaks across two lines, the name wraps, and “Not the Web Store build” wraps into an amber column.'],
+  ['“Unrecognized” sounds like an attack.', 'An amber puzzle icon + “Unrecognized Chrome extension” is alarming when it is the owner’s own developer build.'],
+  ['Allow looks broken for 0.7 s.', 'The safety delay shows Allow as a muddy half-opacity button with no cue that it is about to be ready.'],
+  ['The success moment is off-brand.', 'The titles use uppercase JetBrains Mono instead of the Jersey 15 pixel face; the desktop mixes two colours in “CHROME CONNECTED”; the popup opens with a focus ring on the close button.'],
+  ['Dead ends.', 'Denied has no primary action and leaves 60% of the sheet empty; the amber sentence and the paragraph under it say the same thing.'],
+  ['Three names for one thing.', '“Connect SnagThis”, “Chrome wants to connect” and “Chrome is asking to connect…” for the same request.'],
+  ['Crowded rhythm.', 'Centre-aligned paragraphs of different widths (400, 380, 320 px) give ragged edges and uneven gaps (10/14/16 px).'],
+];
+$('#issues').innerHTML = ISSUES.map(([b, t]) => `<li><b>${b}</b> ${t}</li>`).join('');
+
+const OPTIONS = [
+  { k: 'today', n: 'Today', d: 'As built: the baseline',
+    about: ['What ships now, redrawn from popup.js and PairingApproval.tsx.', ['<b>Popup:</b> dev note, sentence, hot digits, spinner line, info box, two buttons, orange link.', '<b>Desktop:</b> dialog over Settings with a light scrim; the Review banner shows through.', '<b>Motion:</b> none for the digits or waiting; burst + press only on success, and the popup focuses the close button.']] },
+  { k: 'quiet', n: 'Quiet', d: 'Neutral cells, one line, a thin drain bar',
+    about: ['The least brand, the most calm. Everything but the digits recedes.', ['<b>Hierarchy:</b> a small kicker, the digits, one sentence. The info box and the repeated digits are gone.', '<b>Cells:</b> dark, 1 px border, a short accent underline like a code input; not an orange frame.', '<b>Waiting:</b> a 2 px bar drains over two minutes; the clock is small and never announced each second.', '<b>Motion:</b> digits rise in, 70 ms apart. Allow fills left to right while it arms.']] },
+  { k: 'term', n: 'Terminal', d: 'A lit segment display + a prompt line',
+    about: ['Leans into the terminal half of the brand.', ['<b>Digits:</b> one dark display panel with faint scanlines; the pixel digits glow in the accent’s light shade and scramble into place.', '<b>Waiting:</b> a prompt line, <code>› waiting for Allow▌ 1:52</code>, with a blinking block cursor instead of a spinner.', '<b>Desktop:</b> left-aligned, with a key/value “from / build” list in mono, so a long ID never wraps.', '<b>Risk:</b> mono everywhere is harder to scan for non-technical users.']] },
+  { k: 'pips', n: 'Cartridge', d: 'Digits in the logo’s bevel; 12-pip countdown', rec: true,
+    about: ['The digits become one object built like the play button: a single pixel-bevel housing.', ['<b>Digits:</b> one bevel frame (light top-left, dark bottom-right, notched corners) instead of four outlined boxes. Cells flip in with a stepped animation.', '<b>Waiting:</b> 12 pixel pips, one per 10 s; the current one blinks. Calm, readable at a glance, and pixel-native.', '<b>Same object on both surfaces</b>, so “match these” is literal. The Settings banner uses a small copy of it.', '<b>Success:</b> the housing and pips turn green, then the button presses and bursts.']] },
+  { k: 'hand', n: 'Handshake', d: 'Chrome ↔ SnagThis link of marching pixels',
+    about: ['Shows what is happening instead of saying it.', ['<b>Art:</b> a browser glyph and the play button with pixels marching between them while waiting.', '<b>Success:</b> the dots snap solid and turn green, with a check. Denied: the link breaks.', '<b>Cells:</b> notched pixel corners with a bottom bevel, dropping in with stepped motion.', '<b>Cost:</b> one more element above the digits; more height on the desktop dialog.']] },
+  { k: 'focus', n: 'Focus', d: 'Desktop takes over the window; big digits',
+    about: ['Fixes the clutter by removing Settings from view entirely.', ['<b>Desktop:</b> no card and no scrim: the window becomes the request, with 52 × 68 digit cells and a Jersey 15 title.', '<b>Waiting:</b> cells breathe a soft accent glow one after another; a thin bar underneath drains.', '<b>Popup:</b> the same large digits, centred with lots of air.', '<b>Cost:</b> a full-window takeover is heavy if the user was mid-task; best only when SnagThis was just opened for this.']] },
+];
+const STATES = [['opening', 'Opening'], ['waiting', 'Waiting · Approve'], ['review', 'Dialog closed · Review'], ['connected', 'Connected'], ['denied', 'Denied'], ['expired', 'Expired']];
+const COPY = [
+  ['Popup · waiting', 'Developer copy (unpacked). SnagThis will say it isn’t the Web Store build.', 'DEV BUILD chip in the header (tooltip: “Unpacked copy. SnagThis will label it Not Web Store.”)'],
+  ['Popup · waiting', 'Opening SnagThis… Check that it shows 4 7 1 9, then choose Allow there.', 'Kicker “Match in SnagThis” · digits · “Then choose <b>Allow</b> there.”'],
+  ['Popup · waiting', 'Waiting for you to allow it in SnagThis… 2:00', 'Waiting for Allow · 1:52'],
+  ['Popup · waiting', 'No code to type. Nothing connects until you choose Allow in the SnagThis window.', '(removed; the instruction already says it)'],
+  ['Popup · buttons', 'Open SnagThis again · Cancel · Use a code instead', 'Show SnagThis · Cancel · footer: “SnagThis didn’t open? Use a code”'],
+  ['Desktop · title', 'Chrome wants to connect', 'Connect Chrome?'],
+  ['Desktop · body', 'Allow only if Chrome is showing these same four digits right now.', 'Allow only if Chrome shows the same digits.'],
+  ['Desktop · who', 'Unrecognized Chrome extension · full ID · Not the Web Store build', 'Chrome extension · gedjai…nombmb · <i>Not Web Store</i> (neutral chip)'],
+  ['Desktop · foot', 'Expires in 2:00 · Different digits in Chrome? Choose Deny.', 'Different digits? Choose Deny. · 1:52'],
+  ['Banner', 'Chrome is asking to connect… · Review', 'Chrome is asking to connect · 4719 · 1:52 left · Review'],
+  ['Connected', 'CHROME CONNECTED · Chrome can now send streams, audio choices and downloads here.', 'Connected (Jersey 15) · Downloads from Chrome now arrive here.'],
+  ['Popup · connected', 'Play a video in Chrome, then choose Download. Streams go to SnagThis.', 'Play a video, then choose Download.'],
+  ['Popup · denied', 'SnagThis chose Deny. Chrome is not connected. + If the digits didn’t match…', 'Not connected · SnagThis chose Deny. Chrome can ask again in an hour. · [Use a code]'],
+  ['Popup · expired', 'No one allowed this in SnagThis within 2 minutes, so nothing was connected.', 'Timed out · Nothing was connected. · [Try again]'],
+  ['Desktop · toasts', 'Chrome was not connected. That extension can ask again in an hour, or connect with a code.', 'Chrome wasn’t connected. It can ask again in an hour.'],
+];
+$('#copy').innerHTML = COPY.map(([w, o, n]) => `<tr><td>${w}</td><td class="old">${o}</td><td class="new">${n}</td></tr>`).join('');
+$('#rec').innerHTML = `<h3><em>4</em>Recommended: Cartridge, with Quiet’s layout rules</h3>
+<p><b>Why:</b> it is the only direction where the digits read as a SnagThis object (the play button’s bevel) rather than a generic OTP field, and the 12-pip countdown replaces the spinner and clock with something calm and pixel-native. It keeps the same object on both surfaces, so “do these match?” is a glance.</p>
+<p><b>Take from Quiet:</b> the one-sentence hierarchy, the footer link, the neutral “Not Web Store” chip, the stronger blurred scrim, and hiding the Settings banner while the dialog is open. <b>Take from Handshake</b> only if you want a mid-flow illustration later; it adds height. <b>Skip Focus</b> for now: taking over the whole window is too heavy when SnagThis was already in use.</p>
+<p><b>Behaviour fixes for any pick:</b> announce the countdown only at 1:00 and 0:15 (the ticking clock is <code>aria-hidden</code>); show Allow arming as a fill, not 50% opacity; move focus to Done on success (ring only for keyboard users), not to the close button; never show the banner under the dialog; keep “Use a code” as the only fallback link.</p>`;
+
+let opt = 'pips', state = 'waiting', dev = true, remain = 112, tickTimer = null, flow = [], playing = false;
+const picker = $('#picker');
+picker.innerHTML = OPTIONS.map((o, i) => `<button type="button" data-k="${o.k}" aria-pressed="false">${o.rec ? '<span class="rec">PICK</span>' : ''}<span><b>${i + 1}</b>${o.n}</span><small>${o.d}</small></button>`).join('');
+$('#states').innerHTML = STATES.map(([k, l]) => `<button type="button" data-k="${k}" aria-pressed="false">${l}</button>`).join('');
+
+/* ── Popup ── */
+function popup() {
+  const today = opt === 'today';
+  const head = t => `<div class="sh"><b>${t}</b>${!today && dev && !['connected'].includes(state) ? '<span class="devchip" title="Unpacked copy. SnagThis will label it Not Web Store.">DEV BUILD</span>' : ''}<button class="xb${today && state === 'connected' ? ' ring' : ''}" type="button" aria-label="Close">${I.x}</button></div>`;
+  const waitingish = ['opening', 'waiting', 'review'].includes(state);
+  if (today) {
+    const hint = dev ? '<p class="hint">Developer copy (unpacked). SnagThis will say it isn’t the Web Store build.</p>' : '';
+    if (waitingish) return head('Connect SnagThis') + `<div class="pbody">${hint}<p class="lead">${state === 'opening' ? 'Opening SnagThis… ' : 'SnagThis opened on this computer. '}Check that it shows <strong>${[...CODE].join(' ')}</strong>, then choose <strong>Allow</strong> there.</p>${digits('hot')}<div class="wait" role="status"><span class="spin"></span>Waiting for you to allow it in SnagThis… <span class="tick">${clock(remain)}</span></div><div class="shield">${I.check}<span>No code to type. Nothing connects until you choose Allow in the SnagThis window.</span></div><div class="brow"><button class="b bd" type="button">Open SnagThis again</button><button class="b" type="button">Cancel</button></div><button class="tlink" type="button">Use a code instead</button></div>`;
+    if (state === 'connected') return head('Connected') + `<div class="pbody"><div class="yay"><div class="yay-art">${burst()}${pb(64, 'press')}</div><div class="yay-title">Connected</div><p>Play a video in Chrome, then choose Download.<br>Streams go to SnagThis.</p><button class="b pri" type="button">Done</button></div></div>`;
+    if (state === 'denied') return head('Connect SnagThis') + `<div class="pbody">${hint}${digits('bad')}<p class="err">SnagThis chose Deny. Chrome is not connected.</p><p class="more">If the digits didn’t match, something else may have asked. To connect now, use a code instead.</p><button class="tlink" type="button">Use a code instead</button></div>`;
+    return head('Connect SnagThis') + `<div class="pbody">${hint}${digits('plain')}<p class="err">No one allowed this in SnagThis within 2 minutes, so nothing was connected.</p><div class="brow"><button class="b pri" type="button">Try again</button><button class="tlink" type="button" style="margin:0 0 0 8px">Use a code instead</button></div></div>`;
+  }
+  const foot = t => `<div class="pfoot">${t}</div>`;
+  if (waitingish) {
+    const lead = state === 'opening' ? 'Opening SnagThis…' : 'Waiting for Allow';
+    let wait;
+    if (opt === 'quiet' || opt === 'focus') wait = `<div class="bar"><i style="--p:${remain / 120}"></i></div><div class="status"><span>${lead}</span><span aria-hidden="true">·</span><span class="tick" aria-hidden="true">${clock(remain)}</span></div>`;
+    else if (opt === 'term') wait = `<div class="prompt"><span class="pr">›</span><span>${state === 'opening' ? 'opening SnagThis' : 'waiting for Allow'}</span><span class="cur"></span><span class="tick" aria-hidden="true">${clock(remain)}</span></div>`;
+    else if (opt === 'pips') wait = `${pipRow()}<div class="status"><span>${lead}</span><span aria-hidden="true">·</span><span class="tick" aria-hidden="true">${clock(remain)}</span></div>`;
+    else wait = `<div class="status"><span>${lead}</span><span aria-hidden="true">·</span><span class="tick" aria-hidden="true">${clock(remain)}</span></div>`;
+    const art = opt === 'hand' ? linkArt('') : '';
+    const body = `${art}<p class="kicker">Match in SnagThis</p>${digits('hot', opt === 'focus' ? 8 : 6)}<p class="say">Then choose <b>Allow</b> there.</p><div role="status" class="sr">${state === 'opening' ? 'Opening SnagThis.' : 'Waiting for you to choose Allow in SnagThis.'}</div>${wait}<div class="brow"><button class="b bd" type="button">Show SnagThis</button><button class="b" type="button">Cancel</button></div>`;
+    return head('Connect SnagThis') + `<div class="pbody"><div class="center">${body}</div></div>` + foot(`SnagThis didn’t open? <button class="lnk" type="button">Use a code</button>`);
+  }
+  if (state === 'connected') {
+    const extra = opt === 'term' ? `<div class="prompt good" style="margin:0 0 16px"><span class="pr">›</span>paired · this browser is trusted</div>` : opt === 'pips' ? `<div class="pips good" style="margin:0 0 18px">${'<i class="pip"></i>'.repeat(12)}</div>` : '';
+    const art = opt === 'hand' ? linkArt('done') : `<div class="yay-art">${burst()}${pb(64, 'press')}</div>`;
+    return head('Connect SnagThis') + `<div class="pbody"><div class="center"><div class="yay yay-in">${art}<div class="yay-title">Connected</div><p>Play a video, then choose Download.</p>${extra}<button class="b pri" type="button" id="done">Done</button></div></div></div>`;
+  }
+  const denied = state === 'denied';
+  const mark = opt === 'term' ? `<div class="prompt ${denied ? 'bad' : ''}" style="margin:16px 0 0"><span class="pr">›</span>${denied ? 'denied in SnagThis' : 'request timed out'}</div>` : opt === 'hand' ? '' : '';
+  const art = opt === 'hand' ? linkArt('broken') : '';
+  const title = denied ? 'Not connected' : 'Timed out';
+  const bodyT = denied ? 'SnagThis chose Deny. Chrome can ask again in an hour.' : 'Nothing was connected.';
+  const btns = denied ? `<button class="b bd" type="button">Use a code</button><button class="b" type="button">Close</button>` : `<button class="b pri" type="button">Try again</button><button class="b" type="button">Close</button>`;
+  return head('Connect SnagThis') + `<div class="pbody"><div class="center">${art}<div class="off">${digits(opt === 'term' && denied ? 'bad off' : 'off', opt === 'focus' ? 8 : 6)}</div>${mark}<p class="st-title" role="alert">${title}</p><p class="st-body">${bodyT}</p><div class="brow" style="margin-top:20px">${btns}</div></div></div>` + (denied ? '' : foot(`Or <button class="lnk" type="button">use a code</button>`));
+}
+function pipRow() { const gone = Math.floor((120 - remain) / 10); return `<div class="pips" aria-hidden="true">${Array.from({ length: 12 }, (_, i) => `<i class="pip${i < gone ? ' gone' : i === gone ? ' now' : ''}"></i>`).join('')}</div>`; }
+function linkArt(mode) { return `<div class="link ${mode}" aria-hidden="true"><span class="node">${browserGlyph}Chrome</span><span class="dots">${Array.from({ length: 7 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</span>${mode === 'done' ? I.ok : ''}<span class="node">${pb(28, mode === 'done' ? 'press' : '')}SnagThis</span></div>`; }
+
+/* ── Desktop ── */
+function desktop() {
+  const today = opt === 'today';
+  const pending = state === 'review' || (today && ['waiting', 'opening'].includes(state) && state !== 'opening');
+  let banner = '';
+  if (pending && state !== 'opening') {
+    banner = today ? `<div class="pend"><span class="spin" style="color:var(--color-foreground-muted)"></span><div class="pt"><b>Chrome is asking to connect…</b><small>Allow only if Chrome shows these digits.</small></div>${digits('hot', 3)}<button class="b" type="button">Review</button></div>`
+      : `<div class="pend"><span class="pulse" aria-hidden="true"></span><div class="pt"><b>Chrome is asking to connect</b><small>Digits <span class="mono">${CODE}</span> · <span class="tick">${clock(remain)}</span> left</small></div>${opt === 'pips' ? digits('hot', 3) : ''}<button class="b pri" type="button">Review</button></div>`;
+  }
+  if (!today && state === 'waiting') banner = ''; // New: never show the banner under the dialog.
+  const settings = `<div class="dset"><nav><a class="on">${I.puzzle('')}Chrome extension</a><a>${I.dl}Downloads</a><a>${I.app}App</a><a>${I.pal}Appearance</a><a>${I.sl}Advanced</a><div class="ver">SnagThis 2.0.44</div></nav><section><h4>Chrome extension</h4><p class="m">Send videos from Chrome to this app.</p>${banner}<div class="scard"><p>Chrome isn’t connected yet.</p><ol><li>In Chrome, open SnagThis and choose Connect.</li><li>Choose Allow here when the digits match.</li></ol><button class="b bd" type="button">Show connection code</button></div></section></div>`;
+  const win = inner => `<div class="dtitle"><span class="lights"><i></i><i></i><i></i></span>${WM}<span class="ttl">Settings</span></div>${settings}${inner}`;
+  const who = () => {
+    if (today) return dev ? `<div class="who">${I.puzzle('pz')}<div class="wt"><b>Unrecognized Chrome extension</b><small>gedjaidfdkgffaaicpflgjoipbnombmb</small></div><span class="warn">Not the Web Store build</span></div>`
+      : `<div class="who">${pb(26)}<div class="wt"><b>SnagThis for Chrome 2.4.0</b><small>kpldfbgmhacfnoiedhkoimlcpajmeno</small></div><span class="ok">✓ Chrome Web Store build</span></div>`;
+    if (opt === 'term') return dev ? `<dl class="kv"><dt>from</dt><dd>chrome-extension://gedjai…nombmb</dd><dt>build</dt><dd>not from the Web Store</dd></dl>` : `<dl class="kv"><dt>from</dt><dd>SnagThis for Chrome 2.4.0</dd><dt>build</dt><dd style="color:hsl(145 50% 70%)">✓ Chrome Web Store</dd></dl>`;
+    return dev ? `<div class="who">${I.puzzle('pz')}<span class="wn">Chrome extension</span><span class="wid">gedjai…nombmb</span><span class="chip" title="Loaded unpacked or from outside the Chrome Web Store. The digits are the real check.">Not Web Store</span></div>`
+      : `<div class="who">${pb(16)}<span class="wn">SnagThis for Chrome</span><span class="wid">2.4.0</span><span class="chip good">✓ Web Store</span></div>`;
+  };
+  if (state === 'opening') return win('');
+  if (state === 'waiting') {
+    if (today) return win(`<div class="scrim"></div><div class="dlg">${pb(40)}<h3>Chrome wants to connect</h3><p>Allow only if Chrome is showing these same four digits right now.</p>${digits('hot')}${who()}<div class="brow"><button class="b bd" type="button">Deny</button><button class="b pri dis" type="button" id="allow">Allow</button></div><p class="dhint">Expires in <span class="tick">${clock(remain)}</span> · Different digits in Chrome? Choose Deny.</p></div>`);
+    const btns = `<div class="brow"><button class="b bd" type="button">Deny</button><button class="b pri arming" type="button" id="allow" aria-describedby="allow-hint"><span>Allow</span></button></div>`;
+    const foot = opt === 'term' ? `<div class="dfoot" id="allow-hint"><span>different digits? choose Deny</span><span>expires <span class="tick">${clock(remain)}</span></span></div>` : `<div class="dfoot" id="allow-hint"><span>Different digits? Choose Deny.</span><span class="tick" aria-hidden="true">${clock(remain)}</span></div>`;
+    if (opt === 'focus') return win(`<div class="take"><div class="take-in">${pb(44)}<h3>Connect Chrome?</h3><p>Allow only if Chrome shows the same digits.</p>${digits('hot', 8)}${who()}${btns}<div class="bar"><i style="--p:${remain / 120}"></i></div>${foot}</div></div>`);
+    if (opt === 'term') return win(`<div class="scrim soft"></div><div class="dlg"><div class="dhead"><span class="pr">›</span>SNAGTHIS · CONNECTION REQUEST</div><h3>Connect Chrome?</h3><p>Allow only if Chrome shows the same digits.</p>${digits('hot')}${who()}${btns}${foot}</div>`);
+    const art = opt === 'hand' ? linkArt('') : pb(36);
+    const extra = opt === 'pips' ? pipRow() : opt === 'quiet' ? `<div class="bar" style="width:100%;margin:14px 0 0"><i style="--p:${remain / 120}"></i></div>` : '';
+    return win(`<div class="scrim soft"></div><div class="dlg">${art}<h3>Connect Chrome?</h3><p>Allow only if Chrome shows the same digits.</p>${digits('hot')}${extra}${who()}${btns}${foot}</div>`);
+  }
+  if (state === 'review') return win('');
+  if (state === 'connected') {
+    if (today) return win(`<div class="scrim"></div><div class="dlg"><div class="yay-art">${burst()}${pb(64, 'press')}</div><div class="yay-title">Chrome <em>connected</em></div><p style="margin:0 0 16px;color:var(--color-foreground-muted)">Chrome can now send streams, audio choices and downloads here.</p><div class="brow"><button class="b pri" type="button">Done</button></div></div>`);
+    const art = opt === 'hand' ? linkArt('done') : `<div class="yay-art">${burst()}${pb(64, 'press')}</div>`;
+    const extra = opt === 'pips' ? `<div class="pips good" style="margin:0 0 18px">${'<i class="pip"></i>'.repeat(12)}</div>` : opt === 'term' ? `<div class="prompt good" style="margin:0 0 16px"><span class="pr">›</span>paired · token saved</div>` : '';
+    return win(`${opt === 'focus' ? '<div class="take"></div>' : '<div class="scrim soft"></div>'}<div class="yay yay-in">${art}<div class="yay-title">Connected</div><p>Downloads from Chrome now arrive here.</p>${extra}<button class="b pri" type="button">Done</button><div class="autoclose">Closes on its own in a moment</div></div>`);
+  }
+  const denied = state === 'denied';
+  const msg = today ? (denied ? 'Chrome was not connected. That extension can ask again in an hour, or connect with a code.' : 'Chrome’s connection request expired. Nothing was connected.')
+    : (denied ? 'Chrome wasn’t connected. It can ask again in an hour.' : 'Chrome’s request timed out. Nothing was connected.');
+  return win(`<div class="toast" role="status">${today ? '' : denied ? I.ban : I.clock}<span>${msg}</span></div>`);
+}
+
+function render() {
+  clearTimeout(render.t1); clearTimeout(render.t2);
+  $('#stage').className = `stage o-${opt} ${opt === 'today' ? '' : 'nx'}${$('#motion [aria-pressed="true"]').dataset.v === 'reduce' ? ' reduce' : ''}`;
+  $('#pop').innerHTML = popup(); $('#desk').innerHTML = desktop();
+  $$('#picker button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === opt)));
+  $$('#states button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === state)));
+  const o = OPTIONS.find(x => x.k === opt); const n = OPTIONS.indexOf(o) + 1;
+  $('#about').innerHTML = `<h3><em>${n}</em>${o.n}${o.rec ? ' · recommended' : ''}</h3><p style="margin:0 0 10px;color:var(--color-foreground-muted)">${o.about[0]}</p><ul>${o.about[1].map(x => `<li>${x}</li>`).join('')}</ul>`;
+  const allow = $('#allow');
+  if (allow) render.t1 = setTimeout(() => { allow.classList.remove('arming', 'dis'); }, 700);
+  if (opt === 'term') scramble();
+
+}
+function scramble() {
+  if ($('#stage').classList.contains('reduce') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  $$('.o-term .dg.hot .dc').forEach((cell, i) => {
+    const real = cell.dataset.d; let n = 0;
+    const iv = setInterval(() => { n++; if (n > 6 + i * 3) { cell.innerHTML = px(real, 6); clearInterval(iv); return; } cell.innerHTML = px(String(Math.floor(Math.random() * 10)), 6); }, 55);
+  });
+}
+function tick() {
+  if (!['opening', 'waiting', 'review'].includes(state)) return;
+  remain -= 1;
+  if (remain <= 0) { remain = 0; setState('expired'); return; }
+  $$('.tick').forEach(t => { t.textContent = clock(remain); });
+  $$('.bar i').forEach(b => b.style.setProperty('--p', remain / 120));
+  $$('.pips:not(.good)').forEach(p => { p.outerHTML = pipRow(); });
+}
+function setState(s) { state = s; if (['opening', 'waiting'].includes(s) && remain < 20) remain = 112; render(); }
+function stopFlow() { flow.forEach(clearTimeout); flow = []; playing = false; $('#play span').textContent = 'Play flow'; }
+function playFlow() {
+  stopFlow(); playing = true; $('#play span').textContent = 'Stop'; remain = 120;
+  const at = (ms, fn) => flow.push(setTimeout(fn, ms));
+  $('#play svg').classList.remove('press'); void $('#play svg').getBoundingClientRect(); $('#play svg').classList.add('press');
+  state = 'opening'; render();
+  at(1200, () => { state = 'waiting'; render(); });
+  at(3600, () => $('#allow')?.classList.add('hov'));
+  at(4300, () => $('#allow')?.classList.add('press'));
+  at(4500, () => { state = 'connected'; render(); });
+  at(7500, stopFlow);
+}
+
+picker.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; stopFlow(); opt = b.dataset.k; render(); });
+$('#states').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; stopFlow(); setState(b.dataset.k); });
+$('#build').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; dev = b.dataset.v === 'dev'; $$('#build button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); render(); });
+$('#motion').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; $$('#motion button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); render(); });
+$('#play').addEventListener('click', () => playing ? stopFlow() : playFlow());
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const o = OPTIONS[Number(e.key) - 1]; if (o) { stopFlow(); opt = o.k; render(); return; }
+  const i = STATES.findIndex(s => s[0] === state);
+  if (e.key === 'ArrowRight') { stopFlow(); setState(STATES[(i + 1) % STATES.length][0]); }
+  if (e.key === 'ArrowLeft') { stopFlow(); setState(STATES[(i + STATES.length - 1) % STATES.length][0]); }
+  if (e.key === 'p' || e.key === 'P') playing ? stopFlow() : playFlow();
+});
+const q = new URLSearchParams(location.search);
+if (q.get('o')) opt = q.get('o'); if (q.get('s')) state = q.get('s'); if (q.get('b') === 'store') { dev = false; $$('#build button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === 'store'))); }
+render();
+tickTimer = setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

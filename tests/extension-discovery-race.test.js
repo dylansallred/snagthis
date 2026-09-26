@@ -208,7 +208,9 @@ test('first navigation keeps large HLS metadata and child artwork, excludes comp
     await worker.emit('headers', headers(details, contentType));
   }
   const initial = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
-  assert.equal(initial.rawItems.length, 4);
+  // Script-fetched 512-byte pieces with no duration are stream fragments, not
+  // rows, even before their playlist arrives; Show all still lists them.
+  assert.deepEqual(initial.rawItems.map(item => item.url).sort(), [childUrl, masterUrl].sort());
   assert.ok(initial.rawItems.every(item => !item.manifest), 'the first response headers have no playlist body yet');
   const firstVisit = initial.visit;
 

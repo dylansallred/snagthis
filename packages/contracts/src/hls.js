@@ -108,6 +108,121 @@
     return chosen;
   }
 
+  // DRM key systems, by the identifiers manifests and EME use for them. Plain
+  // HLS AES-128 (an ordinary key file) is not DRM and is never reported here.
+  const KEY_SYSTEMS = [
+    { id: 'widevine', pattern: /edef8ba9-?79d6-?4ace-?a3c8-?27dcd51d21ed|widevine/i },
+    { id: 'playready', pattern: /9a04f079-?9840-?4286-?ab92-?e65be0885f95|playready/i },
+    { id: 'fairplay', pattern: /94ce86fb-?07ff-?4f43-?adb8-?93d2fa968ca2|com\.apple\.(?:fps|streamingkeydelivery)|fairplay|^skd:/i },
+    { id: 'clearkey', pattern: /e2719d58-?a985-?b3c9-?781a-?b030af78d30e|1077efec-?c0b2-?4d02-?ace3-?3c1e52e2fb4b|clearkey/i },
+  ];
+  function keySystemOf(value) {
+    const text = String(value || '');
+    const match = KEY_SYSTEMS.find(function (system) { return system.pattern.test(text); });
+    return match ? match.id : '';
+  }
+  function uniqueKeySystems(values) {
+    return Array.from(new Set(values.map(keySystemOf).filter(Boolean)));
+  }
+
+  // ISO 8601 durations as DASH writes them (PT1H2M3.5S, P1DT2H).
+  function isoDuration(value) {
+    const match = /^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(String(value || '').trim());
+    if (!match || !match.slice(1).some(Boolean)) return null;
+    const seconds = (Number(match[1]) || 0) * 86400 + (Number(match[2]) || 0) * 3600 + (Number(match[3]) || 0) * 60 + (Number(match[4]) || 0);
+    return seconds > 0 ? seconds : null;
+  }
+
+  function isDashManifest(text) {
+    return /^\uFEFF?\s*(?:<\?xml[^>]*\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<(?:[\w-]+:)?MPD[\s>]/.test(String(text || '').slice(0, 4096));
+  }
+
+  // A light DASH reader for detection only: duration, protection and which
+  // piece URLs belong to it. Works without DOMParser (service workers lack it).
+  function parseDashManifest(text, manifestUrl) {
+    const url = httpUrl(manifestUrl);
+    const body = String(text || '');
+    if (!url || !isDashManifest(body)) throw new TypeError('A valid manifest URL and MPD document are required');
+    const attr = function (tag, name) {
+      const match = new RegExp('\\s' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\')', 'i').exec(tag);
+      return match ? (match[1] === undefined ? match[2] : match[1]).replace(/&amp;/g, '&') : '';
+    };
+    const stack = [{ name: '', base: url }];
+    const protection = [];
+    const templates = [];
+    const segmentUrls = [];
+    const initializationUrls = [];
+    let durationSeconds = null;
+    let isLive = false;
+    const heights = [];
+    const pattern = /<!--[\s\S]*?-->|<(\/?)(?:[\w-]+:)?([A-Za-z][\w.-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>|([^<]+)/g;
+    let match;
+    let characters = '';
+    while ((match = pattern.exec(body))) {
+      if (match[0].startsWith('<!--')) continue;
+      if (match[5] !== undefined) { characters += match[5]; continue; }
+      const closing = match[1] === '/';
+      const name = match[2];
+      const tag = match[3] || '';
+      if (closing) {
+        const top = stack.pop();
+        if (top && top.name === 'BaseURL') {
+          const parent = stack[stack.length - 1];
+          const resolved = httpUrl(characters.trim().replace(/&amp;/g, '&'), parent.base);
+          // The first BaseURL of an element wins; later ones are CDN alternates.
+          if (resolved && !parent.hasBase) { parent.base = resolved; parent.hasBase = true; }
+          if (resolved && parent.name === 'Representation' && !/\/$/.test(resolved)) parent.file = resolved;
+        }
+        if (top && top.name === 'Representation' && top.file && !top.template && segmentUrls.indexOf(top.file) < 0) segmentUrls.push(top.file);
+        if (!stack.length) stack.push({ name: '', base: url });
+        continue;
+      }
+      const parent = stack[stack.length - 1];
+      if (name === 'MPD') {
+        durationSeconds = isoDuration(attr(tag, 'mediaPresentationDuration'));
+        isLive = attr(tag, 'type') === 'dynamic';
+      } else if (name === 'ContentProtection') {
+        protection.push(attr(tag, 'schemeIdUri') + ' ' + attr(tag, 'value'));
+      } else if (name === 'SegmentTemplate') {
+        ['media', 'initialization'].forEach(function (key) {
+          const value = attr(tag, key);
+          if (!value) return;
+          const resolved = httpUrl(value.replace(/\$([A-Za-z]+)(?:%0\d+d)?\$/g, function (_, id) { return '__DASH_' + id + '__'; }), parent.base);
+          if (resolved && templates.indexOf(resolved) < 0) templates.push(resolved);
+        });
+        for (let index = stack.length - 1; index >= 0; index -= 1) if (stack[index].name === 'Representation' || stack[index].name === 'AdaptationSet') { stack[index].template = true; break; }
+      } else if (name === 'Initialization' || name === 'SegmentURL') {
+        const value = attr(tag, name === 'Initialization' ? 'sourceURL' : 'media');
+        const resolved = value && httpUrl(value, parent.base);
+        if (resolved) (name === 'Initialization' ? initializationUrls : segmentUrls).push(resolved);
+        if (name === 'SegmentURL') for (let index = stack.length - 1; index >= 0; index -= 1) if (stack[index].name === 'Representation') { stack[index].template = true; break; }
+      } else if (name === 'Representation') {
+        const height = number(attr(tag, 'height'));
+        if (height) heights.push(height);
+      }
+      // AdaptationSet-level templates apply to each Representation below it.
+      const inheritsTemplate = name === 'Representation' && stack.some(function (entry) { return entry.name === 'AdaptationSet' && entry.template; });
+      if (match[4] !== '/') { stack.push({ name: name, base: parent.base, template: inheritsTemplate }); characters = ''; }
+    }
+    const keySystems = uniqueKeySystems(protection);
+    return {
+      url: url, isDash: true, isMaster: false, variants: [], audio: [], subtitles: [],
+      durationSeconds: durationSeconds, isLive: isLive, isDrm: protection.length > 0, keySystems: keySystems,
+      encryption: [], referencedUrls: [], segmentUrls: segmentUrls, initializationUrls: initializationUrls, segmentTemplates: templates,
+      height: heights.length ? Math.max.apply(null, heights) : null,
+    };
+  }
+
+  // Whether a URL is one the manifest's SegmentTemplate would produce.
+  function matchesSegmentTemplate(candidate, templates) {
+    const path = String(candidate || '').split(/[?#]/)[0];
+    return (templates || []).some(function (template) {
+      const source = String(template).split(/[?#]/)[0];
+      const expression = source.split(/__DASH_[A-Za-z]+__/).map(function (part) { return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('[^/]+?');
+      return new RegExp('^' + expression + '$').test(path);
+    });
+  }
+
   function parseHlsManifest(text, manifestUrl, options) {
     const url = httpUrl(manifestUrl);
     const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
@@ -180,6 +295,7 @@
       url: url, isMaster: isMaster, variants: orderedVariants, audio: audio, subtitles: subtitles,
       durationSeconds: durationSeconds, isLive: isMaster ? null : !endList && playlistType !== 'VOD',
       isDrm: encryption.some(function (key) { return key.method !== 'AES-128' || key.keyFormat !== 'identity'; }),
+      keySystems: uniqueKeySystems(encryption.filter(function (key) { return key.method !== 'AES-128' || key.keyFormat !== 'identity'; }).map(function (key) { return key.keyFormat + ' ' + (key.url || ''); })),
       encryption: encryption, referencedUrls: referencedUrls, segmentUrls: segmentUrls, initializationUrls: initializationUrls,
     };
   }
@@ -342,7 +458,8 @@
   }
 
   return {
-    parseAttributes: parseAttributes, parseHlsManifest: parseHlsManifest, collapseDetections: collapseDetections, estimateSizeBytes: estimateSizeBytes,
+    parseAttributes: parseAttributes, parseHlsManifest: parseHlsManifest, parseDashManifest: parseDashManifest, isDashManifest: isDashManifest,
+    keySystemOf: keySystemOf, matchesSegmentTemplate: matchesSegmentTemplate, collapseDetections: collapseDetections, estimateSizeBytes: estimateSizeBytes,
     compareVariants: compareVariants, dedupeVariants: dedupeVariants, defaultVariant: defaultVariant, isHdrOrHevc: isHdrOrHevc, variantKey: variantKey,
   };
 });

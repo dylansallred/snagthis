@@ -27,3 +27,24 @@ export function PixelText({ text, scale, ...props }: { text: string; scale: numb
     <path fill="currentColor" d={d} />
   </svg>;
 }
+
+// A 5 × 7 capital face for the one pixel title ("CONNECTED"); only the letters it needs.
+// Matches SnagThisPixel.word in the extension (apps/extension/popup/pixel.js).
+const CAPS: Record<string, string[]> = {
+  C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'], O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'], E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'], D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+};
+
+/** A short decorative pixel title in 5 × 7 capitals; give it an accessible name in text. */
+export function PixelWord({ text, scale, ...props }: { text: string; scale: number } & SVGProps<SVGSVGElement>) {
+  const chars = [...text.toUpperCase()].filter((char) => CAPS[char]);
+  let d = '';
+  chars.forEach((char, index) => CAPS[char].forEach((row, y) => [...row].forEach((cell, x) => {
+    if (cell === '#') d += `M${index * 6 + x} ${y}h1v1h-1z`;
+  })));
+  const width = Math.max(1, chars.length * 6 - 1);
+  return <svg width={width * scale} height={7 * scale} viewBox={`0 0 ${width} 7`} shapeRendering="crispEdges" aria-hidden="true" focusable="false" {...props}>
+    <path fill="currentColor" d={d} />
+  </svg>;
+}
