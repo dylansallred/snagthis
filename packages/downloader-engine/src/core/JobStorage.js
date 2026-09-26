@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const JOB_STORAGE_MARKER = '.vidsnag-job.json';
+const JOB_STORAGE_MARKER = '.snagthis-job.json';
 
 function sanitizeJobFolderName(title) {
   let name = String(title || 'Download').normalize('NFC')

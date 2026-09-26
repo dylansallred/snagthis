@@ -4,4 +4,6 @@ export const CLIENT: { extension: string };
 export * from './rows';
 export * from './selection';
 export * from './hls';
+export * from './audioTracks';
 export * from './strings';
+export * from './accents';

@@ -1,10 +1,10 @@
 export type RowState = 'detected' | 'waiting' | 'downloading' | 'finishing' | 'paused' | 'problem' | 'saved' | 'missing';
 export interface RowAction {
-  id: 'download' | 'pause' | 'resume' | 'play' | 'open-page' | 'retry' | 'choose-folder' | 'locate' | 'details' | 'use-chrome-session';
+  id: 'download' | 'pause' | 'resume' | 'play' | 'open-page' | 'retry' | 'choose-folder' | 'locate' | 'details' | 'use-chrome-session' | 'continue';
   label: string;
   style: 'primary' | 'bordered' | 'icon';
 }
-export interface RowProblem { code: 'authentication' | 'expired' | 'network' | 'disk' | 'unsupported' | 'missing' | 'unknown'; message: string; action: RowAction; raw: string; }
+export interface RowProblem { code: 'authentication' | 'quality' | 'expired' | 'network' | 'disk' | 'unsupported' | 'missing' | 'unknown'; message: string; action: RowAction; raw: string; }
 export interface RowModel {
   id: string;
   jobId: string | null;
@@ -17,6 +17,8 @@ export interface RowModel {
   thumbnailUrl: string | null;
   durationLabel: string;
   qualityLabel: string;
+  /** "1080p — 2160p unavailable" when the engine fell back to a lower quality. */
+  qualityNote: string;
   sizeLabel: string;
   action: RowAction | null;
   problem: RowProblem | null;

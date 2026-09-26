@@ -1,15 +1,21 @@
-(function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.VidSnagSelection = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+// Node's CommonJS loader runs this file with `this` bound to the exports object;
+// classic scripts bind the global object and ES modules leave it undefined. Avoiding
+// the free `module` identifier keeps bundlers from wrapping the file in a CommonJS shim.
+(function (exported, factory) {
+  if (exported) Object.assign(exported, factory());
+  else globalThis.SnagThisSelection = factory();
+})(this && this !== globalThis ? this : null, function () {
   'use strict';
-  const SELECTION_FIELDS = Object.freeze(['variantUrl', 'height', 'audioLang', 'subtitleLang', 'audioOnly']);
+  const SELECTION_FIELDS = Object.freeze(['variantUrl', 'height', 'audioLang', 'audioTrack', 'subtitleLang', 'audioOnly']);
   const SELECTION_SCHEMA = Object.freeze({
     type: 'object', additionalProperties: false,
     properties: Object.freeze({
       variantUrl: { type: 'string', format: 'uri', maxLength: 8192 },
       height: { type: 'integer', minimum: 1, maximum: 16384 },
       audioLang: { type: 'string', minLength: 1, maxLength: 64 },
+      // Rendition identity from describeAudioTracks(); language alone cannot
+      // tell apart nameless tracks or stereo/5.1/AD mixes of one language.
+      audioTrack: { type: 'string', minLength: 1, maxLength: 512 },
       subtitleLang: { type: 'string', minLength: 1, maxLength: 64 },
       audioOnly: { type: 'boolean' },
     }),
@@ -36,6 +42,9 @@
       } else if (field === 'height') {
         if (Number.isInteger(item) && item > 0 && item <= 16384) value[field] = item;
         else errors.push({ field: 'selection.' + field, code: 'invalid_height', message: 'Height must be a positive integer at most 16384' });
+      } else if (field === 'audioTrack') {
+        if (typeof item === 'string' && item.length > 0 && item.length <= 512 && !/[\x00-\x1f\x7f]/.test(item)) value[field] = item;
+        else errors.push({ field: 'selection.' + field, code: 'invalid_track', message: 'Audio track must be a nonempty string of at most 512 characters' });
       } else if (field === 'audioOnly') {
         if (typeof item === 'boolean') value[field] = item;
         else errors.push({ field: 'selection.' + field, code: 'invalid_type', message: 'Audio only must be a boolean' });

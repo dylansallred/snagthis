@@ -1,7 +1,10 @@
-(function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.VidSnagHls = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+// Node's CommonJS loader runs this file with `this` bound to the exports object;
+// classic scripts bind the global object and ES modules leave it undefined. Avoiding
+// the free `module` identifier keeps bundlers from wrapping the file in a CommonJS shim.
+(function (exported, factory) {
+  if (exported) Object.assign(exported, factory());
+  else globalThis.SnagThisHls = factory();
+})(this && this !== globalThis ? this : null, function () {
   'use strict';
 
   function parseAttributes(value) {
@@ -32,6 +35,79 @@
     return rate > 0 && duration > 0 ? Math.round(rate * duration / 8) : null;
   }
 
+  // HEVC/Dolby Vision or PQ/HLG renditions play in fewer places than AVC SDR.
+  function isHdrOrHevc(variant) {
+    const codecs = String(variant && variant.codecs || '').toLowerCase();
+    const range = String(variant && variant.videoRange || '').toUpperCase();
+    return /(?:^|,)\s*(?:hvc1|hev1|dvh1|dvhe|dav1)/.test(codecs) || range === 'PQ' || range === 'HLG';
+  }
+
+  // Highest first; at equal height the broadly playable AVC/SDR copy comes
+  // first, so a default never lands on HEVC/HDR unless the user picks it.
+  function compareVariants(a, b) {
+    return (b.height || 0) - (a.height || 0)
+      || (isHdrOrHevc(a) ? 1 : 0) - (isHdrOrHevc(b) ? 1 : 0)
+      || (b.bandwidth || 0) - (a.bandwidth || 0);
+  }
+
+  function variantKey(variant) {
+    // Without bandwidth, resolution and codecs, attributes cannot prove that two
+    // URLs carry the same encode (rather than two different sources).
+    if (!variant || !variant.bandwidth || !variant.height || !variant.codecs) return null;
+    return [variant.height || 0, variant.bandwidth, String(variant.codecs || '').toLowerCase(), variant.audioGroup || '', variant.videoRange || ''].join('|');
+  }
+
+  // Redundant CDN copies (identical attributes, different URL) are one quality.
+  // Extra copies are kept as ordered failover URLs rather than extra choices.
+  function dedupeVariants(list) {
+    const result = [];
+    const byKey = new Map();
+    (list || []).slice().sort(compareVariants).forEach(function (variant) {
+      const key = variantKey(variant);
+      const first = key && byKey.get(key);
+      if (!first) {
+        const copy = Object.assign({}, variant);
+        if (key) byKey.set(key, copy);
+        result.push(copy);
+        return;
+      }
+      const backups = (first.backupUrls || []).slice();
+      [variant.url].concat(variant.backupUrls || []).forEach(function (url) {
+        if (url && url !== first.url && backups.indexOf(url) < 0) backups.push(url);
+      });
+      first.backupUrls = backups;
+      if (variant.observed) first.observed = true;
+    });
+    return result;
+  }
+
+  // The quality a download starts with. A player that already loaded some
+  // renditions has proven those work on this CDN; prefer the highest of them.
+  // Otherwise choose the highest, broadly playable rendition.
+  // A preferred height is used when present; otherwise `atMost` picks the
+  // highest below it (lowest if none), else the highest candidate.
+  function defaultVariant(variants, preferredQuality, options) {
+    const ordered = (variants || []).slice().sort(compareVariants);
+    if (!ordered.length) return null;
+    const observed = ordered.filter(function (variant) { return variant.observed; });
+    const candidates = observed.length ? observed : ordered;
+    const wanted = Number.parseInt(preferredQuality, 10);
+    let chosen;
+    if (!(wanted > 0)) chosen = candidates[0];
+    else {
+      chosen = candidates.find(function (variant) { return variant.height === wanted; });
+      if (!chosen && options && options.atMost) chosen = candidates.find(function (variant) { return (variant.height || 0) <= wanted; }) || candidates[candidates.length - 1];
+      chosen = chosen || candidates[0];
+    }
+    // A player that loaded the HEVC/HDR copy proves the height plays; the AVC
+    // copy of that same height is still the broadly compatible default.
+    if (chosen && isHdrOrHevc(chosen)) {
+      const avc = ordered.find(function (variant) { return variant.height === chosen.height && !isHdrOrHevc(variant); });
+      if (avc) chosen = avc;
+    }
+    return chosen;
+  }
+
   function parseHlsManifest(text, manifestUrl, options) {
     const url = httpUrl(manifestUrl);
     const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
@@ -60,7 +136,7 @@
         const rendition = {
           url: renditionUrl, language: attrs.LANGUAGE || null, name: attrs.NAME || attrs.LANGUAGE || '',
           groupId: attrs['GROUP-ID'] || null, default: attrs.DEFAULT === 'YES', autoselect: attrs.AUTOSELECT === 'YES',
-          forced: attrs.FORCED === 'YES', channels: attrs.CHANNELS || null,
+          forced: attrs.FORCED === 'YES', channels: attrs.CHANNELS || null, characteristics: attrs.CHARACTERISTICS || null,
         };
         if (attrs.TYPE === 'AUDIO') audio.push(rendition);
         if (attrs.TYPE === 'SUBTITLES' && renditionUrl) subtitles.push(rendition);
@@ -90,17 +166,18 @@
             width: resolution ? Number(resolution[1]) : null, height: resolution ? Number(resolution[2]) : null,
             bandwidth: bandwidth, averageBandwidth: averageBandwidth, codecs: attrs.CODECS || null,
             frameRate: number(attrs['FRAME-RATE']), audioGroup: attrs.AUDIO || null, subtitleGroup: attrs.SUBTITLES || null,
+            videoRange: attrs['VIDEO-RANGE'] || null,
             sizeBytes: sizeBytes, sizeEstimated: sizeBytes !== null,
           });
           pendingVariant = null;
         } else segmentUrls.push(uri);
       }
     });
-    variants.sort(function (a, b) { return (b.height || 0) - (a.height || 0) || (b.bandwidth || 0) - (a.bandwidth || 0); });
+    const orderedVariants = dedupeVariants(variants);
     const durationSeconds = isMaster ? number(opts.durationSeconds) : hasDuration ? duration : null;
     const referencedUrls = Array.from(new Set(variants.map(function (variant) { return variant.url; }).concat(audio.map(function (rendition) { return rendition.url; }), subtitles.map(function (rendition) { return rendition.url; })).filter(Boolean)));
     return {
-      url: url, isMaster: isMaster, variants: variants, audio: audio, subtitles: subtitles,
+      url: url, isMaster: isMaster, variants: orderedVariants, audio: audio, subtitles: subtitles,
       durationSeconds: durationSeconds, isLive: isMaster ? null : !endList && playlistType !== 'VOD',
       isDrm: encryption.some(function (key) { return key.method !== 'AES-128' || key.keyFormat !== 'identity'; }),
       encryption: encryption, referencedUrls: referencedUrls, segmentUrls: segmentUrls, initializationUrls: initializationUrls,
@@ -124,6 +201,27 @@
       return new Set((hls.referencedUrls || []).concat((hls.variants || []).map(function (variant) { return variant.url || variant.variantUrl; }), components(item)).map(function (url) { return httpUrl(url, item.url); }).filter(Boolean));
     }
     const references = detected.map(urls);
+    // Proxy fan-out (P-Stream forks) serves one title from several sources whose
+    // playlists differ by a few frames. Short clips must match exactly.
+    function sameDuration(a, b) {
+      if (!(a > 0) || !(b > 0)) return false;
+      if (a === b) return true;
+      const longer = Math.max(a, b);
+      return longer >= 60 && Math.abs(a - b) <= Math.max(1, longer * 0.0005);
+    }
+    // Wikimedia-style transcodes live under a directory named after the source
+    // file (".../Title.webm/Title.webm.720p.vp9.webm"): one title, many rows.
+    function transcodeKey(item) {
+      if (item.type !== 'file' || manifest(item).isMaster || Array.isArray(manifest(item).segmentUrls)) return '';
+      try {
+        const parsed = new URL(item.url);
+        const parts = parsed.pathname.split('/').filter(Boolean).map(function (part) { try { return decodeURIComponent(part); } catch { return part; } });
+        const index = parts.findIndex(function (part) { return /\.(?:mp4|m4v|mov|webm|mkv|ogv|ogg)$/i.test(part); });
+        if (index < 0) return null;
+        return { key: [parsed.host].concat(parts.slice(Math.max(0, index - 2), index + 1)).join('/'), derived: index < parts.length - 1 };
+      } catch { return null; }
+    }
+    const transcodeKeys = detected.map(transcodeKey);
     for (let i = 0; i < detected.length; i += 1) {
       for (let j = i + 1; j < detected.length; j += 1) {
         const a = detected[i];
@@ -134,8 +232,14 @@
         const bPage = b.pageUrl || b.sourcePageUrl;
         const aDuration = number(a.durationSeconds ?? manifest(a).durationSeconds);
         const bDuration = number(b.durationSeconds ?? manifest(b).durationSeconds);
-        const samePageDuration = aPage && aPage === bPage && aDuration > 0 && aDuration === bDuration;
-        const matches = (aUrl && aUrl === bUrl) || references[i].has(bUrl) || references[j].has(aUrl) || samePageDuration;
+        const samePageDuration = aPage && aPage === bPage && sameDuration(aDuration, bDuration);
+        const aFile = transcodeKeys[i];
+        const bFile = transcodeKeys[j];
+        // Two plain files that merely share a name are not related; a derived
+        // copy filed under the other's name is.
+        const sameTranscode = aFile && bFile && aFile.key === bFile.key && (aFile.derived || bFile.derived)
+          && (!aPage || !bPage || aPage === bPage);
+        const matches = (aUrl && aUrl === bUrl) || references[i].has(bUrl) || references[j].has(aUrl) || samePageDuration || sameTranscode;
         if (matches) roots[rootOf(j)] = rootOf(i);
       }
     }
@@ -168,6 +272,9 @@
       });
       // A child's EXTINF durations describe this stream. Page metadata can be
       // missing when the master arrives, or still belong to an earlier video.
+      // A rendition's own playlist was requested by the page's player, so that
+      // quality demonstrably plays on this CDN (some publish dead renditions).
+      const loaded = new Set(group.filter(function (item) { return item !== main; }).map(function (item) { return httpUrl(item.url); }).filter(Boolean));
       const completePlaylist = mediaPlaylists.find(function (item) { return manifest(item).isLive === false && number(manifest(item).durationSeconds) > 0; });
       const durationSeconds = completePlaylist ? number(manifest(completePlaylist).durationSeconds) : number(main.durationSeconds ?? hls.durationSeconds);
       const componentUrls = new Set(group.flatMap(components));
@@ -175,7 +282,12 @@
       const seen = new Set();
       const addVariant = function (variant) {
         const url = httpUrl(variant.url || variant.variantUrl, main.url);
-        if (url && !seen.has(url)) { seen.add(url); variants.push(Object.assign({}, variant, { url: url, variantUrl: url })); }
+        if (url && !seen.has(url)) {
+          seen.add(url);
+          const copy = Object.assign({}, variant, { url: url, variantUrl: url });
+          if (loaded.has(url) || (variant.backupUrls || []).some(function (backup) { return loaded.has(backup); })) copy.observed = true;
+          variants.push(copy);
+        }
       };
       group.forEach(function (item) { (manifest(item).variants || []).forEach(addVariant); });
       const hasDeclaredVariants = variants.length > 0;
@@ -217,17 +329,20 @@
           variant.sizeEstimated = true;
         }
       });
-      variants.sort(function (a, b) { return (b.height || 0) - (a.height || 0) || (b.bandwidth || 0) - (a.bandwidth || 0); });
+      const orderedVariants = dedupeVariants(variants);
       return Object.assign({}, main, {
         durationSeconds: durationSeconds,
         thumbnailUrl: main.thumbnailUrl || mediaPlaylists.find(function (item) { return item.thumbnailUrl; })?.thumbnailUrl,
         poster: main.poster || mediaPlaylists.find(function (item) { return item.poster; })?.poster,
         height: main.height || mediaPlaylists.find(function (item) { return item.height; })?.height,
-        variants: variants, audio: hls.audio || [], subtitles: hls.subtitles || [],
+        variants: orderedVariants, audio: hls.audio || [], subtitles: hls.subtitles || [],
         detectedStreams: group.slice(), collapsedCount: group.length,
       });
     });
   }
 
-  return { parseAttributes: parseAttributes, parseHlsManifest: parseHlsManifest, collapseDetections: collapseDetections, estimateSizeBytes: estimateSizeBytes };
+  return {
+    parseAttributes: parseAttributes, parseHlsManifest: parseHlsManifest, collapseDetections: collapseDetections, estimateSizeBytes: estimateSizeBytes,
+    compareVariants: compareVariants, dedupeVariants: dedupeVariants, defaultVariant: defaultVariant, isHdrOrHevc: isHdrOrHevc, variantKey: variantKey,
+  };
 });

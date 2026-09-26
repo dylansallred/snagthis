@@ -14,18 +14,11 @@ function buildHlsRequestHeaders(headers = {}, context = {}) {
   const sourcePageUrl = String(context.sourcePageUrl || '').trim();
   if (sourcePageUrl) {
     const hasReferer = Object.keys(normalized).some((key) => key.toLowerCase() === 'referer');
-    const hasOrigin = Object.keys(normalized).some((key) => key.toLowerCase() === 'origin');
-
+    // Browsers send a Referer with nearly every media request. Origin is sent
+    // only on CORS requests, so it is forwarded when observed but never
+    // invented: some CDNs refuse a request carrying an unexpected Origin.
     if (!hasReferer) {
       normalized.Referer = sourcePageUrl;
-    }
-
-    if (!hasOrigin) {
-      try {
-        normalized.Origin = new URL(sourcePageUrl).origin;
-      } catch {
-        // Ignore malformed source page URLs.
-      }
     }
   }
 

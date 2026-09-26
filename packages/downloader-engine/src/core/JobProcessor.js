@@ -7,14 +7,14 @@ const { requestWithRedirects } = require('./PlaylistUtils');
 const { createHash } = require('crypto');
 const { isOwnedJobStorageDir } = require('./JobStorage');
 const { createNativeProgress } = require('./NativeProgress');
-const { createProcessStopper } = require('./ProcessTermination');
+const { createProcessStopper, processTreeSpawnOptions } = require('./ProcessTermination');
 const { createTransferMetrics } = require('./TransferMetrics');
 const { generatePreviewAssets, INTERIM_PREVIEW_CLIP_SUFFIX, isCurrentPreviewClipPath } = require('./PreviewClip');
 const { createLocalPreviewCollector } = require('./LocalPreviewCollector');
 const { createDownloadEta } = require('./DownloadEta');
 const { sniffMedia, resolveHlsSelection, mediaError } = require('./MediaSelection');
 const { startScopedMediaProxy, scopeMediaHeaders } = require('./MediaRequest');
-const { getRetryBackoffMs, downloadSegment, isLocalWriteError } = require('./SegmentDownloader');
+const { getRetryBackoffMs, downloadSegment, isLocalWriteError, isSourceExpiredSegmentError } = require('./SegmentDownloader');
 const {
   buildHlsRequestHeaders,
   buildNativeHlsArgs,
@@ -30,6 +30,9 @@ const {
 } = require('./HlsSegmentDiagnostics');
 const { generateThumbnailFromMp4, normalizeMp4ForPlayback, remuxAndGenerateThumbnails } = require('./VideoConverter');
 const logger = require('../utils/logger');
+
+// Dead renditions tried before a job fails (failover copies count too).
+const MAX_VARIANT_FALLBACKS = 4;
 
 function isYouTubeUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return false;
@@ -95,7 +98,7 @@ async function createYtDlpTrustOptions(env, fsPromises = fs.promises) {
   // Give the child the same public CA roots trusted by our Node requests.
   const certificates = typeof tls.getCACertificates === 'function'
     ? tls.getCACertificates('default') : tls.rootCertificates;
-  const directory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'vidsnag-ca-'));
+  const directory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'snagthis-ca-'));
   const cleanup = () => fsPromises.rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
   try {
     const filePath = path.join(directory, 'certificates.pem');
@@ -114,6 +117,17 @@ function getYtDlpTransportError(line) {
   return null;
 }
 
+// Sites label tracks by region or script ("en-US", "zh-Hans"), and YouTube
+// often only has automatic captions. Match the whole language family, and let
+// yt-dlp fall back to automatic captions when no uploaded track exists.
+function buildYtDlpSubtitleArgs(selection = {}) {
+  const language = String(selection && selection.subtitleLang || '').trim();
+  if (!language || language === 'none') return [];
+  const base = language.split(/[-_]/)[0].toLowerCase().replace(/[^a-z]/g, '');
+  if (!base) return [];
+  return ['--write-subs', '--write-auto-subs', '--sub-langs', `${base}(?:[-_].*)?`, '--embed-subs'];
+}
+
 function createJobProcessor({
   downloadDir,
   FFMPEG_PATH,
@@ -125,6 +139,7 @@ function createJobProcessor({
 }) {
   const MAX_TS_PART_BYTES = 512 * 1024 * 1024; // ~512 MiB per TS part
   const DIRECT_MAX_ATTEMPTS = 4;
+  const SOURCE_EXPIRED_SEGMENT_ATTEMPTS = 3;
   const YT_DLP_PATH = String(process.env.YTDLP_PATH || process.env.YT_DLP_PATH || 'yt-dlp').trim() || 'yt-dlp';
   let ytDlpAvailable = null;
   const isExplicitYtDlpPath = /[\\/]/.test(YT_DLP_PATH);
@@ -179,6 +194,10 @@ function createJobProcessor({
         if (!job.youtubeMetadata?.thumbnailUrl && !(isYouTubeUrl(job.url) && job.thumbnailUrls?.length)) {
           job.thumbnailPath = poster.path;
           job.thumbnailPaths = [poster.path];
+        } else if (poster?.path && poster.path !== job.thumbnailPath) {
+          // An unused poster is not relocated with the saved file and would
+          // keep the job's download folder alive after completion.
+          await unlinkIfExists(poster.path, { jobId: job.id, reason: 'unused-early-poster' });
         }
         job.previewClipPath = clip.path;
         job.previewClipDurationSeconds = clip.durationSeconds;
@@ -214,7 +233,11 @@ function createJobProcessor({
 
       if (isYouTubeUrl(job.url)) return await runDirectJobInternal(job);
       const headers = buildHlsRequestHeaders(job.headers || {}, { sourcePageUrl: job.sourcePageUrl });
-      const detected = await sniffMedia(job.url, headers, { credentialOrigin: job.credentialOrigin, sourcePageUrl: job.sourcePageUrl, signal: downloadAbort.signal });
+      job._headerPolicy ||= new Map();
+      // A captured playlist snapshot (POST/blob) must not be re-requested by GET.
+      const detected = typeof job.manifestText === 'string' && /^\uFEFF?\s*#EXTM3U/.test(job.manifestText)
+        ? { mediaType: 'hls', finalUrl: job.url }
+        : await sniffMedia(job.url, headers, { credentialOrigin: job.credentialOrigin, sourcePageUrl: job.sourcePageUrl, signal: downloadAbort.signal, headerPolicy: job._headerPolicy });
       // A pause may arrive while sniffing. Do not begin another manifest
       // request before the old runner gives its slot back to the queue.
       if (stopCancelled()) return;
@@ -379,6 +402,16 @@ function createJobProcessor({
     const storageDir = job.storageDir || (job.filePath ? path.dirname(job.filePath) : downloadDir);
     await fsPromises.mkdir(storageDir, { recursive: true });
     job.storageDir = storageDir;
+    if (!job.ytDlpPartFiles) {
+      // Earlier builds ran yt-dlp with --no-part, so an interrupted format is
+      // indistinguishable from a finished one and would be merged truncated.
+      // Start such a job's media over once; later restarts resume .part files.
+      const entries = await fsPromises.readdir(storageDir).catch(() => []);
+      await Promise.all(entries
+        .filter((name) => name.startsWith(`${job.id}-`) && /\.(?:mp4|m4a|webm|mkv|mp3|opus|ogg|aac|flv|3gp|ytdl|part)$/i.test(name))
+        .map((name) => unlinkIfExists(path.join(storageDir, name), { jobId: job.id, reason: 'ytdlp-legacy-partial' })));
+      job.ytDlpPartFiles = true;
+    }
 
     const outputTemplate = path.join(storageDir, `${job.id}-%(title).120B.%(ext)s`);
     let previewInputPath = '';
@@ -404,7 +437,9 @@ function createJobProcessor({
       ...browserSessionArgs,
       ...runtimeOptions.args,
       '--no-playlist',
-      '--no-part',
+      // Keep yt-dlp's .part files. A finished format is then renamed and
+      // skipped on the next launch; with --no-part yt-dlp re-requests it past
+      // its end, which YouTube rejects with HTTP 416.
       '--no-keep-video',
       '--no-simulate',
       '--progress',
@@ -421,7 +456,7 @@ function createJobProcessor({
       '--progress-template',
       'download:bytes=%(progress.downloaded_bytes)s,total=%(progress.total_bytes)s,total_estimate=%(progress.total_bytes_estimate)s,speed=%(progress.speed)s,eta=%(progress.eta)s',
       '--print',
-      'before_dl:vidsnag_title=%(title)j',
+      'before_dl:snagthis_title=%(title)j',
       '--print',
       'after_move:filepath=%(filepath)s',
       '-o',
@@ -449,7 +484,7 @@ function createJobProcessor({
         if (separator < 1 || /[\r\n\t]/.test(entry)) return null;
         return `${source.hostname}\tFALSE\t/\t${source.protocol === 'https:' ? 'TRUE' : 'FALSE'}\t0\t${entry.slice(0, separator)}\t${entry.slice(separator + 1)}`;
       }).filter(Boolean);
-      cookieJarDirectory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'vidsnag-cookies-'));
+      cookieJarDirectory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'snagthis-cookies-'));
       cookieJarPath = path.join(cookieJarDirectory, 'cookies.txt');
       await fsPromises.writeFile(cookieJarPath, '# Netscape HTTP Cookie File\n' + cookies.join('\n') + '\n', { mode: 0o600 });
       args.push('--cookies', cookieJarPath);
@@ -458,10 +493,12 @@ function createJobProcessor({
     try {
     trustOptions = await createYtDlpTrustOptions(runtimeOptions.env, fsPromises);
     if (job.selection && job.selection.audioOnly) args.push('--extract-audio', '--audio-format', 'm4a');
-    if (job.selection && job.selection.subtitleLang && job.selection.subtitleLang !== 'none') args.push('--write-subs', '--sub-langs', job.selection.subtitleLang, '--embed-subs');
+    const subtitleArgs = buildYtDlpSubtitleArgs(job.selection);
+    args.push(...subtitleArgs);
     if (job.probe) args.push('--download-sections', `*0-${Math.max(1, Math.min(30, Number(job.probe.seconds) || 30))}`);
 
     let resolvedPath = '';
+    let subtitleWritten = false;
     let lastErrorLine = '';
     let transportError = null;
     let totalDownloadPhases = 1;
@@ -542,7 +579,11 @@ function createJobProcessor({
         cwd: storageDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: trustOptions.env,
+        ...processTreeSpawnOptions(),
       });
+      // yt-dlp starts ffmpeg to merge and remux. Stop the whole tree and
+      // escalate, or a paused job can keep writing after its slot is freed.
+      const stopper = createProcessStopper(child, { processTree: true });
       if (ytDebugEnabled) {
         logger.info('yt-dlp spawned', {
           jobId: job && job.id,
@@ -555,13 +596,12 @@ function createJobProcessor({
       const cancelPoll = setInterval(() => {
         if (!job.cancelled) return;
         job._previewAbort?.abort();
-        if (!child.killed) {
-          child.kill('SIGTERM');
-        }
+        void stopper.stop();
       }, 250);
 
       const finalize = (cb) => {
         clearInterval(cancelPoll);
+        stopper.dispose();
         cb();
       };
 
@@ -569,9 +609,9 @@ function createJobProcessor({
         const text = String(line || '').trim();
         if (!text) return;
 
-        if (!fromStderr && text.startsWith('vidsnag_title=')) {
+        if (!fromStderr && text.startsWith('snagthis_title=')) {
           try {
-            const value = JSON.parse(text.slice('vidsnag_title='.length));
+            const value = JSON.parse(text.slice('snagthis_title='.length));
             const title = typeof value === 'string'
               ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 255)
               : '';
@@ -623,6 +663,20 @@ function createJobProcessor({
           );
           currentPhaseProgress = 0;
         }
+
+        // A format finished before a restart is skipped without a Destination
+        // line. Count it as a completed phase so the next one maps correctly.
+        if (/^\[download\]\s+.+\s+has already been downloaded$/i.test(text)) {
+          destinationLineCount += 1;
+          currentDownloadPhaseIndex = Math.min(destinationLineCount - 1, Math.max(0, totalDownloadPhases - 1));
+          currentPhaseProgress = 100;
+          const doneShare = ((currentDownloadPhaseIndex + 1) / totalDownloadPhases) * 100;
+          job.progress = Math.max(Number(job.progress || 0), Math.min(99, Math.round(doneShare)));
+          job.updatedAt = Date.now();
+          return;
+        }
+
+        if (/^\[info\] Writing video subtitles to:/i.test(text)) subtitleWritten = true;
 
         if (text.startsWith('filepath=')) {
           resolvedPath = text.slice('filepath='.length).trim();
@@ -817,6 +871,8 @@ function createJobProcessor({
     job.downloadNameMp4 = path.basename(finalPath);
     job.bytesDownloaded = Number(stats && stats.size || 0);
     job.totalBytes = Number(stats && stats.size || 0);
+    // Record the absence so Details can say so instead of failing silently.
+    job.subtitleMissing = subtitleArgs.length > 0 && !subtitleWritten;
     job.progress = 100;
     job.speedBps = 0;
     job.etaSeconds = 0;
@@ -1019,6 +1075,7 @@ function createJobProcessor({
       ...(!job.selection?.audioOnly && resolved.subtitleUrl ? [resolved.subtitleUrl] : []),
     ] : [];
     const proxy = await startScopedMediaProxy({ rootUrl: playlistUrl, headers: job.headers || {}, sourcePageUrl: job.sourcePageUrl, credentialOrigin: job.credentialOrigin || job.url, onResourceEvent: progressTracker.onResourceEvent,
+      playlistSnapshots: resolved.playlistSnapshots || {}, headerPolicy: job._headerPolicy || new Map(),
       onTransferStart: () => job._transferMetrics?.begin(),
       onLocalResource: (url, bytes) => job._localPreviewCollector?.captureBytes(url, bytes),
       localResourceUrls: [...String(resolved.playlistText || '').matchAll(/^#EXT-X-(?:KEY|MAP):.*?URI="([^"]+)"/gm)].map(match => new URL(match[1], playlistUrl).href),
@@ -1128,6 +1185,15 @@ function createJobProcessor({
         }));
       });
       if (!job.cancelled && !job.probe) proxy.assertComplete();
+      if (!job.cancelled) {
+        // FFmpeg's HLS demuxer can exit 0 after every input request failed.
+        // Report the upstream failure instead of a missing-file rename error.
+        try { await fsPromises.access(tempMp4Path); } catch {
+          const error = new Error('The media tools finished without writing a video. The source refused or broke the request.');
+          error.code = 'NO_MEDIA_OUTPUT';
+          throw proxy.fatalError || proxy.lastError || error;
+        }
+      }
     } catch (err) {
       try {
         await fsPromises.unlink(tempMp4Path);
@@ -1356,26 +1422,29 @@ function createJobProcessor({
         await fsPromises.mkdir(path.dirname(job.filePath), { recursive: true });
       }
 
-      const headers = buildHlsRequestHeaders(job.headers || {}, { sourcePageUrl: job.sourcePageUrl });
+      // The whole file is requested; a captured player Range would save a slice.
+      const headers = Object.fromEntries(Object.entries(buildHlsRequestHeaders(job.headers || {}, { sourcePageUrl: job.sourcePageUrl }))
+        .filter(([key]) => !/^(?:range|if-range)$/i.test(key)));
       const tempFilePath = `${job.filePath}.part`;
       let downloaded = false;
       let lastErr = null;
 
       // Direct retries write to temp + rename to avoid exposing partial files.
+      // Kept bytes continue only when the server proves the same resource
+      // (If-Range with its validator) and answers with the requested range.
       for (let attempt = 1; attempt <= DIRECT_MAX_ATTEMPTS && !job.cancelled; attempt += 1) {
         let directWriteStream = null;
         try {
+          const keptBytes = job.directValidator ? await fsPromises.stat(tempFilePath).then((stats) => stats.size, () => 0) : 0;
           job.bytesDownloaded = 0;
           job.totalBytes = 0;
-          job.progress = 0;
+          job.progress = keptBytes > 0 ? Number(job.progress || 0) : 0;
           job.updatedAt = Date.now();
 
-          try {
-            await fsPromises.unlink(tempFilePath);
-          } catch (_) {
-          }
+          if (keptBytes === 0) await unlinkIfExists(tempFilePath, { jobId: job.id, reason: 'direct-restart' });
+          const requestHeaders = keptBytes > 0 ? { ...headers, Range: `bytes=${keptBytes}-`, 'If-Range': job.directValidator } : headers;
 
-          await requestWithRedirects(job.url, headers, (res, _finalUrl, req) => {
+          await requestWithRedirects(job.url, requestHeaders, (res, _finalUrl, req) => {
             return new Promise((resolve, reject) => {
               if (res.statusCode < 200 || res.statusCode >= 300) {
                 reject(new Error(`Request failed with status ${res.statusCode}`));
@@ -1383,13 +1452,25 @@ function createJobProcessor({
                 return;
               }
 
+              const contentRange = /^bytes (\d+)-(\d+)\/(\d+|\*)$/i.exec(String(res.headers['content-range'] || '').trim());
+              const resumed = keptBytes > 0 && res.statusCode === 206 && contentRange && Number(contentRange[1]) === keptBytes;
+              if (res.statusCode === 206 && !resumed) {
+                reject(new Error('The server returned only part of the file'));
+                res.resume();
+                return;
+              }
+              const etag = String(res.headers.etag || '');
+              job.directValidator = etag && !/^W\//i.test(etag) ? etag : String(res.headers['last-modified'] || '') || null;
+
               const totalBytesHeader = res.headers['content-length'];
               const totalBytes = totalBytesHeader ? parseInt(totalBytesHeader, 10) : null;
-              if (Number.isFinite(totalBytes) && totalBytes > 0) {
-                job.totalBytes = totalBytes;
+              const expectedBytes = Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes + (resumed ? keptBytes : 0) : 0;
+              if (expectedBytes > 0) {
+                job.totalBytes = expectedBytes;
               }
+              job.bytesDownloaded = resumed ? keptBytes : 0;
 
-              const outStream = fs.createWriteStream(tempFilePath);
+              const outStream = fs.createWriteStream(tempFilePath, { flags: resumed ? 'a' : 'w' });
               directWriteStream = outStream;
               outStream.on('error', (err) => {
                 console.error('Direct job file stream error', {
@@ -1397,6 +1478,11 @@ function createJobProcessor({
                   message: err && err.message,
                 });
                 reject(err);
+              });
+              outStream.on('finish', () => {
+                // A connection that closes early must not be saved as the file.
+                if (expectedBytes > 0 && job.bytesDownloaded !== expectedBytes) reject(new Error('The download ended before the whole file arrived'));
+                else resolve();
               });
 
               res.on('data', (chunk) => {
@@ -1415,7 +1501,6 @@ function createJobProcessor({
               });
 
               res.on('error', reject);
-              outStream.on('finish', resolve);
               res.pipe(outStream);
             });
           }, { timeoutMs: 30_000, credentialOrigin: job.credentialOrigin || job.url, sourcePageUrl: job.sourcePageUrl, signal: job._downloadAbort?.signal }).finally(job._transferMetrics?.begin() || (() => {}));
@@ -1447,7 +1532,8 @@ function createJobProcessor({
       // A preview reader can also hold the partial file open on Windows.
       if (job._earlyThumbnailPromise) await job._earlyThumbnailPromise;
       if (!downloaded && job.cancelled) {
-        await unlinkIfExists(tempFilePath, { jobId: job && job.id, reason: 'direct-cancelled' });
+        // Pause and quit keep the bytes for the next attempt to continue.
+        if (!job.pauseRequested || job.cleanupOnCancel) await unlinkIfExists(tempFilePath, { jobId: job && job.id, reason: 'direct-cancelled' });
         if (job.cleanupOnCancel) {
           await cleanupCancelledDirectArtifacts(job);
         }
@@ -1571,6 +1657,29 @@ function createJobProcessor({
     return true;
   }
 
+  // A rendition whose playlist, init or first pieces the CDN refuses (403) or
+  // has lost (404/5xx) before any output exists is a dead quality, not a dead
+  // video: the page's own player typically uses a different one.
+  function isDeadVariantFailure(job, err, resolved) {
+    if (!err || job.cancelled || !resolved?.selectedVariant?.url || job.selection?.audioOnly) return false;
+    if ((Number(job.progress) || 0) >= 1) return false;
+    const status = Number(err.statusCode) || Number(String(err.message || '').match(/\bstatus (\d{3})\b/)?.[1]) || 0;
+    return err.code === 'PIECE_UNAVAILABLE' || err.code === 'NO_MEDIA_OUTPUT' || status === 403 || status === 404 || (status >= 500 && status <= 599);
+  }
+
+  // The final report for a rendition the CDN has lost: a quality problem the
+  // user can act on (choose another quality), not "link expired" or unknown.
+  function deadQualityError(job, err) {
+    if (!err || job.cancelled || (Number(job.progress) || 0) >= 1) return err;
+    const status = Number(err.statusCode) || Number(String(err.message || '').match(/\bstatus (\d{3})\b/)?.[1]) || 0;
+    if (err.code !== 'PIECE_UNAVAILABLE' && !(status >= 500 && status <= 599)) return err;
+    const error = new Error(`This quality is unavailable from the source${status ? ` (status ${status})` : ''}. Choose another quality.`);
+    error.code = 'VARIANT_UNAVAILABLE';
+    error.statusCode = status || undefined;
+    error.cause = err;
+    return error;
+  }
+
   async function runHlsJobInternal(job) {
     try {
       logger.info('HLS job started', { jobId: job && job.id, url: job && job.url });
@@ -1583,7 +1692,8 @@ function createJobProcessor({
         await fsPromises.mkdir(path.dirname(job.filePath), { recursive: true });
       }
 
-      const resolved = await resolveHlsSelection(job);
+      job.qualityFallback = null;
+      let resolved = await resolveHlsSelection(job);
       const { headers, playlistInfo, playlistUrl } = resolved;
       const segmentDiagnostics = ensureSegmentDiagnostics(job);
       const segments = playlistInfo.segments;
@@ -1608,7 +1718,7 @@ function createJobProcessor({
       }
 
       const needsNative = shouldPreferNativeHlsDownload(playlistInfo) || resolved.audioUrl || resolved.subtitleUrl || job.selection && job.selection.audioOnly || job.probe;
-      if (needsNative && !FFMPEG_PATH) throw mediaError('This video needs the media tools included with VidSnag', 'MEDIA_TOOLS_MISSING');
+      if (needsNative && !FFMPEG_PATH) throw mediaError('This video needs the media tools included with SnagThis', 'MEDIA_TOOLS_MISSING');
       if (FFMPEG_PATH && needsNative) {
         logger.info('Using native FFmpeg HLS ingest for advanced playlist', {
           jobId: job.id,
@@ -1620,8 +1730,43 @@ function createJobProcessor({
           hasByteRange: playlistInfo.hasByteRange,
           hasFmp4Segments: playlistInfo.hasFmp4Segments,
         });
-        await runNativeHlsJob(job, playlistUrl || job.url, playlistInfo, resolved);
-        return;
+        const originalHeight = resolved.selectedHeight || null;
+        const excludedUrls = new Set();
+        let firstError = null;
+        for (let fallbacks = 0; ; fallbacks += 1) {
+          try {
+            await runNativeHlsJob(job, resolved.playlistUrl || job.url, resolved.playlistInfo, resolved);
+            return;
+          } catch (err) {
+            if (fallbacks >= MAX_VARIANT_FALLBACKS || !isDeadVariantFailure(job, err, resolved)) throw deadQualityError(job, firstError || err);
+            firstError ||= err;
+            excludedUrls.add(resolved.selectedVariant.url);
+            let next;
+            try {
+              next = await resolveHlsSelection(job, { excludedUrls, belowHeight: resolved.selectedVariant.height, audioTrack: job.selection?.audioTrack });
+            } catch (resolveError) {
+              if (resolveError.code === 'ABORT_ERR') throw resolveError;
+              throw deadQualityError(job, firstError);
+            }
+            logger.warn('Selected HLS quality is unavailable; continuing with another rendition', {
+              jobId: job.id, failedHeight: resolved.selectedHeight || null, nextHeight: next.selectedHeight || null,
+              statusCode: err.statusCode || null, code: err.code || null,
+            });
+            if (originalHeight && next.selectedHeight && next.selectedHeight !== originalHeight) {
+              job.qualityFallback = { from: originalHeight, to: next.selectedHeight };
+            }
+            resolved = next;
+            job.selectedHeight = next.selectedHeight || job.selectedHeight;
+            job.playlistTopology = next.playlistInfo.topologyFingerprint;
+            job.durationSeconds = next.playlistInfo.totalDurationSeconds;
+            job.totalSegments = next.playlistInfo.totalSegments || next.playlistInfo.segments.length;
+            job.error = null;
+            if (!job.selection?.audioOnly && !job.earlyThumbnailAttempted) {
+              job._localPreviewCollector = createLocalPreviewCollector({ job, playlistText: next.playlistText, playlistUrl: next.playlistUrl,
+                directory: job.storageDir, previewDirectory: path.join(downloadDir, '__previews'), FFMPEG_PATH, FFPROBE_PATH });
+            }
+          }
+        }
       }
 
       job.downloadMode = 'segmented';
@@ -1709,10 +1854,13 @@ function createJobProcessor({
           : (Number.isFinite(job.maxSegmentAttempts)
               ? job.maxSegmentAttempts
               : DEFAULT_MAX_SEGMENT_ATTEMPTS);
-      const effectiveMaxAttemptsPerSegment =
-        maxAttemptsPerSegment === Infinity && job.fallbackUrl
-          ? 5
-          : maxAttemptsPerSegment;
+      // A direct fallback only runs before any segment succeeds; reach it
+      // quickly instead of spending the whole retry budget first.
+      const getSegmentAttemptLimit = () => (
+        job.fallbackUrl && !job.fallbackAttempted && !job.completedSegments
+          ? Math.min(5, maxAttemptsPerSegment)
+          : maxAttemptsPerSegment
+      );
 
       // Index for new segments; failed segments are managed in a separate queue.
       let nextIndex = 0;
@@ -2043,6 +2191,13 @@ function createJobProcessor({
               terminalSegmentError = err;
               job._downloadAbort?.abort(err);
               job._previewAbort?.abort();
+            } else if (isSourceExpiredSegmentError(err) && attempt >= SOURCE_EXPIRED_SEGMENT_ATTEMPTS && !terminalSegmentError
+              && !(job.fallbackUrl && !job.fallbackAttempted && !job.completedSegments)) {
+              // A brief retry absorbs a CDN hiccup; a lasting 401/403/404/410
+              // means the signed link lapsed and waiting will never finish it.
+              terminalSegmentError = mediaError('Link expired. Reopen the page to continue.', 'SOURCE_EXPIRED');
+              job._downloadAbort?.abort(terminalSegmentError);
+              job._previewAbort?.abort();
             }
             await closeWriteStream(segmentStream);
             if (attemptTempPath) {
@@ -2082,7 +2237,7 @@ function createJobProcessor({
               continue;
             }
 
-            if (attempt < effectiveMaxAttemptsPerSegment) {
+            if (attempt < getSegmentAttemptLimit()) {
               // Queue for another retry with a backoff timestamp.
               job.segmentStates[i] = {
                 status: 'retrying',
@@ -2320,4 +2475,4 @@ function createJobProcessor({
   return { runJob, runDirectJob };
 }
 
-module.exports = { createJobProcessor, __test: { buildYouTubeBrowserSessionArgs, buildYtDlpRuntimeOptions, createYtDlpTrustOptions, getYtDlpTransportError, resolveYouTubeVideoUrl } };
+module.exports = { createJobProcessor, __test: { buildYouTubeBrowserSessionArgs, buildYtDlpSubtitleArgs, buildYtDlpRuntimeOptions, createYtDlpTrustOptions, getYtDlpTransportError, resolveYouTubeVideoUrl } };

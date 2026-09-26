@@ -10,6 +10,7 @@ const { fetchAndSaveSubtitles } = require('../services/subdl');
 const { inferMediaMetadata } = require('../utils/mediaMetadata');
 const { buildDownloadAssetUrl, buildJobStorageDir } = require('../utils/downloadPaths');
 const config = require('../config');
+const { normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
 
 function isHttpUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return false;
@@ -160,7 +161,7 @@ function registerJobRoutes(
   runDirectJob
 ) {
   // Create a new download job from the extension queue
-  // Supports ?immediate=true to bypass queue and start immediately (legacy behavior)
+  // ?immediate=true is accepted for legacy callers; the job is still queued.
   app.post('/api/jobs', jobValidation, async (req, res) => {
     const { queue, settings } = req.body || {};
     if (!queue || !queue.url) {
@@ -204,21 +205,11 @@ function registerJobRoutes(
 
     if (isHls) {
       // HLS flow: use TS container internally and MP4 as the final remuxed output.
-      tsName = fileNameBase;
-      if (/\.m3u8$/i.test(tsName)) {
-        tsName = tsName.replace(/\.m3u8$/i, '.ts');
-      } else if (!/\.[a-z0-9]{2,4}$/i.test(tsName)) {
-        tsName = `${tsName}.ts`;
-      }
+      tsName = withMediaExtension(fileNameBase, '.ts');
 
       filePath = path.join(storageDir, `${id}-${tsName}`);
 
-      downloadNameMp4 = fileNameBase;
-      if (/\.m3u8$/i.test(downloadNameMp4)) {
-        downloadNameMp4 = downloadNameMp4.replace(/\.m3u8$/i, '.mp4');
-      } else if (!/\.[a-z0-9]{2,4}$/i.test(downloadNameMp4)) {
-        downloadNameMp4 = `${downloadNameMp4}.mp4`;
-      }
+      downloadNameMp4 = withMediaExtension(fileNameBase, '.mp4');
     } else {
       // Direct file flow (e.g., MP4): save with the original or inferred extension
       // so the resulting file is immediately usable.
@@ -230,10 +221,9 @@ function registerJobRoutes(
         ext = '';
       }
 
-      // Fallback to .mp4 when we don't recognize a safe extension.
-      if (!ext || !/^\.[a-z0-9]{2,4}$/i.test(ext)) {
-        ext = '.mp4';
-      }
+      // Only media containers keep the source extension; the file is later
+      // handed to the OS by Open, so an unknown type must not stay executable.
+      ext = normalizeMediaExtension(ext);
 
       const directName = `${fileNameBase}${ext}`;
       filePath = path.join(storageDir, `${id}-${directName}`);
@@ -348,13 +338,10 @@ function registerJobRoutes(
     });
 
     if (immediate) {
-      // Legacy behavior: start immediately without queue
-      jobs.set(id, job);
-      if (isHls) {
-        runJob(job);
-      } else {
-        runDirectJob(job);
-      }
+      // Legacy callers still get { id }, but the job is queue-managed: an
+      // unmanaged runner would bypass the concurrency limit, stay invisible to
+      // pause/cancel, and keep writing after quit.
+      queueManager.addJob(job);
       logger.info('Job created (immediate)', { jobId: id, url: queue.url, isHls });
       (async () => {
         if (!config.tmdbApiKey) {

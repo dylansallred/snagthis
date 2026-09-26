@@ -1,39 +1,16 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { redact, redactUrl } = require('@m3u8/downloader-engine/src/utils/redact');
 
 const EXTENSION_ORIGIN = /^chrome-extension:\/\/[a-p]{32}$/;
+const AUTH_PROTOCOL_PREFIX = 'snagthis-auth.';
 const ASSET_PATH = /^\/(?:downloads\/|api\/(?:history\/(?:file|stream)\/|jobs\/[^/]+\/(?:file|stream)$))/;
-const SECRET_KEY = /(?:authorization|cookie|password|secret|token|headers|signature|api.?key)/i;
 
 function sameSecret(left, right) {
   const a = Buffer.from(String(left || ''));
   const b = Buffer.from(String(right || ''));
   return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
-}
-
-function redactUrl(value) {
-  try {
-    const url = new URL(value);
-    url.username = '';
-    url.password = '';
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  } catch { return value; }
-}
-
-function redact(value, key = '') {
-  if (SECRET_KEY.test(key)) return '[redacted]';
-  if (typeof value === 'string') {
-    return value.replace(/https?:\/\/[^\s"'<>]+/g, redactUrl)
-      .replace(/(?:Bearer\s+)[A-Za-z0-9._~-]+/gi, 'Bearer [redacted]');
-  }
-  if (Array.isArray(value)) return value.map((item) => redact(item));
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redact(item, name)]));
-  }
-  return value;
 }
 
 function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExtensionConnected }) {
@@ -64,7 +41,7 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     const authorization = String(req.headers.authorization || '');
     if (sameSecret(authorization.replace(/^Bearer\s+/i, ''), token) && /^Bearer\s+/i.test(authorization)) return true;
     const protocols = String(req.headers['sec-websocket-protocol'] || '').split(',').map((item) => item.trim());
-    return protocols.some((protocol) => protocol.startsWith('vidsnag-auth.') && sameSecret(protocol.slice(13), token));
+    return protocols.some((protocol) => protocol.startsWith(AUTH_PROTOCOL_PREFIX) && sameSecret(protocol.slice(AUTH_PROTOCOL_PREFIX.length), token));
   }
 
   function markConnected(req) {
@@ -74,7 +51,7 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     // POST includes it. The already authenticated client header identifies these
     // follow-up reads; this flag never grants an origin or a client access.
     const pairedExtensionRead = !origin && approvedOrigins.size > 0
-      && req.headers['x-client'] === 'vidsnag-extension';
+      && req.headers['x-client'] === 'snagthis-extension';
     if ((!knownOrigin && !pairedExtensionRead) || extensionConnected) return;
     extensionConnected = true;
     save();

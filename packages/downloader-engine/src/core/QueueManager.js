@@ -5,6 +5,9 @@ const { resolveHlsSelection } = require('./MediaSelection');
 const { buildPlexBaseName } = require('../utils/plexNaming');
 const { allocateJobStorageDir, sanitizeJobFolderName, isOwnedJobStorageDir, hasJobStorageMarker, JOB_STORAGE_MARKER } = require('./JobStorage');
 const { isCurrentPreviewClipPath } = require('./PreviewClip');
+const { normalizeMediaExtension } = require('../utils/mediaFiles');
+
+const FINAL_FILE_NAME_MAX_BYTES = 200;
 
 class QueueManager {
   constructor(options) {
@@ -200,22 +203,39 @@ class QueueManager {
   }
 
   sanitizeFinalFileName(rawName, fallbackExt = '') {
-    const raw = String(rawName || '').trim();
+    const raw = String(rawName || '').normalize('NFC').trim();
     const normalized = raw
-      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ')
+      .replace(/[<>:"/\\|?*\u0000-\u001F\u007F]/g, ' ')
       .replace(/\s+/g, ' ')
       .replace(/[. ]+$/g, '')
       .trim();
 
     let safeName = normalized || 'Download';
+    let ext = '';
     if (fallbackExt) {
-      const ext = String(fallbackExt || '').trim();
-      if (ext && !safeName.toLowerCase().endsWith(ext.toLowerCase())) {
+      ext = String(fallbackExt || '').trim();
+      if (ext && safeName.toLowerCase().endsWith(ext.toLowerCase())) {
+        safeName = safeName.slice(0, -ext.length);
+      } else if (ext) {
         safeName = safeName.replace(/\.[a-z0-9]{2,4}$/i, '').trim();
-        safeName = `${safeName}${ext}`;
       }
     }
-    return safeName;
+    // Windows refuses device names even with an extension ("CON.mp4").
+    if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(safeName)) safeName = `Video ${safeName}`;
+    // Filesystems cap a name at 255 bytes, and non-Latin titles use up to 4
+    // bytes per character. Leave room for the extension and a " (N)" suffix,
+    // and never split a character.
+    const budget = FINAL_FILE_NAME_MAX_BYTES - Buffer.byteLength(ext, 'utf8');
+    if (Buffer.byteLength(safeName, 'utf8') > budget) {
+      let bounded = '';
+      for (const character of safeName) {
+        if (Buffer.byteLength(bounded + character, 'utf8') > budget) break;
+        bounded += character;
+      }
+      safeName = bounded;
+    }
+    safeName = safeName.replace(/[. ]+$/g, '').trim() || 'Download';
+    return `${safeName}${ext}`;
   }
 
   buildCompletedArtifactFolderName(preferredBaseName) {
@@ -265,9 +285,11 @@ class QueueManager {
     const primaryPath = job.mp4Path && fs.existsSync(job.mp4Path) ? job.mp4Path : job.filePath;
     if (!primaryPath || !fs.existsSync(primaryPath)) return;
 
-    const ext = path.extname(primaryPath) || (job.mp4Path ? '.mp4' : '');
+    // A saved file is opened by the OS, so it may only keep a media extension.
+    const ext = normalizeMediaExtension(path.extname(primaryPath));
     const preferredBaseName = this.sanitizeFinalFileName(buildPlexBaseName(job), ext);
     const preferredDir = this.getCompletedOutputDir ? String(this.getCompletedOutputDir() || '').trim() : '';
+    let allocatedDir = null;
     try {
       const currentFolder = path.dirname(path.resolve(primaryPath));
       const folderName = sanitizeJobFolderName(preferredBaseName);
@@ -281,6 +303,7 @@ class QueueManager {
         ? !(ownedCurrent && matchesName)
         : hasJobStorageMarker(currentFolder, job.id) && !matchesName;
       const targetDir = shouldAllocate ? allocateJobStorageDir(targetRoot, job.id, preferredBaseName) : currentFolder;
+      if (shouldAllocate) allocatedDir = targetDir;
       fs.mkdirSync(targetDir, { recursive: true });
       const resolvedCurrent = path.resolve(primaryPath);
       const resolvedTargetDir = path.resolve(targetDir);
@@ -344,6 +367,15 @@ class QueueManager {
       job.storageDir = resolvedTargetDir;
       job.updatedAt = Date.now();
     } catch (err) {
+      // Do not leave an empty, marker-only folder behind in the user's folder.
+      if (allocatedDir && fs.existsSync(allocatedDir) && path.resolve(allocatedDir) !== path.dirname(path.resolve(primaryPath))) {
+        try {
+          if (fs.readdirSync(allocatedDir).every(name => name === JOB_STORAGE_MARKER)) {
+            fs.rmSync(path.join(allocatedDir, JOB_STORAGE_MARKER), { force: true });
+            fs.rmdirSync(allocatedDir);
+          }
+        } catch { /* Leave anything we cannot verify as empty. */ }
+      }
       logger.warn('Failed to relocate completed artifact', {
         jobId: job.id,
         preferredDir,
@@ -351,7 +383,9 @@ class QueueManager {
         error: err && err.message,
       });
       if (!job.error) {
-        job.error = `Completed file move failed: ${(err && err.message) || 'Unknown error'}`;
+        // Keep the system code for classification (EXDEV, ENOSPC, EACCES);
+        // the raw message names both absolute paths and stays in the log.
+        job.error = `Completed file move failed${err && err.code ? ` (${String(err.code).replace(/[^A-Z0-9_]/gi, '')})` : ''}`;
         job.status = 'completed-with-errors';
       }
     }
@@ -445,6 +479,7 @@ class QueueManager {
           subtitlePath: job.subtitlePath,
           subtitleZipPath: job.subtitleZipPath,
           subtitleMeta: job.subtitleMeta,
+          subtitleMissing: job.subtitleMissing === true,
           segmentDiagnostics: job.segmentDiagnostics || null,
           forcePlaybackCompatibility: !!job.forcePlaybackCompatibility,
           fallbackUrl: job.fallbackUrl,
@@ -466,7 +501,12 @@ class QueueManager {
           playlistTopology: job.playlistTopology,
           segmentTempDir: job.segmentTempDir,
           resumePartialSegments: !!job.resumePartialSegments,
-          requiresSourceRefresh: !!job.requiresSourceRefresh || Object.keys(job.headers || {}).some((key) => !['referer', 'origin', 'user-agent', 'accept', 'accept-language', 'cache-control', 'pragma'].includes(key.toLowerCase())),
+          ytDlpPartFiles: job.ytDlpPartFiles === true,
+          directValidator: typeof job.directValidator === 'string' ? job.directValidator.slice(0, 256) : null,
+          qualityFallback: job.qualityFallback || null,
+          // A captured playlist snapshot stays in memory; after a restart the
+          // page must supply it again.
+          requiresSourceRefresh: !!job.requiresSourceRefresh || typeof job.manifestText === 'string' || Object.keys(job.headers || {}).some((key) => !['referer', 'origin', 'user-agent', 'accept', 'accept-language', 'cache-control', 'pragma'].includes(key.toLowerCase())),
           headers: Object.fromEntries(
             Object.entries(job.headers || {}).filter(([key]) =>
               ['referer', 'origin', 'user-agent', 'accept', 'accept-language', 'cache-control', 'pragma'].includes(key.toLowerCase())
@@ -546,6 +586,8 @@ class QueueManager {
       downloadMode: job.downloadMode || null,
       segmentProgressAvailable: typeof job.segmentProgressAvailable === 'boolean' ? job.segmentProgressAvailable : null,
       selection: job.selection || null,
+      qualityFallback: job.qualityFallback || null,
+      subtitleMissing: job.subtitleMissing === true,
       durationSeconds: job.durationSeconds || null,
       errorCode: job.errorCode || null,
       outputDirectory: job.outputDirectory || job.storageDir || null,
@@ -609,7 +651,7 @@ class QueueManager {
 
   // Process queue - start next job if we have capacity
   processQueue() {
-    if (!this.settings.autoStart) return;
+    if (!this.settings.autoStart || this.suspending) return;
 
     const attemptedJobIds = new Set();
     const maxIterations = Math.max(1, this.queue.length * 2);
@@ -652,6 +694,8 @@ class QueueManager {
       logger.warn('Cannot start job - already active', { jobId, status: job.status });
       return false;
     }
+
+    if (this.suspending) return false;
 
     if (job.queueStatus !== 'queued' && job.queueStatus !== 'paused') {
       logger.warn('Cannot start job - invalid queueStatus', { jobId, queueStatus: job.queueStatus });
@@ -764,12 +808,39 @@ class QueueManager {
     }
   }
 
+  // App shutdown: stop running downloads but keep their partial data, and save
+  // them as queued so the next launch resumes them like an interrupted run.
+  async suspendActiveJobs({ timeoutMs = 5000 } = {}) {
+    this.suspending = true;
+    const jobIds = [...this.activeJobs];
+    for (const jobId of jobIds) {
+      const job = this.jobs.get(jobId);
+      if (job && this.pauseJob(jobId)) job.resumeRequested = true;
+    }
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); });
+    await Promise.race([Promise.allSettled(jobIds.map((jobId) => this.waitForJobIdle(jobId))), timeout]);
+    clearTimeout(timer);
+    for (const jobId of jobIds) {
+      const job = this.jobs.get(jobId);
+      // A runner still winding down is saved as queued rather than paused.
+      if (job && job.queueStatus === 'paused' && job.resumeRequested) {
+        job.queueStatus = 'queued';
+        job.status = 'pending';
+      }
+    }
+    await this.saveQueue();
+    await this.persistence;
+  }
+
   // Pause a job
   pauseJob(jobId) {
     const job = this.jobs.get(jobId);
     if (!job) return false;
 
-    if (job.queueStatus === 'downloading') {
+    // Finalizing is local work on already-downloaded pieces. Cancelling it
+    // would discard those pieces yet report the job as resumable.
+    if (job.queueStatus === 'downloading' && job.status !== 'finalizing') {
       job.pauseRequested = true;
       job.resumeRequested = false;
       job.cancelled = true;
@@ -817,22 +888,26 @@ class QueueManager {
     return false;
   }
 
-  async refreshJobSource(jobId, { url, headers = {}, sourcePageUrl, selection } = {}) {
+  async refreshJobSource(jobId, { url, headers = {}, sourcePageUrl, selection, manifestText } = {}) {
     const job = this.jobs.get(jobId);
     if (!job || this.activeJobs.has(jobId)) return { ok: false, resumable: false, reason: 'Download is still running' };
     let parsed;
     try { parsed = new URL(url); } catch { return { ok: false, resumable: false, reason: 'Invalid source URL' }; }
     if (!['http:', 'https:'].includes(parsed.protocol)) return { ok: false, resumable: false, reason: 'Unsupported source URL' };
-    const hasPartial = Number(job.completedSegments) > 0 || !!job.resumePartialSegments;
+    // Only saved HLS pieces depend on the refreshed playlist matching. A direct
+    // file restarts, and yt-dlp resumes its own .part files from the page URL.
+    const hasPartial = !!job.playlistTopology && (Number(job.completedSegments) > 0 || !!job.resumePartialSegments);
     if (hasPartial) {
-      const candidate = { ...job, url, headers, sourcePageUrl: sourcePageUrl || job.sourcePageUrl, selection: selection || job.selection, credentialOrigin: parsed.origin };
+      const candidate = { ...job, url, headers, manifestText, sourcePageUrl: sourcePageUrl || job.sourcePageUrl, selection: selection || job.selection, credentialOrigin: parsed.origin };
       const { playlistInfo: info } = await resolveHlsSelection(candidate);
-      if (info.unsupportedReason || !job.playlistTopology || info.topologyFingerprint !== job.playlistTopology) {
+      if (info.unsupportedReason || info.topologyFingerprint !== job.playlistTopology) {
         return { ok: false, resumable: false, reason: 'The refreshed video has changed. Start a new download to keep the existing pieces safe.' };
       }
     }
     job.url = url;
     job.headers = headers;
+    job.manifestText = manifestText;
+    job.qualityFallback = null;
     job.sourcePageUrl = sourcePageUrl || job.sourcePageUrl;
     job.selection = selection || job.selection;
     job.credentialOrigin = parsed.origin;
@@ -942,7 +1017,11 @@ class QueueManager {
               storageEntries
                 .filter((entry) => entry.isFile())
                 .map((entry) => entry.name)
-                .filter((name) => name.endsWith('.part') || name.endsWith('.tmp') || /^ts-parts-.*[.]txt$/i.test(name))
+                .filter((name) => name.endsWith('.part') || name.endsWith('.tmp') || /^ts-parts-.*[.]txt$/i.test(name)
+                  // yt-dlp keeps each finished format (name.f401.mp4) until it merges them.
+                  // A saved file is never an intermediate, whatever its name.
+                  || (!['completed', 'completed-with-errors'].includes(job.queueStatus) && name.startsWith(`${job.id}-`)
+                    && (/\.f[\w-]+\.[a-z0-9]+$/i.test(name) || /\.ytdl$|-Frag\d+$/i.test(name))))
                 .forEach((name) => {
                   const target = path.join(jobStorageDir, name);
                   if (fs.existsSync(target)) {

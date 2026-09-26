@@ -16,7 +16,7 @@ const HEADER = {
 };
 
 const CLIENT = {
-  extension: 'vidsnag-extension',
+  extension: 'snagthis-extension',
 };
 
 module.exports = {
@@ -26,5 +26,7 @@ module.exports = {
   ...require('./strings'),
   ...require('./rows'),
   ...require('./hls'),
+  ...require('./audioTracks'),
   ...require('./selection'),
+  ...require('./accents'),
 };

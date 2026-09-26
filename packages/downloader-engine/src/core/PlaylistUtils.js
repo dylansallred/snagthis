@@ -14,7 +14,10 @@ async function fetchText(url, headers, options = {}) {
   return requestWithRedirects(url, headers, (res, finalUrl) => {
     return new Promise((resolve, reject) => {
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        reject(new Error(`Request failed with status ${res.statusCode}`));
+        const error = new Error(`Request failed with status ${res.statusCode}`);
+        error.statusCode = res.statusCode;
+        if ([401, 403, 410].includes(res.statusCode)) error.code = 'SOURCE_EXPIRED';
+        reject(error);
         res.resume();
         return;
       }

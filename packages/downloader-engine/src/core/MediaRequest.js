@@ -40,19 +40,63 @@ function scopeMediaHeaders(headers = {}, targetUrl, context = {}) {
     const value = String(rawValue == null ? '' : rawValue).trim();
     if (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(key) || !value || /[\r\n]/.test(value)) continue;
     if (HOP_BY_HOP_HEADERS.has(key) || (!sameOrigin && !CROSS_ORIGIN_HEADERS.has(key))) continue;
+    // CORS preflight headers describe an OPTIONS request, never a media GET.
+    if (key.startsWith('access-control-request-')) continue;
     try { http.validateHeaderValue(key, value); } catch { continue; }
     scoped[key] = value;
   }
   if (context.sourcePageUrl) {
     try {
       const source = mediaUrl(context.sourcePageUrl);
+      // Browsers send Referer on media requests but Origin only on CORS
+      // requests: forward an observed Origin, never invent one.
       if (!scoped.referer) scoped.referer = source.href;
-      if (!scoped.origin) scoped.origin = source.origin;
     } catch { /* Ignore invalid page metadata. */ }
+  }
+  if (context.reduced) {
+    // A 403 fallback: first drop Origin; without one, drop Referer instead.
+    if (scoped.origin) delete scoped.origin;
+    else delete scoped.referer;
   }
   // Node does not transparently decompress response bodies. Request plain media.
   scoped['accept-encoding'] = 'identity';
   return scoped;
+}
+
+const MAX_RETRY_AFTER_MS = 10_000;
+
+// Retry-After is either delta-seconds or an HTTP date. Returns milliseconds.
+function parseRetryAfter(value, now = Date.now()) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  const date = Date.parse(text);
+  return Number.isFinite(date) ? Math.max(0, date - now) : null;
+}
+
+// A failed media response, with enough of its body to recognise a CDN that
+// deterministically answers the same error ("origin unavailable") every time.
+async function upstreamError(upstream) {
+  const error = new Error(`Media request failed with status ${upstream.statusCode}.`);
+  error.statusCode = upstream.statusCode;
+  error.code = [401, 403, 410].includes(upstream.statusCode) ? 'LINK_EXPIRED' : 'MEDIA_REQUEST_FAILED';
+  const retryAfter = parseRetryAfter(upstream.headers['retry-after']);
+  if (retryAfter !== null) error.retryAfterMs = Math.min(MAX_RETRY_AFTER_MS * 6, retryAfter);
+  let sample = '';
+  try {
+    for await (const chunk of upstream) {
+      sample += Buffer.from(chunk).toString('utf8');
+      if (sample.length >= 200) break;
+    }
+  } catch { /* The body is only a fingerprint. */ }
+  upstream.destroy();
+  error.bodySample = sample.slice(0, 200).replace(/\s+/g, ' ').trim();
+  return error;
+}
+
+function hasReducibleHeaders(headers = {}, sourcePageUrl) {
+  const keys = Object.keys(headers || {}).map((key) => key.toLowerCase());
+  return keys.includes('origin') || keys.includes('referer') || Boolean(sourcePageUrl);
 }
 
 function requestMediaWithRedirects(url, headers, onResponse, options = {}) {
@@ -67,9 +111,11 @@ function requestMediaWithRedirects(url, headers, onResponse, options = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let currentRequest;
+    let retryTimer;
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
+      clearTimeout(retryTimer);
       if (options.signal) options.signal.removeEventListener('abort', onAbort);
       if (error) reject(error); else resolve(value);
     };
@@ -83,16 +129,43 @@ function requestMediaWithRedirects(url, headers, onResponse, options = {}) {
       if (options.signal.aborted) { onAbort(); return; }
       options.signal.addEventListener('abort', onAbort, { once: true });
     }
-    const run = (currentUrl, redirectsRemaining) => {
+    // Shared per-host memory: once a reduced header set was needed, later
+    // requests of the same job go straight to it instead of doubling each one.
+    const headerPolicy = options.headerPolicy instanceof Map ? options.headerPolicy : new Map();
+    const maxRetryAfterMs = Number.isFinite(Number(options.maxRetryAfterMs)) ? Math.max(0, Number(options.maxRetryAfterMs)) : MAX_RETRY_AFTER_MS;
+    const retryState = { reducedTried: false, waits: 0 };
+    const run = (currentUrl, redirectsRemaining, repeat = false) => {
       if (settled) return;
-      if (visited.has(currentUrl.href)) { finish(new Error('Redirect loop detected.')); return; }
+      if (!repeat && visited.has(currentUrl.href)) { finish(new Error('Redirect loop detected.')); return; }
       visited.add(currentUrl.href);
       const client = currentUrl.protocol === 'https:' ? https : http;
+      const reduced = headerPolicy.get(currentUrl.host) === 'reduced';
       const scopedHeaders = scopeMediaHeaders(headers, currentUrl.href, {
         credentialOrigin,
         sourcePageUrl: options.sourcePageUrl,
+        reduced,
       });
       const activeRequest = client.get(currentUrl, { headers: scopedHeaders }, (response) => {
+        if (response.statusCode === 403 && !reduced && !retryState.reducedTried && options.reduceHeadersOn403 !== false
+          && hasReducibleHeaders(headers, options.sourcePageUrl)) {
+          // Some CDNs refuse a request whose Origin/Referer differs from what
+          // they expect. Retry once with fewer page headers; a second 403 stands.
+          retryState.reducedTried = true;
+          response.resume();
+          headerPolicy.set(currentUrl.host, 'reduced');
+          run(currentUrl, redirectsRemaining, true);
+          return;
+        }
+        if ([429, 503].includes(response.statusCode) && retryState.waits < 2 && options.honorRetryAfter !== false) {
+          const retryAfter = parseRetryAfter(response.headers['retry-after']);
+          const waitMs = retryAfter ?? (response.statusCode === 429 ? 1000 : null);
+          if (waitMs !== null && waitMs <= maxRetryAfterMs) {
+            retryState.waits += 1;
+            response.resume();
+            retryTimer = setTimeout(() => run(currentUrl, redirectsRemaining, true), waitMs);
+            return;
+          }
+        }
         if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
           response.resume();
           if (redirectsRemaining <= 0) { finish(new Error('Too many redirects.')); return; }
@@ -133,7 +206,7 @@ function requestMediaWithRedirects(url, headers, onResponse, options = {}) {
 // FFmpeg applies -headers to every child HLS request. This short-lived loopback
 // relay keeps all credentials in Node, where each redirect, key and segment can
 // be scoped independently. Only resources registered from a playlist are served.
-async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, credentialOrigin, onResourceEvent, onTransferStart, onLocalResource, localResourceUrls = [], pieceSpool, requiredPlaylistUrls = [] } = {}) {
+async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, credentialOrigin, onResourceEvent, onTransferStart, onLocalResource, localResourceUrls = [], pieceSpool, requiredPlaylistUrls = [], playlistSnapshots = {}, headerPolicy = new Map() } = {}) {
   const root = mediaUrl(rootUrl);
   const token = crypto.randomBytes(24).toString('hex');
   const resources = new Map();
@@ -195,6 +268,23 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
     const extension = new URL(resolved).pathname.match(/\.[a-zA-Z0-9]{1,8}$/)?.[0] || '.bin';
     return `${baseUrl}/${token}/${id}${extension}`;
   };
+  // Byte-range pieces of single-file renditions (arte.tv CMAF) are exposed to
+  // FFmpeg as separate resources. FFmpeg 9 otherwise opens one request from a
+  // piece to the end of a multi-gigabyte file and a bounded job never ends.
+  const pieceOf = new Map();
+  const mapPieceUrl = (remoteUrl, range) => {
+    const resolved = mediaUrl(remoteUrl, root).href;
+    const key = `${range.start}-${range.end} ${resolved}`;
+    let id = ids.get(key);
+    if (!id) {
+      id = String(ids.size + 1);
+      ids.set(key, id);
+      resources.set(id, resolved);
+      pieceOf.set(id, { start: range.start, end: range.end });
+    }
+    const extension = new URL(resolved).pathname.match(/\.[a-zA-Z0-9]{1,8}$/)?.[0] || '.bin';
+    return `${baseUrl}/${token}/${id}${extension}`;
+  };
   const rewriteManifest = (text, finalUrl, requestedUrl) => {
     const info = require('./HlsNativeDownload').inspectHlsPlaylist(text, finalUrl);
     if (info.unsupportedReason) {
@@ -202,21 +292,110 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
       error.code = info.errorCode;
       throw error;
     }
+    const described = describeSegments(info, text, finalUrl);
+    const rangeByIndex = [];
+    if (described && info.hasByteRange) for (const items of described.values()) for (const item of items) rangeByIndex[item.index] = item.range;
+    const splitPieces = described && info.hasByteRange;
     if (requiredTracks.has(requestedUrl)) {
       observedTracks.add(requestedUrl);
       // A selected rendition must supply every media URI/range. Initialization
       // and encryption-key requests are still validated by FFmpeg itself.
-      const described = describeSegments(info, text, finalUrl);
       const pieces = described ? [...described.values()].flat()
         : info.segments.map(url => ({ url, range: null }));
       requiredPieces.set(requestedUrl, pieces);
     }
+    let segmentIndex = -1;
     return text.split(/\r?\n/).map((line) => {
       const trimmed = line.trim();
       if (!trimmed) return line;
-      if (!trimmed.startsWith('#')) return mapUrl(mediaUrl(trimmed, finalUrl).href);
+      if (!trimmed.startsWith('#')) {
+        segmentIndex += 1;
+        const url = mediaUrl(trimmed, finalUrl).href;
+        return splitPieces && rangeByIndex[segmentIndex] ? mapPieceUrl(url, rangeByIndex[segmentIndex]) : mapUrl(url);
+      }
+      if (splitPieces && /^#EXT-X-BYTERANGE:/i.test(trimmed)) return null;
+      if (splitPieces && /^#EXT-X-MAP:/i.test(trimmed)) {
+        const range = trimmed.match(/\bBYTERANGE="(\d+)@(\d+)"/i);
+        if (range && Number(range[1]) > 0) {
+          const start = Number(range[2]);
+          return line.replace(/,?\s*BYTERANGE="[^"]*"/i, '')
+            .replace(/\bURI="([^"]+)"/, (_match, uri) => `URI="${mapPieceUrl(mediaUrl(uri, finalUrl).href, { start, end: start + Number(range[1]) - 1 })}"`);
+        }
+      }
       return line.replace(/\bURI="([^"]+)"/g, (_match, uri) => `URI="${mapUrl(mediaUrl(uri, finalUrl).href)}"`);
-    }).join('\n');
+    }).filter((line) => line !== null).join('\n');
+  };
+  // One declared byte range of a larger resource, served as a whole file.
+  const servePiece = async (request, response, controller, remoteUrl, piece, consumer) => {
+    const length = piece.end - piece.start + 1;
+    const requested = String(request.headers.range || '').match(/^bytes=(\d+)-(\d*)$/);
+    const relativeStart = requested ? Number(requested[1]) : 0;
+    const relativeEnd = requested && requested[2] ? Math.min(Number(requested[2]), length - 1) : length - 1;
+    if (relativeStart > relativeEnd) {
+      response.writeHead(416, { 'Content-Range': `bytes */${length}` }).end();
+      controllers.delete(controller);
+      return;
+    }
+    const upstreamStart = piece.start + relativeStart;
+    const upstreamEnd = piece.start + relativeEnd;
+    const expected = upstreamEnd - upstreamStart + 1;
+    const event = { requestId: String(++requestSequence), consumer, url: remoteUrl, finalUrl: remoteUrl, statusCode: null,
+      bytesTransferred: 0, contentLength: expected, totalBytes: null, range: { start: upstreamStart, end: upstreamEnd, total: null },
+      requestedRange: request.headers.range || null, completeResource: false };
+    let endTransfer;
+    try {
+      await requestMediaWithRedirects(remoteUrl, { ...headers, Range: `bytes=${upstreamStart}-${upstreamEnd}` }, async (upstream, finalUrl) => {
+        event.finalUrl = finalUrl;
+        event.statusCode = upstream.statusCode;
+        if (upstream.statusCode < 200 || upstream.statusCode >= 300) throw await upstreamError(upstream);
+        // A server that ignores Range sends the whole resource: skip to the piece.
+        const answered = String(upstream.headers['content-range'] || '').match(/^bytes (\d+)-(\d+)\/(?:\d+|\*)$/i);
+        let skip = upstream.statusCode === 206 && answered ? upstreamStart - Number(answered[1]) : upstream.statusCode === 200 ? upstreamStart : -1;
+        if (skip < 0) {
+          const error = new Error('The media server returned a different part of the video.');
+          error.code = 'INCOMPLETE_MEDIA_RESPONSE';
+          throw error;
+        }
+        if (consumer === 'download') endTransfer = onTransferStart?.();
+        response.writeHead(requested ? 206 : 200, {
+          'Content-Type': upstream.headers['content-type'] || 'application/octet-stream', 'Content-Length': expected,
+          'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store',
+          ...(requested ? { 'Content-Range': `bytes ${relativeStart}-${relativeEnd}/${length}` } : {}),
+        });
+        notify({ ...event, type: 'start', bytesDelta: 0 });
+        for await (let chunk of upstream) {
+          if (skip) {
+            const dropped = Math.min(skip, chunk.length);
+            skip -= dropped;
+            chunk = chunk.subarray(dropped);
+          }
+          const part = chunk.subarray(0, expected - event.bytesTransferred);
+          if (part.length) {
+            if (response.destroyed) throw Object.assign(new Error('Media client disconnected.'), { code: 'ECONNRESET' });
+            if (!response.write(part)) await new Promise((resolve) => response.once('drain', resolve));
+            event.bytesTransferred += part.length;
+            notify({ ...event, type: 'progress', bytesDelta: part.length });
+          }
+          if (event.bytesTransferred >= expected) { upstream.destroy(); break; }
+        }
+        if (event.bytesTransferred !== expected) {
+          const error = new Error('Media response ended before the requested resource was complete.');
+          error.code = 'INCOMPLETE_MEDIA_RESPONSE';
+          throw error;
+        }
+        await new Promise((resolve) => response.end(resolve));
+        if (consumer === 'download') recordDelivered(remoteUrl, { completeResource: false, range: event.range });
+        notify({ ...event, type: 'complete', bytesDelta: 0 });
+      }, { credentialOrigin: credentialOrigin || root.origin, sourcePageUrl, timeoutMs: 30_000, signal: controller.signal, headerPolicy });
+    } catch (error) {
+      notify({ ...event, type: 'error', bytesDelta: 0, code: error.code || 'MEDIA_REQUEST_FAILED' });
+      if (!['ABORT_ERR', 'EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED'].includes(error.code)) lastError = error;
+      if (!response.headersSent && !response.destroyed) response.writeHead(502, { 'Content-Type': 'text/plain' }).end('The media request failed.');
+      else if (!response.destroyed) response.destroy();
+    } finally {
+      endTransfer?.();
+      controllers.delete(controller);
+    }
   };
   const server = http.createServer(async (request, response) => {
     const match = String(request.url || '').match(new RegExp(`^/${token}/(\\d+)(?:\\.[a-zA-Z0-9]{1,8})?$`));
@@ -228,7 +407,26 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
     const controller = new AbortController();
     controllers.add(controller);
     response.on('close', () => { if (!response.writableFinished) controller.abort(); });
-    const consumer = request.headers['user-agent'] === 'VidSnag-Thumbnail/1.0' ? 'preview' : 'download';
+    const consumer = request.headers['user-agent'] === 'SnagThis-Thumbnail/1.0' ? 'preview' : 'download';
+    const piece = pieceOf.get(match[1]);
+    if (piece) {
+      await servePiece(request, response, controller, remoteUrl, piece, consumer);
+      return;
+    }
+    const snapshot = Object.hasOwn(playlistSnapshots, remoteUrl) ? playlistSnapshots[remoteUrl] : null;
+    if (snapshot) {
+      // A playlist the page received from a POST or blob cannot be fetched
+      // again; serve the text the page itself played, resolved to its URL.
+      try {
+        const rewritten = Buffer.from(rewriteManifest(snapshot, remoteUrl, remoteUrl));
+        response.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': rewritten.length, 'Cache-Control': 'no-store' });
+        response.end(rewritten);
+      } catch (error) {
+        lastError = error;
+        if (!response.headersSent) response.writeHead(502, { 'Content-Type': 'text/plain' }).end('The media playlist is unsupported.');
+      } finally { controllers.delete(controller); }
+      return;
+    }
     if (spool && spooledUrls.has(remoteUrl) && consumer === 'download') {
       try {
         const piece = await spool.get(remoteUrl);
@@ -295,13 +493,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           resourceEvent.finalUrl = finalUrl;
           resourceEvent.statusCode = upstream.statusCode;
         }
-        if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
-          const error = new Error(`Media request failed with status ${upstream.statusCode}.`);
-          error.statusCode = upstream.statusCode;
-          error.code = [401, 403, 410].includes(upstream.statusCode) ? 'LINK_EXPIRED' : 'MEDIA_REQUEST_FAILED';
-          upstream.resume();
-          throw error;
-        }
+        if (upstream.statusCode < 200 || upstream.statusCode >= 300) throw await upstreamError(upstream);
         const maxManifestBytes = 5 * 1024 * 1024;
         const iterator = upstream[Symbol.asyncIterator]();
         const headChunks = [];
@@ -426,6 +618,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
         sourcePageUrl,
         timeoutMs: 30_000,
         signal: controller.signal,
+        headerPolicy,
       });
     } catch (error) {
       emitResourceEvent('error', { code: error.code || 'MEDIA_REQUEST_FAILED' });
@@ -469,8 +662,13 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           notify({ type: state.status === 'failed' ? 'failed' : 'error', consumer: 'download',
             requestId: `spool:${index}:${state.attempt}`, url, attempt: state.attempt, code: state.code });
           if (state.status === 'failed') {
-            const error = new Error(`Video piece ${index + 1} could not be downloaded after ${state.attempt} attempt${state.attempt === 1 ? '' : 's'}.`);
+            const status = Number(state.statusCode) > 0 ? ` (status ${state.statusCode})` : '';
+            const error = new Error(state.code === 'PIECE_UNAVAILABLE'
+              ? `Video piece ${index + 1} is unavailable from the source${status}.`
+              : `Video piece ${index + 1} could not be downloaded after ${state.attempt} attempt${state.attempt === 1 ? '' : 's'}${status}.`);
             error.code = state.code || 'INCOMPLETE_HLS_DOWNLOAD';
+            if (Number(state.statusCode) > 0) error.statusCode = Number(state.statusCode);
+            error.pieceIndex = index;
             reportFatal(error);
           }
         },
@@ -486,13 +684,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           await requestMediaWithRedirects(url, pieceHeaders, async (upstream, finalUrl) => {
             event.finalUrl = finalUrl;
             event.statusCode = upstream.statusCode;
-            if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
-              const error = new Error(`Media request failed with status ${upstream.statusCode}.`);
-              error.statusCode = upstream.statusCode;
-              error.code = [401, 403, 410].includes(upstream.statusCode) ? 'LINK_EXPIRED' : 'MEDIA_REQUEST_FAILED';
-              upstream.resume();
-              throw error;
-            }
+            if (upstream.statusCode < 200 || upstream.statusCode >= 300) throw await upstreamError(upstream);
             const rawLength = String(upstream.headers['content-length'] || '');
             const contentLength = /^\d+$/.test(rawLength) ? Number(rawLength) : null;
             event.contentLength = Number.isSafeInteger(contentLength) ? contentLength : null;
@@ -521,7 +713,7 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
               error.code = 'INCOMPLETE_MEDIA_RESPONSE';
               throw error;
             }
-          }, { credentialOrigin: credentialOrigin || root.origin, sourcePageUrl, timeoutMs: 30_000, signal });
+          }, { credentialOrigin: credentialOrigin || root.origin, sourcePageUrl, timeoutMs: 30_000, signal, headerPolicy });
           return { headers: savedHeaders, statusCode: 200, bytes: event.bytesTransferred };
           } finally { endTransfer?.(); }
         },
@@ -570,4 +762,4 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
   };
 }
 
-module.exports = { scopeMediaHeaders, requestMediaWithRedirects, startScopedMediaProxy };
+module.exports = { scopeMediaHeaders, requestMediaWithRedirects, startScopedMediaProxy, parseRetryAfter };

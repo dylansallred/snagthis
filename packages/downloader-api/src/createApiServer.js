@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const { extractYouTubeVideoId, youtubeVideoIdOf, youtubeArtwork } = require('./utils/youtubeArtwork');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
@@ -8,9 +9,10 @@ const { spawnSync } = require('child_process');
 const WebSocket = require('ws');
 const { createHash } = require('node:crypto');
 const rateLimit = require('express-rate-limit');
-const { API, HEADER, CLIENT, validateSelection, classifyProblem } = require('@m3u8/contracts');
+const { API, HEADER, CLIENT, validateSelection, classifyProblem, isAccent, isAccentTimestamp } = require('@m3u8/contracts');
 const { createBridgeSecurity, redact } = require('./utils/security');
 const { generatePreviewAssets, PREVIEW_CLIP_SUFFIX } = require('@m3u8/downloader-engine/src/core/PreviewClip');
+const { isMediaFilePath, normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
 const {
   QueueManager,
   createJobProcessor,
@@ -25,6 +27,7 @@ const { HistoryIndexService } = require('./services/historyIndex');
 const logger = require('./utils/logger');
 const { inferMediaMetadata } = require('./utils/mediaMetadata');
 const { inspectMedia } = require('./services/mediaInspection');
+const { createAudioSampler } = require('./services/audioSample');
 const { lookupPoster } = require('./services/tmdb');
 const {
   buildDownloadAssetUrl,
@@ -136,32 +139,6 @@ function isYouTubeUrl(value) {
   }
 }
 
-function extractYouTubeVideoId(value) {
-  if (typeof value !== 'string' || !value.trim()) return '';
-  try {
-    const parsed = new URL(value.trim());
-    const host = String(parsed.hostname || '').toLowerCase();
-    const pathParts = String(parsed.pathname || '').split('/').filter(Boolean);
-    let videoId = '';
-
-    if (host === 'youtu.be' || host.endsWith('.youtu.be')) {
-      videoId = String(pathParts[0] || '').trim();
-    } else if (host === 'youtube.com' || host.endsWith('.youtube.com')) {
-      const first = String(pathParts[0] || '').toLowerCase();
-      if (first === 'watch') {
-        videoId = String(parsed.searchParams.get('v') || '').trim();
-      } else if (first === 'shorts' || first === 'live' || first === 'embed') {
-        videoId = String(pathParts[1] || '').trim();
-      }
-    }
-
-    if (!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) return '';
-    return videoId;
-  } catch {
-    return '';
-  }
-}
-
 function isJobStorageDirectoryName(name) {
   const value = String(name || '').trim();
   if (!value) return false;
@@ -190,6 +167,7 @@ function createApiServer(options = {}) {
     onExtensionConnected,
     onGetSettings,
     onSaveSettings,
+    onGetAppearance,
     onDownloadComplete,
     onResolvePage,
   } = options;
@@ -248,7 +226,7 @@ function createApiServer(options = {}) {
     res.setHeader('Cache-Control', 'private, no-store');
     if (req.method === 'OPTIONS') return res.status(204).end();
     if (!publicRequest && !security.authenticate(req) && !security.verifyAsset(req)) {
-      return res.status(401).json({ error: 'Connect this extension in VidSnag settings', code: 'PAIRING_REQUIRED' });
+      return res.status(401).json({ error: 'Connect this extension in SnagThis settings', code: 'PAIRING_REQUIRED' });
     }
     if (security.authenticate(req)) security.markConnected(req);
     const json = res.json.bind(res);
@@ -276,17 +254,28 @@ function createApiServer(options = {}) {
     legacyHeaders: false,
   });
 
+  const jobLimitResponse = { error: 'Too many downloads were added at once. Wait a minute and try again.', code: 'RATE_LIMITED' };
   const jobCreationLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 15,
-    message: 'Too many jobs submitted. Try again shortly.',
+    message: jobLimitResponse,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  // /api is refused to extension clients below and every request here is
+  // already authenticated, so a pasted list of links gets a generous bound
+  // instead of the extension's per-click limit.
+  const desktopJobCreationLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 300,
+    message: jobLimitResponse,
     standardHeaders: true,
     legacyHeaders: false,
   });
 
   app.use('/api', apiLimiter);
   app.use('/v1', apiLimiter);
-  app.post('/api/jobs', jobCreationLimiter);
+  app.post('/api/jobs', desktopJobCreationLimiter);
   app.post('/v1/jobs', jobCreationLimiter);
 
   // Lock /api routes to desktop-local usage boundaries. Extension bridge must use /v1.
@@ -461,6 +450,7 @@ function createApiServer(options = {}) {
 
   const previewTasks = new Map();
   const previewAbort = new AbortController();
+  const audioSampler = createAudioSampler({ ffmpegPath: FFMPEG_PATH, logger });
   let previewWork = Promise.resolve();
   const keepYouTubeArtwork = (item) => Boolean(item
     && (isYouTubeUrl(item.url || item.sourcePageUrl) || item.youtubeMetadata?.videoId)
@@ -623,11 +613,13 @@ function createApiServer(options = {}) {
         ? [buildDownloadAssetUrl(resolvedDownloadDir, job.thumbnailPath)].filter(Boolean)
         : []);
 
+    const videoId = youtubeVideoIdOf(job);
     const remoteThumbs = Array.isArray(job.thumbnailUrls)
       ? job.thumbnailUrls.filter((u) => typeof u === 'string' && (u.startsWith('http') || /^data:image\/(?:jpeg|png|webp);base64,/.test(u)))
+        .map((u) => youtubeArtwork(u, videoId)).filter(Boolean)
       : [];
 
-    return [...localThumbs, ...remoteThumbs];
+    return [...new Set([...localThumbs, ...remoteThumbs])];
   }
 
   function buildJobStatusPayload(job) {
@@ -751,8 +743,9 @@ function createApiServer(options = {}) {
       initialThumbnailUrls.push(candidate);
     };
 
-    pushThumbnailUrl(queue.thumbnailUrl);
-    pushThumbnailUrl(queueYoutubeMetadata && queueYoutubeMetadata.thumbnailUrl);
+    const queueVideoId = youtubeVideoIdOf({ ...queue, youtubeMetadata: queueYoutubeMetadata });
+    pushThumbnailUrl(youtubeArtwork(queue.thumbnailUrl, queueVideoId));
+    pushThumbnailUrl(youtubeArtwork(queueYoutubeMetadata && queueYoutubeMetadata.thumbnailUrl, queueVideoId));
 
     if (initialThumbnailUrls.length === 0 && isYouTubeUrl(queue.url)) {
       const videoId = extractYouTubeVideoId(queue.url)
@@ -771,21 +764,11 @@ function createApiServer(options = {}) {
     const storageDir = buildJobStorageDir(resolvedDownloadDir, id, baseName);
 
     if (isHls) {
-      tsName = fileNameBase;
-      if (/\.m3u8$/i.test(tsName)) {
-        tsName = tsName.replace(/\.m3u8$/i, '.ts');
-      } else if (!/\.[a-z0-9]{2,4}$/i.test(tsName)) {
-        tsName = `${tsName}.ts`;
-      }
+      tsName = withMediaExtension(fileNameBase, '.ts');
 
       filePath = path.join(storageDir, `${id}-${tsName}`);
 
-      downloadNameMp4 = fileNameBase;
-      if (/\.m3u8$/i.test(downloadNameMp4)) {
-        downloadNameMp4 = downloadNameMp4.replace(/\.m3u8$/i, '.mp4');
-      } else if (!/\.[a-z0-9]{2,4}$/i.test(downloadNameMp4)) {
-        downloadNameMp4 = `${downloadNameMp4}.mp4`;
-      }
+      downloadNameMp4 = withMediaExtension(fileNameBase, '.mp4');
 
       if (fallbackMediaUrl) {
         let ext = '';
@@ -796,9 +779,9 @@ function createApiServer(options = {}) {
           ext = '';
         }
 
-        if (!ext || !/^\.[a-z0-9]{2,4}$/i.test(ext)) {
-          ext = '.mp4';
-        }
+        // Only media containers keep the source extension; the file is later
+        // handed to the OS by Open, so an unknown type must not stay executable.
+        ext = normalizeMediaExtension(ext);
 
         directFallbackDownloadName = `${fileNameBase}${ext}`;
         directFallbackDownloadNameMp4 = directFallbackDownloadName;
@@ -813,9 +796,9 @@ function createApiServer(options = {}) {
         ext = '';
       }
 
-      if (!ext || !/^\.[a-z0-9]{2,4}$/i.test(ext)) {
-        ext = '.mp4';
-      }
+      // Only media containers keep the source extension; the file is later
+      // handed to the OS by Open, so an unknown type must not stay executable.
+      ext = normalizeMediaExtension(ext);
 
       const directName = `${fileNameBase}${ext}`;
       filePath = path.join(storageDir, `${id}-${directName}`);
@@ -835,6 +818,9 @@ function createApiServer(options = {}) {
       headers: sanitizeHeaders(queue.headers),
       headerOrigin: queue.headerOrigin || new URL(queue.url).origin,
       selection: queue.selection || undefined,
+      // A playlist captured from a POST/blob response. Memory only: it can
+      // hold signed piece URLs, so it is never persisted with the queue.
+      ...(validManifestText(queue.manifestText) ? { manifestText: queue.manifestText } : {}),
       mediaType: queue.mediaType || (isHls ? 'hls' : 'file'),
       sourcePageUrl: queue.sourcePageUrl || '',
       totalSegments: 0,
@@ -1242,8 +1228,8 @@ function createApiServer(options = {}) {
     const compatibility = getCompatibilityInfo();
     const allowedClients = new Set([
       CLIENT.extension,
-      'vidsnag-desktop',
-      'vidsnag-extension',
+      'snagthis-desktop',
+      'snagthis-extension',
     ]);
 
     if (client && !allowedClients.has(client)) {
@@ -1392,23 +1378,24 @@ function createApiServer(options = {}) {
   }
 
   function resolveIncomingThumbnailUrl(payload) {
-    const explicit = sanitizeString(payload && payload.thumbnailUrl, 350000);
-    if (isValidHttpUrl(explicit) || isValidThumbnailDataUrl(explicit)) {
-      return explicit;
-    }
-
     const youtubeMetadata = sanitizeYoutubeMetadata(payload && payload.youtubeMetadata);
-    if (youtubeMetadata && isValidHttpUrl(youtubeMetadata.thumbnailUrl)) {
-      return youtubeMetadata.thumbnailUrl;
-    }
-
     const videoId = extractYouTubeVideoId(String(payload && payload.mediaUrl || '').trim())
       || String(youtubeMetadata && youtubeMetadata.videoId || '').trim();
+    const explicit = sanitizeString(payload && payload.thumbnailUrl, 350000);
+    if (isValidThumbnailDataUrl(explicit)) return explicit;
+    if (isValidHttpUrl(explicit) && youtubeArtwork(explicit, videoId)) return youtubeArtwork(explicit, videoId);
+
+    const artwork = youtubeMetadata && isValidHttpUrl(youtubeMetadata.thumbnailUrl) ? youtubeArtwork(youtubeMetadata.thumbnailUrl, videoId) : '';
+    if (artwork) return artwork;
     if (videoId) {
       return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
     }
 
     return '';
+  }
+
+  function validManifestText(value) {
+    return typeof value === 'string' && value.length <= 4 * 1024 * 1024 && /^\uFEFF?\s*#EXTM3U(?:\s|$)/.test(value);
   }
 
   function validateCreateJobRequest(body) {
@@ -1450,6 +1437,12 @@ function createApiServer(options = {}) {
       throw err;
     }
 
+    if (payload.manifestText !== undefined && !validManifestText(payload.manifestText)) {
+      const err = new Error('manifestText must be an HLS playlist (#EXTM3U) of at most 4 MB');
+      err.statusCode = 400;
+      throw err;
+    }
+
     if (payload.sourcePageUrl && !isValidHttpUrl(payload.sourcePageUrl)) {
       const err = new Error('sourcePageUrl must be a valid http/https URL');
       err.statusCode = 400;
@@ -1473,7 +1466,9 @@ function createApiServer(options = {}) {
       ? 'infinite'
       : (() => {
         const value = Number(settingsInput.maxSegmentAttempts);
-        if (!Number.isFinite(value) || value <= 0) return 'infinite';
+        // Unbounded retries can hold the queue on a segment that will never
+        // return, so clients that omit a limit get the engine's finite default.
+        if (!Number.isFinite(value) || value <= 0) return String(engineConfig.defaultMaxSegmentAttempts);
         return String(Math.floor(value));
       })();
 
@@ -1490,6 +1485,7 @@ function createApiServer(options = {}) {
       youtubeMetadata,
       thumbnailUrl,
       headers: sanitizeHeaders(payload.headers),
+      manifestText: validManifestText(payload.manifestText) ? payload.manifestText : undefined,
       settings: {
         fileNaming,
         customName: sanitizeString(settingsInput.customName, 255),
@@ -1535,6 +1531,7 @@ function createApiServer(options = {}) {
       minExtensionVersion: compatibility.minExtensionVersion,
       pairingRequired: true,
       wsPath: '/ws',
+      features: ['audio-track', 'audio-sample'],
     });
   });
 
@@ -1572,6 +1569,7 @@ function createApiServer(options = {}) {
       titleHints: body.titleHints || null,
       youtubeMetadata: body.youtubeMetadata || null,
       thumbnailUrl: body.thumbnailUrl || '',
+      ...(body.manifestText ? { manifestText: body.manifestText } : {}),
     };
 
     const settings = {
@@ -1605,10 +1603,17 @@ function createApiServer(options = {}) {
     });
   });
 
+  // The shared accent rides on the popup's queue poll, so a change on either side shows up within a second.
+  function appearance() {
+    const current = typeof onGetAppearance === 'function' ? onGetAppearance() : null;
+    return current && isAccent(current.accent) ? { accent: current.accent, accentChangedAt: Number(current.accentChangedAt) || 0 } : undefined;
+  }
+
   app.get('/v1/queue', (req, res) => {
     res.json({
       queue: queueManager.getQueue(),
       settings: queueManager.getSettings(),
+      appearance: appearance(),
       ...security.getConnectionState(),
     });
   });
@@ -1631,19 +1636,23 @@ function createApiServer(options = {}) {
   app.get('/v1/settings', async (req, res) => {
     const current = typeof onGetSettings === 'function' ? await onGetSettings() : {};
     const { outputDirectory = '', preferredQuality = 'best', subtitleLanguage = 'none', notifyOnComplete = true, launchAtLogin = false } = current;
-    res.json({ outputDirectory, preferredQuality, subtitleLanguage, notifyOnComplete, launchAtLogin });
+    const accent = isAccent(current.accent) ? { accent: current.accent, accentChangedAt: Number(current.accentChangedAt) || 0 } : {};
+    res.json({ outputDirectory, preferredQuality, subtitleLanguage, notifyOnComplete, launchAtLogin, ...accent });
   });
 
   app.post('/v1/settings', async (req, res) => {
     const input = req.body || {};
-    const permitted = new Set(['preferredQuality', 'subtitleLanguage', 'notifyOnComplete', 'launchAtLogin']);
+    const permitted = new Set(['preferredQuality', 'subtitleLanguage', 'notifyOnComplete', 'launchAtLogin', 'accent', 'accentChangedAt']);
     if (Object.keys(input).some((key) => !permitted.has(key))
+      || (input.accent !== undefined && !isAccent(input.accent))
+      || (input.accentChangedAt !== undefined && (input.accent === undefined || !isAccentTimestamp(input.accentChangedAt)))
       || (input.preferredQuality !== undefined && !['best', '1080', '720', '480'].includes(input.preferredQuality))
       || (input.subtitleLanguage !== undefined && (typeof input.subtitleLanguage !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(input.subtitleLanguage)))
       || ['notifyOnComplete', 'launchAtLogin'].some((key) => input[key] !== undefined && typeof input[key] !== 'boolean')) return res.status(400).json({ error: 'Invalid preference' });
     if (typeof onSaveSettings !== 'function') return res.status(501).json({ error: 'Change preferences in the desktop app' });
     await onSaveSettings(input);
-    res.json({ ok: true });
+    // An accent older than the desktop's own choice is ignored; the reply carries whichever won.
+    res.json({ ok: true, appearance: appearance() });
   });
 
   app.post(['/v1/media/inspect', '/api/media/inspect'], async (req, res) => {
@@ -1661,6 +1670,43 @@ function createApiServer(options = {}) {
       }
       return res.json(result);
     } catch (error) { return res.status(400).json({ error: redact(error.message) }); }
+  });
+
+  // Desktop-only "hover to hear" preview of one audio track. The /api guard
+  // above rejects extension clients; saved headers never leave this process.
+  app.post('/api/media/audio-sample', async (req, res) => {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const { mediaUrl, renditionUrl, streamIndex, durationSeconds } = body;
+    if (!isValidHttpUrl(mediaUrl)
+      || (renditionUrl !== undefined && renditionUrl !== null && renditionUrl !== '' && !isValidHttpUrl(renditionUrl))
+      || (streamIndex !== undefined && streamIndex !== null && (!Number.isInteger(streamIndex) || streamIndex < 0 || streamIndex > 63))
+      || (durationSeconds !== undefined && durationSeconds !== null && (typeof durationSeconds !== 'number' || !Number.isFinite(durationSeconds) || durationSeconds <= 0))) {
+      return res.status(400).json({ error: 'Provide a valid audio track' });
+    }
+    const abort = new AbortController();
+    const onClose = () => { if (!res.writableFinished) abort.abort(); };
+    res.once('close', onClose);
+    try {
+      const filePath = await audioSampler.generate({
+        mediaUrl: mediaUrl.trim(),
+        renditionUrl: renditionUrl ? renditionUrl.trim() : undefined,
+        streamIndex: streamIndex ?? undefined,
+        durationSeconds: durationSeconds ?? undefined,
+        headers: sanitizeHeaders(body.headers),
+      }, abort.signal);
+      const bytes = await fsPromises.readFile(filePath);
+      if (abort.signal.aborted || res.destroyed) return undefined;
+      res.status(200).set({ 'Content-Type': 'audio/mp4', 'Cache-Control': 'no-store', 'Content-Length': String(bytes.length) });
+      return res.end(bytes);
+    } catch (error) {
+      if (abort.signal.aborted || res.destroyed || res.headersSent) return undefined;
+      const code = error && error.code;
+      if (code === 'SAMPLE_SUPERSEDED' || code === 'SAMPLE_ABORTED') return res.status(499).json({ error: 'Sample cancelled' });
+      if (code === 'INVALID_SAMPLE_REQUEST' || code === 'INVALID_MEDIA_URL') return res.status(400).json({ error: 'Provide a valid audio track' });
+      return res.status(code === 'SAMPLE_SOURCE_FAILED' || code === 'SAMPLE_TIMEOUT' ? 502 : 422).json({ error: 'Sample unavailable' });
+    } finally {
+      res.removeListener('close', onClose);
+    }
   });
 
   for (const action of ['pause', 'resume']) {
@@ -1712,6 +1758,8 @@ function createApiServer(options = {}) {
     if (!job || !['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) return res.status(409).json({ error: 'This download is not saved yet' });
     const filePath = job.mp4Path && fs.existsSync(job.mp4Path) ? job.mp4Path : job.filePath;
     if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: 'File moved or deleted', code: 'FILE_MISSING' });
+    // The OS opens whatever handler matches the extension; only media may launch.
+    if (!isMediaFilePath(filePath)) return res.status(415).json({ error: 'Only video and audio files can be opened' });
     if (typeof onOpenFile !== 'function') return res.status(501).json({ error: 'Open the file from the desktop app' });
     try {
       const error = await onOpenFile(filePath);
@@ -1731,6 +1779,7 @@ function createApiServer(options = {}) {
         headers: sanitizeHeaders(source.headers),
         sourcePageUrl: sanitizeString(source.sourcePageUrl, 4096),
         ...(selectionResult.value ? { selection: selectionResult.value } : {}),
+        ...(validManifestText(source.manifestText) ? { manifestText: source.manifestText } : {}),
       });
       return res.status(result.ok ? 200 : 409).json(result);
     } catch (error) { return res.status(400).json({ error: redact(error.message) }); }
@@ -1802,7 +1851,8 @@ function createApiServer(options = {}) {
       return;
     }
 
-    if (sourceJob.queueStatus === 'downloading' || sourceJob.status === 'downloading' || sourceJob.status === 'fetching-playlist') {
+    // A queued or paused job resumes; retrying it would download it twice.
+    if (['queued', 'paused', 'downloading'].includes(sourceJob.queueStatus) || sourceJob.status === 'downloading' || sourceJob.status === 'fetching-playlist') {
       res.status(400).json({ error: 'Cannot retry an active job' });
       return;
     }
@@ -1810,6 +1860,12 @@ function createApiServer(options = {}) {
     const retryUrl = sanitizeString(sourceJob.url, 4096);
     if (!isValidHttpUrl(retryUrl)) {
       res.status(400).json({ error: 'Source job URL is invalid for retry' });
+      return;
+    }
+    // A repeated retry (for example a double-clicked Undo) returns the first.
+    const duplicate = findDuplicateQueuedJob(retryUrl);
+    if (duplicate) {
+      res.json({ id: duplicate.id, jobId: duplicate.id, queuePosition: duplicate.queuePosition || 0, retryOf: sourceJob.id, duplicate: true });
       return;
     }
 
@@ -1938,7 +1994,7 @@ function createApiServer(options = {}) {
 
   const wss = new WebSocket.Server({
     server, path: '/ws',
-    handleProtocols: (protocols) => protocols.has('vidsnag') ? 'vidsnag' : false,
+    handleProtocols: (protocols) => protocols.has('snagthis') ? 'snagthis' : false,
     verifyClient: ({ req }, done) => {
       const allowedHosts = new Set([`127.0.0.1:${server.address()?.port}`, `localhost:${server.address()?.port}`, `[::1]:${server.address()?.port}`]);
       const allowed = allowedHosts.has(String(req.headers.host || '')) && security.originAllowed(String(req.headers.origin || '')) && security.authenticate(req);
@@ -2223,6 +2279,7 @@ function createApiServer(options = {}) {
 
     started = true;
     await queueManager.ready;
+    queueManager.suspending = false;
     await queueManager.saveQueue();
     for (const job of jobs.values()) if (['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) notifiedCompletedJobs.add(job.id);
     await historyIndex.init();
@@ -2279,6 +2336,10 @@ function createApiServer(options = {}) {
       historyRefreshTimer = null;
     }
     previewAbort.abort();
+    audioSampler.close();
+    // Quitting must not leave yt-dlp/ffmpeg writing into a folder the next
+    // launch will resume from; pause active downloads and keep them queued.
+    await queueManager.suspendActiveJobs();
     await previewWork;
     await queueManager.persistence;
     // A scan can still enqueue an index write after the current persistence

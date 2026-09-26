@@ -5,6 +5,14 @@ function isLocalWriteError(error) {
   return ['ENOSPC', 'EDQUOT', 'EACCES', 'EPERM', 'EROFS', 'EIO', 'EMFILE', 'ENFILE', 'ENOTDIR', 'ENOENT'].includes(error?.code);
 }
 
+// Signed segment URLs answer these once their token lapses. Retrying them
+// cannot succeed, so the job stops and asks for a refreshed page instead.
+const SOURCE_EXPIRED_STATUSES = new Set([401, 403, 404, 410]);
+
+function isSourceExpiredSegmentError(error) {
+  return SOURCE_EXPIRED_STATUSES.has(Number(error?.statusCode));
+}
+
 function getRetryBackoffMs(attempt) {
   const baseMs = 500;
   const maxMs = 8000;
@@ -28,7 +36,7 @@ async function downloadSegment(segmentUrl, headers, stream, job) {
     return await requestWithRedirects(segmentUrl, headers, async (res, _finalUrl, req) => {
         if (res.statusCode < 200 || res.statusCode >= 300) {
           res.resume();
-          throw new Error(`Segment failed with status ${res.statusCode}`);
+          throw Object.assign(new Error(`Segment failed with status ${res.statusCode}`), { statusCode: res.statusCode });
         }
         res.on('data', (chunk) => {
           if (job && job.cancelled) {
@@ -55,4 +63,5 @@ module.exports = {
   getRetryBackoffMs,
   downloadSegment,
   isLocalWriteError,
+  isSourceExpiredSegmentError,
 };

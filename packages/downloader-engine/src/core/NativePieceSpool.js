@@ -27,6 +27,10 @@ async function createNativePieceSpool(options = {}) {
   const maxPieceBytes = Math.min(maxSpoolBytes, boundedInteger(options.maxPieceBytes, 128 * 1024 * 1024, Number.MAX_SAFE_INTEGER));
   const admissionBytes = Math.min(maxPieceBytes, boundedInteger(options.admissionBytes, 64 * 1024, Number.MAX_SAFE_INTEGER));
   const lookahead = boundedInteger(options.lookahead, Math.max(4, concurrency * 2), Math.max(1, segments.length));
+  // A CDN that answers the same 5xx body for the same piece again and again
+  // (e.g. 502 "origin unavailable") has lost that object. Stop after a few
+  // identical answers instead of spending the whole retry budget (~3.5 min).
+  const identicalFailureLimit = boundedInteger(options.identicalFailureLimit, 4, 30);
   const retryDelay = typeof options.retryDelayMs === 'function' ? options.retryDelayMs
     : options.retryDelayMs === undefined ? (attempt) => Math.min(8000, 500 * (2 ** (attempt - 1)))
       : () => Math.max(0, Number(options.retryDelayMs) || 0);
@@ -35,6 +39,7 @@ async function createNativePieceSpool(options = {}) {
   const records = segments.map((url, index) => ({
     url, index, status: 'pending', attempt: 0, bytes: 0, reserved: 0,
     retryAt: 0, controller: null, result: null, error: null, waiters: [], contentLength: null,
+    failureSignature: null, identicalFailures: 0,
     partPath: path.join(spoolDirectory, `${index}.part`),
     filePath: path.join(spoolDirectory, `${index}.piece`),
   }));
@@ -55,7 +60,7 @@ async function createNativePieceSpool(options = {}) {
         ? 'The video link expired. Open its page to refresh it.'
         : 'The video piece could not be downloaded.'
       : undefined;
-    try { onState?.(record.index, { status, attempt: record.attempt, bytes: record.bytes, code: record.error?.code, message }); } catch { /* Observers do not control delivery. */ }
+    try { onState?.(record.index, { status, attempt: record.attempt, bytes: record.bytes, code: record.error?.code, statusCode: record.error?.statusCode, message }); } catch { /* Observers do not control delivery. */ }
   }
 
   function settleWaiters(record, error) {
@@ -167,8 +172,16 @@ async function createNativePieceSpool(options = {}) {
       reserve(record, 0);
       record.bytes = 0;
       record.error = error;
+      const status = Number(error.statusCode);
+      const signature = status >= 500 && status <= 599 ? `${status}|${error.bodySample || ''}` : null;
+      record.identicalFailures = signature && signature === record.failureSignature ? record.identicalFailures + 1 : signature ? 1 : 0;
+      record.failureSignature = signature;
+      if (signature && record.identicalFailures >= identicalFailureLimit) {
+        error.code = 'PIECE_UNAVAILABLE';
+        error.message = `Video piece ${record.index + 1} is unavailable from the source (status ${status}).`;
+      }
       const permanent = ['SPOOL_PIECE_TOO_LARGE', 'SPOOL_CONTENT_LENGTH_MISMATCH', 'SPOOL_BYTE_ACCOUNTING',
-        'LINK_EXPIRED', 'SOURCE_EXPIRED', 'INSECURE_REDIRECT', 'INVALID_MEDIA_URL', 'NATIVE_PIECE_TOO_LARGE'].includes(error.code);
+        'LINK_EXPIRED', 'SOURCE_EXPIRED', 'INSECURE_REDIRECT', 'INVALID_MEDIA_URL', 'NATIVE_PIECE_TOO_LARGE', 'PIECE_UNAVAILABLE'].includes(error.code);
       if (closed || stoppedError || permanent || record.attempt >= maxAttempts) {
         const cancelled = closed || (stoppedError && record.controller.signal.aborted);
         record.status = cancelled ? 'cancelled' : 'failed';
@@ -186,7 +199,9 @@ async function createNativePieceSpool(options = {}) {
         } else settleWaiters(record, stoppedError || error);
       } else {
         record.status = 'retrying';
-        record.retryAt = Date.now() + Math.max(0, Number(retryDelay(record.attempt)) || 0);
+        // A server-announced Retry-After (429/503) overrides a shorter backoff.
+        const announced = Number(error.retryAfterMs) > 0 ? Number(error.retryAfterMs) : 0;
+        record.retryAt = Date.now() + Math.max(announced, Math.max(0, Number(retryDelay(record.attempt)) || 0));
         notify(record, 'retrying');
       }
       if (!closed && !stoppedError) drainBudgetWaiters();

@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const { isMediaFilePath } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
 
 const MEDIA_TYPES = {
   '.mp4': 'video/mp4', '.ts': 'video/mp2t', '.mkv': 'video/x-matroska',
@@ -63,6 +64,7 @@ function registerHistoryRoutes(app, historyIndex, fsPromises, downloadDir, optio
     const item = find(req);
     const filePath = item && historyIndex.resolveFilePath(item.id);
     if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: 'File moved or deleted', code: 'FILE_MISSING' });
+    if (!isMediaFilePath(filePath)) return res.status(415).json({ error: 'Only video and audio files can be opened' });
     if (typeof options.onOpenFile !== 'function') return res.status(501).json({ error: 'Open the file from the desktop app' });
     try {
       const error = await options.onOpenFile(filePath);

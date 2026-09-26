@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { isCurrentPreviewClipPath } = require('@m3u8/downloader-engine/src/core/PreviewClip');
+const { youtubeVideoIdOf, youtubeArtwork } = require('../utils/youtubeArtwork');
 const {
   buildDownloadAssetUrl,
   decodeExternalDownloadPath,
@@ -186,12 +187,18 @@ class HistoryIndexService {
     this.minRefreshIntervalMs = Math.max(1_000, Number(minRefreshIntervalMs) || 5_000);
     this.indexFilePath = path.join(indexDir, 'history-index.json');
     this.legacyIndexFilePath = path.join(downloadDir, 'history-index.json');
-    this.removedPaths = new Set();
+    // Path -> time the user removed it. A file written there later (the same
+    // title downloaded again) is a new item, not the removed one.
+    this.removedPaths = new Map();
     this.items = [];
     this.lastRefreshAt = 0;
     this.lastSavedAt = 0;
     this.refreshInFlight = null;
     this.persistence = Promise.resolve();
+    this.queuedPersist = null;
+    // Directory listings and existence answers gathered during one rescan.
+    this.scanListing = null;
+    this.scanExists = null;
   }
 
   async init() {
@@ -209,7 +216,11 @@ class HistoryIndexService {
     try {
       const raw = await this.fsPromises.readFile(this.indexFilePath, 'utf8');
       const parsed = JSON.parse(raw);
-      this.removedPaths = new Set(Array.isArray(parsed.removedPaths) ? parsed.removedPaths : []);
+      const removedAt = parsed.removedAt && typeof parsed.removedAt === 'object' ? parsed.removedAt : {};
+      const loadedAt = Date.now();
+      this.removedPaths = new Map((Array.isArray(parsed.removedPaths) ? parsed.removedPaths : [])
+        .filter((value) => typeof value === 'string')
+        .map((value) => [value, Number(removedAt[value]) || loadedAt]));
       if (
         parsed
         && (parsed.version === INDEX_VERSION || parsed.version === 1)
@@ -227,22 +238,47 @@ class HistoryIndexService {
     }
   }
 
-  async persistIndex() {
+  serializeIndex() {
     const payload = {
       version: INDEX_VERSION,
       updatedAt: Date.now(),
       items: this.items,
-      removedPaths: [...this.removedPaths],
+      removedPaths: [...this.removedPaths.keys()],
+      removedAt: Object.fromEntries(this.removedPaths),
     };
-    const snapshot = JSON.stringify(payload, null, 2);
-    const persist = async () => {
-      const tempPath = `${this.indexFilePath}.tmp`;
-      await this.fsPromises.writeFile(tempPath, snapshot, { encoding: 'utf8', mode: 0o600 });
-      await this.fsPromises.rename(tempPath, this.indexFilePath);
-    };
-    this.persistence = this.persistence.then(persist, persist);
-    await this.persistence;
-    this.lastSavedAt = Date.now();
+    return JSON.stringify(payload);
+  }
+
+  // Requests made while a write is pending share it. The write snapshots state
+  // when it starts, so every caller's change is on disk once its promise settles.
+  persistIndex() {
+    if (!this.queuedPersist) {
+      const persist = async () => {
+        this.queuedPersist = null;
+        const tempPath = `${this.indexFilePath}.tmp`;
+        await this.fsPromises.writeFile(tempPath, this.serializeIndex(), { encoding: 'utf8', mode: 0o600 });
+        await this.fsPromises.rename(tempPath, this.indexFilePath);
+        this.lastSavedAt = Date.now();
+      };
+      this.queuedPersist = this.persistence.then(persist, persist);
+      this.persistence = this.queuedPersist;
+    }
+    return this.queuedPersist;
+  }
+
+  // Rescans answer existence from the directory listings they just read, and
+  // check any other path once per scan rather than once per item.
+  pathExists(candidate) {
+    if (typeof candidate !== 'string' || !candidate) return false;
+    const listed = this.scanListing && this.scanListing.get(path.dirname(candidate));
+    if (listed) return listed.has(path.basename(candidate));
+    if (!this.scanExists) return fs.existsSync(candidate);
+    let exists = this.scanExists.get(candidate);
+    if (exists === undefined) {
+      exists = fs.existsSync(candidate);
+      this.scanExists.set(candidate, exists);
+    }
+    return exists;
   }
 
   toRelativePath(absolutePath) {
@@ -313,6 +349,7 @@ class HistoryIndexService {
   async walkMediaFiles(currentDir = this.downloadDir, relativeDir = '') {
     const entries = await this.fsPromises.readdir(currentDir, { withFileTypes: true });
     const files = [];
+    if (this.scanListing) this.scanListing.set(currentDir, new Set(entries.filter((entry) => entry && !entry.isDirectory()).map((entry) => entry.name)));
 
     for (const entry of entries) {
       if (!entry) continue;
@@ -362,6 +399,9 @@ class HistoryIndexService {
       if (!job) continue;
       const status = String(job.queueStatus || job.status || '').trim();
       if (!status || !TERMINAL_STATUSES.has(status)) continue;
+      // Files inside the download folder are found by the directory walk.
+      const internal = (value) => typeof value !== 'string' || !value.trim() || Boolean(this.toRelativePath(value));
+      if (internal(job.mp4Path) && internal(job.filePath)) continue;
 
       const candidatePath = job.mp4Path && fs.existsSync(job.mp4Path) ? job.mp4Path : job.filePath;
       if (typeof candidatePath !== 'string' || !candidatePath.trim()) continue;
@@ -425,7 +465,7 @@ class HistoryIndexService {
   findThumbnailUrl({ validJobId, dirAbsolute, dirRelative, job, persistedItem }) {
     // Explicit selected artwork must survive refreshes even when an older
     // opening-frame or page thumbnail still exists beside the saved video.
-    if (job && typeof job.thumbnailPath === 'string' && job.thumbnailPath.trim() && fs.existsSync(job.thumbnailPath)) {
+    if (job && typeof job.thumbnailPath === 'string' && job.thumbnailPath.trim() && this.pathExists(job.thumbnailPath)) {
       const url = buildDownloadAssetUrl(this.downloadDir, job.thumbnailPath);
       if (url) return url;
     }
@@ -433,7 +473,7 @@ class HistoryIndexService {
     if (job && Array.isArray(job.thumbnailPaths)) {
       for (const thumbPath of job.thumbnailPaths) {
         if (typeof thumbPath !== 'string') continue;
-        if (!fs.existsSync(thumbPath)) continue;
+        if (!this.pathExists(thumbPath)) continue;
         const url = buildDownloadAssetUrl(this.downloadDir, thumbPath);
         if (url) return url;
       }
@@ -448,18 +488,20 @@ class HistoryIndexService {
       const value = String(candidate || '').trim();
       if (!value) continue;
       if (/^https?:\/\//i.test(value)) {
-        return value;
+        const artwork = youtubeArtwork(value, youtubeVideoIdOf(job) || youtubeVideoIdOf(persistedItem));
+        if (artwork) return artwork;
+        continue;
       }
       if (value.startsWith('/downloads/')) {
         const relative = value.slice('/downloads/'.length);
         const resolved = resolveDownloadPath(this.downloadDir, relative);
-        if (resolved && fs.existsSync(resolved)) {
+        if (resolved && this.pathExists(resolved)) {
           return `/downloads/${toPosixPath(relative)}`;
         }
       }
       if (value.startsWith(EXTERNAL_DOWNLOAD_PREFIX)) {
         const decoded = decodeExternalDownloadPath(value.slice(EXTERNAL_DOWNLOAD_PREFIX.length));
-        if (decoded && fs.existsSync(decoded)) {
+        if (decoded && this.pathExists(decoded)) {
           return value;
         }
       }
@@ -472,12 +514,12 @@ class HistoryIndexService {
     }
     for (const thumbName of localThumbCandidates) {
       const sameDirPath = path.join(dirAbsolute, thumbName);
-      if (fs.existsSync(sameDirPath)) {
+      if (this.pathExists(sameDirPath)) {
         const url = buildDownloadAssetUrl(this.downloadDir, sameDirPath);
         if (url) return url;
       }
       const legacyPath = path.join(this.downloadDir, thumbName);
-      if (fs.existsSync(legacyPath)) return `/downloads/${thumbName}`;
+      if (this.pathExists(legacyPath)) return `/downloads/${thumbName}`;
     }
 
     if (
@@ -486,13 +528,13 @@ class HistoryIndexService {
       && job.thumbnailUrls.length > 0
       && typeof job.thumbnailUrls[0] === 'string'
     ) {
-      return job.thumbnailUrls[0];
+      return youtubeArtwork(job.thumbnailUrls[0], youtubeVideoIdOf(job)) || null;
     }
 
     return null;
   }
 
-  buildItem(mediaFile, filesByDir, activeJobFiles, jobLookup) {
+  buildItem(mediaFile, filesByDir, activeJobFiles, jobLookup, persistedByPath) {
     const fileName = mediaFile.fileName;
     const relativePath = toPosixPath(mediaFile.relativePath);
     const ext = path.extname(fileName).toLowerCase();
@@ -510,7 +552,9 @@ class HistoryIndexService {
     const validJobId = extractedJobId && isValidHistoryJobId(extractedJobId)
       ? extractedJobId
       : null;
-    const persistedItem = mediaFile.persistedItem || this.items.find((item) => item.absolutePath === mediaFile.fullPath) || null;
+    const persistedItem = mediaFile.persistedItem
+      || (persistedByPath ? persistedByPath.get(mediaFile.fullPath) : this.items.find((item) => item.absolutePath === mediaFile.fullPath))
+      || null;
     const job = mediaFile.job
       || jobLookup.get(relativePath)
       || (validJobId ? this.jobs.get(validJobId) : null)
@@ -535,7 +579,7 @@ class HistoryIndexService {
       persistedItem,
     });
     const previewClipPath = (job && job.previewClipPath) || (persistedItem && persistedItem.previewClipPath) || null;
-    const previewClipUrl = isCurrentPreviewClipPath(previewClipPath) && fs.existsSync(previewClipPath)
+    const previewClipUrl = isCurrentPreviewClipPath(previewClipPath) && this.pathExists(previewClipPath)
       ? buildDownloadAssetUrl(this.downloadDir, previewClipPath) : null;
 
     return {
@@ -581,6 +625,8 @@ class HistoryIndexService {
 
     this.refreshInFlight = (async () => {
       this.lastRefreshAt = Date.now();
+      this.scanListing = new Map();
+      this.scanExists = new Map();
 
       const mediaFiles = await this.walkMediaFiles();
       mediaFiles.push(...this.collectExternalJobMediaFiles());
@@ -597,10 +643,14 @@ class HistoryIndexService {
       const activeJobFiles = this.buildActiveJobFiles();
       const jobLookup = this.buildJobLookup();
 
+      // A tombstone only hides an existing file; a later file there is newer.
+      for (const removedPath of [...this.removedPaths.keys()]) if (!this.pathExists(removedPath)) this.removedPaths.delete(removedPath);
+      const persistedByPath = new Map();
+      for (const item of this.items) if (item.absolutePath && !persistedByPath.has(item.absolutePath)) persistedByPath.set(item.absolutePath, item);
       const nextItemsByLocator = new Map();
       for (const mediaFile of mediaFiles) {
-        const item = this.buildItem(mediaFile, filesByDir, activeJobFiles, jobLookup);
-        if (!item || this.removedPaths.has(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)))) continue;
+        const item = this.buildItem(mediaFile, filesByDir, activeJobFiles, jobLookup, persistedByPath);
+        if (!item || (this.removedPaths.size > 0 && this.isRemoved(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)), item.modifiedAt))) continue;
 
         const locator = getHistoryItemLocator(item);
         if (!locator) continue;
@@ -611,14 +661,15 @@ class HistoryIndexService {
 
       // Keep records for moved/deleted files so the user can locate or remove them.
       for (const previous of this.items) {
+        const locator = getHistoryItemLocator(previous);
+        if (nextItemsByLocator.has(locator)) continue;
         const absolute = path.resolve(previous.absolutePath || path.join(this.downloadDir, previous.relativePath));
         // Old versions indexed copied init fragments as saved videos. Remove
         // those records, including already-cleaned scratch files, without
         // deleting files or weakening missing-file recovery for user media.
         if (this.isInternalPreviewFile(absolute)) continue;
-        const locator = getHistoryItemLocator(previous);
-        if (!this.removedPaths.has(absolute) && !nextItemsByLocator.has(locator)) {
-          nextItemsByLocator.set(locator, { ...previous, missing: !fs.existsSync(absolute) });
+        if (!this.removedPaths.has(absolute)) {
+          nextItemsByLocator.set(locator, { ...previous, missing: !this.pathExists(absolute) });
         }
       }
       const nextItems = Array.from(nextItemsByLocator.values());
@@ -637,6 +688,8 @@ class HistoryIndexService {
       this.emitChange('refresh');
       return { changed: true };
     })().finally(() => {
+      this.scanListing = null;
+      this.scanExists = null;
       this.refreshInFlight = null;
     });
 
@@ -718,11 +771,21 @@ class HistoryIndexService {
     return resolved;
   }
 
+  isRemoved(absolutePath, modifiedAt) {
+    const removedAt = this.removedPaths.get(absolutePath);
+    if (removedAt === undefined) return false;
+    if (Number(modifiedAt) > removedAt) {
+      this.removedPaths.delete(absolutePath);
+      return false;
+    }
+    return true;
+  }
+
   async removeById(historyId) {
     const item = this.findById(historyId);
     if (!item) return false;
     const before = this.items.length;
-    this.removedPaths.add(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)));
+    this.removedPaths.set(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)), Date.now());
     this.items = this.items.filter((candidate) => candidate.id !== item.id);
     if (this.items.length === before) return false;
     await this.persistIndex();
@@ -748,7 +811,7 @@ class HistoryIndexService {
     const item = this.findById(historyId);
     if (!item) return null;
     const previousPath = item.absolutePath || path.join(this.downloadDir, item.relativePath);
-    this.removedPaths.add(path.resolve(previousPath));
+    this.removedPaths.set(path.resolve(previousPath), Date.now());
     this.removedPaths.delete(path.resolve(selectedPath));
     const stat = await this.fsPromises.stat(selectedPath);
     Object.assign(item, {
@@ -765,7 +828,7 @@ class HistoryIndexService {
 
   async clear() {
     if (this.items.length === 0) return;
-    for (const item of this.items) this.removedPaths.add(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)));
+    for (const item of this.items) this.removedPaths.set(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath)), Date.now());
     this.items = [];
     await this.persistIndex();
     this.emitChange('clear');

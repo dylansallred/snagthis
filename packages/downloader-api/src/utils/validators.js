@@ -30,6 +30,8 @@ function isSafeFilename(value) {
 const jobValidation = [
   body('queue.url').exists().bail().custom(isValidUrl),
   body('queue.title').optional().isString().isLength({ max: 255 }),
+  // A non-string name reached safeFilename() and failed with a 500.
+  body('queue.name').optional({ values: 'null' }).isString(),
   body('threads').optional().isInt({ min: 1, max: 16 }),
   body('settings.customName').optional().custom(isSafeFilename),
   (req, res, next) => {

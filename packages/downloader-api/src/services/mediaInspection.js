@@ -1,4 +1,4 @@
-const { parseHlsManifest } = require('@m3u8/contracts');
+const { parseHlsManifest, parseDashAudio } = require('@m3u8/contracts');
 const { scopeMediaHeaders } = require('@m3u8/downloader-engine/src/core/MediaRequest');
 
 function httpUrl(value) {
@@ -21,8 +21,22 @@ async function readText(response, limit = 1_000_000) {
 function resourceTitle(url) {
   try {
     const filename = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
-    return filename.replace(/\.(?:m3u8|mp4|m4v|webm|mov|mkv|ts|mp3|m4a|ogg)$/i, '').replace(/[_]+/g, ' ').trim().slice(0, 255) || undefined;
+    return filename.replace(/\.(?:m3u8|mpd|mp4|m4v|webm|mov|mkv|ts|mp3|m4a|ogg)$/i, '').replace(/[_]+/g, ' ').trim().slice(0, 255) || undefined;
   } catch { return undefined; }
+}
+
+function urlPath(value) {
+  try { const url = new URL(value); return url.origin + url.pathname; } catch { return ''; }
+}
+
+/** Flag variants that the page's own player was seen loading (exact URL, else origin+path). */
+function markObservedVariants(inspection, observedUrls) {
+  if (!Array.isArray(observedUrls) || !observedUrls.length || !Array.isArray(inspection.variants)) return inspection;
+  const exact = new Set(observedUrls.filter((value) => typeof value === 'string').slice(0, 32));
+  const paths = new Set([...exact].map(urlPath).filter(Boolean));
+  const variants = inspection.variants.map((variant) => (exact.has(variant.url) || paths.has(urlPath(variant.url))
+    ? { ...variant, observed: true } : variant));
+  return { ...inspection, variants };
 }
 
 async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = fetch }) {
@@ -66,23 +80,31 @@ async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = f
     const contentType = response?.headers.get('content-type') || '';
     if (allowPage && /text\/html|application\/xhtml\+xml/i.test(contentType)) {
       await response.body?.cancel();
-      if (!resolvePage) throw new Error('Open this page in Chrome and use VidSnag to choose its video.');
+      if (!resolvePage) throw new Error('Open this page in Chrome and use SnagThis to choose its video.');
       let resolved;
       try { resolved = await resolvePage({ url: target }); }
-      catch { throw new Error('Could not find a video automatically. Open this page in Chrome, press play, then choose it in VidSnag.'); }
-      if (!resolved?.mediaUrl || resolved.mediaUrl === target) throw new Error('No playable video was found. Open the page in Chrome, press play, and try the VidSnag extension.');
+      catch { throw new Error('Could not find a video automatically. Open this page in Chrome, press play, then choose it in SnagThis.'); }
+      if (!resolved?.mediaUrl || resolved.mediaUrl === target) throw new Error('No playable video was found. Open the page in Chrome, press play, and try the SnagThis extension.');
       const resolvedUrl = httpUrl(resolved.mediaUrl).href;
-      return inspectSource(resolvedUrl, resolved.headers || {}, {
+      const inspection = await inspectSource(resolvedUrl, resolved.headers || {}, {
         title: typeof resolved.title === 'string' ? resolved.title.trim().slice(0, 255) : undefined,
         sourcePageUrl: original.href, thumbnailUrl: resolved.thumbnailUrl,
         headers: resolved.headers || {},
       }, false, resolved.manifestText);
+      return markObservedVariants(inspection, resolved.observedUrls);
     }
     if (manifestText || /mpegurl|text\/plain/i.test(contentType) || /\.m3u8(?:[?#]|$)/i.test(target)) {
       const text = manifestText || await readText(response);
       if (!/^\uFEFF?\s*#EXTM3U/.test(text)) throw new Error('This link does not point to a playable video playlist.');
       const result = parseHlsManifest(text, target);
       return { ...result, ...metadata, mediaUrl: target, mediaType: 'hls', title: metadata.title || resourceTitle(target), headers: scopeMediaHeaders(requestHeaders, target, { credentialOrigin: url }) };
+    }
+    if (/dash\+xml/i.test(contentType) || /\.mpd(?:[?#]|$)/i.test(target)) {
+      // DASH downloads use yt-dlp; its audio adaptation sets still get labels
+      // (lang, label, Role) and FFmpeg stream indexes for desktop samples.
+      const text = await readText(response);
+      if (!/<MPD\b/i.test(text)) throw new Error('This link does not point to a playable video.');
+      return { ...metadata, mediaUrl: target, mediaType: 'file', title: metadata.title || resourceTitle(target), headers: scopeMediaHeaders(requestHeaders, target, { credentialOrigin: url }), variants: [], audio: parseDashAudio(text, target), subtitles: [] };
     }
     await response?.body?.cancel();
     if (/text\/html|application\/xhtml\+xml/i.test(contentType)) throw new Error('The source returned a web page instead of a video. Reopen it in Chrome and try again.');

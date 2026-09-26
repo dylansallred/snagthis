@@ -2,6 +2,7 @@ const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { redact } = require('./redact');
 
 const isTest = process.env.NODE_ENV === 'test';
 const disableFileLogs = process.env.DISABLE_FILE_LOGS === '1' || isTest;
@@ -42,14 +43,20 @@ if (fileLoggingEnabled) {
   }
 }
 
+// Keep a bounded history: the newest file keeps its name (tailable) and older
+// ones rotate out, so a long-running install cannot fill the profile disk.
+const rotation = { maxsize: 5 * 1024 * 1024, maxFiles: 3, tailable: true };
+
 if (fileLoggingEnabled) {
   transports.push(
     new winston.transports.File({
       filename: path.join(logDir, 'error.log'),
-      level: 'error'
+      level: 'error',
+      ...rotation,
     }),
     new winston.transports.File({
-      filename: path.join(logDir, 'combined.log')
+      filename: path.join(logDir, 'combined.log'),
+      ...rotation,
     })
   );
 }
@@ -57,6 +64,8 @@ if (fileLoggingEnabled) {
 const logger = winston.createLogger({
   level: loggerLevel,
   format: winston.format.combine(
+    // Media URLs carry signed query tokens; never write them to disk.
+    winston.format((info) => Object.assign(info, redact(info)))(),
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
     winston.format.json()
