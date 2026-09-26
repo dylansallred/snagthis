@@ -33,6 +33,26 @@ contextBridge.exposeInMainWorld('desktop', {
   locateHistoryFile: (historyId) => ipcRenderer.invoke('app:locate-history-file', historyId),
   getPairingInfo: () => ipcRenderer.invoke('app:get-pairing-info'),
   getConnectionState: () => ipcRenderer.invoke('app:get-connection-state'),
+  getPairingRequest: () => ipcRenderer.invoke('pairing:get-state'),
+  decidePairing: (requestId, allow) => ipcRenderer.invoke('pairing:decide', requestId, allow === true),
+  listExtensions: () => ipcRenderer.invoke('extensions:list'),
+  disconnectExtension: (id) => ipcRenderer.invoke('extensions:disconnect', id),
+  onPairingShow: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('pairing:show', handler);
+    ipcRenderer.invoke('pairing:listener-ready').catch(() => {});
+    return () => ipcRenderer.removeListener('pairing:show', handler);
+  },
+  onPairingState: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('pairing:state', handler);
+    return () => ipcRenderer.removeListener('pairing:state', handler);
+  },
+  onExtensionsChange: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('pairing:extensions', handler);
+    return () => ipcRenderer.removeListener('pairing:extensions', handler);
+  },
   openSaveFolder: () => ipcRenderer.invoke('app:open-save-folder'),
   openSettings: () => ipcRenderer.invoke('app:open-settings'),
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),

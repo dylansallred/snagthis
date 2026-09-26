@@ -67,11 +67,16 @@ test('private bridge pairing, whole-library search, safe removal, missing-file l
     const pairing = api.getPairingInfo();
     const paired = await request('/v1/pair/complete', { auth: false, method: 'POST', headers: { Origin: extensionOrigin }, body: { code: pairing.code } });
     assert.equal(paired.status, 200);
-    assert.equal(paired.body.token, token);
+    const extensionToken = paired.body.token;
+    assert.match(extensionToken, /^[0-9a-f]{64}$/);
+    assert.notEqual(extensionToken, token, 'each extension gets its own token, never the desktop credential');
+    const asExtension = (headers = {}) => ({ auth: false, headers: { Authorization: `Bearer ${extensionToken}`, ...headers } });
     assert.equal(api.getConnectionState().extensionConnected, false, 'pairing itself is not a successful authenticated request');
-    assert.equal((await request('/v1/queue', { headers: { 'X-Client': 'snagthis-extension' } })).status, 200);
+    assert.equal((await request('/v1/queue', asExtension({ 'X-Client': 'snagthis-extension' }))).status, 200);
     assert.equal(api.getConnectionState().extensionConnected, true, 'Chrome extension GET requests may omit Origin');
-    assert.equal((await request('/v1/queue', { headers: { Origin: extensionOrigin } })).status, 200);
+    assert.equal((await request('/v1/queue', asExtension({ Origin: extensionOrigin }))).status, 200);
+    assert.equal((await request('/v1/queue', { headers: { Origin: extensionOrigin } })).status, 401, 'the desktop token is refused from an extension page');
+    assert.equal((await request('/api/history', asExtension())).status, 403, 'an extension token never reaches desktop-only routes');
     assert.equal(api.getConnectionState().extensionConnected, true);
     assert.equal((await request('/v1/pair/complete', { auth: false, method: 'POST', headers: { Origin: extensionOrigin }, body: { code: pairing.code } })).status, 403, 'code is one use');
 
@@ -81,7 +86,7 @@ test('private bridge pairing, whole-library search, safe removal, missing-file l
       rejectedSocket.once('open', () => reject(new Error('Unauthenticated WebSocket was accepted')));
       rejectedSocket.on('error', () => {});
     });
-    const socket = new WebSocket(`${base.replace('http:', 'ws:')}/ws`, ['snagthis', `snagthis-auth.${token}`], { origin: extensionOrigin });
+    const socket = new WebSocket(`${base.replace('http:', 'ws:')}/ws`, ['snagthis', `snagthis-auth.${extensionToken}`], { origin: extensionOrigin });
     await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
     const messagePromise = new Promise((resolve) => socket.once('message', (message) => resolve(JSON.parse(message))));
     socket.send(JSON.stringify({ type: 'subscribe', channel: 'queue' }));

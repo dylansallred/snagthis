@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LoaderCircle, X, FolderOpen, MonitorPlay, Captions, Bell, Power } from 'lucide-react';
+import { LoaderCircle, X, FolderOpen, MonitorPlay, Captions, Bell, Power, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import type { DesktopSettings } from '@/types/settings';
-import type { AppInfo } from '@/types/desktop-bridge';
+import type { AppInfo, ConnectedExtension, PairingRequest } from '@/types/desktop-bridge';
 import type { UpdaterState } from '@/types/updater';
 import type { ApiClient } from '@/lib/api';
 import { ui } from '@/lib/strings';
@@ -12,6 +12,7 @@ import { buildSiteReportUrl } from '@/lib/siteReport';
 import { defaultSettings } from '@/hooks/useAppInit';
 import { NumberSetting, SettingTitle, SettingsFormContext, TextSetting, type Draft, type SettingsForm } from './settingsFields';
 import { AccentPicker } from './AccentPicker';
+import { PairingDigits, countdown, reviewPairing, shortExtensionId } from './PairingApproval';
 import { settingsSections, type SettingsSectionId } from './settingsSections';
 import './settings.css';
 
@@ -20,6 +21,16 @@ const namingHints: Record<DesktopSettings['fileNaming'], string> = { title: ui.t
 /** Advanced values that "Restore defaults" resets. Credentials and update choices are left alone. */
 const speedAndNaming = ['queueMaxConcurrent', 'downloadThreads', 'queueAutoStart', 'fileNaming', 'customFilename'] as const;
 const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const shortDate = (time: number) => new Date(time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+function lastSeen(time: number | null) {
+  if (!time) return 'not used yet';
+  const minutes = Math.floor((Date.now() - time) / 60_000);
+  if (minutes < 1) return 'last seen just now';
+  if (minutes < 60) return `last seen ${minutes} min ago`;
+  if (minutes < 24 * 60) return `last seen ${Math.floor(minutes / 60)} hr ago`;
+  return `last seen ${shortDate(time)}`;
+}
+const galleryExtensions: ConnectedExtension[] = [{ id: 'gallery', extensionId: 'kpldfbnhcgkemcoimbeoeialgfajmeno', createdAt: Date.now() - 86_400_000, lastSeenAt: Date.now(), legacy: false, identity: 'store' }];
 
 /**
  * Desktop Settings as a 640px sheet with a section rail (settings-refresh option 2). The owner of
@@ -34,6 +45,10 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
   const [pairingNow, setPairingNow] = useState(Date.now);
   const [codeCopied, setCodeCopied] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState<PairingRequest | null>(null);
+  const [extensions, setExtensions] = useState<ConnectedExtension[]>(gallery ? galleryExtensions : []);
+  const [confirmDisconnect, setConfirmDisconnect] = useState('');
+  const [disconnected, setDisconnected] = useState(false);
   const [saved, setSaved] = useState({ key: '', announcement: '' });
   const savedTimer = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -53,6 +68,22 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     return () => window.clearInterval(timer);
   }, [open, pairing]);
   useEffect(() => { if (appInfo?.extensionConnected) setPairing(null); }, [appInfo?.extensionConnected]);
+  // Connected browsers and a waiting one-click request, kept current while Settings is open.
+  const apiReady = appInfo?.apiStartupState === 'ready';
+  useEffect(() => {
+    if (!open || gallery || !apiReady || !window.desktop?.listExtensions) return undefined;
+    let live = true;
+    void window.desktop.listExtensions().then((list) => { if (live) setExtensions(list); }).catch(() => {});
+    void window.desktop.getPairingRequest().then((next) => { if (live) setPendingRequest(next?.status === 'pending' ? next : null); }).catch(() => {});
+    const offState = window.desktop.onPairingState((next) => setPendingRequest(next?.status === 'pending' ? next : null));
+    const offList = window.desktop.onExtensionsChange((list) => { setExtensions(list); if (list.length) setDisconnected(false); });
+    return () => { live = false; offState(); offList(); };
+  }, [open, gallery, apiReady]);
+  useEffect(() => {
+    if (!pendingRequest) return undefined;
+    const timer = window.setInterval(() => setPairingNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [pendingRequest]);
   useEffect(() => () => window.clearTimeout(savedTimer.current), []);
   useEffect(() => {
     if (!focusCustomName.current || settings.fileNaming !== 'custom') return;
@@ -155,13 +186,46 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
   };
   const sub = (id: string, title: string, children: React.ReactNode) => <div className="advanced-group" role="group" aria-labelledby={id}><h4 id={id}>{title}</h4>{children}</div>;
   const panes: Record<SettingsSectionId, () => React.ReactNode> = {
-    chrome: () => <section className="settings-group pairing-settings" aria-label="Chrome extension setup">
-      <p role="status">{appInfo?.extensionConnected && !pairing ? 'Chrome is connected. Keep SnagThis open while downloading.' : 'Connect the extension once to send videos from Chrome to this app.'}</p>
-      {(!appInfo?.extensionConnected || pairing) && <ol className="pairing-steps">{ui.pairingSteps.map((step) => <li key={step}>{step}</li>)}</ol>}
-      {pairing && pairingSeconds > 0 ? <div className="pairing-code"><label htmlFor="chrome-connection-code">{ui.pairingHelp}</label><div className="pairing-code-actions"><output id="chrome-connection-code" aria-label="Connection code">{pairing.code}</output><button type="button" className="row-action labelled" disabled={!!busy} onClick={() => run('copy-code', async () => { await navigator.clipboard.writeText(pairing.code); setCodeCopied(true); })}>{codeCopied ? 'Copied' : 'Copy code'}</button></div><small>Expires in {Math.floor(pairingSeconds / 60)}:{String(pairingSeconds % 60).padStart(2, '0')}. Keep SnagThis open.</small></div>
-        : <>{pairing && <p className="tone-attention" role="status">This code expired. Get a new code and try again.</p>}<button type="button" className="row-action labelled" disabled={!!busy || (!gallery && appInfo?.apiStartupState !== 'ready')} onClick={showPairing}>{busy === 'pairing' ? 'Getting code…' : pairing ? 'Get a new code' : appInfo?.extensionConnected ? 'Connect another browser' : 'Show connection code'}</button></>}
-      {!appInfo?.extensionConnected && <button type="button" className="detail-refresh pairing-install" onClick={() => run('install-extension', async () => { if (!gallery) await window.desktop.openExternal('https://github.com/dylansallred/snagthis#run-locally'); })}>Need the extension? Add to Chrome</button>}
-    </section>,
+    chrome: () => {
+      const connected = extensions.length > 0;
+      const waiting = pendingRequest && pendingRequest.expiresAt > pairingNow ? pendingRequest : null;
+      const disconnect = (entry: ConnectedExtension) => run(`disconnect-${entry.id}`, async () => {
+        if (gallery) { setExtensions([]); setDisconnected(true); setConfirmDisconnect(''); return; }
+        const result = await window.desktop.disconnectExtension(entry.id);
+        if (!result.ok) throw new Error('This browser was already disconnected.');
+        setExtensions(await window.desktop.listExtensions());
+        setConfirmDisconnect(''); setDisconnected(true);
+      });
+      return <section className="settings-group pairing-settings" aria-label="Chrome extension setup">
+        <p role="status">{connected ? 'Chrome is connected. Keep SnagThis open while downloading.' : disconnected ? 'Chrome is disconnected. Its key no longer works.' : 'Connect the extension once to send videos from Chrome to this app.'}</p>
+        {waiting && <div className="pairing-pending" role="status">
+          <span className="pairing-spinner" aria-hidden="true" />
+          <div className="pairing-pending-text"><b>{ui.pairingWaiting}</b><small>{ui.pairingExpiresIn.replace('{time}', countdown(waiting.expiresAt - pairingNow))}</small></div>
+          <PairingDigits code={waiting.matchCode} size="sm" />
+          <button type="button" className="row-action primary-action" onClick={() => reviewPairing(waiting)}>{ui.pairingReview}</button>
+        </div>}
+        {connected && <ul className="connected-extensions" aria-label="Connected browsers">{extensions.map((entry) => <li key={entry.id} className="connected-extension">
+          {confirmDisconnect === entry.id ? <>
+            <b>Disconnect {entry.identity === 'store' ? ui.pairingStoreName : 'this Chrome extension'}?</b>
+            <small className="pairing-note">Chrome will stop sending downloads here until you connect it again. Finished files and your library stay.</small>
+            <div className="connected-extension-actions"><button type="button" className="row-action labelled" onClick={() => setConfirmDisconnect('')}>{ui.cancel}</button><button type="button" className="row-action danger-action" disabled={!!busy} onClick={() => disconnect(entry)}>Disconnect</button></div>
+          </> : <div className="connected-extension-row">
+            <Check aria-hidden="true" />
+            <div className="connected-extension-text"><b>{entry.identity === 'store' ? ui.pairingStoreName : 'Chrome extension'} <span className="sr-only">{entry.extensionId}</span></b><small title={entry.extensionId}>{entry.identity === 'store' ? 'Web Store build' : shortExtensionId(entry.extensionId)} · connected {shortDate(entry.createdAt)} · {lastSeen(entry.lastSeenAt)}</small></div>
+            <button type="button" className="row-action danger-action" aria-label={`Disconnect ${shortExtensionId(entry.extensionId)}`} onClick={() => setConfirmDisconnect(entry.id)}>Disconnect</button>
+          </div>}
+        </li>)}</ul>}
+        {connected && <p className="pairing-note">Each browser gets its own key, so disconnecting one leaves the others.</p>}
+        {!waiting && <ol className="pairing-steps">{ui.pairingSteps.map((step) => <li key={step}>{step}</li>)}</ol>}
+        <div className="pairing-code-fallback">
+          <p>Another browser, or SnagThis didn’t come forward? Connect with a code instead.</p>
+          {pairing && <ol className="pairing-steps">{ui.pairingCodeSteps.map((step) => <li key={step}>{step}</li>)}</ol>}
+          {pairing && pairingSeconds > 0 ? <div className="pairing-code"><label htmlFor="chrome-connection-code">{ui.pairingHelp}</label><div className="pairing-code-actions"><output id="chrome-connection-code" aria-label="Connection code">{pairing.code}</output><button type="button" className="row-action labelled" disabled={!!busy} onClick={() => run('copy-code', async () => { await navigator.clipboard.writeText(pairing.code); setCodeCopied(true); })}>{codeCopied ? 'Copied' : 'Copy code'}</button></div><small>Expires in {Math.floor(pairingSeconds / 60)}:{String(pairingSeconds % 60).padStart(2, '0')}. Keep SnagThis open.</small></div>
+            : <>{pairing && <p className="tone-attention" role="status">This code expired. Get a new code and try again.</p>}<button type="button" className="row-action labelled" disabled={!!busy || (!gallery && !apiReady)} onClick={showPairing}>{busy === 'pairing' ? 'Getting code…' : pairing ? 'Get a new code' : 'Show connection code'}</button></>}
+        </div>
+        {!appInfo?.extensionConnected && !connected && <button type="button" className="detail-refresh pairing-install" onClick={() => run('install-extension', async () => { if (!gallery) await window.desktop.openExternal('https://github.com/dylansallred/snagthis#run-locally'); })}>Need the extension? Add to Chrome</button>}
+      </section>;
+    },
     downloads: () => <div className="settings-group">
       <div className="preference-row folder-row">
         <span className="setting-icon warm" aria-hidden="true"><FolderOpen /></span>
@@ -211,7 +275,7 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     </div>,
   };
   return <Dialog open={open} onOpenChange={close}>
-    <DialogContent ref={contentRef} className="settings-sheet settings-sidebar" showCloseButton={false} onEscapeKeyDown={escape}
+    <DialogContent ref={contentRef} className="settings-sheet settings-sidebar top-0 left-auto translate-x-0 translate-y-0" showCloseButton={false} onEscapeKeyDown={escape}
       // Start on the sheet itself rather than lighting up the close button; Tab reaches it first.
       onOpenAutoFocus={(event) => { event.preventDefault(); contentRef.current?.focus({ preventScroll: true }); }}>
       <div className="sheet-heading"><DialogTitle>{ui.settings}</DialogTitle><button type="button" className="row-action" aria-label={ui.closeSettings} title={ui.closeSettingsHint} onClick={() => close(false)}><X /></button></div>

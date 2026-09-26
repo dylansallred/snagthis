@@ -191,6 +191,17 @@ async function icon(browser, file, size, cell, shadowed = false) {
 }
 // macOS keeps the body at about 824/1024; small sizes stay on whole pixel cells.
 const macCell = size => Math.max(1, Math.round(size * 824 / 1024 / N));
+// The macOS app icon fills Apple's rounded-square body: macOS 26 shrinks icons of any
+// other shape onto a plain light tile. The bevel becomes the tile's edges (amber top
+// and left, deep orange bottom and right) around the pixel play button and its shadow.
+async function macIcon(browser, file, size) {
+  const body = Math.round(size * 824 / 1024), offset = Math.round((size - body) / 2);
+  const radius = Math.round(body * 185 / 824), edge = Math.max(1, Math.round(body / N));
+  const drop = size > 64 ? `filter:drop-shadow(0 ${size / 100}px ${size / 50}px rgba(0,0,0,.3));` : '';
+  const glyph = `<svg xmlns="http://www.w3.org/2000/svg" width="${body}" height="${body}" viewBox="0 0 ${N} ${N}" shape-rendering="crispEdges" style="position:absolute;inset:0"><path fill="${COL.o2}" d="${BUTTON.shadow}"/><path fill="${COL.night}" d="${BUTTON.glyph}"/></svg>`;
+  await shoot(browser, `<div style="position:absolute;left:${offset}px;top:${offset}px;width:${body}px;height:${body}px;border-radius:${radius}px;background:${COL.o};overflow:hidden;${drop}
+    box-shadow:inset 0 ${edge}px 0 ${COL.amber},inset ${edge}px 0 0 ${COL.amber},inset 0 -${edge}px 0 ${COL.o2},inset -${edge}px 0 0 ${COL.o2}">${glyph}</div>`, file, { width: size, height: size });
+}
 
 // The 16px toolbar icon must be the 16 × 16 grid, one pixel per cell.
 async function assertPixelExact(browser, file) {
@@ -250,7 +261,7 @@ const banner = geo => `<div style="position:relative;width:1440px;height:400px;b
     await icon(browser, mark, 1024, 64);
     for (const target of ['apps/desktop/src/assets/snagthis-logo-mark.png', 'apps/extension/img/snagthis-logo-mark.png', 'logos/Just Logo.png']) copy(mark, target);
     const app = path.join(tmp, 'app.png');
-    await icon(browser, app, 1024, macCell(1024), true);
+    await macIcon(browser, app, 1024);
     for (const target of ['apps/extension/img/snagthis-app-icon.png', 'logos/App Icon.png']) copy(app, target);
 
     // Chrome: 16px is the grid 1:1; 48px is 3 per cell; 128px keeps the recommended 16px padding (96px body).
@@ -261,12 +272,12 @@ const banner = geo => `<div style="position:relative;width:1440px;height:400px;b
     console.log('wrote apps/extension/img/icon-16.png (pixel-exact), icon-48.png, icon-128.png');
 
     // Desktop build icons.
-    await icon(browser, path.join(ROOT, 'apps/desktop/build/icon.png'), 256, macCell(256), true);
+    await macIcon(browser, path.join(ROOT, 'apps/desktop/build/icon.png'), 256);
     const iconset = path.join(tmp, 'icon.iconset');
     fs.mkdirSync(iconset);
     for (const px of [16, 32, 128, 256, 512]) {
-      await icon(browser, path.join(iconset, `icon_${px}x${px}.png`), px, macCell(px), px > 32);
-      await icon(browser, path.join(iconset, `icon_${px}x${px}@2x.png`), px * 2, macCell(px * 2), px * 2 > 32);
+      await macIcon(browser, path.join(iconset, `icon_${px}x${px}.png`), px);
+      await macIcon(browser, path.join(iconset, `icon_${px}x${px}@2x.png`), px * 2);
     }
     execFileSync('iconutil', ['-c', 'icns', iconset, '-o', path.join(ROOT, 'apps/desktop/build/icon.icns')]);
     console.log('wrote apps/desktop/build/icon.png and icon.icns');

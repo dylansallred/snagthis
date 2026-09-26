@@ -46,7 +46,7 @@ async function loadPopup(page, flags = { storeBuild: false }) {
   const source = fs.readFileSync(path.join(extension, 'popup.js'), 'utf8');
   expect(source).toContain(startup);
   await page.addScriptTag({ content: source.replace(startup,
-    `window.popupFixture = { load(items, jobs, links) { mediaItems = items; queue = jobs; mappings = links; reachable = true; compatible = true; appToken = 'fixture'; selected.clear(); renderRows(); }, pair: () => showPairing() };`,
+    `window.popupFixture = { load(items, jobs, links) { mediaItems = items; queue = jobs; mappings = links; reachable = true; compatible = true; appToken = 'fixture'; selected.clear(); renderRows(); }, pair: () => showCodePairing() };`,
   ) });
   return errors;
 }

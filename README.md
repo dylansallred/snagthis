@@ -88,11 +88,10 @@ Connect it to Chrome using the steps below.
 
 Connect once for downloads that need the desktop app. Direct Chrome downloads don't need this step.
 
-1. In SnagThis desktop, open **Settings → Chrome extension → Show connection code**.
-2. Choose **Copy code**, open **Extensions → SnagThis** in Chrome, and choose **Connect**.
-3. Paste the six-digit code and choose **Connect**. The connection stays saved on your device.
+1. With SnagThis desktop running, open **Extensions → SnagThis** in Chrome and choose **Connect**.
+2. SnagThis comes forward with four digits. If Chrome shows the same four, choose **Allow**. The connection stays saved on your device.
 
-Codes expire after five minutes. Choose **Get a new code** in the desktop app if yours expires.
+If SnagThis doesn't come forward, or you are connecting another browser, choose **Use a code instead**: open **Settings → Chrome extension → Show connection code** in the desktop app and paste the six-digit code in Chrome. Codes expire after five minutes. Each browser gets its own key; **Disconnect** in either app removes it.
 
 ## Your files stay yours
 

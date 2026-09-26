@@ -26,6 +26,10 @@ let requestedView = null;
 // Deep links and the extension open Settings on Chrome extension; the app menu reopens the last section.
 let requestedSettingsSection = null;
 let settingsListenerReady = false;
+// snagthis://open/pair asks to show the one pending Chrome request; it carries no ID or secret.
+let pairingDialogRequested = false;
+let pairingListenerReady = false;
+let pairingDialogShownFor = '';
 const explicitUserData = process.env.SNAGTHIS_USER_DATA || process.env.E2E_USER_DATA_DIR || app.commandLine.getSwitchValue('user-data-dir');
 const userDataDirectory = explicitUserData ? path.resolve(explicitUserData) : path.join(app.getPath('appData'), app.isPackaged ? 'SnagThis' : 'SnagThis-development');
 // Builds before the SnagThis rename kept data under the VidSnag name. Adopt that
@@ -503,6 +507,29 @@ function focusMainWindow(view, settingsSection = 'chrome') {
   }
 }
 
+/**
+ * A deep link only focuses the app. The Approve dialog appears when a request is actually
+ * pending, so a website opening the link shows nothing.
+ */
+function showPendingPairing() {
+  pairingDialogRequested = true;
+  focusMainWindow();
+  deliverPairingDialog();
+}
+
+function deliverPairingDialog() {
+  if (!pairingListenerReady || apiStartupState !== 'ready') return;
+  const pending = apiServer?.getPendingPairing?.();
+  // A reloaded window gets the dialog back for the request the link already opened.
+  const reshow = pending && pending.status === 'pending' && pending.requestId === pairingDialogShownFor;
+  if (!pairingDialogRequested && !reshow) return;
+  pairingDialogRequested = false;
+  if (pending && pending.status === 'pending') {
+    pairingDialogShownFor = pending.requestId;
+    sendToRenderer('pairing:show', pending);
+  }
+}
+
 function summarizeReleaseNote(updateInfo) {
   const firstNote = normalizeReleaseNotes(updateInfo)[0];
   if (!firstNote) return '';
@@ -862,7 +889,12 @@ async function startLocalApi() {
       });
       return result.canceled ? null : (result.filePaths[0] || null);
     },
-    onExtensionConnected: () => sendToRenderer('app:info-update', appInfo()),
+    onExtensionConnected: () => {
+      sendToRenderer('app:info-update', appInfo());
+      sendToRenderer('pairing:extensions', apiServer?.listExtensions?.() || []);
+    },
+    // Match codes go only to the trusted renderer; they are never logged.
+    onPairingChange: (pending) => sendToRenderer('pairing:state', pending),
     onGetSettings: currentSettings,
     onSaveSettings: saveSettings,
     onGetAppearance: accentState,
@@ -945,6 +977,7 @@ function installApplicationMenu() {
 
 function createWindow() {
   settingsListenerReady = false;
+  pairingListenerReady = false;
   mainWindow = new BrowserWindow({
     width: 820,
     height: 680,
@@ -1061,6 +1094,17 @@ function registerIpc() {
   handleIpc('app:get-pairing-info', async () => {
     if (apiStartupState !== 'ready') throw new Error('SnagThis is still starting');
     return apiServer.getPairingInfo();
+  });
+  handleIpc('pairing:get-state', async () => (apiStartupState === 'ready' ? apiServer.getPendingPairing() : null));
+  handleIpc('pairing:decide', async (_event, requestId, allow) => {
+    if (apiStartupState !== 'ready') throw new Error('SnagThis is still starting');
+    return apiServer.decidePairing(String(requestId || ''), allow === true);
+  });
+  handleIpc('pairing:listener-ready', async () => { pairingListenerReady = true; deliverPairingDialog(); });
+  handleIpc('extensions:list', async () => (apiStartupState === 'ready' ? apiServer.listExtensions() : []));
+  handleIpc('extensions:disconnect', async (_event, id) => {
+    if (apiStartupState !== 'ready') throw new Error('SnagThis is still starting');
+    return { ok: apiServer.revokeExtension(String(id || '')) };
   });
   handleIpc('app:get-connection-state', async () => apiServer?.getConnectionState?.() || { extensionConnected: false, pairedExtensions: 0 });
   handleIpc('app:open-settings', async () => { focusMainWindow('settings'); return { ok: true }; });
@@ -1266,6 +1310,7 @@ async function bootstrap() {
     try {
       const parsed = new URL(url);
       if (parsed.protocol !== 'snagthis:' || parsed.hostname !== 'open') return;
+      if (parsed.pathname === '/pair') { showPendingPairing(); return; }
       focusMainWindow(parsed.pathname === '/settings' ? 'settings' : undefined);
     } catch { /* Ignore unrelated launch arguments. */ }
   };

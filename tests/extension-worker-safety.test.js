@@ -23,32 +23,35 @@ function storage(initial = {}, quota = { bytes: Infinity }) {
 }
 
 // The shipped worker with Chrome's event and storage surface replaced.
-function loadWorker({ tab = { id: 7, url: 'https://cinema.example/watch', title: 'Watch', documentId: 'document-a' }, frames = {}, downloads, fetch } = {}) {
+function loadWorker({ tab = { id: 7, url: 'https://cinema.example/watch', title: 'Watch', documentId: 'document-a' }, frames = {}, downloads, fetch, local = { appToken: 'fixture-token', appTokenVersion: 2 } } = {}) {
   const listeners = {};
   const event = name => ({ addListener: listener => { listeners[name] = listener; } });
   const quota = { bytes: Infinity };
   const session = storage({}, quota);
   const warnings = [];
   const requests = [];
+  const badges = [];
+  const opened = [];
+  const localStorage = storage(local);
   const chrome = {
-    storage: { session, local: storage({ appToken: 'fixture-token' }) },
-    action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
+    storage: { session, local: localStorage },
+    action: { setBadgeText: async value => { badges.push(clone(value)); }, setBadgeBackgroundColor: async () => {} },
     runtime: { id: 'a'.repeat(32), getURL: value => `chrome-extension://${'a'.repeat(32)}/${value}`,
       getManifest: () => ({ version: '1.0.0' }), onMessage: event('message'), onInstalled: event('installed') },
-    tabs: { get: async () => clone(tab), onRemoved: event('removed') },
+    tabs: { get: async () => clone(tab), onRemoved: event('removed'), create: async value => { opened.push(value.url); } },
     webNavigation: { getFrame: async ({ frameId }) => clone(frames[frameId] || (frameId === 0 ? { url: tab.url, documentId: tab.documentId, parentFrameId: -1, frameType: 'outermost_frame', documentLifecycle: 'active' } : null)),
       onCommitted: event('committed'), onHistoryStateUpdated: event('history') },
     webRequest: { onBeforeSendHeaders: event('beforeHeaders'), onHeadersReceived: event('headers'),
       onCompleted: event('completed'), onErrorOccurred: event('error') },
     ...(downloads ? { downloads } : {}),
   };
-  const context = vm.createContext({ chrome, URL, AbortSignal, TextEncoder, crypto: { randomUUID, subtle: webcrypto.subtle }, console: { warn: (...args) => warnings.push(args) },
+  const context = vm.createContext({ chrome, URL, AbortSignal, TextEncoder, setTimeout, clearTimeout, crypto: { randomUUID, subtle: webcrypto.subtle, getRandomValues: array => webcrypto.getRandomValues(array) }, console: { warn: (...args) => warnings.push(args) },
     fetch: async (url, options) => { requests.push(new URL(url).pathname); return (fetch || (async () => ({ ok: true, json: async () => ({ jobId: 'desktop-job' }) })))(url, options); } });
   context.importScripts = (...files) => files.forEach(file => vm.runInContext(fs.readFileSync(path.join(extension, file), 'utf8'), context, { filename: file }));
   vm.runInContext(fs.readFileSync(path.join(extension, 'service-worker.js'), 'utf8'), context, { filename: 'service-worker.js' });
   const popup = { id: chrome.runtime.id, url: chrome.runtime.getURL('popup.html') };
   return {
-    context, session, quota, warnings, requests,
+    context, session, quota, warnings, requests, badges, opened, local: localStorage,
     content: (patch = {}) => ({ id: chrome.runtime.id, tab: clone(tab), frameId: 0, documentId: tab.documentId, url: tab.url, ...patch }),
     message(message, sender = popup) { return new Promise(resolve => listeners.message(message, sender, value => resolve(clone(value)))); },
     async emit(name, details) { await listeners[name](details); for (let turn = 0; turn < 20; turn++) await new Promise(setImmediate); },
@@ -204,4 +207,56 @@ test('the store build refuses YouTube handoff while development builds keep it',
   assert.equal(blocked.ok, false);
   assert.match(blocked.error, /paste it into the SnagThis desktop app/);
   assert.deepEqual(worker.requests, [], 'no desktop handoff is attempted');
+});
+
+const reply = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+test('one-click pairing: the worker keeps the secret, polls, stores its own key and badges the outcome', async () => {
+  const bodies = [];
+  let decided = false;
+  const worker = loadWorker({ local: {}, fetch: async (url, options) => {
+    const route = new URL(url).pathname; const body = JSON.parse(options.body || '{}'); bodies.push({ route, body, headers: options.headers });
+    if (route === '/v1/pair/request') return reply(201, { requestId: 'c'.repeat(32), matchCode: '4719', expiresInMs: 120000, status: 'pending' });
+    if (route === '/v1/pair/status') return reply(200, decided ? { status: 'approved', token: 'd'.repeat(64) } : { status: 'pending', expiresInMs: 110000 });
+    return reply(404, {});
+  } });
+  const started = await worker.message({ cmd: 'PAIR_START', tabId: 7, apiBase: 'http://127.0.0.1:39999' });
+  assert.equal(started.ok, true);
+  assert.equal(started.state.status, 'waiting');
+  assert.equal(started.state.matchCode, '4719');
+  const request = bodies.find(entry => entry.route === '/v1/pair/request');
+  assert.match(request.body.secret, /^[0-9a-f]{64}$/);
+  assert.equal(request.headers.Authorization, undefined, 'a request carries no credential');
+  const publicState = JSON.stringify(worker.session.values['snagthis:pairing']);
+  assert.equal(publicState.includes(request.body.secret), false, 'the popup-visible state never holds the secret');
+  assert.deepEqual(worker.badges.filter(badge => badge.text === '4719').map(badge => badge.tabId ?? null), [null, 7], 'the badge repeats the digits');
+  assert.equal(worker.local.values.appToken, undefined);
+  await new Promise(resolve => setTimeout(resolve, 1300));
+  assert.deepEqual(worker.opened, ['snagthis://open/pair'], 'SnagThis is opened by a link carrying no ID or secret');
+  decided = true;
+  for (let turn = 0; turn < 40 && worker.session.values['snagthis:pairing']?.status !== 'connected'; turn++) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(worker.session.values['snagthis:pairing'].status, 'connected');
+  assert.equal(worker.session.values['snagthis:pairing-secret'], undefined, 'the secret is dropped once used');
+  assert.equal(worker.local.values.appToken, 'd'.repeat(64));
+  assert.equal(worker.local.values.appTokenVersion, 2);
+  assert.ok(bodies.filter(entry => entry.route === '/v1/pair/status').every(entry => entry.body.secret === request.body.secret));
+  assert.equal(worker.badges.at(-1).text, '✓');
+  assert.equal((await worker.message({ cmd: 'PAIR_ACK' })).ok, true);
+  assert.equal(worker.session.values['snagthis:pairing'], undefined);
+  assert.equal(worker.badges.some(badge => badge.text === '' && badge.tabId === undefined), true, 'the celebration clears the badge');
+  // Content scripts cannot start or read pairing.
+  const fromPage = await worker.message({ cmd: 'PAIR_STATE' }, worker.content());
+  assert.equal(fromPage.ok, false);
+});
+
+test('a key from before per-browser keys is swapped once for this browser\'s own', async () => {
+  const worker = loadWorker({ local: { appToken: 'legacy-token' }, fetch: async (url, options) => {
+    if (new URL(url).pathname === '/v1/pair/upgrade') { assert.equal(options.headers.Authorization, 'Bearer legacy-token'); return reply(200, { token: 'e'.repeat(64), paired: true }); }
+    return reply(200, { jobId: 'desktop-job' });
+  } });
+  assert.equal((await worker.message({ cmd: 'PAIR_UPGRADE', apiBase: 'http://127.0.0.1:39999' })).ok, true);
+  assert.equal(worker.local.values.appToken, 'e'.repeat(64));
+  assert.equal(worker.local.values.appTokenVersion, 2);
+  await worker.message({ cmd: 'PAIR_UPGRADE', apiBase: 'http://127.0.0.1:39999' });
+  assert.deepEqual(worker.requests, ['/v1/pair/upgrade'], 'the swap happens once');
 });

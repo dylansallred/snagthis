@@ -91,8 +91,8 @@ test('desktop types the logo and presses play on first launch, settles briefly a
     const brand = page.locator('.top-bar').getByRole('img', { name: 'SnagThis', exact: true });
     await expect(brand).toBeVisible();
     expect((await brand.boundingBox()).width).toBe(120);
-    // Hover shine: one sweep per pointer entry, clipped to the artwork.
-    await brand.hover();
+    // The logo drags the window, so its shine plays on window focus: one sweep, clipped to the artwork.
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect(page.locator('.app-brand.shining')).toHaveCount(1);
     expect(await page.locator('.app-brand').evaluate(element => getComputedStyle(element, '::after').maskImage)).toMatch(/snagthis-logo-title\.svg|%3ctitle%3eSnagThis%3c/); // Vite may inline the small SVG.
     await expect(page.locator('.app-brand.shining')).toHaveCount(0);

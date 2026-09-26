@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type PointerEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { Link2, LoaderCircle, Search, X } from 'lucide-react';
 import { SnagThisLogo } from './BrandLockup';
 import { ui } from '@/lib/strings';
@@ -26,17 +26,23 @@ export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit
     observer.observe(nav);
     return () => observer.disconnect();
   }, [filter, searchOpen, showNavigation]);
-  const lastShine = useRef(0);
+  const lastShine = useRef(-Infinity);
   // One shine per pointer entry, at most once a second; CSS removes it under reduced motion.
-  const shine = (event: PointerEvent<HTMLElement>) => {
-    const now = performance.now();
-    if (now - lastShine.current < 1000) return;
-    lastShine.current = now;
-    const brand = event.currentTarget;
-    brand.classList.remove('shining');
-    void brand.offsetWidth;
-    brand.classList.add('shining');
-  };
+  // The logo is part of the window's drag area, where macOS delivers no pointer events,
+  // so its shine plays when the window comes into focus (at most once a minute).
+  const brandBox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const shine = () => {
+      const brand = brandBox.current, now = performance.now();
+      if (!brand || now - lastShine.current < 60_000) return;
+      lastShine.current = now;
+      brand.classList.remove('shining');
+      void brand.offsetWidth;
+      brand.classList.add('shining');
+    };
+    window.addEventListener('focus', shine);
+    return () => window.removeEventListener('focus', shine);
+  }, []);
   const followPointer = (event: PointerEvent<HTMLElement>) => {
     const button = (event.target as HTMLElement).closest<HTMLElement>('button');
     if (!button) return;
@@ -49,8 +55,8 @@ export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit
   // the browser gallery draws placeholder lights instead.
   return <header className="top-bar drag-region">
     {gallery && <div className="window-lights" aria-hidden="true"><i /><i /><i /></div>}
-    {/* no-drag so the pointer reaches the logo's hover shine; the rest of the header drags the window. */}
-    <div className="app-brand no-drag" onPointerEnter={shine} onAnimationEnd={(event) => event.currentTarget.classList.remove('shining')}><SnagThisLogo ref={brandRef} className="app-wordmark" /></div>
+    {/* The logo drags the window like the rest of the header. */}
+    <div className="app-brand" ref={brandBox} onAnimationEnd={(event) => event.currentTarget.classList.remove('shining')}><SnagThisLogo ref={brandRef} className="app-wordmark" /></div>
     <form className={`paste-form no-drag${firstLaunch ? ' first-launch' : ''}`} onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
       <div className="paste-field">
         {checking ? <LoaderCircle className="spin" /> : <Link2 />}

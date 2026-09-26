@@ -10,7 +10,7 @@ The extension uses Chrome's `downloads` permission to start and manage direct MP
 
 To restore those download rows, SnagThis stores Chrome download IDs and limited display metadata locally. It does not persist source URLs or request headers in its browser-download records. Chrome maintains its own download history, including source URLs and file locations, which you can manage in Chrome Downloads.
 
-The desktop stores download state, preferences and a saved-file index locally. Its private bridge is paired with the extension using an installation-scoped token. Authentication headers and cookies must not be written into persisted queue files or support bundles. Diagnostics are redacted before export; users choose whether to share them.
+The desktop stores download state, preferences and a saved-file index locally. Its private bridge is paired with each browser's extension using a separate token, which either app can disconnect. Authentication headers and cookies must not be written into persisted queue files or support bundles. Diagnostics are redacted before export; users choose whether to share them.
 
 For a YouTube download that requires sign-in, the desktop offers **Use Chrome sign-in**. After you confirm, yt-dlp reads the local Chrome cookie store and uses the matching YouTube session for that download attempt. This is off by default; the choice is not saved or reused for other downloads. SnagThis does not receive the cookie values from yt-dlp or include them in its library or diagnostics.
 

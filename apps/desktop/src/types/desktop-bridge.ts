@@ -25,6 +25,27 @@ export interface ConnectionState {
   pairedExtensions: number;
 }
 
+/** A one-click connection request, as shown in the trusted desktop UI. Never holds a token or secret. */
+export interface PairingRequest {
+  requestId: string;
+  status: 'pending' | 'approved' | 'collected' | 'denied' | 'expired' | 'conflict' | 'cancelled';
+  matchCode: string;
+  expiresAt: number;
+  extensionId: string;
+  extensionVersion: string;
+  /** 'store' is a known Chrome Web Store ID; 'connected-before' re-pairs a connected extension. */
+  identity: 'store' | 'connected-before' | 'unrecognized';
+}
+
+export interface ConnectedExtension {
+  id: string;
+  extensionId: string;
+  createdAt: number;
+  lastSeenAt: number | null;
+  legacy: boolean;
+  identity: 'store' | 'unrecognized';
+}
+
 export interface WindowState {
   fullScreen: boolean;
 }
@@ -54,6 +75,14 @@ export interface DesktopBridge {
   locateHistoryFile(historyId: string): Promise<DesktopActionResult>;
   getPairingInfo(): Promise<{ code: string; expiresAt: number }>;
   getConnectionState(): Promise<ConnectionState>;
+  getPairingRequest(): Promise<PairingRequest | null>;
+  decidePairing(requestId: string, allow: boolean): Promise<{ ok: boolean; status: string }>;
+  listExtensions(): Promise<ConnectedExtension[]>;
+  disconnectExtension(id: string): Promise<{ ok: boolean }>;
+  /** snagthis://open/pair while a request is pending. */
+  onPairingShow(cb: (request: PairingRequest) => void): () => void;
+  onPairingState(cb: (request: PairingRequest | null) => void): () => void;
+  onExtensionsChange(cb: (extensions: ConnectedExtension[]) => void): () => void;
   openSaveFolder(): Promise<DesktopActionResult>;
   openSettings(): Promise<DesktopActionResult>;
   openExternal(url: string): Promise<DesktopActionResult>;

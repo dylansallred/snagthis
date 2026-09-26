@@ -1,0 +1,60 @@
+/* One-click pairing (docs/design/prototypes/pairing option 2): Approve dialog, pixel match code, celebration. */
+.pairing-dialog { width: 400px; max-width: calc(100% - 32px); display: grid; justify-items: center; gap: 0; padding: 22px 22px 18px; border-radius: 12px; background: var(--color-popover); border: 1px solid var(--color-border); box-shadow: 0 30px 80px rgb(0 0 0 / .6); text-align: center; outline: none; }
+.pairing-dialog h2 { margin: 10px 0 4px; font-size: 16px; font-weight: 620; color: var(--color-foreground); }
+.pairing-dialog > p { margin: 0 0 14px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.pairing-dialog .pairing-hint { margin: 10px 0 0; font-size: 11.5px; color: var(--color-foreground-subtle); }
+.pairing-alert { width: 34px; height: 34px; color: var(--color-status-paused); }
+.pairing-buttons { display: flex; gap: 8px; width: 100%; justify-content: center; }
+.pairing-buttons .row-action { flex: 1; height: 34px; }
+.pairing-buttons .row-action:disabled { opacity: .5; cursor: default; }
+
+/* Pixel digits in bevelled cells; accent-aware through the logo's bevel shades. */
+.pairing-digits { display: inline-flex; gap: 6px; }
+.pairing-digit { width: 38px; height: 50px; display: grid; place-items: center; color: #fff; background: var(--color-background); border: 2px solid var(--color-border); box-shadow: inset 2px 2px 0 hsl(215 15% 24%), inset -2px -2px 0 #000; }
+.pairing-digit svg { display: block; }
+.pairing-digits.hot .pairing-digit { border-color: var(--accent-bevel-dark, #bd3f00); box-shadow: inset 2px 2px 0 var(--accent-bevel-light, #ffb238), inset -2px -2px 0 var(--accent-bevel-dark, #bd3f00); background: color-mix(in srgb, var(--accent-bevel-dark, #bd3f00) 18%, #0b0d10); color: #ffe3cc; }
+.pairing-digits.bad .pairing-digit { border-color: hsl(0 50% 40%); color: hsl(0 80% 80%); }
+.pairing-digits.sm { gap: 4px; }
+.pairing-digits.sm .pairing-digit { width: 26px; height: 34px; border-width: 1px; box-shadow: inset 1px 1px 0 hsl(215 15% 24%), inset -1px -1px 0 #000; }
+.pairing-digits.sm.hot .pairing-digit { box-shadow: inset 1px 1px 0 var(--accent-bevel-light, #ffb238), inset -1px -1px 0 var(--accent-bevel-dark, #bd3f00); }
+
+.pairing-who { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; margin: 14px 0; padding: 9px 11px; border-radius: 8px; background: var(--color-background); border: 1px solid var(--color-border-subtle); font-size: 12px; }
+.pairing-who > svg { flex: none; }
+.pairing-who-icon { width: 22px; height: 22px; color: var(--color-status-paused); }
+.pairing-who-text { min-width: 0; flex: 1; }
+.pairing-who-text b { display: block; font-weight: 570; font-size: 12.5px; line-height: 1.35; color: var(--color-foreground); }
+.pairing-who-text small { display: block; margin-top: 2px; color: var(--color-foreground-subtle); font: 10.5px/1.35 var(--font-mono); overflow-wrap: anywhere; }
+.pairing-who .ok { flex: none; max-width: 110px; font-size: 11px; line-height: 1.35; text-align: right; color: var(--color-segment-completed); }
+.pairing-who .warn { flex: none; max-width: 96px; font-size: 11px; line-height: 1.35; text-align: right; color: var(--color-status-paused); }
+
+/* Connected: the logo's button presses while pixels burst, then rests. */
+.pairing-yay { position: relative; width: 64px; height: 64px; margin-top: 4px; }
+.pairing-burst i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; background: var(--c); opacity: 0; animation: pairing-burst 900ms steps(6) forwards; }
+@keyframes pairing-burst { 0% { opacity: 1; transform: rotate(var(--a)) translateX(10px); } 80% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--d, 54px)); } }
+.pairing-dialog h2.pairing-yay-title { margin-top: 14px; font-family: var(--font-mono); font-size: 22px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.pairing-yay-title em { font-style: normal; color: var(--accent-logo, #fa5d0e); }
+
+/* Settings → Chrome extension: pending request, connected browsers, disconnect. */
+.pairing-pending { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--accent-bevel-dark, #bd3f00); background: var(--color-background); font-size: 12.5px; }
+.pairing-pending .pairing-pending-text { flex: 1; min-width: 0; }
+.pairing-pending b { display: block; line-height: 1.35; }
+.pairing-pending small { display: block; line-height: 1.4; color: var(--color-foreground-subtle); font-size: 11.5px; }
+.pairing-spinner { width: 13px; height: 13px; flex: none; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: pairing-spin 700ms linear infinite; color: var(--color-foreground-muted); }
+@keyframes pairing-spin { to { transform: rotate(360deg); } }
+.connected-extensions { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
+.connected-extension { display: grid; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface-row); }
+.connected-extension-row { display: flex; align-items: center; gap: 10px; }
+.connected-extension-row > svg { flex: none; width: 16px; height: 16px; color: var(--color-status-completed); }
+.connected-extension-text { flex: 1; min-width: 0; }
+.connected-extension-text b { display: block; font-weight: 570; font-size: 12.5px; line-height: 1.35; }
+.connected-extension-text small { display: block; color: var(--color-foreground-subtle); font-size: 11.5px; line-height: 1.4; }
+.connected-extension-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.row-action.danger-action { color: var(--color-destructive); border: 1px solid color-mix(in srgb, var(--color-destructive) 40%, transparent); }
+.pairing-settings .pairing-note { margin: 0 0 10px; font-size: 11.5px; color: var(--color-foreground-subtle); }
+.pairing-code-fallback { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border-subtle); }
+.pairing-code-fallback > p { margin: 0 0 8px; color: var(--color-foreground-muted); font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pairing-burst { display: none; }
+  .pairing-spinner { animation: none; border-right-color: currentColor; opacity: .6; }
+}

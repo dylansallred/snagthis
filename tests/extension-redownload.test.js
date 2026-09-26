@@ -29,7 +29,7 @@ function loadWorker(tab, token) {
   const event = name => ({ addListener: listener => { listeners[name] = listener; } });
   const requests = [];
   const chrome = {
-    storage: { session: storage(), local: storage({ appToken: token }) },
+    storage: { session: storage(), local: storage({ appToken: token, appTokenVersion: 2 }) },
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
     runtime: { id: 'a'.repeat(32), getURL: value => `chrome-extension://${'a'.repeat(32)}/${value}`,
       getManifest: () => ({ version: '1.0.0' }), onMessage: event('message'), onInstalled: event('installed') },

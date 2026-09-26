@@ -6,7 +6,7 @@ const { root, startRenderer, launchDesktop } = require('./helpers');
 const { startFixtureServer } = require('../fixtures/server');
 const { probeFile } = require('../fixtures/engine');
 
-test('full loop: actual Chrome pairing and 480p selection → Electron → playable saved video', async () => {
+test('full loop: actual one-click Chrome pairing and 480p selection → Electron → playable saved video', async () => {
   test.setTimeout(150_000);
   const fixture = await startFixtureServer();
   const renderer = await startRenderer();
@@ -22,13 +22,6 @@ test('full loop: actual Chrome pairing and 480p selection → Electron → playa
     await expect.poll(() => desktop.evaluate(async () => (await window.desktop.getAppInfo()).apiStartupState)).toBe('ready');
     await desktop.evaluate((folder) => window.desktop.saveSettings({ outputDirectory: folder, notifyOnComplete: false, queueMaxConcurrent: 1, queueAutoStart: true }), outputDirectory);
 
-    // Use the actual product pairing flow; no test bearer token or fake API.
-    await desktop.getByRole('button', { name: 'Settings', exact: true }).click();
-    await desktop.getByRole('tab', { name: 'Chrome extension', exact: true }).click();
-    await desktop.getByRole('button', { name: 'Show connection code', exact: true }).click();
-    const code = (await desktop.getByLabel('Connection code', { exact: true }).textContent()).trim();
-    expect(code).toMatch(/^\d{6}$/);
-
     const extensionPath = path.join(root, 'apps/extension');
     context = await chromium.launchPersistentContext(browserProfile, {
       channel: 'chromium', headless: true,
@@ -40,12 +33,24 @@ test('full loop: actual Chrome pairing and 480p selection → Electron → playa
     const tabId = await worker.evaluate(async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url)?.id, source.url());
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${new URL(worker.url()).host}/popup.html?tab=${tabId}&apiBase=${encodeURIComponent(native.baseUrl)}`);
+    // Use the actual one-click pairing flow; no test bearer token or fake API. Connect asks
+    // the real bridge, then snagthis://open/pair (delivered to Electron as Chrome would)
+    // brings up the Approve dialog, where the digits must match before Allow.
     await popup.locator('#connection-banner').getByRole('button', { name: 'Connect', exact: true }).click();
-    // Six digits submit on their own; no Connect click is needed.
-    await popup.getByLabel('Connection code', { exact: true }).fill(code);
+    const code = await popup.locator('#sheet .pair-digits').getAttribute('data-code');
+    expect(code).toMatch(/^\d{4}$/);
+    await native.app.evaluate(({ app }) => { app.emit('open-url', { preventDefault() {} }, 'snagthis://open/pair'); });
+    const approve = desktop.getByRole('dialog', { name: 'Chrome wants to connect' });
+    await expect(approve.getByRole('img', { name: /^Match code/ })).toHaveAttribute('data-code', code);
+    // A reloaded window gets the same request back; it is still the only pending one.
+    await desktop.reload();
+    await expect(approve.getByRole('img', { name: /^Match code/ })).toHaveAttribute('data-code', code);
+    await approve.getByRole('button', { name: 'Allow', exact: true }).click();
+    await desktop.getByRole('dialog', { name: 'Chrome connected' }).getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(popup.locator('#sheet-title')).toHaveText('Connected');
+    await popup.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(popup.locator('#connection-banner')).toBeHidden();
     await expect.poll(() => desktop.evaluate(async () => (await window.desktop.getConnectionState()).extensionConnected)).toBe(true);
-    await desktop.getByRole('button', { name: 'Close settings', exact: true }).click();
 
     await expect(popup.locator('.video-row')).toHaveCount(1);
     await popup.getByRole('button', { name: 'Choose quality', exact: true }).click();

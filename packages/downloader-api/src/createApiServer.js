@@ -10,7 +10,7 @@ const WebSocket = require('ws');
 const { createHash } = require('node:crypto');
 const rateLimit = require('express-rate-limit');
 const { API, HEADER, CLIENT, validateSelection, classifyProblem, isAccent, isAccentTimestamp } = require('@m3u8/contracts');
-const { createBridgeSecurity, redact } = require('./utils/security');
+const { createBridgeSecurity, redact, EXTENSION_ORIGIN } = require('./utils/security');
 const { generatePreviewAssets, PREVIEW_CLIP_SUFFIX } = require('@m3u8/downloader-engine/src/core/PreviewClip');
 const { isMediaFilePath, normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
 const {
@@ -165,6 +165,7 @@ function createApiServer(options = {}) {
     onOpenFile,
     onLocateFile,
     onExtensionConnected,
+    onPairingChange,
     onGetSettings,
     onSaveSettings,
     onGetAppearance,
@@ -177,7 +178,7 @@ function createApiServer(options = {}) {
   }
 
   if (!['127.0.0.1', '::1', 'localhost'].includes(host)) throw new Error('The desktop bridge must bind to loopback');
-  const security = createBridgeSecurity({ dataDir, authToken, allowedOrigins, onExtensionConnected });
+  const security = createBridgeSecurity({ dataDir, authToken, allowedOrigins, onExtensionConnected, onPairingChange });
   const resolvedDownloadDir = downloadDir || path.join(dataDir, 'downloads');
   fs.mkdirSync(resolvedDownloadDir, { recursive: true });
 
@@ -208,13 +209,18 @@ function createApiServer(options = {}) {
   });
 
   app.disable('x-powered-by');
+  // One-click pairing routes answer only extension pages: not `null` (a sandboxed
+  // iframe on any website sends it), not web origins, and not native clients.
+  const ONE_CLICK_PAIRING_PATHS = new Set(['/v1/pair/request', '/v1/pair/status', '/v1/pair/cancel']);
   app.use((req, res, next) => {
     const origin = String(req.headers.origin || '');
-    const publicRequest = req.path === '/v1/health' || req.path === '/v1/pair/complete';
+    const oneClickPairing = ONE_CLICK_PAIRING_PATHS.has(req.path);
+    const publicRequest = req.path === '/v1/health' || req.path === '/v1/pair/complete' || oneClickPairing;
     const expectedPort = server.address() && server.address().port;
     const requestHost = String(req.headers.host || '');
     const allowedHosts = new Set([`127.0.0.1:${expectedPort}`, `localhost:${expectedPort}`, `[::1]:${expectedPort}`]);
-    if (!allowedHosts.has(requestHost) || !security.originAllowed(origin, { pairingRequest: publicRequest })) {
+    if (!allowedHosts.has(requestHost) || !security.originAllowed(origin, { pairingRequest: publicRequest })
+      || (oneClickPairing && !EXTENSION_ORIGIN.test(origin))) {
       return res.status(403).json({ error: 'Origin not allowed' });
     }
     if (origin) {
@@ -225,10 +231,12 @@ function createApiServer(options = {}) {
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Cache-Control', 'private, no-store');
     if (req.method === 'OPTIONS') return res.status(204).end();
-    if (!publicRequest && !security.authenticate(req) && !security.verifyAsset(req)) {
+    const client = security.authenticate(req);
+    if (!publicRequest && !client && !security.verifyAsset(req)) {
       return res.status(401).json({ error: 'Connect this extension in SnagThis settings', code: 'PAIRING_REQUIRED' });
     }
-    if (security.authenticate(req)) security.markConnected(req);
+    req.bridgeClient = client;
+    if (client) security.markConnected(req, client);
     const json = res.json.bind(res);
     res.json = (payload) => json(security.publicPayload(payload));
     next();
@@ -282,7 +290,7 @@ function createApiServer(options = {}) {
   app.use('/api', (req, res, next) => {
     const origin = String(req.headers.origin || '').trim();
     const client = String(req.headers[HEADER.client.toLowerCase()] || '').trim();
-    if (origin.startsWith('chrome-extension://') || client === CLIENT.extension) {
+    if (origin.startsWith('chrome-extension://') || client === CLIENT.extension || req.bridgeClient?.kind === 'extension') {
       res.status(403).json({ error: 'Use /v1 extension bridge endpoints for extension clients' });
       return;
     }
@@ -1542,6 +1550,46 @@ function createApiServer(options = {}) {
     return res.json(result);
   });
 
+  // One-click approve. The request route counts its own 3 per 5 minutes; status
+  // polling gets a separate bound. Nothing here approves anything: only the
+  // desktop's Allow (Electron IPC) does.
+  const pairingStatusLimiter = rateLimit({ windowMs: 60_000, max: 240, standardHeaders: true, legacyHeaders: false });
+  const pairingInput = (req) => ({
+    origin: String(req.headers.origin || ''),
+    requestId: req.body && req.body.requestId,
+    secret: req.body && req.body.secret,
+  });
+  app.post('/v1/pair/request', (req, res) => {
+    const result = security.requestPairing({
+      origin: String(req.headers.origin || ''),
+      secret: req.body && req.body.secret,
+      extensionVersion: req.headers['x-extension-version'],
+    });
+    res.status(result.status).json(result.body);
+  });
+  app.post('/v1/pair/status', pairingStatusLimiter, (req, res) => {
+    const result = security.pairingStatus(pairingInput(req));
+    res.status(result.status).json(result.body);
+  });
+  app.post('/v1/pair/cancel', pairingStatusLimiter, (req, res) => {
+    const result = security.cancelPairing(pairingInput(req));
+    res.status(result.status).json(result.body);
+  });
+  // A paired extension forgets itself here ("Disconnect" in the popup).
+  app.post('/v1/pair/disconnect', (req, res) => {
+    const client = req.bridgeClient;
+    if (!client || client.kind !== 'extension') return res.status(400).json({ error: 'Only a connected extension can disconnect itself' });
+    const entry = client.entry;
+    if (!entry || !security.revokeExtension(entry.id)) return res.status(404).json({ error: 'This extension is not connected' });
+    return res.json({ ok: true });
+  });
+  // Extensions paired before per-extension tokens trade the shared credential for their own.
+  app.post('/v1/pair/upgrade', (req, res) => {
+    const issued = security.upgradeLegacy(req.bridgeClient);
+    if (!issued) return res.status(409).json({ error: 'This connection is already current', code: 'TOKEN_CURRENT' });
+    return res.json({ token: issued, paired: true });
+  });
+
   app.post('/v1/jobs', async (req, res) => {
     let body;
     try {
@@ -1997,8 +2045,9 @@ function createApiServer(options = {}) {
     handleProtocols: (protocols) => protocols.has('snagthis') ? 'snagthis' : false,
     verifyClient: ({ req }, done) => {
       const allowedHosts = new Set([`127.0.0.1:${server.address()?.port}`, `localhost:${server.address()?.port}`, `[::1]:${server.address()?.port}`]);
-      const allowed = allowedHosts.has(String(req.headers.host || '')) && security.originAllowed(String(req.headers.origin || '')) && security.authenticate(req);
-      if (allowed) security.markConnected(req);
+      const client = allowedHosts.has(String(req.headers.host || '')) && security.originAllowed(String(req.headers.origin || '')) ? security.authenticate(req) : null;
+      const allowed = Boolean(client);
+      if (client) security.markConnected(req, client);
       done(allowed, allowed ? 200 : 401, allowed ? 'OK' : 'Unauthorized');
     },
   });
@@ -2373,6 +2422,10 @@ function createApiServer(options = {}) {
     stop,
     getAuthToken: () => security.token,
     getPairingInfo: security.getPairingInfo,
+    getPendingPairing: security.getPendingPairing,
+    decidePairing: security.decidePairing,
+    listExtensions: security.listExtensions,
+    revokeExtension: security.revokeExtension,
     getConnectionState: security.getConnectionState,
     getQueueSettings: () => queueManager.getSettings(),
     updateQueueSettings: (settings) => queueManager.updateSettings(settings || {}),

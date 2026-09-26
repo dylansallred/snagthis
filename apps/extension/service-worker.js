@@ -350,17 +350,148 @@ async function storeMedia(tabId, incoming, frameId = 0, topUrl = '', observed = 
 function localApiBase(candidate) {
   try { const url = new URL(candidate); return url.protocol === 'http:' && url.hostname === '127.0.0.1' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash ? url.origin : API_BASE; } catch { return API_BASE; }
 }
+function bridgeHeaders(token) {
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), 'X-Client': 'snagthis-extension', 'X-Protocol-Version': '1', 'X-Extension-Version': chrome.runtime.getManifest().version };
+}
 async function appRequest(path, body, apiBase = API_BASE, method = 'POST') {
-  const { appToken } = await chrome.storage.local.get('appToken');
+  const appToken = await ensureCurrentToken(apiBase);
   if (!appToken) throw new Error('Connect SnagThis before downloading.');
   let response;
   try {
-    response = await fetch(`${apiBase}${path}`, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${appToken}`, 'X-Client': 'snagthis-extension', 'X-Protocol-Version': '1', 'X-Extension-Version': chrome.runtime.getManifest().version }, ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20000) });
+    response = await fetch(`${apiBase}${path}`, { method, headers: bridgeHeaders(appToken), ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20000) });
   } catch (error) { throw new Error(D.friendlyError(error)); }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) { const error = new Error(data.error?.message || data.error || 'Could not start the download.'); error.status = response.status; throw error; }
   return data;
 }
+
+/* ── One-click pairing (docs/design/prototypes/pairing option 2) ──
+ * The worker owns the request because Chrome closes the popup as soon as SnagThis
+ * takes focus. The request secret lives only in storage.session, which is memory-only
+ * and limited to trusted extension contexts; the popup sees just the public state. */
+const PAIRING_KEY = 'snagthis:pairing';
+const PAIRING_SECRET_KEY = 'snagthis:pairing-secret';
+const PAIRING_OPEN_DELAY_MS = 1200;
+const PAIRING_POLL_MS = 1000;
+let pairingPoll = null;
+let tokenUpgrade = null; let tokenUpgradeUnavailable = false;
+async function bridgePost(apiBase, path, body, token) {
+  const response = await fetch(`${apiBase}${path}`, { method: 'POST', headers: bridgeHeaders(token), body: JSON.stringify(body || {}), signal: AbortSignal.timeout(8000) });
+  return { status: response.status, data: await response.json().catch(() => ({})) };
+}
+async function pairingState() { return (await chrome.storage.session.get(PAIRING_KEY))[PAIRING_KEY] || null; }
+async function refreshTabBadge(tabId) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  const count = SnagThisHls.collapseDetections(visibleItems(await readPage(tabId))).length;
+  await chrome.action.setBadgeText({ tabId, text: count ? String(count) : '' }).catch(() => {});
+}
+// While waiting, the toolbar badge repeats the four digits, so they stay visible after the popup closes.
+async function pairingBadge(text, tabId) {
+  await chrome.action.setBadgeBackgroundColor({ color: text === '✓' ? '#1f9d55' : SnagThisAccentIcon.badgeColor() }).catch(() => {});
+  await chrome.action.setBadgeText({ text }).catch(() => {});
+  if (Number.isInteger(tabId) && tabId >= 0) {
+    if (text) await chrome.action.setBadgeText({ tabId, text }).catch(() => {});
+    else await refreshTabBadge(tabId).catch(() => {});
+  }
+  if (!text) await chrome.action.setBadgeBackgroundColor({ color: SnagThisAccentIcon.badgeColor() }).catch(() => {});
+}
+async function openPairingApp() { await chrome.tabs.create({ url: 'snagthis://open/pair' }).catch(() => {}); }
+async function finishPairing(state, status, token) {
+  if (token) await chrome.storage.local.set({ appToken: token, appTokenVersion: 2 });
+  await chrome.storage.session.remove([PAIRING_SECRET_KEY, ...(token ? ['snagthis:disconnected'] : [])]);
+  const next = { ...state, status, finishedAt: Date.now() };
+  await chrome.storage.session.set({ [PAIRING_KEY]: next });
+  await pairingBadge(status === 'connected' ? '✓' : '', state.tabId);
+  return next;
+}
+async function pollPairing() {
+  for (;;) {
+    const stored = await chrome.storage.session.get([PAIRING_KEY, PAIRING_SECRET_KEY]);
+    const state = stored[PAIRING_KEY]; const ticket = stored[PAIRING_SECRET_KEY];
+    if (!state || state.status !== 'waiting' || !ticket || ticket.requestId !== state.requestId) return;
+    let result = null;
+    try { result = await bridgePost(ticket.apiBase, '/v1/pair/status', { requestId: ticket.requestId, secret: ticket.secret }); } catch { /* SnagThis closed or busy; keep waiting until expiry. */ }
+    const status = result?.status === 200 ? result.data.status : result?.status === 404 ? 'failed' : null;
+    if (status === 'approved' && result.data.token) { await finishPairing(state, 'connected', result.data.token); return; }
+    if (['denied', 'expired', 'conflict', 'cancelled', 'failed'].includes(status)) { await finishPairing(state, status); return; }
+    if (status === 'approved') { await finishPairing(state, 'failed'); return; }
+    if (Date.now() > state.expiresAt + 5000) { await finishPairing(state, 'expired'); return; }
+    await new Promise(resolve => setTimeout(resolve, PAIRING_POLL_MS));
+  }
+}
+function resumePairingPoll() {
+  if (!pairingPoll) pairingPoll = pollPairing().catch(error => console.warn('SnagThis could not check its connection request.', error)).finally(() => { pairingPoll = null; });
+  return pairingPoll;
+}
+async function startPairing(message) {
+  const apiBase = !chrome.runtime.getManifest().update_url ? localApiBase(message.apiBase) : API_BASE;
+  const tabId = Number.isInteger(message.tabId) ? message.tabId : null;
+  const current = await pairingState();
+  if (current?.status === 'waiting' && current.expiresAt > Date.now()) { resumePairingPoll(); return current; }
+  const secret = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  let result;
+  try { result = await bridgePost(apiBase, '/v1/pair/request', { secret }); }
+  catch { const state = { status: 'offline', finishedAt: Date.now() }; await chrome.storage.session.set({ [PAIRING_KEY]: state }); return state; }
+  if (result.status !== 201 || !/^\d{4}$/.test(String(result.data.matchCode)) || !/^[0-9a-f]{32}$/.test(String(result.data.requestId))) {
+    const status = result.status === 409 ? 'conflict' : result.status === 429 ? 'limited' : result.data.code === 'PAIRING_BLOCKED' ? 'blocked' : 'failed';
+    const state = { status, finishedAt: Date.now() };
+    await chrome.storage.session.set({ [PAIRING_KEY]: state });
+    return state;
+  }
+  const expiresInMs = Math.min(Math.max(Number(result.data.expiresInMs) || 120000, 1000), 120000);
+  const state = { status: 'waiting', requestId: result.data.requestId, matchCode: result.data.matchCode, expiresAt: Date.now() + expiresInMs, startedAt: Date.now(), tabId };
+  await chrome.storage.session.set({ [PAIRING_KEY]: state, [PAIRING_SECRET_KEY]: { requestId: state.requestId, secret, apiBase } });
+  await pairingBadge(state.matchCode, tabId);
+  resumePairingPoll();
+  // Show the digits in the popup for a moment, then bring SnagThis forward. The link carries no ID or secret.
+  setTimeout(() => { pairingState().then(latest => { if (latest?.requestId === state.requestId && latest.status === 'waiting') openPairingApp(); }).catch(() => {}); }, PAIRING_OPEN_DELAY_MS);
+  return state;
+}
+async function cancelPairing() {
+  const stored = await chrome.storage.session.get([PAIRING_KEY, PAIRING_SECRET_KEY]);
+  const ticket = stored[PAIRING_SECRET_KEY];
+  if (ticket) await bridgePost(ticket.apiBase, '/v1/pair/cancel', { requestId: ticket.requestId, secret: ticket.secret }).catch(() => {});
+  await chrome.storage.session.remove([PAIRING_KEY, PAIRING_SECRET_KEY]);
+  await pairingBadge('', stored[PAIRING_KEY]?.tabId);
+}
+/** The popup has shown the outcome; clear it and the ✓ badge. */
+async function acknowledgePairing() {
+  const state = await pairingState();
+  if (!state || state.status === 'waiting') return;
+  await chrome.storage.session.remove(PAIRING_KEY);
+  await pairingBadge('', state.tabId);
+}
+/** Extensions paired before per-extension tokens swap the shared credential for their own, once. */
+async function ensureCurrentToken(apiBase = API_BASE) {
+  const { appToken, appTokenVersion } = await chrome.storage.local.get(['appToken', 'appTokenVersion']);
+  if (!appToken || appTokenVersion === 2 || tokenUpgradeUnavailable) return appToken || '';
+  if (!tokenUpgrade) tokenUpgrade = (async () => {
+    try {
+      const result = await bridgePost(apiBase, '/v1/pair/upgrade', {}, appToken);
+      if (result.status === 200 && typeof result.data.token === 'string' && result.data.token.length >= 32) {
+        await chrome.storage.local.set({ appToken: result.data.token, appTokenVersion: 2 });
+        return result.data.token;
+      }
+      if (result.status === 409) await chrome.storage.local.set({ appTokenVersion: 2 });
+      // An older SnagThis without per-browser keys keeps the shared one; ask again after a restart.
+      if (result.status === 404) tokenUpgradeUnavailable = true;
+    } catch { /* SnagThis is closed; upgrade on the next request. */ }
+    return appToken;
+  })().finally(() => { tokenUpgrade = null; });
+  return tokenUpgrade;
+}
+async function disconnectApp(message) {
+  const apiBase = !chrome.runtime.getManifest().update_url ? localApiBase(message.apiBase) : API_BASE;
+  const appToken = await ensureCurrentToken(apiBase);
+  if (appToken) {
+    const result = await bridgePost(apiBase, '/v1/pair/disconnect', {}, appToken);
+    if (result.status !== 200 && result.status !== 401) throw new Error(result.data.error || 'SnagThis could not disconnect this browser.');
+  }
+  await chrome.storage.local.remove(['appToken', 'appTokenVersion']);
+  await chrome.storage.session.set({ 'snagthis:disconnected': true });
+  return { ok: true };
+}
+pairingState().then(state => { if (state?.status === 'waiting') resumePairingPoll(); }).catch(() => {});
 async function downloadMedia(message) {
   const key = `${message.tabId}:${message.mediaId}:${message.backend || 'auto'}`;
   if (pendingDownloads.has(key)) return pendingDownloads.get(key);
@@ -465,6 +596,13 @@ async function handleMessage(message, sender) {
   const tabId = sender.tab?.id;
   if (['STORE_DETECTED_MEDIA', 'PAGE_CONTEXT', 'PAGE_NAVIGATED', 'SERVICE_WORKER_MEDIA'].includes(message.cmd) && Number.isInteger(tabId)) return handleContentMessage(message, sender, tabId);
   if (!trustedPage(sender)) return { ok: false, error: 'Unavailable to this page.' };
+  if (message.cmd === 'PAIR_START') return { ok: true, state: await startPairing(message) };
+  if (message.cmd === 'PAIR_STATE') { const state = await pairingState(); if (state?.status === 'waiting') resumePairingPoll(); return { ok: true, state }; }
+  if (message.cmd === 'PAIR_OPEN_APP') { const state = await pairingState(); if (state?.status === 'waiting') await openPairingApp(); return { ok: true }; }
+  if (message.cmd === 'PAIR_CANCEL') { await cancelPairing(); return { ok: true }; }
+  if (message.cmd === 'PAIR_ACK') { await acknowledgePairing(); return { ok: true }; }
+  if (message.cmd === 'PAIR_UPGRADE') { await ensureCurrentToken(!chrome.runtime.getManifest().update_url ? localApiBase(message.apiBase) : API_BASE); return { ok: true }; }
+  if (message.cmd === 'PAIR_DISCONNECT') return disconnectApp(message);
   if (message.cmd === 'STORE_MEDIA_PREVIEW_METADATA') {
     if (!Number.isInteger(message.tabId) || !Number.isFinite(message.durationSeconds) || message.durationSeconds <= 0) return { ok: false };
     return serializeTab(message.tabId, async () => {

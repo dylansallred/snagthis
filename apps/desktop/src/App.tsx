@@ -23,6 +23,7 @@ import '@/components/layout/PixelChrome.css';
 import type { RowCommand } from '@/components/list/RowDetails';
 import type { QueueJob } from '@/types/queue';
 import { SettingsSheet } from '@/components/settings/SettingsSheet';
+import { PairingApproval } from '@/components/settings/PairingApproval';
 import { defaultSettingsSection, isSettingsSection, type SettingsSectionId } from '@/components/settings/settingsSections';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -365,6 +366,7 @@ function App() {
         <button className="row-action" aria-label={ui.settings} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}><Settings /></button>
       </footer>
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} settings={settings} onSave={save} updater={updater} appInfo={appInfo} api={api} gallery={gallery} />
+      <PairingApproval />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} actions={paletteActions} videos={baseRows} apiBase={gallery ? window.location.origin : apiBase} />
       <Dialog open={!!chromeSessionRow} onOpenChange={(open) => { if (!open && !(chromeSessionRow && busyIds.has(chromeSessionRow.id))) setChromeSessionRow(null); }}><DialogContent className="remove-dialog"><DialogTitle>{ui.chromeSessionTitle}</DialogTitle><DialogDescription>{ui.chromeSessionBody}</DialogDescription><p>{ui.chromeSessionHint}</p><div className="remove-options"><button className="row-action labelled primary-action" disabled={!!chromeSessionRow && busyIds.has(chromeSessionRow.id)} onClick={async () => {
         if (!chromeSessionRow) return;
@@ -378,7 +380,7 @@ function App() {
       }}>{ui.useChromeSession}</button><button className="row-action" disabled={!!chromeSessionRow && busyIds.has(chromeSessionRow.id)} onClick={() => setChromeSessionRow(null)}>{ui.cancel}</button></div></DialogContent></Dialog>
       {gallery && <Dialog open={!!galleryVideo} onOpenChange={(open) => { if (!open) setGalleryVideo(null); }}><DialogContent className="gallery-video-dialog"><DialogTitle>{galleryVideo?.title}</DialogTitle><DialogDescription className="sr-only">{ui.galleryVideoDescription}</DialogDescription>{galleryVideo && <video src={galleryVideo.url} controls autoPlay playsInline preload="metadata" aria-label={galleryVideo.title} />}</DialogContent></Dialog>}
       <Dialog open={!!confirm} onOpenChange={(open) => { if (!open && !confirmBusy) setConfirm(null); }}>{confirm?.mode === 'remove'
-        ? <DialogContent className={`remove-popover${confirmPlace?.above ? ' above' : ''}`} showCloseButton={false} style={confirmPlace ? { left: confirmPlace.left, top: confirmPlace.top, '--caret-x': `${confirmPlace.caret}px` } as React.CSSProperties : undefined}><DialogTitle>{ui.removeTitle}</DialogTitle><DialogDescription>{ui.removeBody} {confirm.row.title}</DialogDescription>
+        ? <DialogContent className={`remove-popover translate-x-0 translate-y-0${confirmPlace?.above ? ' above' : ''}`} showCloseButton={false} style={confirmPlace ? { left: confirmPlace.left, top: confirmPlace.top, '--caret-x': `${confirmPlace.caret}px` } as React.CSSProperties : undefined}><DialogTitle>{ui.removeTitle}</DialogTitle><DialogDescription>{ui.removeBody} {confirm.row.title}</DialogDescription>
           <div className="remove-popover-title" title={confirm.row.title} aria-hidden="true">{confirm.row.title}</div>
           <button className="remove-choice" autoFocus disabled={confirmBusy} onClick={() => removeRow('list')}><ListX aria-hidden="true" /><span><strong>{ui.removeList}</strong><small>{ui.keepFile}</small></span></button>
           {confirm.row.state !== 'missing' && <><hr /><button className="remove-choice destructive-text" disabled={confirmBusy} onClick={() => removeRow('trash')}><Trash2 aria-hidden="true" /><span><strong>{ui.trash}</strong><small>{ui.trashAlso}</small></span></button></>}

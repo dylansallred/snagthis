@@ -41,4 +41,20 @@ test('the production renderer bundle starts without Node globals', { timeout: 90
   await page.goto('http://snagthis-production.test/');
   await page.waitForSelector('.workbench', { state: 'attached', timeout: 10_000 });
   assert.deepEqual(errors, []);
+
+  // The production minifier once dropped the sheet's `translate: none`, leaving the
+  // dialog's -50% centring shift: Settings opened half off screen and looked empty.
+  await page.evaluate(() => localStorage.setItem('snagthis.startupSeen', '1'));
+  await page.reload();
+  await page.waitForSelector('.workbench', { state: 'attached', timeout: 10_000 });
+  await page.keyboard.press('Meta+Comma');
+  const sheet = page.locator('.settings-sheet');
+  await sheet.waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(400); // Let the 220ms entrance finish.
+  const box = await sheet.boundingBox();
+  const width = page.viewportSize().width;
+  assert.ok(box.y === 0 && Math.round(box.x + box.width) === width, `Settings sheet should sit against the right edge, got ${JSON.stringify(box)} in ${width}px`);
+  // The sheet covers the header's window-drag strip; it must opt out, or macOS takes
+  // clicks on its close button as window drags.
+  assert.equal(await sheet.evaluate(element => getComputedStyle(element).getPropertyValue('-webkit-app-region') || getComputedStyle(element).getPropertyValue('app-region')), 'no-drag');
 });
