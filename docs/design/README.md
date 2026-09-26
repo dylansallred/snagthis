@@ -1,4 +1,4 @@
-# VidSnag UI design
+# SnagThis UI design
 
 | File | What it is |
 |---|---|

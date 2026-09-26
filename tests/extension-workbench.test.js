@@ -15,7 +15,7 @@ const manifest = hls.parseHlsManifest(`#EXTM3U
 #EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=1280x720,AUDIO="en",SUBTITLES="subs"
 720.m3u8
 `, manifestUrl, { durationSeconds: 60 });
-const item = { id: 'master', url: manifestUrl, type: 'hls', sourcePageTitle: 'A short film', sourcePageUrl: 'https://example.com/watch', manifest, durationSeconds: 60, requestHeadersOrigin: 'https://media.example', requestHeaders: { authorization: 'Bearer media-only' } };
+const item = { id: 'master', url: manifestUrl, type: 'hls', sourcePageTitle: 'A short film', sourcePageUrl: 'https://example.com/watch', manifest, durationSeconds: 60, requestHeadersOrigin: 'https://media.example', requestHeaders: { authorization: 'Bearer media-only' }, networkObserved: true };
 
 test('compatibility guidance identifies the product that needs updating', () => {
   const health = { protocolVersion: 1, supportedProtocolVersions: { min: 1, max: 1 }, minExtensionVersion: '1.0.0' };
@@ -133,6 +133,13 @@ test('media credentials remain scoped and control headers are not forwarded', ()
   assert.deepEqual(payload.headers, {});
 });
 
+test('transport failures become plain-language messages', () => {
+  assert.equal(detection.friendlyError(new TypeError('Failed to fetch')), "SnagThis desktop isn't running. Open it, then try again.");
+  assert.equal(detection.friendlyError(Object.assign(new Error('signal timed out'), { name: 'TimeoutError' })), 'The connection to SnagThis timed out. Try again.');
+  assert.equal(detection.friendlyError('The operation was aborted due to timeout'), 'The connection to SnagThis timed out. Try again.');
+  assert.equal(detection.friendlyError(new Error('Choose an available quality.')), 'Choose an available quality.');
+});
+
 test('popup checks compatibility and restricts development API destinations to loopback', () => {
   assert.equal(model.compatible({ supportedProtocolVersions: { min: 1, max: 1 }, minExtensionVersion: '1.0.0' }), true);
   assert.equal(model.compatible({ supportedProtocolVersions: { min: 2, max: 3 } }), false);
@@ -216,6 +223,10 @@ test('standalone preview uses real low quality, scopes captured headers and reje
   assert.equal(other.headers.get('authorization'), null);
   assert.equal(other.headers.get('range'), 'bytes=0-99');
   assert.equal(sourcePreview.sourceFor({ ...item, mediaKind: 'youtube-page' }), null);
+  const hinted = sourcePreview.sourceFor(hls.collapseDetections([{ ...item, networkObserved: false }])[0]);
+  assert.equal(hinted.trusted, false);
+  assert.deepEqual(hinted.headers, {}, 'a page-reported URL never receives captured headers');
+  assert.equal(sourcePreview.fetchOptions(hinted, hinted.url).credentials, 'omit');
   assert.equal(sourcePreview.nonblack(new Uint8ClampedArray(32 * 18 * 4)), false);
   const frame = new Uint8ClampedArray(32 * 18 * 4);
   for (let index = 0; index < frame.length; index += 4) { frame[index] = index % 255; frame[index + 1] = 90; frame[index + 2] = 120; frame[index + 3] = 255; }

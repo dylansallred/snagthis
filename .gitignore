@@ -29,7 +29,7 @@ Thumbs.db
 apps/extension/popup.css
 
 # Release outputs created by package:extension and the release workflow.
-/vidsnag-extension.zip
+/snagthis-extension.zip
 /release-assets/
 /notarization.json
 # Canonical notices are copied here only for extension packaging.

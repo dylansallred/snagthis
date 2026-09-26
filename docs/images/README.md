@@ -1,8 +1,8 @@
 # README images
 
-These assets show the current VidSnag interfaces, with fictional download states from the existing development galleries. They do not claim real download speeds or successful live-site downloads.
+These assets show the current SnagThis interfaces, with fictional download states from the existing development galleries. They do not claim real download speeds or successful live-site downloads.
 
-- `header.png`: a documentation banner using the original, unchanged VidSnag wordmark from `apps/desktop/src/assets/vidsnag-logo-title.png`.
+- `header.png`: a documentation banner with the SnagThis pixel lockup (the same artwork as `apps/desktop/src/assets/snagthis-logo-title.svg`, at 4×). Regenerate it with `node scripts/render-brand-assets.cjs`.
 - `desktop.png` and `desktop-demo.gif`: the desktop renderer at `/?gallery`, captured at 960 × 660. The expired-link example is removed using the normal row control before recording. The animation demonstrates hover preview, download details, the folder hover treatment, and the Saved filter.
 - `chrome-extension.png` and `extension-demo.gif`: the extension popup at `/apps/extension/popup.html?demo`, served on localhost. The film titles are set using the popup’s Rename control. The animation demonstrates hover previews and pause/resume controls.
 

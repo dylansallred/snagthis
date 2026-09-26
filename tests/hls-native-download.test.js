@@ -91,13 +91,16 @@ test('buildHlsRequestHeaders forces anti-cache headers while preserving caller h
   assert.equal(headers.Pragma, 'no-cache');
 });
 
-test('buildHlsRequestHeaders synthesizes browser-like headers from source page context', () => {
+test('buildHlsRequestHeaders synthesizes browser-like headers from source page context without inventing Origin', () => {
   const headers = buildHlsRequestHeaders({}, {
     sourcePageUrl: 'https://site.example/watch/episode-1',
   });
 
   assert.equal(headers.Referer, 'https://site.example/watch/episode-1');
-  assert.equal(headers.Origin, 'https://site.example');
+  // Origin is only sent by browsers on CORS requests; an invented one makes
+  // some CDNs refuse the request (P-Stream upstreams answer 403).
+  assert.equal(headers.Origin, undefined);
+  assert.equal(buildHlsRequestHeaders({ origin: 'https://site.example' }, { sourcePageUrl: 'https://site.example/watch' }).origin, 'https://site.example');
   assert.match(headers['User-Agent'], /Mozilla\/5\.0/);
   assert.equal(headers['Cache-Control'], 'no-cache');
 });

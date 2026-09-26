@@ -27,7 +27,7 @@ test('real Electron: paste, pause/resume, save, persist, and remove from list sa
     await expect(row.getByRole('button', { name: /^Pause:/ })).toBeVisible();
     await row.getByRole('button', { name: /^Pause:/ }).click();
     await expect(row).toContainText('Paused at');
-    await row.getByRole('button', { name: /^Resume:/ }).click();
+    await row.getByRole('button', { name: /^Resume download:/ }).click();
     await expect(row.getByRole('button', { name: /^Play:/ })).toBeVisible({ timeout: 60_000 });
     await expect(row).toContainText('Saved');
     const history = await window.evaluate(async () => {

@@ -21,7 +21,7 @@ async function openFixture(browser, mode, reducedMotion = 'no-preference') {
     const state = window.openingFixture = { items: mode === 'ready' ? [film] : [], queue: [], headers: [], animations: [], listeners: [], reads: 0, error: mode === 'error' };
     const scan = new Promise(resolve => { state.finishScan = items => { state.items = items; resolve({ ok: true }); }; });
     const health = new Promise(resolve => { state.finishHealth = () => resolve({ status: 'ok', supportedProtocolVersions: { min: 1, max: 1 } }); });
-    state.emit = () => state.listeners.forEach(listener => listener({ 'vidsnag:tab:1': {} }, 'session'));
+    state.emit = () => state.listeners.forEach(listener => listener({ 'snagthis:tab:1': {} }, 'session'));
     const trackHeader = () => state.headers.push(document.getElementById('page-count').textContent);
     trackHeader(); new MutationObserver(trackHeader).observe(document.getElementById('page-count'), { childList: true, subtree: true, characterData: true });
     document.addEventListener('animationstart', event => { if (['popup-enter', 'popup-list-reveal'].includes(event.animationName)) state.animations.push(event.animationName); });
@@ -38,10 +38,10 @@ async function openFixture(browser, mode, reducedMotion = 'no-preference') {
       const value = pathname === '/v1/health' ? await health : pathname === '/v1/queue' ? { queue: state.queue } : { settings: {} };
       return new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
-    window.VidSnagSourcePreview = { sourceFor: () => null };
+    window.SnagThisSourcePreview = { sourceFor: () => null };
   }, { mode, film });
   await page.addStyleTag({ content: fs.readFileSync(path.join(extension, 'popup.css'), 'utf8') });
-  for (const relative of ['packages/contracts/src/strings.js', 'packages/contracts/src/rows.js', 'packages/contracts/src/hls.js', 'packages/contracts/src/selection.js', 'apps/extension/js/detection.js', 'apps/extension/js/browser-downloads.js', 'apps/extension/popup/titles.js', 'apps/extension/popup/model.js', 'apps/extension/popup.js']) {
+  for (const relative of ['packages/contracts/src/strings.js', 'packages/contracts/src/rows.js', 'packages/contracts/src/hls.js', 'packages/contracts/src/selection.js', 'packages/contracts/src/audioTracks.js', 'apps/extension/js/detection.js', 'apps/extension/js/browser-downloads.js', 'apps/extension/popup/titles.js', 'apps/extension/popup/model.js', 'packages/contracts/src/accents.js', 'apps/extension/popup/accent.js', 'apps/extension/popup/pixel.js', 'apps/extension/popup/speed-trace.js', 'apps/extension/popup.js']) {
     await page.addScriptTag({ content: fs.readFileSync(path.join(root, relative), 'utf8') });
   }
   return { page, errors, close: () => context.close() };
@@ -67,12 +67,18 @@ test('popup opens promptly and transitions from checking to rows without false e
   const loading = await openFixture(browser, 'loading');
   try {
     await expect(loading.page.locator('#video-list')).toHaveAttribute('data-view', 'loading');
-    await expect(loading.page.getByText('Looking for videos…')).toBeVisible();
+    await expect(loading.page.getByRole('status').getByText('Looking for videos…')).toBeAttached();
+    // Skeleton rows use the real row geometry, so the first row lands where its skeleton was.
+    const skeletons = loading.page.locator('.skeleton-row');
+    await expect(skeletons).toHaveCount(3);
+    const skeletonHeight = await skeletons.first().evaluate(node => node.getBoundingClientRect().height);
     const initialHeight = await loading.page.locator('#popup').evaluate(node => node.getBoundingClientRect().height);
     await loading.page.evaluate(film => openingFixture.finishScan([film]), film);
     await expect(loading.page.locator('.video-row')).toHaveCount(1);
+    const rowHeight = await loading.page.locator('.video-row').evaluate(node => node.getBoundingClientRect().height);
     const finalHeight = await loading.page.locator('#popup').evaluate(node => node.getBoundingClientRect().height);
-    expect(Math.abs(finalHeight - initialHeight)).toBeLessThanOrEqual(1);
+    expect(Math.abs(rowHeight - skeletonHeight)).toBeLessThanOrEqual(1);
+    expect(finalHeight).toBeLessThanOrEqual(initialHeight);
     expect(await loading.page.evaluate(() => openingFixture.headers.includes('No videos yet'))).toBe(false);
     expect(loading.errors).toEqual([]);
   } finally { await loading.close(); }
@@ -91,7 +97,7 @@ test('popup opens promptly and transitions from checking to rows without false e
   const reduced = await openFixture(browser, 'loading', 'reduce');
   try {
     await expect(reduced.page.locator('#popup')).toHaveCSS('animation-name', 'none');
-    await expect(reduced.page.locator('.discovery-dots .thumb-loading-dot').first()).toHaveCSS('animation-name', 'none');
+    await expect(reduced.page.locator('.skeleton-bar').first()).toHaveCSS('animation-name', 'none');
     await reduced.page.evaluate(film => openingFixture.finishScan([film]), film);
     await expect(reduced.page.locator('.video-row')).toHaveCount(1);
     await expect(reduced.page.locator('#video-list')).toHaveCSS('animation-name', 'none');

@@ -5,12 +5,12 @@ const { spawnSync } = require('node:child_process');
 
 function verifySourcePacket(base, releaseTag) {
   const directory = path.join(base, 'release-source');
-  const archive = path.join(directory, 'vidsnag-corresponding-source.tar.xz');
+  const archive = path.join(directory, 'snagthis-corresponding-source.tar.xz');
   const manifestPath = path.join(directory, 'corresponding-source.json');
   if (!fs.existsSync(archive) || !fs.existsSync(manifestPath)) throw new Error('Publication requires the reviewed corresponding-source archive and manifest');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   if (!/^v\d+\.\d+\.\d+$/.test(releaseTag || '') || manifest.releaseTag !== releaseTag) throw new Error('Corresponding source must identify this exact release tag');
-  if (!/^[a-f0-9]{40}$/.test(manifest.sourceCommit || '')) throw new Error('Corresponding source must identify the exact VidSnag Git commit');
+  if (!/^[a-f0-9]{40}$/.test(manifest.sourceCommit || '')) throw new Error('Corresponding source must identify the exact SnagThis Git commit');
   const sha256 = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
   if (manifest.archiveSha256 !== sha256) throw new Error('Corresponding-source archive SHA256 does not match its reviewed manifest');
   // GNU tar treats a Windows drive prefix in -f as a remote host. Using cwd
@@ -28,7 +28,7 @@ function verifySourcePacket(base, releaseTag) {
     if (![...entries].some(name => name.startsWith(prefix) && !name.endsWith('/')) || !entries.has(component.licenseFile) || !entries.has(component.buildInstructions)) throw new Error(`Source, license or build instructions are absent for ${component.id}`);
     components.set(component.id, component);
   }
-  if (components.get('vidsnag')?.version !== releaseTag.slice(1)) throw new Error('The source archive must include VidSnag source for this release');
+  if (components.get('snagthis')?.version !== releaseTag.slice(1)) throw new Error('The source archive must include SnagThis source for this release');
   return { archive, manifestPath, sha256, manifest, components };
 }
 

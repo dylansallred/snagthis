@@ -8,7 +8,7 @@ const { chromium } = require('playwright');
 const { runTool } = require('./fixtures/server');
 
 test('bounded source previews choose later real scenes and prepare small posters before full hover probes', { timeout: 60_000 }, async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-preview-scenes-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-preview-scenes-'));
   const timers = new Set();
   const requests = [];
   let browser;
@@ -73,11 +73,11 @@ test('bounded source previews choose later real scenes and prepare small posters
         const image = new Image(); await new Promise((done, failed) => { image.onload = done; image.onerror = failed; image.src = frame.poster; });
         const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 18;
         const context = canvas.getContext('2d'); context.drawImage(image, 0, 0, 32, 18);
-        const useful = VidSnagSourcePreview.nonblack(context.getImageData(0, 0, 32, 18).data);
+        const useful = SnagThisSourcePreview.nonblack(context.getImageData(0, 0, 32, 18).data);
         const center = [...context.getImageData(16, 9, 1, 1).data].slice(0, 3);
         resolve({ offset: frame.offset, scope: frame.scope, elapsedMs, currentTime, useful, center });
       };
-      controller = VidSnagSourcePreview.create({ item: { url: `${location.origin}/${options.file}`, type: options.hls ? 'hls' : 'file', durationSeconds: options.duration || 0 },
+      controller = SnagThisSourcePreview.create({ item: { url: `${location.origin}/${options.file}`, type: options.hls ? 'hls' : 'file', durationSeconds: options.duration || 0 },
         video, posterOnly: options.posterOnly, sceneOffset: options.sceneOffset, sceneScope: options.sceneScope,
         onPoster: (poster, offset, scope) => { frame = { poster, offset, scope }; if (options.posterOnly) finish().catch(reject); },
         onPlaying: () => { if (!options.posterOnly) finish().catch(reject); },

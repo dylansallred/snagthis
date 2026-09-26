@@ -3,7 +3,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, 'apps/extension/shared');
 fs.mkdirSync(output, { recursive: true });
-for (const name of ['strings.js', 'rows.js', 'hls.js', 'selection.js']) {
+for (const name of ['strings.js', 'rows.js', 'hls.js', 'selection.js', 'audioTracks.js', 'accents.js']) {
   fs.copyFileSync(path.join(root, 'packages/contracts/src', name), path.join(output, name));
 }
 const fonts = path.join(root, 'apps/extension/fonts');

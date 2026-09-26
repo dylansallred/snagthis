@@ -87,7 +87,7 @@ jobs:
     runs-on: ${{ inputs.macos_arch == 'x64' && 'macos-15-intel' || 'macos-15' }}
     timeout-minutes: 60
     env:
-      VIDSNAG_RELEASE: '1'
+      SNAGTHIS_RELEASE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -110,7 +110,7 @@ jobs:
           npm run fetch:yt-dlp --workspace @m3u8/desktop
       - name: Include project notices in the installed app
         run: |
-          cp LICENSE apps/desktop/bin/VIDSNAG-LICENSE.txt
+          cp LICENSE apps/desktop/bin/SNAGTHIS-LICENSE.txt
           cp THIRD_PARTY_NOTICES.md apps/desktop/bin/THIRD_PARTY_NOTICES.md
       - name: Build signed and notarized installers without publishing
         env:

@@ -53,7 +53,7 @@ jobs:
         with:
           name: extension-release
           path: |
-            release-assets/extension-only/vidsnag-extension.zip
+            release-assets/extension-only/snagthis-extension.zip
             release-assets/extension-only/extension-release.json
             release-assets/extension-only/SHA256SUMS
           if-no-files-found: error
@@ -96,7 +96,7 @@ jobs:
               name: `Chrome extension ${version}`, draft: true, prerelease: true, make_latest: 'false',
               body: `Extension-only release draft. The runtime ZIP, commit manifest and SHA256 checksum are attached.\n\nSource commit: ${report.sourceCommit}\nBuild source: ${report.sourceArchive}\nUse Node from .nvmrc, then npm ci and npm run package:extension. GitHub also provides the tagged source archives. These links stay private until the owner makes this repository public at launch.\n\nOwner review is required before manual publication: inspect the package and source/licenses. Keep this release marked pre-release and do not mark it Latest; desktop updates use the stable Latest release.\n\nThis workflow does not publish the draft, change repository visibility, or upload to Chrome Web Store. ZIP installations update manually by replacing the same folder and reloading the existing extension.`,
             });
-            for (const name of ['vidsnag-extension.zip', 'extension-release.json', 'SHA256SUMS']) {
+            for (const name of ['snagthis-extension.zip', 'extension-release.json', 'SHA256SUMS']) {
               const data = fs.readFileSync(path.join('release-assets/extension-only', name));
               await github.rest.repos.uploadReleaseAsset({ ...context.repo, release_id: created.data.id, name, data });
             }

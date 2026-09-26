@@ -7,9 +7,9 @@ const { freePort, root } = require('./helpers');
 
 test('offline YouTube hover records a quick loop, upgrades to a silent excerpt, and leaves the page player alone', async () => {
   test.setTimeout(75_000);
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-youtube-preview-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-youtube-preview-'));
   const pageUrl = 'https://www.youtube.com/watch?v=abc123XYZ_-';
-  const mediaUrl = 'https://www.youtube.com/vidsnag-fixture.mp4';
+  const mediaUrl = 'https://www.youtube.com/snagthis-fixture.mp4';
   const posterUrl = 'https://i.ytimg.com/vi/abc123XYZ_-/hqdefault.jpg';
   const apiBase = `http://127.0.0.1:${await freePort()}`;
   let context;
@@ -84,7 +84,7 @@ test('offline YouTube hover records a quick loop, upgrades to a silent excerpt, 
     await popup.bringToFront();
     const row = popup.locator('.video-row');
     const clip = row.locator('video.thumb-preview');
-    await expect(popup.getByText('Save supported files in Chrome. Open VidSnag for streams and more.', { exact: true })).toBeVisible();
+    await expect(popup.getByText('Save supported files in Chrome. Open SnagThis for streams and more.', { exact: true })).toBeVisible();
     await expect(row).toHaveCount(1);
     await expect(row.getByRole('button', { name: 'Use desktop app', exact: true })).toBeEnabled();
     await expect(row.locator('.thumb-poster')).toHaveAttribute('src', posterUrl);
@@ -148,7 +148,7 @@ test('offline YouTube hover records a quick loop, upgrades to a silent excerpt, 
       .toEqual({ paused: true, unchanged: true, events: [] });
     const storage = await worker.evaluate(async () => ({ local: await chrome.storage.local.get(null), session: await chrome.storage.session.get(null) }));
     expect(JSON.stringify(storage)).not.toMatch(/data:video\/|blob:|sourcePreviewDataUrl/);
-    expect(storage.session[`vidsnag:tab:${tabId}`].mappings).toEqual({});
+    expect(storage.session[`snagthis:tab:${tabId}`].mappings).toEqual({});
     expect(downloadRequests).toEqual([]);
     expect(unexpectedRequests).toEqual([]);
   } finally {

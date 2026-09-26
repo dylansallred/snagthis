@@ -9,7 +9,7 @@ const { packageExtension, RUNTIME_FILES } = require('../scripts/package-extensio
 const repo = path.resolve(__dirname, '..');
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-extension-package-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-extension-package-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const name of [...RUNTIME_FILES, 'package.json']) {
     const target = path.join(root, 'apps/extension', name);
@@ -17,7 +17,7 @@ function fixture(t) {
     if (name === 'popup.css') fs.writeFileSync(target, '@font-face{font-family:Inter;src:url(fonts/inter-latin.woff2)}');
     else fs.copyFileSync(path.join(repo, 'apps/extension', name), target);
   }
-  for (const name of ['strings.js', 'rows.js', 'hls.js', 'selection.js']) {
+  for (const name of ['strings.js', 'rows.js', 'hls.js', 'selection.js', 'audioTracks.js', 'accents.js']) {
     const target = path.join(root, 'packages/contracts/src', name);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.copyFileSync(path.join(repo, 'packages/contracts/src', name), target);
@@ -77,6 +77,13 @@ test('extension ZIP is deterministic, complete and excludes development or accid
   }
   for (const reference of references) assert.ok(entries.has(reference), `Bundled runtime reference ${reference} exists`);
   assert.ok(!entries.get('popup.html').toString().includes('popup/demo.js'));
+  // The ZIP is the store build: YouTube downloads are off there, and only there.
+  const flags = source => { const context = {}; vm.runInNewContext(source, context); return context.SnagThisBuild; };
+  assert.deepEqual({ ...flags(entries.get('js/build-config.js').toString()) }, { storeBuild: true });
+  assert.deepEqual({ ...flags(fs.readFileSync(path.join(extension, 'js/build-config.js'), 'utf8')) }, { storeBuild: false }, 'packaging never edits the development flags');
+  assert.ok(entries.get('popup.html').toString().includes('js/build-config.js'), 'the popup reads the build flags');
+  assert.match(entries.get('service-worker.js').toString(), /importScripts\('js\/build-config\.js'/, 'the worker enforces the build flags');
+  assert.ok(!manifest.permissions.includes('tabs'), 'tab URLs come from host access; the tabs permission is not requested');
   assert.deepEqual(fs.readFileSync(path.join(extension, 'popup.html')), sourceHtml, 'packaging never edits the development popup');
   for (const [name, data] of entries) if (name.endsWith('.js')) assert.doesNotThrow(() => new vm.Script(data.toString(), { filename: name }));
   for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) assert.deepEqual(entries.get(name), fs.readFileSync(path.join(root, name)));
@@ -99,6 +106,11 @@ test('extension packaging refuses stale contracts, missing runtime inputs and mi
   fs.unlinkSync(modelPath);
   assert.throws(() => packageExtension({ root }), /ENOENT/);
   fs.writeFileSync(modelPath, model);
+  const configPath = path.join(extension, 'js/build-config.js');
+  const config = fs.readFileSync(configPath, 'utf8');
+  fs.writeFileSync(configPath, config.replace('storeBuild: false', 'storeBuild: true'));
+  assert.throws(() => packageExtension({ root }), /development flags/, 'an unexpected flag file never ships unchecked');
+  fs.writeFileSync(configPath, config);
   const manifestPath = path.join(extension, 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath));
   manifest.version = '1.0.99';

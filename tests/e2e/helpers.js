@@ -43,7 +43,7 @@ async function startRenderer() {
 async function launchDesktop(rendererUrl, { userDataDirectory } = {}) {
   const pinned = fs.readFileSync(path.join(root, '.nvmrc'), 'utf8').trim().replace(/^v/, '');
   if (process.versions.node.split('.')[0] !== pinned.split('.')[0]) throw new Error(`Electron e2e requires Node ${pinned}; current ${process.versions.node}`);
-  const profile = userDataDirectory || fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-electron-e2e-'));
+  const profile = userDataDirectory || fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-electron-e2e-'));
   const port = await freePort();
   const env = {
     ...process.env, NODE_ENV: 'test', E2E_ALLOW_MULTI_INSTANCE: '1', E2E_USER_DATA_DIR: profile,

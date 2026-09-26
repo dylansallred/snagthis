@@ -127,3 +127,64 @@ test('playlist init and media references exclude MP4-looking components while pr
   assert.equal(standalone[0].id, 'media', 'a media playlist remains the source when no master was observed');
   assert.deepEqual(standalone[0].variants.map(variant => variant.url), [media.url]);
 });
+
+// Survey-driven variant handling (compat/reports/fmhy-video-survey.md).
+const hlsContract = require('../packages/contracts/src/hls');
+const cinejoyMaster = `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Track 1",DEFAULT=YES,AUTOSELECT=YES,URI="a1.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=20000000,RESOLUTION=3840x2160,CODECS="hvc1.2.4.L150.B0,mp4a.40.2",VIDEO-RANGE=PQ,AUDIO="audio"
+2160.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2",AUDIO="audio"
+1080.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=7000000,RESOLUTION=1920x1080,CODECS="hev1.1.6.L120.B0,mp4a.40.2",AUDIO="audio"
+1080-hevc.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2",AUDIO="audio"
+720.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2",AUDIO="audio"
+https://mirror.example.test/720.m3u8
+`;
+
+test('equal-height renditions prefer AVC over HEVC/HDR and identical CDN copies become failover URLs', () => {
+  const parsed = parseHlsManifest(cinejoyMaster, 'https://cdn.example.test/master.m3u8');
+  assert.deepEqual(parsed.variants.map((variant) => [variant.height, variant.codecs.split('.')[0]]), [[2160, 'hvc1'], [1080, 'avc1'], [1080, 'hev1'], [720, 'avc1']]);
+  assert.equal(parsed.variants[0].videoRange, 'PQ');
+  assert.deepEqual(parsed.variants[3].backupUrls, ['https://mirror.example.test/720.m3u8']);
+  // Without codecs, attributes cannot prove two URLs are the same encode.
+  const bare = parseHlsManifest('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\nb.m3u8\n', 'https://cdn.example.test/m.m3u8');
+  assert.equal(bare.variants.length, 2);
+});
+
+test('the default quality is the highest one the page player loaded, else the highest broadly playable one', () => {
+  const master = { id: 'm', url: 'https://cdn.example.test/master.m3u8', type: 'hls', sourcePageUrl: 'https://site.example.test/watch', manifest: parseHlsManifest(cinejoyMaster, 'https://cdn.example.test/master.m3u8') };
+  const child = (name) => ({ id: name, url: `https://cdn.example.test/${name}`, type: 'hls', sourcePageUrl: master.sourcePageUrl,
+    manifest: parseHlsManifest('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\ns1.m4s\n#EXT-X-ENDLIST\n', `https://cdn.example.test/${name}`) });
+  const [played] = collapseDetections([master, child('720.m3u8'), child('1080.m3u8')]);
+  assert.deepEqual(played.variants.filter((variant) => variant.observed).map((variant) => variant.height), [1080, 720]);
+  assert.equal(hlsContract.defaultVariant(played.variants).url, 'https://cdn.example.test/1080.m3u8', 'not the dead 2160p HDR rendition');
+  assert.equal(hlsContract.defaultVariant(played.variants, '2160').height, 1080, 'a preference cannot pick an unproven rendition over played ones');
+  const [unplayed] = collapseDetections([master]);
+  assert.equal(hlsContract.defaultVariant(unplayed.variants).height, 2160);
+  assert.equal(hlsContract.defaultVariant(unplayed.variants, '1080').codecs.split('.')[0], 'avc1');
+  assert.equal(hlsContract.defaultVariant(unplayed.variants, '900', { atMost: true }).height, 720);
+  const hevcPlayed = unplayed.variants.map((variant) => (variant.url.endsWith('1080-hevc.m3u8') ? { ...variant, observed: true } : variant));
+  assert.equal(hlsContract.defaultVariant(hevcPlayed).url, 'https://cdn.example.test/1080.m3u8', 'arte: a played HEVC height still defaults to its AVC copy');
+});
+
+test('proxy fan-out rows of one title and one file\'s transcodes collapse into one row', () => {
+  const page = 'https://aggregator.example.test/watch/1';
+  const playlist = (url, seconds) => ({ id: url, url, type: 'hls', sourcePageUrl: page,
+    manifest: parseHlsManifest(`#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:${seconds},\ns.ts\n#EXT-X-ENDLIST\n`, url) });
+  const rows = collapseDetections([
+    playlist('https://p1.example.test/a.m3u8', 8888.04), playlist('https://p2.example.test/b.m3u8', 8884.13),
+    playlist('https://p3.example.test/c.m3u8', 30), playlist('https://p4.example.test/d.m3u8', 31),
+  ]);
+  assert.deepEqual(rows.map((row) => row.collapsedCount), [2, 1, 1], 'feature-length sources merge; short clips must match exactly');
+  const file = (url) => ({ id: url, url, type: 'file', sourcePageUrl: 'https://commons.example.test/wiki/File:X.webm' });
+  const transcodes = collapseDetections([
+    file('https://upload.example.test/wikipedia/commons/c/c0/X.webm'),
+    file('https://upload.example.test/wikipedia/commons/transcoded/c/c0/X.webm/X.webm.480p.vp9.webm'),
+    file('https://upload.example.test/wikipedia/commons/transcoded/c/c0/X.webm/X.webm.720p.vp9.webm'),
+    file('https://videos.example.test/a/movie.mp4'), file('https://videos.example.test/b/movie.mp4'),
+  ]);
+  assert.deepEqual(transcodes.map((row) => row.collapsedCount), [3, 1, 1], 'unrelated files that share a name stay separate');
+});

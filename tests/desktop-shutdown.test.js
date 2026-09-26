@@ -4,8 +4,8 @@ const vm = require('node:vm');
 
 if (process.versions.electron) {
   const { app } = require('electron');
-  const profile = process.env.VIDSNAG_SHUTDOWN_TEST_PROFILE;
-  const scenario = process.env.VIDSNAG_SHUTDOWN_TEST_SCENARIO;
+  const profile = process.env.SNAGTHIS_SHUTDOWN_TEST_PROFILE;
+  const scenario = process.env.SNAGTHIS_SHUTDOWN_TEST_SCENARIO;
   app.setPath('userData', profile);
   app.setPath('sessionData', profile);
   fs.mkdirSync(path.join(profile, 'crashes'), { recursive: true });
@@ -16,11 +16,20 @@ if (process.versions.electron) {
   const start = source.indexOf('let apiShutdownPromise = null;');
   const end = source.lastIndexOf('\nbootstrap();');
   if (start < 0 || end < start) throw new Error('Could not isolate actual shutdown handler');
+  let prompts = 0;
   const sandbox = {
     app, updaterInstallRequested: scenario === 'update', updaterTimer: null, clearInterval,
+    Promise, mainWindow: null, skipQuitConfirmation: false,
+    // The first prompt answers "Keep downloading", the second "Quit".
+    dialog: { async showMessageBox(options) {
+      prompts += 1;
+      record('prompt', { buttons: options.buttons });
+      if (prompts === 1) setTimeout(() => app.quit(), 50);
+      return { response: prompts === 1 ? 1 : 0 };
+    } },
     clearUpdaterInstallTimer() {}, clearUpdaterReminderTimer() {}, clearUpdaterCheckTimeout() {},
     autoUpdater: { quitAndInstall() { record('unexpected-install'); } },
-    apiServer: { async stop() {
+    apiServer: { getState: () => ({ queue: scenario === 'confirm' ? [{ queueStatus: 'downloading' }] : [] }), async stop() {
       record('stop-started');
       await new Promise(resolve => setTimeout(resolve, scenario === 'update' ? 1000 : 100));
       if (scenario === 'reject') { record('stop-rejected'); throw new Error('Expected shutdown failure'); }
@@ -47,10 +56,10 @@ if (process.versions.electron) {
   const { spawn } = require('node:child_process');
   const electron = require('electron');
   test('Electron waits for normal shutdown once, tolerates stop failure, and preserves direct update quit', async () => {
-    for (const scenario of ['delayed', 'repeat', 'reject', 'update']) {
-      const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-shutdown-test-'));
+    for (const scenario of ['delayed', 'repeat', 'reject', 'update', 'confirm']) {
+      const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-shutdown-test-'));
       try {
-        const environment = { ...process.env, VIDSNAG_SHUTDOWN_TEST_PROFILE: profile, VIDSNAG_SHUTDOWN_TEST_SCENARIO: scenario };
+        const environment = { ...process.env, SNAGTHIS_SHUTDOWN_TEST_PROFILE: profile, SNAGTHIS_SHUTDOWN_TEST_SCENARIO: scenario };
         delete environment.ELECTRON_RUN_AS_NODE;
         const result = await new Promise((resolve, reject) => {
           const child = spawn(electron, [__filename, `--user-data-dir=${profile}`], {
@@ -79,6 +88,14 @@ if (process.versions.electron) {
           assert.equal(quits.at(-1).prevented, false, `${scenario}: completed cleanup permits final quit`);
           assert.ok(quits.slice(0, -1).every(event => event.prevented), `${scenario}: earlier quits wait for cleanup`);
           if (scenario === 'repeat') assert.ok(quits.length >= 4, 'repeated quits were received while cleanup was pending');
+          const prompts = matching('prompt');
+          if (scenario === 'confirm') {
+            assert.equal(prompts.length, 2, 'active downloads ask before quitting, and "Keep downloading" keeps the app open');
+            assert.deepEqual(prompts[0].buttons, ['Quit', 'Keep downloading']);
+            assert.ok(events.findIndex(entry => entry.event === 'stop-started') > events.lastIndexOf(prompts[1]), 'shutdown starts only after Quit is chosen');
+          } else {
+            assert.equal(prompts.length, 0, `${scenario}: no prompt without active downloads`);
+          }
         }
       } finally {
         fs.rmSync(profile, { recursive: true, force: true });

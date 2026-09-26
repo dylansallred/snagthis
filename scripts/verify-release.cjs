@@ -33,7 +33,7 @@ async function verifyRelease() {
   if (artifacts.length !== 1) throw new Error(`Expected one installer for this architecture, found ${artifacts.length}`);
   const artifact = artifacts[0];
   if (process.env.GITHUB_REF_NAME && process.env.GITHUB_REF_NAME !== `v${expectedVersion}`) throw new Error('Release tag does not match the packaged version');
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-installer-'));
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-installer-'));
   let mounted = false;
   const mount = path.join(temporary, 'mount');
   try {
@@ -51,14 +51,14 @@ async function verifyRelease() {
       const installed = path.join(temporary, appName);
       run('ditto', [path.join(mount, appName), installed]);
       verifyMacApp(installed);
-      executable = path.join(installed, 'Contents/MacOS/VidSnag');
+      executable = path.join(installed, 'Contents/MacOS/SnagThis');
       resources = path.join(installed, 'Contents/Resources');
     } else {
       const quote = value => "'" + value.replace(/'/g, "''") + "'";
       run('powershell.exe', ['-NoProfile', '-Command', `$s = Get-AuthenticodeSignature -LiteralPath ${quote(artifact)}; if ($s.Status -ne 'Valid') { throw ('Invalid installer signature: ' + $s.Status) }`]);
       const installed = path.join(temporary, 'app');
       run(artifact, ['/S', `/D=${installed}`]);
-      executable = path.join(installed, 'VidSnag.exe');
+      executable = path.join(installed, 'SnagThis.exe');
       resources = path.join(installed, 'resources');
       run('powershell.exe', ['-NoProfile', '-Command', `$s = Get-AuthenticodeSignature -LiteralPath ${quote(executable)}; if ($s.Status -ne 'Valid') { throw ('Invalid app signature: ' + $s.Status) }`]);
     }
@@ -77,7 +77,7 @@ async function verifyRelease() {
       const app = path.join(extracted, appName);
       verifyMacApp(app);
       const zipUpdateRepository = verifyUpdateFeed(path.join(app, 'Contents/Resources'));
-      const zipSmoke = await packagedSmoke(path.join(app, 'Contents/MacOS/VidSnag'), path.join(app, 'Contents/Resources'));
+      const zipSmoke = await packagedSmoke(path.join(app, 'Contents/MacOS/SnagThis'), path.join(app, 'Contents/Resources'));
       if (zipSmoke.version !== expectedVersion) throw new Error('The update ZIP contains a different app version');
       updateArchive = { name: path.basename(archives[0]), sha256: sha256(archives[0]), blockmapSha256: sha256(`${archives[0]}.blockmap`), signature: 'verified', updateRepository: zipUpdateRepository, smoke: zipSmoke };
     }

@@ -4,7 +4,7 @@ Run `npm run compat` for generated local fixture pages. This installs the actual
 
 `npm run compat -- --site mux-bbb-480p` checks one permitted public source. `--external` runs the public seed list, serially; `--tag iframe` selects a technique; `--headed` shows the test browser. Public stream entries are exercised in a local test player; this does not assert their publisher's website works. Full files are opt-in with `--full`; normal runs request a 30-second engine probe. FFmpeg/FFprobe and Playwright Chromium must be installed.
 
-`sites.yaml` uses JSON syntax, which is valid YAML, so the harness needs no YAML dependency. Each entry records permission evidence and source reachability separately from VidSnag results. Never change an unknown stage to passing without running it.
+`sites.yaml` uses JSON syntax, which is valid YAML, so the harness needs no YAML dependency. Each entry records permission evidence and source reachability separately from SnagThis results. Never change an unknown stage to passing without running it.
 
 Raw, redacted results go to ignored `results/`. `COMPATIBILITY.md` includes stage results and a technique summary. `npm run compat -- --matrix-only` regenerates it from existing evidence without opening a browser. A public-site failure does not fail CI; local fixture failures do. A failure row without a linked issue explicitly says “not filed”.
 

@@ -12,7 +12,7 @@ process.env.LOG_LEVEL = 'error';
 process.env.DISABLE_FILE_LOGS = '1';
 
 test('rotating HLS URLs retain the selected quality through nested masters and save real media', { timeout: 90_000 }, async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-rotating-selection-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-rotating-selection-'));
   let server;
   t.after(async () => {
     if (server) await new Promise(resolve => { server.closeAllConnections(); server.close(resolve); });

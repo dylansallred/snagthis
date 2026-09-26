@@ -44,16 +44,16 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$ARCHIVE_SHA256" =~ ^[a-fA-F0-9]{64}$ && "$MANIFEST_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]
           mkdir -p release-assets/release-source
-          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 1800 --url "$ARCHIVE_URL" --output release-assets/release-source/vidsnag-corresponding-source.tar.xz
+          curl --fail --location --proto '=https' --proto-redir '=https' --max-time 1800 --url "$ARCHIVE_URL" --output release-assets/release-source/snagthis-corresponding-source.tar.xz
           curl --fail --location --proto '=https' --proto-redir '=https' --max-time 120 --url "$MANIFEST_URL" --output release-assets/release-source/corresponding-source.json
-          printf '%s  %s\n' "$ARCHIVE_SHA256" release-assets/release-source/vidsnag-corresponding-source.tar.xz "$MANIFEST_SHA256" release-assets/release-source/corresponding-source.json | sha256sum --check --strict
+          printf '%s  %s\n' "$ARCHIVE_SHA256" release-assets/release-source/snagthis-corresponding-source.tar.xz "$MANIFEST_SHA256" release-assets/release-source/corresponding-source.json | sha256sum --check --strict
           GITHUB_REF_NAME="$RELEASE_TAG" node scripts/verify-corresponding-source.cjs release-assets --packet-only
       - name: Stage for exact binary-source matching and required release approval
         uses: actions/upload-artifact@v4
         with:
-          name: vidsnag-corresponding-source
+          name: snagthis-corresponding-source
           path: |
-            release-assets/release-source/vidsnag-corresponding-source.tar.xz
+            release-assets/release-source/snagthis-corresponding-source.tar.xz
             release-assets/release-source/corresponding-source.json
           if-no-files-found: error
           retention-days: 30

@@ -14,7 +14,7 @@ const { createApiServer } = require('../packages/downloader-api/src');
 const { generatePreviewClip } = require('../packages/downloader-engine/src/core/VideoConverter');
 
 test('local previews crop to fill, replace padded clips, skip black scenes, and remain private and reusable', { timeout: 60000 }, async () => {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-clips-'));
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-clips-'));
   const source = path.join(dataDir, 'source.mp4');
   const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
   const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';

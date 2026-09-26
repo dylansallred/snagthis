@@ -4,7 +4,7 @@ const base = document.body.dataset.base;
 const other = document.body.dataset.other;
 document.body.style.cssText = 'background:#121316;color:#eee;font:16px system-ui;padding:24px';
 const heading = document.createElement('h1');
-heading.textContent = `VidSnag fixture — ${kind}`;
+heading.textContent = `SnagThis fixture — ${kind}`;
 document.body.append(heading);
 if (kind === 'iframe' || kind === 'nested') {
   const frame = document.createElement('iframe');

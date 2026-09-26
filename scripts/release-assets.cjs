@@ -77,8 +77,8 @@ function assembleRelease(base, releaseTag, sourceCommit = process.env.GITHUB_SHA
     if (existing) existing.files.push(...update.files);
     else metadata.set(target.metadata, update);
   }
-  include('release-extension', 'vidsnag-extension.zip');
-  include('release-source', 'vidsnag-corresponding-source.tar.xz');
+  include('release-extension', 'snagthis-extension.zip');
+  include('release-source', 'snagthis-corresponding-source.tar.xz');
   include('release-source', 'corresponding-source.json');
   for (const [name, update] of metadata) {
     // Modern clients choose the architecture from files. Keep the legacy path

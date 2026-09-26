@@ -14,11 +14,11 @@ test('extension release identity is independent of desktop versions and refuses 
 
 test('extension metadata binds the ZIP checksum to exact public-at-launch source identity', () => {
   const bytes = Buffer.from('isolated package fixture');
-  const input = { tag: 'extension-v1.2.3', version: '1.2.3', sourceCommit: 'a'.repeat(40), repository: 'dylansallred/vidsnag', bytes };
+  const input = { tag: 'extension-v1.2.3', version: '1.2.3', sourceCommit: 'a'.repeat(40), repository: 'dylansallred/snagthis', bytes };
   const report = releaseMetadata(input);
-  assert.equal(report.sourceArchive, `https://github.com/dylansallred/vidsnag/archive/${input.sourceCommit}.zip`);
+  assert.equal(report.sourceArchive, `https://github.com/dylansallred/snagthis/archive/${input.sourceCommit}.zip`);
   assert.equal(report.sourceCommit, input.sourceCommit);
-  assert.equal(report.artifact.name, 'vidsnag-extension.zip');
+  assert.equal(report.artifact.name, 'snagthis-extension.zip');
   assert.equal(report.artifact.size, bytes.length);
   assert.equal(report.artifact.sha256, crypto.createHash('sha256').update(bytes).digest('hex'));
   assert.throws(() => releaseMetadata({ ...input, sourceCommit: 'main' }), /exact Git commit/);

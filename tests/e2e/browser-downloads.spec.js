@@ -50,7 +50,7 @@ async function startBrowserFixture(directory) {
     const start = range ? Number(range[1]) : 0;
     const end = range?.[2] ? Math.min(Number(range[2]), video.length - 1) : video.length - 1;
     response.setHeader('Accept-Ranges', 'bytes');
-    response.setHeader('ETag', '"vidsnag-browser-fixture"');
+    response.setHeader('ETag', '"snagthis-browser-fixture"');
     if (start > end) { response.setHeader('Content-Range', `bytes */${video.length}`); respond(416, '', 'text/plain'); return; }
     if (range) response.setHeader('Content-Range', `bytes ${start}-${end}/${video.length}`);
     response.writeHead(range ? 206 : 200, { 'Content-Type': 'video/mp4', 'Content-Length': end - start + 1 });
@@ -114,7 +114,7 @@ async function workerGlobal(cdp, workerUrl, expression) {
 
 test('Chrome-only files survive popup and worker closure, retry expired URLs, and keep streams on desktop', async () => {
   test.setTimeout(90_000);
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-browser-downloads-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-browser-downloads-'));
   const downloadsPath = path.join(directory, 'downloads');
   const evidencePath = path.join(root, 'work/verification/browser-downloads');
   fs.mkdirSync(downloadsPath);
@@ -189,10 +189,10 @@ test('Chrome-only files survive popup and worker closure, retry expired URLs, an
       downloadId = Number(job.id.slice('browser:'.length));
       await expect.poll(async () => (await chromeDownload(popup, downloadId)).bytesReceived).toBeGreaterThan(0);
       await popup.getByRole('button', { name: 'Pause', exact: true }).click();
-      await expect(popup.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+      await expect(popup.getByRole('button', { name: 'Resume download', exact: true })).toBeVisible();
       expect((await chromeDownload(popup, downloadId)).paused).toBe(true);
       const pausedBytes = (await chromeDownload(popup, downloadId)).bytesReceived;
-      await popup.getByRole('button', { name: 'Resume', exact: true }).click();
+      await popup.getByRole('button', { name: 'Resume download', exact: true }).click();
       await expect(popup.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
       await expect.poll(async () => (await chromeDownload(popup, downloadId)).bytesReceived).toBeGreaterThan(pausedBytes);
       evidence.nativePauseResume = true;
@@ -200,7 +200,7 @@ test('Chrome-only files survive popup and worker closure, retry expired URLs, an
 
     await test.step('native bytes continue with popup closed and the extension worker stopped', async () => {
       await popup.close();
-      await worker.evaluate(() => { globalThis.__vidsnagLifecycleProbe = 'isolated-worker-state'; });
+      await worker.evaluate(() => { globalThis.__snagthisLifecycleProbe = 'isolated-worker-state'; });
       const lifecycleStart = workerLifecycle.length;
       // Chromium keeps the DevTools target (and Playwright Worker handle) across
       // a worker restart. Assert Chrome's stopped/running events and a fresh
@@ -224,7 +224,7 @@ test('Chrome-only files survive popup and worker closure, retry expired URLs, an
       await expect(popup.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
       const lifecycle = workerLifecycle.slice(lifecycleStart);
       expect(lifecycle.slice(lifecycle.indexOf('stopped') + 1)).toContain('running');
-      expect(await workerGlobal(cdp, worker.url(), 'typeof globalThis.__vidsnagLifecycleProbe')).toBe('undefined');
+      expect(await workerGlobal(cdp, worker.url(), 'typeof globalThis.__snagthisLifecycleProbe')).toBe('undefined');
       expect(Object.values((await tabSnapshot(popup, tabId)).mappings)).toContain(`browser:${downloadId}`);
       evidence.workerLifecycle = lifecycle;
       evidence.freshWorkerGlobal = true;
@@ -285,12 +285,12 @@ test('Chrome-only files survive popup and worker closure, retry expired URLs, an
       await expect(popup.getByRole('button', { name: 'Download', exact: true })).toHaveCount(0);
       const before = await popup.evaluate(() => chrome.downloads.search({}));
       await popup.getByRole('button', { name: 'Use desktop app', exact: true }).click();
-      await expect(popup.locator('#sheet')).toContainText('Open VidSnag and connect Chrome to try this download.');
-      await expect(popup.locator('#sheet').getByRole('button', { name: 'Open VidSnag', exact: true })).toBeVisible();
+      await expect(popup.locator('#sheet')).toContainText('Open SnagThis and connect Chrome to try this download.');
+      await expect(popup.locator('#sheet').getByRole('button', { name: 'Open SnagThis', exact: true })).toBeVisible();
       expect((await popup.evaluate(() => chrome.downloads.search({}))).map(item => item.id)).toEqual(before.map(item => item.id));
       const stored = await popup.evaluate(() => chrome.storage.local.get(null));
       expect(stored.appToken).toBeUndefined();
-      const records = Object.entries(stored).filter(([key]) => key.startsWith('vidsnag:browser-download:'));
+      const records = Object.entries(stored).filter(([key]) => key.startsWith('snagthis:browser-download:'));
       expect(records.length).toBeGreaterThanOrEqual(2);
       for (const [, record] of records) {
         expect(Object.keys(record).sort()).toEqual(['downloadId', 'durationSeconds', 'height', 'pageKey', 'sourceKey', 'title']);

@@ -48,7 +48,7 @@ async function getFreePort() {
 let fixtureMediaPromise;
 async function getFixtureMedia() {
   if (!fixtureMediaPromise) fixtureMediaPromise = (async () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-api-media-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-api-media-'));
     const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
     const source = path.join(directory, 'sample.mp4');
     try {
@@ -348,7 +348,7 @@ async function apiFetch(baseUrl, pathName, {
 } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (includeV1Headers) {
-    headers['X-Client'] = 'vidsnag-extension';
+    headers['X-Client'] = 'snagthis-extension';
     headers['X-Protocol-Version'] = '1';
   }
   Object.assign(headers, extraHeaders || {});
@@ -1554,7 +1554,7 @@ test('websocket channels publish compatibility and queue updates', async () => {
   const mediaServer = await startFixtureMediaServer();
   const apiServer = await startApi({ dataDir: tmpRoot, port });
 
-  const ws = new WebSocket(wsUrl, ['vidsnag', `vidsnag-auth.${TEST_AUTH_TOKEN}`]);
+  const ws = new WebSocket(wsUrl, ['snagthis', `snagthis-auth.${TEST_AUTH_TOKEN}`]);
   await new Promise((resolve, reject) => {
     ws.once('open', resolve);
     ws.once('error', reject);

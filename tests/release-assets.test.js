@@ -13,7 +13,7 @@ const digest = (value, algorithm = 'sha256', encoding = 'hex') => crypto.createH
 const releaseTag = 'v2.0.45';
 const sourceCommit = 'a'.repeat(40);
 function fixture() {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-release-'));
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-release-'));
   const write = (directory, name, contents) => {
     const destination = path.join(base, directory, name);
     fs.mkdirSync(path.dirname(destination), { recursive: true });
@@ -23,19 +23,19 @@ function fixture() {
   fs.mkdirSync(sourceDirectory);
   for (const name of ['source.c', 'LICENSE', 'BUILD.md']) fs.writeFileSync(path.join(sourceDirectory, name), name);
   fs.mkdirSync(path.join(base, 'release-source'));
-  const archive = path.join(base, 'release-source/vidsnag-corresponding-source.tar.xz');
-  const components = ['vidsnag', 'ffmpeg', 'yt-dlp'].map(id => ({ id, version: id === 'vidsnag' ? '2.0.45' : 'fixture', path: '.', licenseFile: 'LICENSE', buildInstructions: 'BUILD.md' }));
+  const archive = path.join(base, 'release-source/snagthis-corresponding-source.tar.xz');
+  const components = ['snagthis', 'ffmpeg', 'yt-dlp'].map(id => ({ id, version: id === 'snagthis' ? '2.0.45' : 'fixture', path: '.', licenseFile: 'LICENSE', buildInstructions: 'BUILD.md' }));
   // The source verifier deliberately requires real files inside each named directory.
   for (const component of components) component.path = 'sources';
   fs.mkdirSync(path.join(sourceDirectory, 'sources'));
   fs.writeFileSync(path.join(sourceDirectory, 'sources/source.c'), 'fixture source');
-  const archived = spawnSync('tar', ['-cJf', 'release-source/vidsnag-corresponding-source.tar.xz', '-C', 'source-content', '.'], { cwd: base, encoding: 'utf8' });
+  const archived = spawnSync('tar', ['-cJf', 'release-source/snagthis-corresponding-source.tar.xz', '-C', 'source-content', '.'], { cwd: base, encoding: 'utf8' });
   assert.equal(archived.status, 0, archived.stderr);
   const builds = [];
   for (const [platform, arch] of [['darwin', 'arm64'], ['darwin', 'x64'], ['win32', 'x64']]) {
     const directory = `release-${platform === 'darwin' ? 'mac' : 'win'}-${arch}`;
-    const installer = `VidSnag-2.0.45${arch === 'arm64' ? '-arm64' : ''}.${platform === 'darwin' ? 'dmg' : 'exe'}`;
-    const zip = `VidSnag-2.0.45${arch === 'arm64' ? '-arm64' : ''}-mac.zip`;
+    const installer = `SnagThis-2.0.45${arch === 'arm64' ? '-arm64' : ''}.${platform === 'darwin' ? 'dmg' : 'exe'}`;
+    const zip = `SnagThis-2.0.45${arch === 'arm64' ? '-arm64' : ''}-mac.zip`;
     const smoke = { passed: true, version: '2.0.45' };
     const toolVersion = 'ffmpeg fixture';
     const report = { platform, arch, releaseTag, sourceCommit, smoke, updateRepository: sourceRepository,
@@ -60,7 +60,7 @@ function fixture() {
     builds.push({ platform, arch, tools: { ffmpeg: { version: toolVersion, components: ['ffmpeg'] }, ffprobe: { version: toolVersion, components: ['ffmpeg'] }, 'yt-dlp': { version: 'fixture', components: ['yt-dlp'] } } });
   }
   write('release-source', 'corresponding-source.json', JSON.stringify({ releaseTag, sourceCommit, archiveSha256: digest(fs.readFileSync(archive)), components, builds }));
-  write('release-extension', 'vidsnag-extension.zip', 'extension fixture');
+  write('release-extension', 'snagthis-extension.zip', 'extension fixture');
   write('publish', 'stale-debug.yml', 'must disappear');
   return { base, write };
 }
@@ -71,7 +71,7 @@ test('release assembly merges both Mac architectures, checks verified update pay
   const output = assembleRelease(base, releaseTag, sourceCommit);
   const mac = yaml.load(fs.readFileSync(path.join(output, 'latest-mac.yml'), 'utf8'));
   assert.equal(mac.files.length, 4);
-  assert.equal(mac.path, 'VidSnag-2.0.45-mac.zip');
+  assert.equal(mac.path, 'SnagThis-2.0.45-mac.zip');
   assert.ok(mac.files.some(file => file.url.includes('arm64') && file.url.endsWith('.zip')));
   for (const file of mac.files) {
     const bytes = fs.readFileSync(path.join(output, file.url));
@@ -91,7 +91,7 @@ test('release assembly merges both Mac architectures, checks verified update pay
   assert.throws(() => assembleRelease(base, releaseTag, sourceCommit), /checksum or size mismatch/);
   fs.writeFileSync(metadataPath, originalMetadata);
 
-  const zipPath = path.join(base, 'release-mac-arm64/VidSnag-2.0.45-arm64-mac.zip');
+  const zipPath = path.join(base, 'release-mac-arm64/SnagThis-2.0.45-arm64-mac.zip');
   const originalZip = fs.readFileSync(zipPath);
   fs.appendFileSync(zipPath, 'changed after smoke');
   assert.throws(() => assembleRelease(base, releaseTag, sourceCommit), /changed after signature/);

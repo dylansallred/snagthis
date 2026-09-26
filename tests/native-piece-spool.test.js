@@ -17,7 +17,7 @@ async function waitUntil(predicate) {
 }
 
 async function fixture(t, options) {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-spool-test-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-spool-test-'));
   let spool;
   t.after(async () => {
     await spool?.close();
@@ -302,4 +302,42 @@ test('native spool stops at the finite attempt limit and cancellation removes on
     assert.equal(await fs.readFile(unrelated, 'utf8'), 'keep');
     await assert.rejects(fs.stat(spool.stats().directory), { code: 'ENOENT' });
   });
+});
+
+test('an identical 5xx answer for one piece is permanent after a few attempts, not the whole retry budget', async (t) => {
+  const segments = urls(2);
+  let attempts = 0;
+  const states = [];
+  const { spool } = await fixture(t, {
+    segments, maxAttempts: 30, retryDelayMs: 0,
+    onState: (index, state) => states.push({ index, ...state }),
+    async request(url, filePath, context) {
+      if (url === segments[0]) {
+        attempts += 1;
+        throw Object.assign(new Error('Media request failed with status 502.'), { statusCode: 502, code: 'MEDIA_REQUEST_FAILED', bodySample: 'origin unavailable' });
+      }
+      return writePiece(filePath, context);
+    },
+  });
+  await assert.rejects(spool.get(segments[0]), { code: 'PIECE_UNAVAILABLE', message: /status 502/ });
+  assert.equal(attempts, 4);
+  assert.ok(states.some((state) => state.status === 'failed' && state.statusCode === 502));
+});
+
+test('a changing 5xx answer keeps retrying and a Retry-After delay is honored', async (t) => {
+  const segments = urls(1);
+  const times = [];
+  const { spool } = await fixture(t, {
+    segments, maxAttempts: 10, retryDelayMs: 0,
+    async request(url, filePath, context) {
+      times.push(Date.now());
+      if (times.length === 1) throw Object.assign(new Error('Busy'), { statusCode: 503, code: 'MEDIA_REQUEST_FAILED', bodySample: 'busy', retryAfterMs: 300 });
+      if (times.length <= 5) throw Object.assign(new Error('Busy'), { statusCode: 502, code: 'MEDIA_REQUEST_FAILED', bodySample: `attempt ${times.length}` });
+      return writePiece(filePath, context);
+    },
+  });
+  const piece = await spool.get(segments[0]);
+  assert.equal(piece.bytes, 4);
+  assert.equal(times.length, 6);
+  assert.ok(times[1] - times[0] >= 280, 'the announced Retry-After delay was waited out');
 });

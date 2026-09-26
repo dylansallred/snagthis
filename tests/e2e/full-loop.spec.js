@@ -10,7 +10,7 @@ test('full loop: actual Chrome pairing and 480p selection → Electron → playa
   test.setTimeout(150_000);
   const fixture = await startFixtureServer();
   const renderer = await startRenderer();
-  const browserProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-full-loop-browser-'));
+  const browserProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-full-loop-browser-'));
   const outputDirectory = path.join(fixture.directory, 'saved-videos');
   fs.mkdirSync(outputDirectory);
   let native;
@@ -24,6 +24,7 @@ test('full loop: actual Chrome pairing and 480p selection → Electron → playa
 
     // Use the actual product pairing flow; no test bearer token or fake API.
     await desktop.getByRole('button', { name: 'Settings', exact: true }).click();
+    await desktop.getByRole('tab', { name: 'Chrome extension', exact: true }).click();
     await desktop.getByRole('button', { name: 'Show connection code', exact: true }).click();
     const code = (await desktop.getByLabel('Connection code', { exact: true }).textContent()).trim();
     expect(code).toMatch(/^\d{6}$/);
@@ -40,8 +41,8 @@ test('full loop: actual Chrome pairing and 480p selection → Electron → playa
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${new URL(worker.url()).host}/popup.html?tab=${tabId}&apiBase=${encodeURIComponent(native.baseUrl)}`);
     await popup.locator('#connection-banner').getByRole('button', { name: 'Connect', exact: true }).click();
+    // Six digits submit on their own; no Connect click is needed.
     await popup.getByLabel('Connection code', { exact: true }).fill(code);
-    await popup.locator('#sheet').getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(popup.locator('#connection-banner')).toBeHidden();
     await expect.poll(() => desktop.evaluate(async () => (await window.desktop.getConnectionState()).extensionConnected)).toBe(true);
     await desktop.getByRole('button', { name: 'Close settings', exact: true }).click();

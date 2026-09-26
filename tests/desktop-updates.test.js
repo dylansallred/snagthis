@@ -22,7 +22,7 @@ function fixture() {
   const app = {
     isPackaged: true, installed: true,
     getVersion: () => '2.0.44',
-    getPath: name => name === 'exe' ? '/Applications/VidSnag.app/Contents/MacOS/VidSnag' : '/fixture',
+    getPath: name => name === 'exe' ? '/Applications/SnagThis.app/Contents/MacOS/SnagThis' : '/fixture',
     isInApplicationsFolder() { return this.installed; },
   };
   const sandbox = {
@@ -139,4 +139,16 @@ test('desktop update checks support installed apps and permit retry after a fail
   assert.equal(f.state.phase, 'idle');
   assert.equal(f.state.error, null);
   assert.equal(checks, 2);
+});
+
+test('an incomplete previous update gives platform-appropriate recovery advice', () => {
+  for (const [platform, advice, forbidden] of [['darwin', /\/Applications/, null], ['win32', /installer/, /Applications/]]) {
+    const f = fixture();
+    f.sandbox.process.platform = platform;
+    f.sandbox.readUpdaterInstallState = () => ({ fromVersion: '2.0.44', targetVersion: '2.0.45', attemptedAt: Date.now() });
+    f.sandbox.reconcileUpdaterInstallState();
+    assert.equal(f.state.phase, 'error');
+    assert.match(f.state.error, advice);
+    if (forbidden) assert.doesNotMatch(f.state.error, forbidden);
+  }
 });

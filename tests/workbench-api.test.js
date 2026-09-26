@@ -11,7 +11,7 @@ const { createApiServer } = require('../packages/downloader-api/src');
 const { redact } = require('../packages/downloader-api/src/utils/security');
 
 test('private bridge pairing, whole-library search, safe removal, missing-file locate and restart', async () => {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-bridge-'));
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-bridge-'));
   const downloadDir = path.join(dataDir, 'downloads');
   const trashDir = path.join(dataDir, 'trash');
   await fs.mkdir(downloadDir);
@@ -69,7 +69,7 @@ test('private bridge pairing, whole-library search, safe removal, missing-file l
     assert.equal(paired.status, 200);
     assert.equal(paired.body.token, token);
     assert.equal(api.getConnectionState().extensionConnected, false, 'pairing itself is not a successful authenticated request');
-    assert.equal((await request('/v1/queue', { headers: { 'X-Client': 'vidsnag-extension' } })).status, 200);
+    assert.equal((await request('/v1/queue', { headers: { 'X-Client': 'snagthis-extension' } })).status, 200);
     assert.equal(api.getConnectionState().extensionConnected, true, 'Chrome extension GET requests may omit Origin');
     assert.equal((await request('/v1/queue', { headers: { Origin: extensionOrigin } })).status, 200);
     assert.equal(api.getConnectionState().extensionConnected, true);
@@ -81,7 +81,7 @@ test('private bridge pairing, whole-library search, safe removal, missing-file l
       rejectedSocket.once('open', () => reject(new Error('Unauthenticated WebSocket was accepted')));
       rejectedSocket.on('error', () => {});
     });
-    const socket = new WebSocket(`${base.replace('http:', 'ws:')}/ws`, ['vidsnag', `vidsnag-auth.${token}`], { origin: extensionOrigin });
+    const socket = new WebSocket(`${base.replace('http:', 'ws:')}/ws`, ['snagthis', `snagthis-auth.${token}`], { origin: extensionOrigin });
     await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
     const messagePromise = new Promise((resolve) => socket.once('message', (message) => resolve(JSON.parse(message))));
     socket.send(JSON.stringify({ type: 'subscribe', channel: 'queue' }));
@@ -104,6 +104,14 @@ test('private bridge pairing, whole-library search, safe removal, missing-file l
     assert.equal(JSON.stringify((await request('/api/diagnostics')).body).includes('private'), false);
     assert.equal((await request('/v1/settings', { method: 'POST', body: { launchAtLogin: true, preferredQuality: '480' } })).status, 200);
     assert.equal((await request('/v1/settings')).body.launchAtLogin, true);
+    // The shared accent: validated, and only with a colour; this fixture desktop keeps no accent, so none is reported.
+    for (const body of [{ accent: 'teal' }, { accentChangedAt: 1 }, { accent: 'cobalt', accentChangedAt: -5 }, { accent: 'cobalt', accentChangedAt: Date.now() + 3 * 86_400_000 }]) {
+      assert.equal((await request('/v1/settings', { method: 'POST', body })).status, 400);
+    }
+    assert.equal((await request('/v1/settings', { method: 'POST', body: { accent: 'cobalt', accentChangedAt: 1234 } })).status, 200);
+    assert.deepEqual([settings.accent, settings.accentChangedAt], ['cobalt', 1234]);
+    assert.equal((await request('/v1/settings')).body.accent, 'cobalt');
+    assert.equal((await request('/v1/queue')).body.appearance, undefined, 'no appearance without a desktop that keeps one');
 
     const page = (await request('/api/history?limit=20')).body;
     assert.equal(page.total, 500);

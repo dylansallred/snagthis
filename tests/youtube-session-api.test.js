@@ -10,7 +10,7 @@ process.env.DISABLE_FILE_LOGS = '1';
 const { createApiServer } = require('../packages/downloader-api/src');
 
 test('Chrome sign-in recovery is an explicit desktop-only retry of the existing YouTube job', async () => {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-youtube-auth-'));
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-youtube-auth-'));
   const downloadDir = path.join(dataDir, 'downloads');
   const authError = 'Sign in to confirm your age. This video may be inappropriate for some users.';
   const seed = [
@@ -34,7 +34,7 @@ test('Chrome sign-in recovery is an explicit desktop-only retry of the existing 
   });
   try {
     assert.equal((await retry('auth-video', { headers: { Authorization: '' } })).status, 401);
-    assert.equal((await retry('auth-video', { headers: { 'X-Client': 'vidsnag-extension' } })).status, 403);
+    assert.equal((await retry('auth-video', { headers: { 'X-Client': 'snagthis-extension' } })).status, 403);
     assert.equal((await retry('auth-video', { bridge: 'v1/queue' })).status, 404);
     assert.equal((await retry('other-site', { body: { url: 'https://www.youtube.com/watch?v=fixture' } })).status, 409, 'the stored source determines eligibility');
     assert.equal((await retry('network-error')).status, 409);

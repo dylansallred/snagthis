@@ -35,7 +35,7 @@ function ListFixture() {
     if (patch.metadata) setHistory(items => items.map(item => item.id === 'saved' ? { ...item, ...patch.metadata } : item));
   });
   return <VideoList rows={mergeRows([{ ...job, progress }], history, { surface: 'desktop' })}
-    apiBase="http://127.0.0.1:1" folder="/fixture/videos" expandedId={expandedId} renamingId={null} busyId={null}
+    apiBase="http://127.0.0.1:1" folder="/fixture/videos" expandedId={expandedId} renamingId={null} busyIds={new Set()}
     hasMore={false} loadingMore={false} onLoadMore={noop} onMoveTo={noop} onRename={asyncNoop} onRefreshLink={asyncNoop}
     onRequestPreview={noPreview} onToggle={row => setExpandedId(current => current === row.id ? null : row.id)}
     onCommand={(row, command) => window.commands.push({ id: row.id, command, revision })} />;

@@ -1,4 +1,4 @@
-# VidSnag contributor instructions
+# SnagThis contributor instructions
 
 Implement the requested scope and follow `docs/design/ui-design-spec.md`. The approved direction is **Workbench, simplified**; rejected explorations are not a design source. `docs/design/roadmap.md` is historical migration context, not the current backlog. Remaining release requirements are in `docs/release-readiness.md`.
 

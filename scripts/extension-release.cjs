@@ -31,7 +31,7 @@ function releaseMetadata({ tag, version, sourceCommit, repository, bytes }) {
   if (!/^[a-f0-9]{40}$/.test(sourceCommit || '')) throw new Error('The extension release requires the exact Git commit');
   if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository || '')) throw new Error('The source GitHub repository is required');
   return { tag, version, sourceCommit, sourceArchive: `https://github.com/${repository}/archive/${sourceCommit}.zip`,
-    artifact: { name: 'vidsnag-extension.zip', size: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') } };
+    artifact: { name: 'snagthis-extension.zip', size: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') } };
 }
 
 if (require.main === module) {
@@ -41,7 +41,7 @@ if (require.main === module) {
     if (process.argv.includes('--check')) console.log('Extension tag and both extension versions match.');
     else {
       const output = path.join(root, 'release-assets/extension-only');
-      const archive = packageExtension({ root, output: path.join(output, 'vidsnag-extension.zip') });
+      const archive = packageExtension({ root, output: path.join(output, 'snagthis-extension.zip') });
       const report = releaseMetadata({ tag, version, sourceCommit: process.env.RELEASE_SOURCE_COMMIT,
         repository: process.env.GITHUB_REPOSITORY, bytes: fs.readFileSync(archive.output) });
       fs.writeFileSync(path.join(output, 'extension-release.json'), JSON.stringify(report, null, 2) + '\n');

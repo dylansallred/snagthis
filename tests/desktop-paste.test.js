@@ -12,7 +12,7 @@ process.env.LOG_LEVEL = 'error';
 const { createApiServer } = require('../packages/downloader-api/src');
 
 test('desktop paste keeps resolved titles, quality and source metadata, and explains pages without a video', { timeout: 35000 }, async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-paste-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-paste-'));
   const renderer = await startRenderer();
   const source = http.createServer((_request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/html' });
@@ -79,6 +79,6 @@ test('desktop paste keeps resolved titles, quality and source metadata, and expl
   assert.ok(api.getState().queue.every(job => job.queueStatus === 'queued'));
 
   await submit(`${fixtureUrl}/empty`);
-  await page.getByText('Could not find a video automatically. Open this page in Chrome, press play, then choose it in VidSnag.', { exact: true }).waitFor();
+  await page.getByText('Could not find a video automatically. Open this page in Chrome, press play, then choose it in SnagThis.', { exact: true }).waitFor();
   assert.equal(api.getState().queue.length, 2, 'unsupported pages must not create a doomed download');
 });

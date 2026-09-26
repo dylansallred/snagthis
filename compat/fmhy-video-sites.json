@@ -1,0 +1,363 @@
+[
+ {
+  "id": "cinejoy",
+  "name": "Cinejoy",
+  "section": "Stream Aggregators (owner report)",
+  "url": "https://cinejoy.pk/watch/tv/287620/1/6",
+  "discover": false
+ },
+ {
+  "id": "cineby",
+  "name": "Cineby (gdn)",
+  "section": "Stream Aggregators",
+  "url": "https://cineby.gdn/movie/27205?play=true",
+  "discover": false
+ },
+ {
+  "id": "spacedom",
+  "name": "Spacedom",
+  "section": "Stream Aggregators",
+  "url": "https://spacedom.live/",
+  "discover": true
+ },
+ {
+  "id": "movish",
+  "name": "Movish",
+  "section": "Stream Aggregators",
+  "url": "https://movish.to/",
+  "discover": true,
+  "headed": true
+ },
+ {
+  "id": "chillflix",
+  "name": "Chillflix",
+  "section": "Stream Aggregators",
+  "url": "https://www.chillflix.lol/movie/27205/watch",
+  "discover": false
+ },
+ {
+  "id": "cinemaos",
+  "name": "CinemaOS",
+  "section": "Stream Aggregators",
+  "url": "https://cinemaos.live/movie/watch/27205",
+  "discover": false,
+  "headed": true
+ },
+ {
+  "id": "hivex",
+  "name": "HiveX",
+  "section": "Stream Aggregators",
+  "url": "https://hivex.stream/",
+  "discover": true,
+  "headed": true
+ },
+ {
+  "id": "bingebang",
+  "name": "BingeBang",
+  "section": "Stream Aggregators",
+  "url": "https://bingebang.st/",
+  "discover": true
+ },
+ {
+  "id": "mapple",
+  "name": "Mapple",
+  "section": "Stream Aggregators",
+  "url": "https://mapple.fun/watch/movie/27205",
+  "discover": false
+ },
+ {
+  "id": "popwatch",
+  "name": "PopcornTime (popwatch)",
+  "section": "Stream Aggregators",
+  "url": "https://popwatch.to/",
+  "discover": true
+ },
+ {
+  "id": "pstream",
+  "name": "P-Stream fork",
+  "section": "P-Stream Forks",
+  "url": "https://pstream.cfd/media/tmdb-movie-27205-inception",
+  "discover": false
+ },
+ {
+  "id": "kdesa",
+  "name": "kstream",
+  "section": "P-Stream Forks",
+  "url": "https://kdesa.stream/media/tmdb-movie-27205-inception",
+  "discover": false
+ },
+ {
+  "id": "streamingunity",
+  "name": "Streaming Unity",
+  "section": "Dedicated-Server",
+  "url": "https://streamingunity.vip/",
+  "discover": true
+ },
+ {
+  "id": "ridomovies",
+  "name": "RidoMovies",
+  "section": "Dedicated-Server",
+  "url": "https://ridomovies.is/",
+  "discover": true
+ },
+ {
+  "id": "soapgo",
+  "name": "SoapGo",
+  "section": "Dedicated-Server",
+  "url": "https://soapgo.to/movies",
+  "discover": true,
+  "linkPattern": "/(?:movie|watch|film)/"
+ },
+ {
+  "id": "lookmovie",
+  "name": "LookMovie",
+  "section": "Dedicated-Server",
+  "url": "https://www.lookmovie2.to/movies/view/6933238-unabomber-2026",
+  "discover": false
+ },
+ {
+  "id": "primewire",
+  "name": "PrimeWire",
+  "section": "Dedicated-Server",
+  "url": "https://primewire.mov/movie/1408592-unabomber",
+  "discover": false
+ },
+ {
+  "id": "fsharetv",
+  "name": "FshareTV",
+  "section": "Dedicated-Server",
+  "url": "https://fsharetv.co/",
+  "discover": true
+ },
+ {
+  "id": "onionplay",
+  "name": "OnionPlay",
+  "section": "Dedicated-Server",
+  "url": "https://onionplay.st/",
+  "discover": true
+ },
+ {
+  "id": "vidbox",
+  "name": "Vidbox",
+  "section": "Multi-Server",
+  "url": "https://vidbox.vc/movie/27205",
+  "discover": false
+ },
+ {
+  "id": "zencine",
+  "name": "Zencine",
+  "section": "Multi-Server",
+  "url": "https://zencine.org/movie/27205",
+  "discover": false
+ },
+ {
+  "id": "flyflix",
+  "name": "Flyflix",
+  "section": "Multi-Server",
+  "url": "https://flyflix.net/",
+  "discover": true
+ },
+ {
+  "id": "cinego",
+  "name": "CineGo",
+  "section": "Multi-Server",
+  "url": "https://cinego.co/genres/action/",
+  "discover": true,
+  "linkPattern": [
+   "/(?:movie|film|watch)/"
+  ]
+ },
+ {
+  "id": "watchseries",
+  "name": "WatchSeries",
+  "section": "Multi-Server",
+  "url": "https://watchseries.bar/",
+  "discover": true,
+  "linkPattern": "/(?:movie|movies|watch|tv|series)/[^/]+"
+ },
+ {
+  "id": "tvids",
+  "name": "TVids",
+  "section": "Multi-Server",
+  "url": "https://www.tvids.to/",
+  "discover": true
+ },
+ {
+  "id": "rivestream",
+  "name": "Rive",
+  "section": "Anime/Multi",
+  "url": "https://www.rivestream.app/watch?type=movie&id=27205",
+  "discover": false,
+  "headed": true
+ },
+ {
+  "id": "kuroanime",
+  "name": "KuroAnime",
+  "section": "Anime Streaming",
+  "url": "https://kuroanime.lol/",
+  "discover": true
+ },
+ {
+  "id": "justanime",
+  "name": "JustAnime",
+  "section": "Anime Streaming",
+  "url": "https://justanime.to/",
+  "discover": true
+ },
+ {
+  "id": "anizone",
+  "name": "AniZone",
+  "section": "Anime Streaming",
+  "url": "https://anizone.to/",
+  "discover": true
+ },
+ {
+  "id": "animeparadise",
+  "name": "AnimeParadise",
+  "section": "Anime Streaming",
+  "url": "https://www.animeparadise.moe/",
+  "discover": true
+ },
+ {
+  "id": "9anime",
+  "name": "9anime (9animstv)",
+  "section": "Anime Streaming",
+  "url": "https://9animstv.to/watch/anime-clevatess-ii-majuu-no-ou-to-itsuwari-no-yuusha-denshou-episode-1",
+  "discover": false
+ },
+ {
+  "id": "aniwaves",
+  "name": "Aniwave",
+  "section": "Anime Streaming",
+  "url": "https://aniwaves.ru/",
+  "discover": true,
+  "linkPattern": "/watch/"
+ },
+ {
+  "id": "kisskh",
+  "name": "KissKH",
+  "section": "Drama Streaming",
+  "url": "https://kisskh.la/",
+  "discover": true,
+  "linkPattern": [
+   "#/Drama/",
+   "Episode"
+  ]
+ },
+ {
+  "id": "dramahood",
+  "name": "Dramahood",
+  "section": "Drama Streaming",
+  "url": "https://dramahood.mom/dive-into-you-2026-episode-1/",
+  "discover": false
+ },
+ {
+  "id": "megacartoons",
+  "name": "MegaCartoons",
+  "section": "Cartoon Streaming",
+  "url": "https://www.megacartoons.net/",
+  "discover": true,
+  "linkPattern": "^/[a-z0-9-]{8,}/?$"
+ },
+ {
+  "id": "popcornflix",
+  "name": "PopcornFlix",
+  "section": "Free w/ Ads",
+  "url": "https://popcornflix.com/",
+  "discover": true
+ },
+ {
+  "id": "filmzie",
+  "name": "Filmzie",
+  "section": "Free w/ Ads",
+  "url": "https://filmzie.com/",
+  "discover": true
+ },
+ {
+  "id": "fawesome",
+  "name": "Fawesome",
+  "section": "Free w/ Ads",
+  "url": "https://fawesome.tv/",
+  "discover": true
+ },
+ {
+  "id": "arte",
+  "name": "ARTE",
+  "section": "Free w/ Ads",
+  "url": "https://www.arte.tv/en/",
+  "discover": true,
+  "linkPattern": "/videos/\\d{6}-\\d{3}-A/"
+ },
+ {
+  "id": "rumble",
+  "name": "Rumble",
+  "section": "Video Streaming",
+  "url": "https://rumble.com/",
+  "discover": true
+ },
+ {
+  "id": "odysee",
+  "name": "Odysee",
+  "section": "Video Streaming",
+  "url": "https://odysee.com/",
+  "discover": true,
+  "linkPattern": "^/@[^/]+/[^/]+"
+ },
+ {
+  "id": "rutube",
+  "name": "Rutube",
+  "section": "Video Streaming",
+  "url": "https://rutube.ru/",
+  "discover": true
+ },
+ {
+  "id": "videa",
+  "name": "Videa",
+  "section": "Video Streaming",
+  "url": "https://videa.hu/",
+  "discover": true
+ },
+ {
+  "id": "pluto",
+  "name": "Pluto TV",
+  "section": "Live TV",
+  "url": "https://pluto.tv/live-tv",
+  "discover": false
+ },
+ {
+  "id": "xumo",
+  "name": "Xumo Play",
+  "section": "Live TV",
+  "url": "https://play.xumo.com/free-movies",
+  "discover": true,
+  "linkPattern": "/free-movies/[^/]+/"
+ },
+ {
+  "id": "daddylive",
+  "name": "DaddyLiveHD",
+  "section": "Live Sports",
+  "url": "https://daddylive.mov/",
+  "discover": true
+ },
+ {
+  "id": "streameast",
+  "name": "StreamEast",
+  "section": "Live Sports",
+  "url": "https://streameast.ga/",
+  "discover": true
+ },
+ {
+  "id": "thetvapp",
+  "name": "TheTVApp",
+  "section": "Live Sports",
+  "url": "https://thetvapp.plus/",
+  "discover": true
+ },
+ {
+  "id": "wikimedia",
+  "name": "Wikimedia Commons",
+  "section": "Classics / Public Domain",
+  "url": "https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm",
+  "discover": false
+ }
+]

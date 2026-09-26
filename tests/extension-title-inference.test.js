@@ -243,3 +243,27 @@ test('a page title that already names the episode as S4:E9 does not gain a secon
   // A different episode in the title still receives the real tag.
   assert.match(buildJobPayload({ ...item, id: 'other', sourcePageTitle: 'Show S4:E8 recap' }).title, /S04E09$/);
 });
+
+test('several differently titled detections on one page keep their own titles instead of the tab title', () => {
+  const helpers = loadPopupTitleHelpers();
+  const page = 'https://videos.example/watch';
+  const film = (id, title) => ({ id, url: `https://videos.example/${id}.mp4`, sourcePageUrl: page, sourcePageTitle: title, pageTitleCandidates: [{ source: 'document.title', value: title }] });
+  const items = [film('sintel', 'Sintel — an open movie'), film('bunny', 'Big Buck Bunny'), film('steel', 'Tears of Steel')];
+  try {
+    helpers.setActiveTab({ title: 'Open movies', url: page });
+    helpers.setPageItems(items);
+    assert.deepEqual(items.map(helpers.getDisplayTitle), ['Sintel — an open movie', 'Big Buck Bunny', 'Tears of Steel']);
+    assert.equal(helpers.buildJobPayload(items[1]).title, 'Big Buck Bunny');
+    // One detection, or several sharing the captured page title, still follow the settled tab title.
+    helpers.setPageItems([items[0]]);
+    assert.equal(helpers.getDisplayTitle(items[0]), 'Open movies');
+    helpers.setPageItems([items[0], { ...items[1], sourcePageTitle: items[0].sourcePageTitle }]);
+    assert.equal(helpers.getDisplayTitle(items[0]), 'Open movies');
+    // An untitled detection falls back to the tab title.
+    helpers.setPageItems(items);
+    assert.equal(helpers.getDisplayTitle({ id: 'untitled', url: 'https://videos.example/master.m3u8', sourcePageUrl: page }), 'Open movies');
+  } finally {
+    helpers.setPageItems([]);
+    helpers.setActiveTab(null);
+  }
+});

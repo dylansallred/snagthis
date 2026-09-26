@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 test('an occupied API port rejects startup without an unhandled WebSocket error', async () => {
   const existingServer = http.createServer();
   await new Promise((resolve) => existingServer.listen(0, '127.0.0.1', resolve));
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-startup-'));
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-startup-'));
 
   try {
     // A real child process must catch the rejection and exit naturally. The

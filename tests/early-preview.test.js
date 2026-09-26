@@ -21,7 +21,7 @@ const waitFor = async (condition, timeout = 25000) => {
 test('native HLS publishes a real local poster and silent clip before its final piece finishes', { timeout: 65000 }, async (t) => {
   const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
   const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-early-preview-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-early-preview-'));
   const media = path.join(directory, 'media');
   const output = path.join(directory, 'output');
   fs.mkdirSync(media); fs.mkdirSync(output);

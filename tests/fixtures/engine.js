@@ -33,7 +33,7 @@ async function downloadMedia({ url, directory, mediaType = 'hls', headers = {}, 
   });
   const job = {
     id, url, mediaType, headers, selection, probe,
-    title: 'Generated VidSnag fixture', status: 'pending', queueStatus: 'downloading',
+    title: 'Generated SnagThis fixture', status: 'pending', queueStatus: 'downloading',
     progress: 0, bytesDownloaded: 0, completedSegments: 0, failedSegments: [],
     filePath: path.join(output, mediaType === 'file' ? 'fixture.mp4' : 'fixture.ts'),
     storageDir: output, downloadName: 'fixture.ts', downloadNameMp4: 'fixture.mp4',

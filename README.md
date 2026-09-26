@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/header.png" alt="VidSnag — save supported videos from the web to your computer" width="1200">
+  <img src="docs/images/header.png" alt="SnagThis — save supported videos from the web to your computer" width="1200">
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
 </p>
 
 > [!NOTE]
-> **VidSnag is in development.** Public installers and a Chrome Web Store listing are not available yet. You can [run it locally](#get-started) today.
+> **SnagThis is in development.** Public installers and a Chrome Web Store listing are not available yet. You can [run it locally](#get-started) today.
 
 ## See it in action
 
@@ -38,7 +38,7 @@
 
 ## From playing to saved
 
-1. **Play a video** on a supported website, then open VidSnag in Chrome.
+1. **Play a video** on a supported website, then open SnagThis in Chrome.
 2. **Choose the quality** when the source offers alternatives. Available audio and subtitle choices appear with it.
 3. **Download and carry on.** Downloads keep going after you close the popup.
 
@@ -52,7 +52,7 @@ You can also paste a video link directly into the desktop app.
 
 Keep the desktop app open for downloads that use it. To send a direct file to its library instead of Chrome Downloads, right-click the video's row and choose **Download with desktop**. Browser-only stream downloading is not available yet.
 
-Use VidSnag for videos you own or have permission to save. Protected DRM videos and live recording are not supported. See the [compatibility notes](compat/COMPATIBILITY.md) for tested formats and sites.
+Use SnagThis for videos you own or have permission to save. Protected DRM videos and live recording are not supported. See the [compatibility notes](compat/COMPATIBILITY.md) for tested formats and sites.
 
 ## Get started
 
@@ -88,8 +88,8 @@ Connect it to Chrome using the steps below.
 
 Connect once for downloads that need the desktop app. Direct Chrome downloads don't need this step.
 
-1. In VidSnag desktop, open **Settings → Chrome extension → Show connection code**.
-2. Choose **Copy code**, open **Extensions → VidSnag** in Chrome, and choose **Connect**.
+1. In SnagThis desktop, open **Settings → Chrome extension → Show connection code**.
+2. Choose **Copy code**, open **Extensions → SnagThis** in Chrome, and choose **Connect**.
 3. Paste the six-digit code and choose **Connect**. The connection stays saved on your device.
 
 Codes expire after five minutes. Choose **Get a new code** in the desktop app if yours expires.
@@ -106,7 +106,7 @@ The extension needs website access to find videos and Chrome's downloads permiss
 
 | What you're seeing | What to try |
 | --- | --- |
-| **No video found** | Start playback, reopen VidSnag, or choose **No video?** in the popup. |
+| **No video found** | Start playback, reopen SnagThis, or choose **No video?** in the popup. |
 | **App not open** | Start the desktop app. If asked to connect, use a fresh code from **Settings → Chrome extension**. Direct Chrome downloads don't require it. |
 | **Download failed** | Check the message in the popup or **Chrome Downloads**. For desktop downloads, open **Details**. If the link expired, reopen the source page and try again. |
 

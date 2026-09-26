@@ -32,7 +32,7 @@ function marker(frame) {
 // This single real-media fixture exercises full-file selection, local HLS
 // replacement, silent motion, and serialization that permits persisted repair.
 test('previews replace a 30-second interim scene with the actual 35% scene using only captured media', { timeout: 60000 }, async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-preview-selection-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-preview-selection-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
   const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';

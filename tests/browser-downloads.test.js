@@ -14,7 +14,7 @@ function fixture() {
   const calls = [];
   let nextId = 1;
   const chrome = {
-    runtime: { id: 'vidsnag-test' },
+    runtime: { id: 'snagthis-test' },
     storage: { local: {
       get: async key => structuredClone(key == null ? values : { [key]: values[key] }),
       set: async entry => { Object.assign(values, structuredClone(entry)); },
@@ -24,7 +24,7 @@ function fixture() {
       download: async options => {
         calls.push(['download', options]);
         const id = nextId++;
-        downloads.set(id, { id, byExtensionId: 'vidsnag-test', state: 'in_progress', paused: false, canResume: false, danger: 'safe', mime: '', bytesReceived: 0, totalBytes: -1, filename: `/Downloads/${options.filename}`, startTime: '2026-09-20T12:00:00.000Z' });
+        downloads.set(id, { id, byExtensionId: 'snagthis-test', state: 'in_progress', paused: false, canResume: false, danger: 'safe', mime: '', bytesReceived: 0, totalBytes: -1, filename: `/Downloads/${options.filename}`, startTime: '2026-09-20T12:00:00.000Z' });
         return id;
       },
       search: async ({ id }) => downloads.has(id) ? [structuredClone(downloads.get(id))] : [],
@@ -75,7 +75,7 @@ test('DOM rescans cannot overwrite an observed response MIME with video/unknown'
   const event = { addListener() {} };
   const chrome = {
     storage: { session: storage, local: storage },
-    runtime: { id: 'fixture', getURL: value => `chrome-extension://fixture/${value}`, onMessage: event },
+    runtime: { id: 'fixture', getURL: value => `chrome-extension://fixture/${value}`, onMessage: event, onInstalled: event },
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
     tabs: { onRemoved: event },
     webNavigation: { onCommitted: event, onHistoryStateUpdated: event },
@@ -101,6 +101,8 @@ test('filenames are relative safe basenames with the actual video extension', ()
   assert.equal(B.filenameFor('CON', 'webm'), 'Video CON.webm');
   assert.equal(B.filenameFor('..', 'mp4'), 'Video.mp4');
   assert.equal(B.filenameFor('Film.mp4', 'mp4'), 'Film.mp4');
+  assert.equal(B.filenameFor('Holiday\u202Egnp.exe', 'mp4'), 'Holidaygnp.exe.mp4', 'bidi overrides cannot disguise the real extension');
+  assert.equal(B.filenameFor('Clip\u200B\u2066name\u2069\uFEFF', 'webm'), 'Clipname.webm');
 });
 
 test('native transfer ownership survives manager restart without persisting source credentials', async () => {
@@ -159,7 +161,7 @@ test('wrong response types and Chrome danger states are never reported as saved 
   await assert.rejects(manager.action(result.jobId, 'show'), /saved file is unavailable/);
 });
 
-test('download controls require a VidSnag record and the matching Chrome owner', async () => {
+test('download controls require a SnagThis record and the matching Chrome owner', async () => {
   const f = fixture(); const manager = f.manager();
   await assert.rejects(manager.action('browser:41', 'cancel'), /not owned/);
   await assert.rejects(manager.action('desktop-job', 'pause'), /not a Chrome/);

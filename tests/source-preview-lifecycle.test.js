@@ -8,7 +8,7 @@ const { chromium } = require('playwright');
 const { runTool } = require('./fixtures/server');
 
 test('source previews cancel failed response bodies and capture cover-cropped real video posters', { timeout: 30_000 }, async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-source-preview-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-source-preview-'));
   let browser;
   let server;
   let failureTimer;
@@ -54,7 +54,7 @@ test('source previews cancel failed response bodies and capture cover-cropped re
     await page.goto(origin);
     await page.evaluate(() => new Promise(resolve => {
       const video = document.createElement('video'); document.body.append(video);
-      VidSnagSourcePreview.create({ item: { url: `${location.origin}/error.mp4`, type: 'file' }, video, onError: resolve });
+      SnagThisSourcePreview.create({ item: { url: `${location.origin}/error.mp4`, type: 'file' }, video, onError: resolve });
     }));
     // Browser onError and the server observing TCP cancellation run in separate
     // processes. Measure the actual closed response, not chunks written during
@@ -71,7 +71,7 @@ test('source previews cancel failed response bodies and capture cover-cropped re
 
     const aspect = await page.evaluate(async () => {
       const video = document.createElement('video'); document.body.append(video);
-      const captured = await new Promise((resolve, reject) => VidSnagSourcePreview.create({
+      const captured = await new Promise((resolve, reject) => SnagThisSourcePreview.create({
         item: { url: `${location.origin}/wide.mp4`, type: 'file', durationSeconds: 2 }, video, posterOnly: true,
         onPoster: (poster, offset) => resolve({ poster, offset }), onError: () => reject(new Error('Fixture did not produce a poster')),
       }));

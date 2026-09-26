@@ -68,6 +68,17 @@ test('ETA, sizes, dates and duration use the documented boundary rules', () => {
   assert.equal(formatDuration(8406), '2:20:06');
 });
 
+test('the popup turns an expired link into an on-page continue step without changing desktop copy', () => {
+  const failed = job('failed', { error: 'SOURCE_EXPIRED' });
+  const popup = toRowModel(failed, { surface: 'popup' });
+  assert.equal(popup.statusLine, 'Link expired at 34%. Play the video, then click Download to continue.');
+  assert.deepEqual(popup.action, { id: 'continue', label: 'Download', style: 'primary' });
+  assert.equal(popup.problem.code, 'expired');
+  const desktop = toRowModel(failed, { surface: 'desktop' });
+  assert.equal(desktop.statusLine, 'Link expired. Reopen the page to continue from 34%.');
+  assert.equal(desktop.action.id, 'open-page');
+});
+
 test('every problem has exactly the approved sentence and labelled recovery action', () => {
   const examples = [
     ['ERROR: [youtube] B0_13LSguRc: Sign in to confirm your age. Use --cookies-from-browser or --cookies for the authentication.', 'authentication', 'Sign-in required to download this video.', 'Details'],
@@ -146,14 +157,64 @@ test('merged rows preserve queue order, prioritise problems and never duplicate 
   assert.equal(retry[0].state, 'downloading');
 });
 
+test('merged rows match the straightforward merge on a large randomized library', () => {
+  // The original quadratic merge, kept as the reference for the indexed version.
+  const reference = (queue, history, options) => {
+    const firstWaiting = queue.find(item => item.queueStatus === 'queued');
+    const rowOptions = { ...options, firstQueuedId: options.firstQueuedId || (firstWaiting && firstWaiting.id) };
+    const queueById = new Map(queue.map(item => [String(item.id), item]));
+    const historyJobIds = new Set(history.filter(item => item.jobId).map(item => String(item.jobId)));
+    const rows = [];
+    for (const item of queue) {
+      if (item.queueStatus === 'completed' && historyJobIds.has(String(item.id))) continue;
+      const row = toRowModel(item, rowOptions);
+      if (row) rows.push(row);
+    }
+    for (const item of history) {
+      const active = item.jobId && queueById.get(String(item.jobId));
+      if (active && active.queueStatus !== 'completed' && active.queueStatus !== 'cancelled') continue;
+      const row = toRowModel(item, { ...rowOptions, kind: 'history' });
+      if (row && !rows.some(existing => existing.id === row.id)) rows.push(row);
+    }
+    const rank = { problem: 0, missing: 0, downloading: 1, finishing: 1, paused: 2, waiting: 3, detected: 3, saved: 4 };
+    const date = row => new Date(row.source.completedAt ?? row.source.modifiedAt ?? row.source.updatedAt ?? row.source.createdAt ?? 0).getTime();
+    return rows.sort((a, b) => rank[a.state] - rank[b.state] || (a.state === 'saved' && b.state === 'saved' ? date(b) - date(a) : 0));
+  };
+  let seed = 20260926;
+  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const pick = values => values[Math.floor(random() * values.length)];
+  const stamp = () => pick([undefined, now - Math.floor(random() * 30) * 86400000, new Date(now - Math.floor(random() * 5) * 3600000).toISOString(), 'not a date']);
+  const statuses = ['queued', 'downloading', 'paused', 'failed', 'completed', 'cancelled'];
+  const queue = Array.from({ length: 80 }, (_, i) => job(pick(statuses), { id: `job-${i % 70}`, progress: Math.floor(random() * 100), completedAt: stamp() }));
+  const history = Array.from({ length: 3000 }, (_, i) => ({
+    id: `saved-${i % 2800}`, jobId: random() < 0.1 ? `job-${Math.floor(random() * 90)}` : random() < 0.5 ? `old-${i % 2500}` : undefined,
+    title: `Saved ${i}`, fileName: `saved-${i}.mp4`, sizeBytes: Math.floor(random() * 2e9),
+    completedAt: stamp(), modifiedAt: stamp(), createdAt: stamp(), missing: random() < 0.05,
+  }));
+  const options = { surface: 'desktop', now };
+  assert.deepEqual(mergeRows(queue, history, options), reference(queue, history, options));
+});
+
 test('the same row module works as a browser script and an ESM import', async () => {
   const context = vm.createContext({});
   for (const file of ['strings.js', 'rows.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../packages/contracts/src', file), 'utf8'), context);
   }
   const expected = toRowModel(job('downloading', { etaSeconds: 600 }));
-  const browserRow = context.VidSnagRows.toRowModel(job('downloading', { etaSeconds: 600 }));
+  const browserRow = context.SnagThisRows.toRowModel(job('downloading', { etaSeconds: 600 }));
   assert.deepEqual(JSON.parse(JSON.stringify(browserRow)), expected);
   const esm = await import('../packages/contracts/src/rows.mjs');
   assert.deepEqual(esm.toRowModel(job('downloading', { etaSeconds: 600 })), expected);
+});
+
+test('a dead rendition is a quality problem, not an expired link, and a fallback is labelled', () => {
+  assert.equal(classifyProblem('Video piece 1 is unavailable from the source (status 502).').code, 'quality');
+  assert.equal(classifyProblem({ code: 'VARIANT_UNAVAILABLE', message: 'This quality is unavailable from the source (status 502). Choose another quality.' }).code, 'quality');
+  assert.equal(classifyProblem('Segment 4 failed with status 403').code, 'quality');
+  assert.equal(classifyProblem('Video piece 40 could not be downloaded after 1 attempt (status 403).', { progress: 40 }).code, 'expired', 'mid-download refusals are expiry');
+  assert.equal(classifyProblem('Media request failed with status 403.').code, 'expired', 'a refused playlist still means the link expired');
+  const row = toRowModel(job('downloading', { selection: { height: 2160 }, qualityFallback: { from: 2160, to: 1080 }, etaSeconds: null }));
+  assert.equal(row.qualityLabel, '1080p');
+  assert.equal(row.qualityNote, '1080p — 2160p unavailable');
+  assert.match(row.statusLine, /1080p — 2160p unavailable/);
 });

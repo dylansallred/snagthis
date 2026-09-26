@@ -12,7 +12,7 @@ process.env.DISABLE_FILE_LOGS = '1';
 const { createApiServer } = require('../packages/downloader-api/src');
 
 test('real yt-dlp metadata names completed videos while custom and resource choices survive', { timeout: 180000 }, async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-ytdlp-title-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-ytdlp-title-'));
   const mediaPath = path.join(directory, 'sample.mp4');
   const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
   const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';
@@ -93,4 +93,71 @@ test('real yt-dlp metadata names completed videos while custom and resource choi
   const persisted = JSON.parse(fs.readFileSync(path.join(dataDir, 'queue.json'), 'utf8')).queue;
   assert.deepEqual(persisted.map(job => job.fileNaming), ['title', 'custom', 'resource']);
   assert.deepEqual(persisted.map(job => job.manualTitleOverride), [false, true, false]);
+});
+
+test('real yt-dlp subtitles match regional tracks and report when none exist', { timeout: 180000 }, async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-ytdlp-subtitles-'));
+  const mediaPath = path.join(directory, 'sample.mp4');
+  const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
+  const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';
+  const bundledYtDlp = path.join(__dirname, '../apps/desktop/bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+  const ytDlp = process.env.YTDLP_PATH || process.env.YT_DLP_PATH
+    || (fs.existsSync(bundledYtDlp) ? bundledYtDlp : 'yt-dlp');
+  let api;
+  let source;
+  t.after(async () => {
+    await api?.stop();
+    if (source) await new Promise(resolve => source.close(resolve));
+    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
+  });
+  await runTool(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=128x72:rate=10',
+    '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100', '-t', '1', '-c:v', 'libx264', '-preset', 'ultrafast',
+    '-c:a', 'aac', '-movflags', '+faststart', mediaPath]);
+  const media = fs.readFileSync(mediaPath);
+  const captions = 'WEBVTT\n\n00:00:00.000 --> 00:00:00.900\nRegional caption\n';
+  source = http.createServer((request, response) => {
+    if (request.url === '/sample.mp4') {
+      response.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': media.length });
+      response.end(media);
+    } else if (request.url === '/captions.vtt') {
+      response.writeHead(200, { 'Content-Type': 'text/vtt' });
+      response.end(captions);
+    } else {
+      // The page labels its track by region, as many sites and YouTube do.
+      const track = request.url === '/with-track' ? '<track kind="subtitles" srclang="en-US" label="English" src="/captions.vtt">' : '';
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<html><head><title>Captioned clip</title></head><body><video controls src="/sample.mp4">${track}</video></body></html>`);
+    }
+  });
+  await new Promise(resolve => source.listen(0, '127.0.0.1', resolve));
+  const sourceBase = `http://127.0.0.1:${source.address().port}`;
+  api = createApiServer({ dataDir: path.join(directory, 'data'), downloadDir: path.join(directory, 'downloads'), port: 0,
+    ffmpegPath: ffmpeg, ffprobePath: ffprobe, ytDlpPath: ytDlp, trustBinaryPaths: true, initialQueueSettings: { autoStart: false } });
+  const address = await api.start();
+  const apiBase = `http://127.0.0.1:${address.port}`;
+  const post = async (route, body) => {
+    const response = await fetch(`${apiBase}${route}`, { method: 'POST', headers: {
+      Authorization: `Bearer ${api.getAuthToken()}`, 'Content-Type': 'application/json',
+    }, body: JSON.stringify(body) });
+    const value = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(value));
+    return value;
+  };
+  for (const [page, expectSubtitle] of [['with-track', true], ['without-track', false]]) {
+    const result = await post('/api/jobs', { queue: { url: `${sourceBase}/${page}`, title: page, mediaType: 'file', selection: { subtitleLang: 'en' } } });
+    const id = result.jobId || result.id;
+    await post(`/api/queue/${id}/start`, {});
+    let job;
+    const deadline = Date.now() + 45000;
+    do {
+      job = api.getState().queue.find(value => value.id === id);
+      if (['completed', 'failed'].includes(job.queueStatus)) break;
+      await delay(50);
+    } while (Date.now() < deadline);
+    assert.equal(job.queueStatus, 'completed', job.error || 'The local fixture did not finish');
+    const output = fs.readdirSync(job.outputDirectory).find(name => name.endsWith('.mp4'));
+    const metadata = JSON.parse(await runTool(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'json', path.join(job.outputDirectory, output)]));
+    assert.equal(metadata.streams.some(stream => stream.codec_type === 'subtitle'), expectSubtitle, `${page}: embedded subtitle track`);
+    assert.equal(job.subtitleMissing, !expectSubtitle, `${page}: the missing-subtitle note`);
+  }
 });

@@ -49,11 +49,11 @@ Earlier local evidence is under ignored `work/verification/release-readiness/`, 
 
 ## Remaining launch requirements
 
-Read-only GitHub inspection found `dylansallred/vidsnag` is private, with no published releases. Access to repository variables and branch-protection details was denied to the current token, so those settings were not verified or changed. Draft preparation now ends before publication; a private-repository required-reviewer environment is no longer a prerequisite.
+Read-only GitHub inspection found `dylansallred/snagthis` is private, with no published releases. Access to repository variables and branch-protection details was denied to the current token, so those settings were not verified or changed. Draft preparation now ends before publication; a private-repository required-reviewer environment is no longer a prerequisite.
 
 The owner clarified that this repository is private **during testing** and will become public at launch. The same repository will host source, desktop downloads, update metadata, and extension ZIPs. No separate distribution repository is needed. The five Apple signing/notarization repository secrets are configured. Their presence is confirmed; a successful [manual signing check](release-guide.md#verify-apple-signing-before-a-release) is required to establish that they work.
 
-1. Make this repository public when ready to launch, then manually publish its reviewed desktop draft as latest. The updater stays on `dylansallred/vidsnag`. Private GitHub artifacts are suitable for collaborators testing manual installs; anonymous automatic updates cannot read a private feed or a draft. Never embed a private GitHub token in an installer or extension.
+1. Make this repository public when ready to launch, then manually publish its reviewed desktop draft as latest. The updater stays on `dylansallred/snagthis`. Private GitHub artifacts are suitable for collaborators testing manual installs; anonymous automatic updates cannot read a private feed or a draft. Never embed a private GitHub token in an installer or extension.
 2. Configure and verify the existing Apple account's signing/notarization credentials and Windows signing credentials. Signed installer builds remain blocked without the required credentials. Review and publish completed drafts manually.
 3. Prepare and review the exact corresponding-source packet for bundled tools, including the required version/commit and source metadata. License notices alone do not replace this step.
 4. Create the Chrome Web Store listing and complete its privacy/permission disclosures and review. Store approval is not guaranteed. Publish a ZIP with clear manual-install/update instructions if using the fallback.

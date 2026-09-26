@@ -7,7 +7,7 @@ const { root, startRenderer, launchDesktop } = require('./helpers');
 test('first-run connection explains setup, rejects expired codes, and remembers real pairing', async () => {
   test.setTimeout(90_000);
   const renderer = await startRenderer();
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-pairing-browser-'));
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-pairing-browser-'));
   const evidence = path.join(root, 'work/verification/pairing-onboarding');
   fs.mkdirSync(evidence, { recursive: true });
   let native;
@@ -20,13 +20,13 @@ test('first-run connection explains setup, rejects expired codes, and remembers 
     desktop = await native.app.firstWindow();
     await desktop.waitForFunction(() => typeof window.desktop?.getAppInfo === 'function');
     await expect.poll(() => desktop.evaluate(async () => (await window.desktop.getAppInfo()).apiStartupState)).toBe('ready');
-    await expect(desktop.getByRole('button', { name: 'Add VidSnag to Chrome', exact: true })).toBeVisible();
+    await expect(desktop.getByRole('button', { name: 'Add SnagThis to Chrome', exact: true })).toBeVisible();
     await desktop.screenshot({ path: path.join(evidence, 'desktop-first-launch.png') });
     await desktop.getByRole('button', { name: 'Already installed? Connect Chrome', exact: true }).click();
     const setup = desktop.getByRole('region', { name: 'Chrome extension setup' });
     await expect(setup.getByRole('button', { name: 'Show connection code', exact: true })).toBeVisible();
     await expect(desktop.getByLabel('Connection code', { exact: true })).toHaveCount(0);
-    await expect(setup).toContainText('Extensions (the puzzle icon) → VidSnag → Connect');
+    await expect(setup).toContainText('Extensions (the puzzle icon) → SnagThis → Connect');
     await desktop.screenshot({ path: path.join(evidence, 'desktop-setup.png') });
 
     const extension = path.join(root, 'apps/extension');
@@ -42,8 +42,8 @@ test('first-run connection explains setup, rejects expired codes, and remembers 
     // or modifying any authentication checks.
     await popup.route(`${native.baseUrl}/**`, route => route.abort('connectionrefused'));
     await popup.goto(popupUrl);
-    await expect(popup.locator('#connection-banner')).toContainText('Save supported files in Chrome. Open VidSnag for streams and more.');
-    await expect(popup.locator('#connection-banner').getByRole('button', { name: 'Open VidSnag', exact: true })).toBeVisible();
+    await expect(popup.locator('#connection-banner')).toContainText('Save supported files in Chrome. Open SnagThis for streams and more.');
+    await expect(popup.locator('#connection-banner').getByRole('button', { name: 'Open SnagThis', exact: true })).toBeVisible();
     await popup.screenshot({ path: path.join(evidence, 'extension-offline.png') });
     await popup.unroute(`${native.baseUrl}/**`);
     await popup.locator('#connection-banner').getByRole('button', { name: 'Connect', exact: true }).click();
@@ -66,8 +66,8 @@ test('first-run connection explains setup, rejects expired codes, and remembers 
     expect(await desktop.evaluate(() => window.__copiedPairingCode)).toBe(originalCode);
     await desktop.screenshot({ path: path.join(evidence, 'desktop-code.png') });
 
+    // Six digits submit on their own; no Connect click is needed.
     await popup.getByLabel('Connection code', { exact: true }).fill(originalCode === '000000' ? '111111' : '000000');
-    await popup.locator('#sheet').getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(popup.locator('.sheet-error')).toContainText('incorrect or expired');
     // Advance only these isolated desktop clocks. The real API expiry check
     // still rejects the code through its unchanged five-minute boundary.
@@ -76,9 +76,8 @@ test('first-run connection explains setup, rejects expired codes, and remembers 
     await desktop.evaluate(() => { window.__pairingRealNow = Date.now; Date.now = () => window.__pairingRealNow() + 301000; });
     await expect(setup.getByRole('button', { name: 'Get a new code', exact: true })).toBeVisible();
     await expect(desktop.getByLabel('Connection code', { exact: true })).toHaveCount(0);
-    await popup.getByLabel('Connection code', { exact: true }).fill(originalCode);
     const expiredResponse = popup.waitForResponse(response => response.url().endsWith('/v1/pair/complete'));
-    await popup.locator('#sheet').getByRole('button', { name: 'Connect', exact: true }).click();
+    await popup.getByLabel('Connection code', { exact: true }).fill(originalCode);
     expect((await expiredResponse).status()).toBe(403);
     await expect(popup.locator('.sheet-error')).toContainText('Settings → Chrome extension');
     await popup.screenshot({ path: path.join(evidence, 'extension-expired-code.png') });
@@ -87,10 +86,9 @@ test('first-run connection explains setup, rejects expired codes, and remembers 
     await setup.getByRole('button', { name: 'Get a new code', exact: true }).click();
     const freshCode = (await desktop.getByLabel('Connection code', { exact: true }).textContent()).trim();
     await popup.getByLabel('Connection code', { exact: true }).fill(freshCode);
-    await popup.locator('#sheet').getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(popup.locator('#sheet')).not.toBeVisible();
     await expect(popup.locator('#connection-banner')).toBeHidden();
-    await expect(popup.locator('#notice')).toContainText('Connected to VidSnag');
+    await expect(popup.locator('#notice')).toContainText('Connected to SnagThis');
     await expect(setup).toContainText('Chrome is connected');
     await expect(desktop.getByLabel('Connection code', { exact: true })).toHaveCount(0);
     await popup.screenshot({ path: path.join(evidence, 'extension-connected.png') });

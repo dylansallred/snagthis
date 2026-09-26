@@ -1,4 +1,4 @@
-# VidSnag historical migration plan — 2026-09-19
+# SnagThis historical migration plan — 2026-09-19
 
 This document preserves the original migration plan and its rationale. The new repository and product implementation now exist; these milestones are **not the current backlog or a current status report**. Use the [current design spec](ui-design-spec.md) for approved interface behavior and [release readiness](../release-readiness.md) for current verification evidence and remaining release requirements.
 
@@ -17,7 +17,7 @@ The original milestones were ordered by dependency rather than assigned dates. T
 
 **Original recommendation: create a new repository with clean history and port the code module by module. Preserve the engine and rewrite the visible UI.** A from-scratch rewrite would have spent weeks re-learning HLS edge cases the predecessor engine already handled (segment retry, resume, fMP4, remux, yt-dlp path). The proposed work addressed its UI, known defects, and repository hygiene.
 
-The predecessor review recorded a 2.4 GB `.git` directory, 604 tracked `node_modules` paths, 24 tracked `.DS_Store` files, and no licence. Its README/AGENTS/CLAUDE described missing directories (`FetchTVPlugin/`, `local-downloader/`), and its project name/history still said "M3u8-Downloader-chrome-plugin". These measurements motivated a fresh repository; they do not describe this VidSnag checkout. Preserving the predecessor was part of the plan, not authorization to archive or change it now.
+The predecessor review recorded a 2.4 GB `.git` directory, 604 tracked `node_modules` paths, 24 tracked `.DS_Store` files, and no licence. Its README/AGENTS/CLAUDE described missing directories (`FetchTVPlugin/`, `local-downloader/`), and its project name/history still said "M3u8-Downloader-chrome-plugin". These measurements motivated a fresh repository; they do not describe this SnagThis checkout. Preserving the predecessor was part of the plan, not authorization to archive or change it now.
 
 Predecessor measurements on `main` @ `268fbd8`, with the original port decisions:
 
@@ -26,7 +26,7 @@ Predecessor measurements on `main` @ `268fbd8`, with the original port decisions
 | `packages/downloader-engine` | 5.7k LOC (`JobProcessor` 2.0k, `QueueManager` 1.0k, `VideoConverter` 1.0k) | **Port as-is, then fix** | Copy with its tests. Land the review's P1 fixes as the first commits in the new repo (muxer `-f mp4` on `.part` outputs, finalization runner ownership, drop HTTPS→HTTP downgrade, 14-day auto-delete, atomic queue writes). Do not refactor `JobProcessor` during the port; split it only when M3 has to touch it. |
 | `packages/downloader-api` | 5.1k LOC (`createApiServer.js` 1.9k) | **Port with surgery** | Keep routes and validation. Fix while porting: installation-scoped auth token + exact origin checks for HTTP and WebSocket; move `queue.json` out of the statically served downloads folder; history delete semantics (M0). |
 | `packages/contracts` | 26 LOC | **Keep and grow** | Becomes the home of shared types, the row formatting module (M0.4), job payload schema incl. `selection` (M3), error codes. |
-| `apps/desktop/electron` | 1.2k LOC | **Port** | Updater, IPC, notifications, bundled-tool scripts (`fetch-ffmpeg.cjs`, `fetch-yt-dlp.cjs`) all carry over. Add `vidsnag://`, `trashItem`, login item. |
+| `apps/desktop/electron` | 1.2k LOC | **Port** | Updater, IPC, notifications, bundled-tool scripts (`fetch-ffmpeg.cjs`, `fetch-yt-dlp.cjs`) all carry over. Add `snagthis://`, `trashItem`, login item. |
 | `apps/desktop/src` — `components/ui/*`, `hooks/*`, `lib/*`, `types/*`, `globals.css` | ~2k LOC | **Port** | Radix primitives, API client, queue/history hooks and tokens are what the new UI is built from. |
 | `apps/desktop/src` — `components/queue|history|settings|layout` | ~2.4k LOC | **Rewrite** | Replaced by `VideoRow`, `FillThumb`, `VideoList`, `RowDetails`, `TopBar`, `SettingsSheet` (spec §11). Only `SegmentHeatmap.tsx` is kept. |
 | `apps/extension/js` (detector + content script) | 1.3k LOC | **Port after provenance check** | See below. Fix small-manifest rule, relative URLs, reset on navigation. |
@@ -43,7 +43,7 @@ Predecessor measurements on `main` @ `268fbd8`, with the original port decisions
 
 | # | Task | Done when |
 |---|---|---|
-| R0.1 | Create `vidsnag` (GitHub, private until R0.9). `git init`, default branch `main`, branch protection: PR + green CI required. | Empty repo with protection on. |
+| R0.1 | Create `snagthis` (GitHub, private until R0.9). `git init`, default branch `main`, branch protection: PR + green CI required. | Empty repo with protection on. |
 | R0.2 | Skeleton before any code: `.gitignore` (node_modules, dist*, `.DS_Store`, bin/, logs/, reports, `compat/results/`), `.editorconfig`, `.nvmrc` pinned to the Node LTS the Electron version supports (the old repo's e2e failed to launch under Node 23 — pin and test), npm workspaces root `package.json`. | `git status` clean after `npm install` and a full build. |
 | R0.3 | Same layout so every path in the design spec stays valid: `apps/extension`, `apps/desktop`, `packages/{contracts,downloader-engine,downloader-api}`, `tests/`, `compat/`, `docs/`. | Tree matches. |
 | R0.4 | Port module by module in dependency order — contracts → engine → api → desktop/electron → desktop/src (kept parts) → extension — **one commit per module**, message `Port <module> from M3u8-Downloader-chrome-plugin@268fbd8`. Uncommitted work in the old tree (`network.ts`, request-context changes) is ported only where the project review said keep; the HTTPS→HTTP downgrade hunk is dropped. | `npm test`, `npm run lint`, `npm run typecheck:desktop` green in the new repo. |
@@ -62,7 +62,7 @@ Predecessor measurements on `main` @ `268fbd8`, with the original port decisions
 | One row component, one list | `ActiveDownloadCard`, `QueueJobCard`, `HistoryItemCard`; separate Queue / History / Settings views behind a Navbar | Desktop restructure (M1) |
 | Colour-fill thumbnail | Queue jobs only have thumbnails for YouTube/TMDB (`thumbnailUrls`), others get one after conversion (`generateThumbnailFromMp4`) | Placeholder works now (M1); early frame grab (M3) |
 | Popup rows with thumbnail, live progress, Play | Popup sends `POST /v1/jobs` and forgets; no thumbnails; no progress; `renderMedia()` builds ~400 lines of DOM per item | Popup rewrite (M2) |
-| "Open VidSnag" when the app is closed | `POST /v1/app/focus` only works when the app is already running; no `vidsnag://` protocol | Protocol handler (M2) |
+| "Open SnagThis" when the app is closed | `POST /v1/app/focus` only works when the app is already running; no `snagthis://` protocol | Protocol handler (M2) |
 | Quality / audio / subtitle menu | Popup only guesses resolution from the URL (`extractResolution`); engine has no variant-selection input; master playlists are only inspected in `HlsNativeDownload.js` | Variant discovery + selection end to end (M3) |
 | Remove from list vs. Move to Trash | `DELETE /api/history` deletes every file; per-item delete unlinks the file | Safety work (M0) |
 | Whole-library search | History loads first 200 items | Server-side search/pagination (M1) |
@@ -112,7 +112,7 @@ Pure front-end restructure on existing APIs. Thumbnails that don't exist yet use
 | 2.1 | Replace `popup.html` structure (§5) and split `popup.js`: keep title-inference helpers (they have tests) in `popup/titles.js`; new `popup/render.js` builds rows from `RowModel` using the M0 module. | `apps/extension/` | `tests/extension-title-inference.test.js` still passes untouched. |
 | 2.2 | Live state: persist `mediaItemId → jobId` in `chrome.storage.session`; poll `GET /v1/queue` every 1s while open; map job → row state; Pause/Resume/Play from the popup. Needs `/v1` equivalents of pause/resume (today only `/api/queue/:id/pause` exists) and a `/v1/jobs/:id/open`. | `popup/state.js`, `createApiServer.js` | Start a download, close and reopen the popup: the row shows current progress. |
 | 2.3 | Thumbnails at detection time (§5.3): poster → og:image → canvas frame → none. Pass the chosen URL/data-URL in the job payload as `thumbnailUrl` so the desktop row shows the same image immediately. | `js/content.js`, `service-worker.js`, `buildJobPayload()`, `routes/jobs.js` | On a page with `<video poster>`, popup and desktop show the poster before any bytes download. |
-| 2.4 | Offline / not-installed / version-mismatch banner (§5.4). Register `vidsnag://` protocol in the desktop app (`app.setAsDefaultProtocolClient`, `protocols` in electron-builder config) so **Open VidSnag** can launch a closed app. | `popup/`, `apps/desktop/electron/main.js`, `apps/desktop/package.json` | With the app quit, clicking Open VidSnag launches it and the banner clears within ~3s. |
+| 2.4 | Offline / not-installed / version-mismatch banner (§5.4). Register `snagthis://` protocol in the desktop app (`app.setAsDefaultProtocolClient`, `protocols` in electron-builder config) so **Open SnagThis** can launch a closed app. | `popup/`, `apps/desktop/electron/main.js`, `apps/desktop/package.json` | With the app quit, clicking Open SnagThis launches it and the banner clears within ~3s. |
 | 2.5 | Empty state, "No video?" help, footer badge, settings sheet (popup subset; **Change** deep-links to the app). | `popup/` | Matches the current popup states in `ui-design-spec.md`. |
 | 2.6 | Reset detections on navigation; per-row Hide; remove "Clear Media". Include the review's detection fixes that change what rows appear: small-manifest rule (review P1), relative URL resolution. | `js/media-detector.js`, `service-worker.js` | A 40 KB `.m3u8` is detected; navigating away clears the list. |
 | 2.7 | Popup Playwright test against a local fixture page + stub API. | `tests/` | Detected → Downloading → Saved asserted on row text and `--p`. |
@@ -166,7 +166,7 @@ Principle from the project review: **assert on real media, not on argument strin
 | L6 Extension e2e | Playwright `launchPersistentContext` with `--load-extension`, **fixture pages** (below), a stub or real local API; popup opened at `chrome-extension://<id>/popup.html?tab=<id>` | Detection, collapse, thumbnail capture order, Download → live progress → Saved, offline banner, navigation reset | every PR |
 | L7 Desktop e2e | Playwright Electron (fix the launch failure first: pinned Node, `executablePath`, isolated `userData`) | Paste link → row → pause/resume → Finishing → Saved → Play/Show in folder → Remove (list vs. trash) → restart app and state survives | nightly + before release |
 | L8 Full loop | L6 + L7 together | fixture page → extension → real desktop API → file on disk → `ffprobe` duration/streams/height | nightly + before release |
-| L9 Release smoke | Packaged app on macOS + Windows runners | Installs, launches, bundled ffmpeg/yt-dlp found, one fixture download completes, `vidsnag://` registered | on release tag, **before** publishing |
+| L9 Release smoke | Packaged app on macOS + Windows runners | Installs, launches, bundled ffmpeg/yt-dlp found, one fixture download completes, `snagthis://` registered | on release tag, **before** publishing |
 
 ### 5.1 Fixture server (`tests/fixtures/server.js`)
 
@@ -316,7 +316,7 @@ Light theme, tray/menu-bar mode, collections, bulk actions, browsers other than 
 | Merging queue + history causes duplicates/flicker at completion | Single `RowModel` keyed by `jobId`; de-dupe rule in 1.3 with a test that walks a job through every state. |
 | Collapsing detections hides a video the user wanted | Conservative collapse rule (§5.2); "No video?" help explains; right-click → "Show all detected streams" escape hatch in the popup. |
 | Variant selection touches the most fragile code (HLS paths) | M3 is last, behind fixture-based ffprobe tests; UI never shows the menu unless discovery succeeded. |
-| `vidsnag://` registration differs per OS / unsigned dev builds | Banner falls back to `Get the app` + manual instructions after 3s. |
+| `snagthis://` registration differs per OS / unsigned dev builds | Banner falls back to `Get the app` + manual instructions after 3s. |
 | Playwright-Electron harness currently fails to launch (review) | Fix first in M1.10; until then rely on component tests + manual checklist from the mock-ups. |
 | Port drags old problems into the new repo | One commit per module, tests must pass per module, P1 fixes are the first PRs (R0.8), rewrite-not-port for the visible UI. |
 | Inherited FetchV code blocks an open-source licence | Provenance audit before licence choice (R0.5); detector/content script are small enough to rewrite clean. |

@@ -11,7 +11,7 @@ const { createApiServer } = require('../packages/downloader-api/src');
 const { toRowModel } = require('../packages/contracts/src/rows');
 
 test('cancelling failed and waiting jobs hides and persists them, supports Undo, and preserves saved files', async () => {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-cancel-'));
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-cancel-'));
   const downloadDir = path.join(dataDir, 'downloads');
   await fs.mkdir(downloadDir);
   const savedPath = path.join(downloadDir, 'saved-video.mp4');
@@ -54,6 +54,18 @@ test('cancelling failed and waiting jobs hides and persists them, supports Undo,
     const restored = api.getState().queue.find((job) => job.id === retried.jobId);
     assert.equal(restored.queueStatus, 'queued');
     assert.ok(toRowModel(restored));
+    // A second Undo (double click) must not start the same download twice.
+    const again = await (await request('/api/jobs/waiting-video/retry', 'POST')).json();
+    assert.equal(again.jobId, retried.jobId);
+    assert.equal(again.duplicate, true);
+    assert.equal((await request(`/api/jobs/${retried.jobId}/retry`, 'POST')).status, 400, 'a queued job resumes instead of retrying');
+    assert.equal(api.getState().queue.filter((job) => job.queueStatus === 'queued').length, 1);
+    // The legacy immediate flag must not start an unmanaged runner outside
+    // the queue's concurrency limit, pause, and quit handling.
+    const immediate = await (await fetch(`${base}/api/jobs?immediate=true`, { method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ queue: { url: 'https://example.org/other.mp4', title: 'Other', mediaType: 'file' } }) })).json();
+    assert.equal(api.getState().queue.find((job) => job.id === immediate.id)?.queueStatus, 'queued');
     // Retry acknowledges enqueueing before its atomic queue write finishes.
     // Wait for that required write before removing this isolated profile.
     let persistedRetry;

@@ -17,6 +17,7 @@ function loadStreamPlayerHelpers() {
   const script = [
     'let primaryUrl = "";',
     'let requestHeaders = {};',
+    'let credentialed = true;',
     source.slice(helperStart, helperEnd),
     'globalThis.__streamPlayerHelpers = {',
     '  setContext: (headers, mediaUrl) => { requestHeaders = headers || {}; primaryUrl = mediaUrl || ""; },',

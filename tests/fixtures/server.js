@@ -52,7 +52,7 @@ async function generateMedia(directory, ffmpegPath) {
   }
   await ffmpeg('-i', direct, '-vn', '-c:a', 'copy', '-hls_time', '1', '-hls_playlist_type', 'vod',
     '-hls_segment_filename', path.join(media, 'audio', 'segment-%02d.ts'), path.join(media, 'audio', 'index.m3u8'));
-  fs.writeFileSync(path.join(media, 'subtitles', 'english.vtt'), 'WEBVTT\n\n00:00.000 --> 00:05.000\nVidSnag fixture: first half\n\n00:05.000 --> 00:10.000\nVidSnag fixture: second half\n');
+  fs.writeFileSync(path.join(media, 'subtitles', 'english.vtt'), 'WEBVTT\n\n00:00.000 --> 00:05.000\nSnagThis fixture: first half\n\n00:05.000 --> 00:10.000\nSnagThis fixture: second half\n');
   fs.writeFileSync(path.join(media, 'subtitles', 'index.m3u8'), '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10,\nenglish.vtt\n#EXT-X-ENDLIST\n');
   const master = ['#EXTM3U', '#EXT-X-VERSION:3',
     '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="audio/index.m3u8"',
@@ -71,7 +71,7 @@ async function generateMedia(directory, ffmpegPath) {
 const TYPES = { '.mp4': 'video/mp4', '.ts': 'video/mp2t', '.m4s': 'video/iso.segment', '.m3u8': 'application/vnd.apple.mpegurl', '.aac': 'audio/aac', '.vtt': 'text/vtt', '.jpg': 'image/jpeg', '.js': 'text/javascript', '.html': 'text/html', '.bin': 'application/octet-stream' };
 
 async function startFixtureServer({ ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg' } = {}) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-fixtures-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-fixtures-'));
   try { await generateMedia(directory, ffmpegPath); } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }
   const attempts = new Map();
   const requests = [];

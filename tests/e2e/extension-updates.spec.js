@@ -40,7 +40,7 @@ test('production popup boots without demo code and directs an old extension to t
       await expect(page.getByRole('button', { name: 'Download extension ZIP', exact: true })).toHaveCount(fromStore ? 0 : 1);
       await page.getByRole('button', { name: 'Open Chrome extensions', exact: true }).click();
       expect(await page.evaluate(() => updateFixture.opened)).toEqual(['chrome://extensions/']);
-      expect(await page.evaluate(() => typeof window.VidSnagDemo)).toBe('undefined');
+      expect(await page.evaluate(() => typeof window.SnagThisDemo)).toBe('undefined');
       expect(errors).toEqual([]);
     } finally { await context.close(); }
   }

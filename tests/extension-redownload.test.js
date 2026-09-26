@@ -32,7 +32,7 @@ function loadWorker(tab, token) {
     storage: { session: storage(), local: storage({ appToken: token }) },
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
     runtime: { id: 'a'.repeat(32), getURL: value => `chrome-extension://${'a'.repeat(32)}/${value}`,
-      getManifest: () => ({ version: '1.0.0' }), onMessage: event('message') },
+      getManifest: () => ({ version: '1.0.0' }), onMessage: event('message'), onInstalled: event('installed') },
     tabs: { get: async () => structuredClone(tab), onRemoved: event('removed') },
     webNavigation: { getFrame: async () => ({ url: tab.url, documentId: tab.documentId }),
       onCommitted: event('committed'), onHistoryStateUpdated: event('history') },
@@ -60,7 +60,7 @@ function loadWorker(tab, token) {
 }
 
 test('extension Download works after desktop cancel, Undo and remove, preserving the extension API boundary', async () => {
-  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'vidsnag-redownload-'));
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snagthis-redownload-'));
   const downloadDir = path.join(dataDir, 'downloads');
   await fs.promises.mkdir(downloadDir);
   // Queue transitions are under test; no media download or user's profile runs.
@@ -96,7 +96,7 @@ test('extension Download works after desktop cancel, Undo and remove, preserving
 
     // The old worker queried this desktop-only route and turned its expected
     // 403 into a transient "Something went wrong at 0%" row. Keep it forbidden.
-    const forbidden = await fetch(`${base}/api/jobs/${original.jobId}`, { headers: { ...headers, 'X-Client': 'vidsnag-extension' } });
+    const forbidden = await fetch(`${base}/api/jobs/${original.jobId}`, { headers: { ...headers, 'X-Client': 'snagthis-extension' } });
     assert.equal(forbidden.status, 403);
     const repeated = await download();
     assert.equal(repeated.ok, true, repeated.error);

@@ -6,7 +6,7 @@ test('approved Workbench component gallery: clean thumbnails, motion previews, a
   try {
     await page.setViewportSize({ width: 820, height: 820 });
     await page.goto(`${renderer.baseUrl}/?gallery=states`);
-    await expect(page.locator('.top-bar').getByRole('img', { name: 'VidSnag', exact: true })).toBeVisible();
+    await expect(page.locator('.top-bar').getByRole('img', { name: 'SnagThis', exact: true })).toBeVisible();
     await expect(page.locator('.top-bar')).toHaveCSS('padding-left', '14px');
     const states = [
       ['downloading', '34% · 5 min left'],
@@ -88,7 +88,7 @@ test('approved Workbench component gallery: clean thumbnails, motion previews, a
     await expect(page.locator('#details-downloading .detail-folder-name')).toBeVisible();
     await expect(page.locator('#details-downloading .technical-details')).toHaveCount(0);
     await expect(page.locator('#details-downloading .detail-location')).toHaveJSProperty('tagName', 'BUTTON');
-    await expect(page.locator('#details-downloading .detail-folder-name')).toHaveText('~/Downloads/VidSnag');
+    await expect(page.locator('#details-downloading .detail-folder-name')).toHaveText('~/Downloads/SnagThis');
     await expect(page.locator('#details-downloading [data-connections]')).toBeVisible();
     await expect(page.locator('#details-downloading [data-connections]')).toHaveText('6 of 16 active');
     const activeDetails = page.locator('#details-downloading');
@@ -126,7 +126,7 @@ test('approved Workbench component gallery: clean thumbnails, motion previews, a
     await finishing.focus();
     await finishing.press('Enter');
     await expect(page.locator('#details-finishing [data-connections]')).toHaveText('Not reported by this downloader · limit 16');
-    await expect(page.locator('#details-finishing [data-transfer-size]')).toHaveText('0 MB / Total unknown');
+    await expect(page.locator('#details-finishing [data-transfer-size]')).toHaveText('1.1 GB / 1.2 GB');
     await expect(page.locator('#details-finishing .technical-details')).toHaveCount(0);
     await finishing.press('Space');
     const savedRow = page.locator('[data-row-key="saved"]');
@@ -135,9 +135,9 @@ test('approved Workbench component gallery: clean thumbnails, motion previews, a
     await expect(savedDetails).toHaveCSS('transform', 'none'); // the drawer has finished sliding open
     const folderAction = savedDetails.getByRole('button', { name: /^Saved in/ });
     await expect(folderAction).toHaveClass('detail-location');
-    await expect(folderAction).toHaveAttribute('title', 'Open folder: ~/Downloads/VidSnag');
+    await expect(folderAction).toHaveAttribute('title', 'Open folder: ~/Downloads/SnagThis');
     await expect(folderAction).toContainText('Saved in');
-    await expect(folderAction.locator('.detail-folder-name')).toHaveText('~/Downloads/VidSnag');
+    await expect(folderAction.locator('.detail-folder-name')).toHaveText('~/Downloads/SnagThis');
     // Closed/open folder layers plus the chevron form Open + settle.
     await expect(folderAction.locator('svg')).toHaveCount(3);
     await expect(savedDetails.locator('.detail-links .lucide-folder-open')).toHaveCount(0);
@@ -257,7 +257,73 @@ test('approved first-launch gallery provides the first-download instructions', a
     await page.goto(`${renderer.baseUrl}/?gallery=empty`);
     await expect(page.getByPlaceholder('Paste a video link')).toBeVisible();
     await expect(page.getByText('Download your first video', { exact: true })).toBeVisible();
-    await expect(page.getByText('Paste a link above, or play a video in Chrome and click the VidSnag icon in the toolbar.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Add VidSnag to Chrome', exact: true })).toBeVisible();
+    await expect(page.getByText('Paste a link above, or play a video in Chrome and click the SnagThis icon in the toolbar.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add SnagThis to Chrome', exact: true })).toBeVisible();
+  } finally { await renderer.close(); }
+});
+
+test('settings sections swap from the rail, confirm saves, pick an accent and validate number fields', async ({ page }) => {
+  const renderer = await startRenderer();
+  try {
+    await page.setViewportSize({ width: 960, height: 660 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${renderer.baseUrl}/?gallery=states&sheet=settings`);
+    const sheet = page.locator('.settings-sheet');
+    await expect(sheet).toBeVisible();
+    expect(Math.round((await sheet.boundingBox()).width)).toBe(640);
+    const rail = sheet.getByRole('tablist', { name: 'Settings sections' });
+    await expect(rail.getByRole('tab')).toHaveText(['Chrome extension', 'Downloads', 'App', 'Appearance', 'Advanced', 'Updates & support']);
+    // Downloads is the first section shown in a session.
+    await expect(rail.getByRole('tab', { name: 'Downloads' })).toHaveAttribute('aria-selected', 'true');
+    await expect(sheet.getByRole('tabpanel', { name: 'Downloads' })).toContainText('Save videos to');
+
+    await rail.getByRole('tab', { name: 'App', exact: true }).click();
+    await page.getByLabel('Tell me when a download finishes', { exact: true }).click();
+    await expect(sheet.locator('.saved-mark')).toContainText('Saved');
+    await expect(page.getByRole('status').filter({ hasText: 'Tell me when a download finishes saved' })).toHaveCount(1);
+
+    // Arrow keys move through the rail and show each section.
+    await rail.getByRole('tab', { name: 'App', exact: true }).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(rail.getByRole('tab', { name: 'Appearance' })).toBeFocused();
+    const accents = sheet.getByRole('radiogroup', { name: 'Accent colour' });
+    await expect(accents.getByRole('radio')).toHaveCount(5);
+    await expect(accents.getByRole('radio', { name: 'Orange' })).toBeChecked();
+    await accents.getByRole('radio', { name: 'Cobalt' }).check();
+    await expect(accents.getByRole('radio', { name: 'Cobalt' })).toBeChecked();
+    await expect(page.getByRole('status').filter({ hasText: 'Accent colour saved' })).toHaveCount(1);
+    await page.keyboard.press('ArrowRight');
+    await expect(accents.getByRole('radio', { name: 'Violet' })).toBeChecked();
+    await page.evaluate(() => localStorage.removeItem('snagthis.accent'));
+
+    await rail.getByRole('tab', { name: 'Appearance' }).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(rail.getByRole('tab', { name: 'Advanced' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByLabel('Downloads at once', { exact: true })).toBeInViewport();
+    await page.getByLabel('Downloads at once', { exact: true }).fill('40');
+    await page.getByLabel('Downloads at once', { exact: true }).press('Enter');
+    await expect(sheet.getByText('Enter a whole number from 1 to 16.')).toBeVisible();
+    // Esc first reverts the unsaved value; a second Esc closes the sheet.
+    await page.getByLabel('Downloads at once', { exact: true }).press('Escape');
+    await expect(page.getByLabel('Downloads at once', { exact: true })).toHaveValue('1');
+    await expect(sheet).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+
+    // Reopening keeps the last section; Already installed? Connect Chrome lands on the extension setup.
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(sheet.getByRole('tab', { name: 'Advanced' })).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    await page.goto(`${renderer.baseUrl}/?gallery=empty`);
+    await page.getByRole('button', { name: 'Already installed? Connect Chrome', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Chrome extension setup' }).getByRole('button', { name: 'Show connection code', exact: true })).toBeVisible();
+
+    // A narrow 640px window keeps the rail and a usable pane.
+    await page.setViewportSize({ width: 640, height: 560 });
+    await expect(sheet).toBeVisible();
+    expect(Math.round((await sheet.boundingBox()).width)).toBe(640);
+    await sheet.getByRole('tab', { name: 'Downloads' }).click();
+    await expect(sheet.getByRole('button', { name: 'Change save folder' })).toBeInViewport();
   } finally { await renderer.close(); }
 });

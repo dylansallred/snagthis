@@ -114,7 +114,7 @@ test('the real scoped proxy reports completed binary responses and distinguishes
   } });
   try {
     assert.equal((await (await fetch(proxy.url)).arrayBuffer()).byteLength, body.length);
-    assert.equal((await (await fetch(proxy.url, { headers: { 'User-Agent': 'VidSnag-Thumbnail/1.0' } })).arrayBuffer()).byteLength, body.length);
+    assert.equal((await (await fetch(proxy.url, { headers: { 'User-Agent': 'SnagThis-Thumbnail/1.0' } })).arrayBuffer()).byteLength, body.length);
     await completed;
     const complete = events.filter(event => event.type === 'complete');
     assert.equal(complete.length, 2);
@@ -187,7 +187,7 @@ test('real FFmpeg SIGTERM emits end for a partial MP4 without inflating paused p
   timeout: 15000,
   skip: process.platform === 'win32' ? 'Node terminates Windows children without a graceful SIGTERM handler.' : false,
 }, async (t) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-partial-progress-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-partial-progress-'));
   const output = path.join(directory, 'partial.mp4');
   const durationSeconds = 30;
   const job = { id: 'partial-fixture', progress: 0, bytesDownloaded: 0 };

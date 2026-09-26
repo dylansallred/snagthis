@@ -48,7 +48,7 @@ jobs:
             arch: x64
     runs-on: ${{ matrix.os }}
     env:
-      VIDSNAG_RELEASE: '1'
+      SNAGTHIS_RELEASE: '1'
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -73,7 +73,7 @@ jobs:
       - name: Include project notices in the installed app
         shell: bash
         run: |
-          cp LICENSE apps/desktop/bin/VIDSNAG-LICENSE.txt
+          cp LICENSE apps/desktop/bin/SNAGTHIS-LICENSE.txt
           cp THIRD_PARTY_NOTICES.md apps/desktop/bin/THIRD_PARTY_NOTICES.md
       - name: Build signed installers without publishing
         shell: bash
@@ -126,7 +126,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: release-extension
-          path: vidsnag-extension.zip
+          path: snagthis-extension.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -167,7 +167,7 @@ jobs:
       - name: Download the reviewed corresponding-source artifact
         uses: actions/download-artifact@v4
         with:
-          name: vidsnag-corresponding-source
+          name: snagthis-corresponding-source
           path: release-assets/release-source
           run-id: ${{ vars.CORRESPONDING_SOURCE_RUN_ID }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -182,7 +182,7 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'NOTES'
-          VidSnag desktop and Chrome extension.
+          SnagThis desktop and Chrome extension.
 
           Desktop installers are signed and verified. Chrome's ZIP is the manual-install package; Chrome Web Store publication is separate.
 
@@ -199,5 +199,5 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" release-assets/publish/* \
             --repo "$GITHUB_REPOSITORY" --verify-tag --draft --latest=false \
-            --title "VidSnag $GITHUB_REF_NAME" --notes-file release-notes.md
+            --title "SnagThis $GITHUB_REF_NAME" --notes-file release-notes.md
           printf '## Release draft ready\n\nReview all artifacts and edit the release notes in [GitHub Releases](https://github.com/%s/releases). This workflow does not publish releases. Keep the draft private until the repository is public and you are ready to distribute it.\n' "$GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"

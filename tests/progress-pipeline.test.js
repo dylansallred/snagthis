@@ -22,7 +22,7 @@ async function waitFor(condition, message) {
 }
 
 test('API shutdown disconnects an unfinished preview response after saving local state', { timeout: 5000 }, async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-shutdown-stream-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-shutdown-stream-'));
   const api = createApiServer({ dataDir: directory, port: 0,
     ffmpegPath: process.execPath, ffprobePath: process.execPath, ytDlpPath: process.execPath,
     trustBinaryPaths: true, initialQueueSettings: { autoStart: false } });
@@ -65,7 +65,7 @@ test('API shutdown disconnects an unfinished preview response after saving local
 });
 
 test('queue broadcasts include metadata and rate changes without scanning history for transfer progress', { timeout: 15000 }, async (t) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vidsnag-progress-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-progress-'));
   const downloadDir = path.join(directory, 'downloads');
   let api;
   let manager;
@@ -109,7 +109,7 @@ test('queue broadcasts include metadata and rate changes without scanning histor
   assert.ok(manager);
   const job = manager.jobs.get('fixture');
   job.status = job.queueStatus = 'downloading';
-  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`, ['vidsnag', `vidsnag-auth.${api.getAuthToken()}`]);
+  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`, ['snagthis', `snagthis-auth.${api.getAuthToken()}`]);
   const updates = [];
   socket.on('message', message => {
     const parsed = JSON.parse(message);

@@ -35,7 +35,7 @@ function loadWorker(initialTab) {
     storage: { session: storage({}, sessionQuota), local: storage({ appToken: 'fixture-token' }) },
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
     runtime: { id: 'a'.repeat(32), getURL: value => `chrome-extension://${'a'.repeat(32)}/${value}`,
-      getManifest: () => ({ version: '1.0.0' }), onMessage: event('message') },
+      getManifest: () => ({ version: '1.0.0' }), onMessage: event('message'), onInstalled: event('installed') },
     tabs: { get: async () => clone(tab), onRemoved: event('removed') },
     webNavigation: { getFrame: async () => ({ url: tab.url, documentId: tab.documentId }),
       onCommitted: event('committed'), onHistoryStateUpdated: event('history') },
@@ -315,4 +315,44 @@ test('aborted and reused XHRs emit one detection and keep async response identit
   await xhr.complete(manifest, 'application/vnd.apple.mpegurl');
   assert.equal(detector.observations.at(-1).media.url, 'https://media.example/reused.m3u8');
   assert.equal(detector.observations.length, 3);
+});
+
+test('in-page anchors keep detections, hash routes reset them, and redirect hops are not media', async () => {
+  const tab = { id: 7, url: 'https://cinema.example/watch', title: 'Watch', documentId: 'document-one' };
+  const worker = loadWorker(tab);
+  const sender = () => ({ id: 'a'.repeat(32), tab: clone(tab), frameId: 0, documentId: tab.documentId, url: 'https://cinema.example/watch' });
+  const movieUrl = 'https://media.example/movie.mp4';
+  await worker.emit('committed', { tabId: 7, frameId: 0, url: tab.url, documentId: tab.documentId, timeStamp: 1000 });
+  await worker.message({ cmd: 'STORE_DETECTED_MEDIA', media: { url: movieUrl, contentType: 'video/mp4' } }, sender());
+  const first = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  assert.equal(first.items.length, 1);
+
+  for (const url of ['https://cinema.example/watch#comments', 'https://cinema.example/watch#t=90']) {
+    tab.url = url;
+    worker.setTab(tab, 2000);
+    await worker.message({ cmd: 'PAGE_NAVIGATED', pageUrl: url }, sender());
+    await worker.emit('history', { tabId: 7, frameId: 0, url, documentId: tab.documentId, timeStamp: 2000 });
+    const same = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+    assert.deepEqual(same.items.map(item => item.url), [movieUrl], `${url} is the same video page`);
+    assert.equal(same.visit, first.visit);
+  }
+  // Observations from the anchored page still attach to it.
+  await worker.message({ cmd: 'STORE_DETECTED_MEDIA', media: { url: 'https://media.example/extra.mp4', contentType: 'video/mp4',
+    sourcePageUrl: tab.url } }, sender());
+  assert.equal((await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 })).items.length, 2);
+
+  // A redirect response names the old URL but describes the redirect.
+  const redirect = { requestId: 'redirect', url: 'https://media.example/redirected.mp4', tabId: 7, frameId: 0,
+    documentId: tab.documentId, type: 'media', statusCode: 302,
+    responseHeaders: [{ name: 'Content-Type', value: 'text/html' }, { name: 'Content-Length', value: '154' }] };
+  await worker.emit('headers', redirect);
+  assert.ok((await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 })).rawItems.every(item => item.url !== redirect.url));
+
+  const route = 'https://cinema.example/watch#/episode/2';
+  tab.url = route;
+  worker.setTab(tab, 3000);
+  await worker.message({ cmd: 'PAGE_NAVIGATED', pageUrl: route }, sender());
+  const next = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  assert.equal(next.items.length, 0, 'a hash route is a different video page');
+  assert.notEqual(next.visit, first.visit);
 });

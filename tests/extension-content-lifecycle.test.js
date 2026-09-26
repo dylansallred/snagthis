@@ -27,7 +27,7 @@ function element(tag, parentElement = null) {
   };
 }
 
-function loadContent({ pageUrl = 'https://example.test/watch', poster = '', pageImage = '', frame = null, hasVideo = true, atTime = 12, reply } = {}) {
+function loadContent({ pageUrl = 'https://example.test/watch', poster = '', pageImage = '', pageMeta = {}, title = 'A real video', frame = null, hasVideo = true, atTime = 12, reply, resources = null } = {}) {
   const location = { href: pageUrl };
   const window = target();
   let frameReads = 0;
@@ -41,8 +41,11 @@ function loadContent({ pageUrl = 'https://example.test/watch', poster = '', page
   const videos = hasVideo ? [video] : [];
   Object.defineProperty(video, 'currentTime', { get: () => playbackTime, set: () => { throw new Error('Detection must not seek the page video'); } });
   const document = Object.assign(target(), {
-    title: 'A real video', baseURI: location.href, documentElement: element('html'),
-    querySelector: selector => selector === 'meta[property="og:image"]' && pageImage ? { getAttribute: () => pageImage } : null,
+    title, baseURI: location.href, documentElement: element('html'),
+    querySelector: selector => {
+      const value = selector === 'meta[property="og:image"]' ? pageImage || pageMeta[selector] : pageMeta[selector];
+      return value ? { getAttribute: () => value } : null;
+    },
     querySelectorAll: selector => selector === 'video' ? videos : [],
     createElement: () => ({
       getContext: () => ({
@@ -64,6 +67,7 @@ function loadContent({ pageUrl = 'https://example.test/watch', poster = '', page
   let failure;
   let reject = false;
   let observer;
+  let resourceObserver;
   const chrome = { runtime: {
     sendMessage(message) {
       sent.push(message);
@@ -81,10 +85,20 @@ function loadContent({ pageUrl = 'https://example.test/watch', poster = '', page
       observe() {}
       disconnect() { this.disconnected = true; }
     },
+    ...(resources ? {
+      performance: { getEntriesByType: type => (type === 'resource' ? resources : []) },
+      PerformanceObserver: class {
+        constructor(callback) { this.callback = callback; resourceObserver = this; }
+        observe() {}
+        disconnect() { this.disconnected = true; }
+      },
+    } : {}),
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../apps/extension/js/content.js'), 'utf8'), context);
   return { sent, timers, runtimeListeners, window, video, videos, location, observer, get frameReads() { return frameReads; },
     setPlaybackTime(value) { playbackTime = value; },
+    resourceTimings(entries) { resourceObserver.callback({ getEntries: () => entries }); },
+    get resourceObserver() { return resourceObserver; },
     mutate(mutation = { type: 'attributes', target: video }) { observer.callback([mutation]); },
     advance(ms) {
       const until = now + ms;
@@ -96,7 +110,7 @@ function loadContent({ pageUrl = 'https://example.test/watch', poster = '', page
       now = until;
     },
     fail(error, asynchronously = false) { failure = error; reject = asynchronously; },
-    emitMedia() { window.dispatch('message', { source: window, data: { source: 'vidsnag:media', media: { url: video.currentSrc } } }); },
+    emitMedia() { window.dispatch('message', { source: window, data: { source: 'snagthis:media', media: { url: video.currentSrc } } }); },
   };
 }
 
@@ -105,6 +119,12 @@ test('content messaging works normally and retires all page work after synchrono
   assert.deepEqual(page.sent.map(message => message.cmd), ['PAGE_CONTEXT', 'STORE_DETECTED_MEDIA']);
   page.emitMedia();
   assert.equal(page.sent.at(-1).media.url, page.video.currentSrc);
+  // Any page script can post on this channel; only a detection hint crosses it.
+  page.window.dispatch('message', { source: page.window, data: { source: 'snagthis:media', media: { url: 'http://intranet.example/a.mp4',
+    contentType: 'video/mp4', requestHeaders: { origin: 'https://bank.example', referer: 'https://bank.example/' }, mediaKind: 'youtube-page', networkObserved: true } } });
+  const hint = page.sent.at(-1).media;
+  assert.equal(hint.url, 'http://intranet.example/a.mp4');
+  for (const field of ['requestHeaders', 'mediaKind', 'networkObserved']) assert.equal(Object.hasOwn(hint, field), false, `${field} is never forwarded from the page`);
   assert.equal(page.observer.disconnected, false);
   page.mutate();
   assert.equal(page.timers.size, 1);
@@ -196,9 +216,33 @@ test('a usable video frame beats its poster, generic page artwork is rejected, a
     assert.equal(thumbnail(loadContent({ frame, poster, pageImage: artwork })), poster);
   }
   assert.equal(thumbnail(loadContent({ frame: pixels(() => 0), pageImage: artwork })), '');
-  const youtube = loadContent({ pageUrl: 'https://www.youtube.com/watch?v=abc123XYZ_-', frame: useful, poster, pageImage: artwork });
-  assert.equal(thumbnail(youtube), artwork);
-  assert.equal(youtube.frameReads, 0, 'supplied YouTube artwork remains preferred without reading the video canvas');
+  // YouTube artwork is used only when the share tags describe this video.
+  const id = 'abc123XYZ_-';
+  const own = `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+  const youtube = loadContent({ pageUrl: `https://www.youtube.com/watch?v=${id}`, frame: useful, poster,
+    pageImage: own, pageMeta: { 'meta[property="og:url"]': `https://www.youtube.com/watch?v=${id}` } });
+  assert.equal(thumbnail(youtube), own);
+  assert.equal(youtube.frameReads, 0, 'this video’s YouTube artwork remains preferred without reading the video canvas');
+});
+
+test('stale YouTube share tags after in-page navigation never become this video’s artwork or title', () => {
+  const id = 'v2yscspL_AQ';
+  const context = page => page.sent.find(message => message.cmd === 'PAGE_CONTEXT').context;
+  for (const pageMeta of [
+    // YouTube's generic logo card, left from the home page.
+    { 'meta[property="og:url"]': 'https://www.youtube.com/', 'meta[property="og:image"]': 'https://www.youtube.com/img/desktop/yt_1200.png', 'meta[property="og:title"]': 'YouTube' },
+    // The previous video's tags.
+    { 'meta[property="og:url"]': 'https://www.youtube.com/watch?v=previous123', 'meta[property="og:image"]': 'https://i.ytimg.com/vi/previous123/hqdefault.jpg', 'meta[property="og:title"]': 'The previous video' },
+    // Current page, but YouTube's generic card instead of a thumbnail.
+    { 'meta[property="og:url"]': `https://www.youtube.com/watch?v=${id}`, 'meta[property="og:image"]': 'https://www.youtube.com/img/desktop/yt_1200.png' },
+  ]) {
+    const page = loadContent({ pageUrl: `https://www.youtube.com/watch?v=${id}`, hasVideo: false, pageMeta,
+      title: '(3) The CRAZIEST Reveal In Financial Audit History - YouTube' });
+    assert.equal(context(page).thumbnailUrl, `https://i.ytimg.com/vi/${id}/hqdefault.jpg`);
+    assert.equal(context(page).youtubeMetadata.thumbnailUrl, `https://i.ytimg.com/vi/${id}/hqdefault.jpg`);
+    assert.equal(context(page).youtubeMetadata.title, pageMeta['meta[property="og:title"]'] && pageMeta['meta[property="og:url"]'].includes(id)
+      ? pageMeta['meta[property="og:title"]'] : 'The CRAZIEST Reveal In Financial Audit History');
+  }
 });
 
 test('unrelated mutations neither postpone video discovery nor repeat frame captures and messages', t => {
@@ -256,4 +300,26 @@ test('asynchronous invalidation retires content, while an ordinary unavailable r
   await Promise.resolve();
   assert.equal(page.observer.disconnected, true);
   assert.equal(page.runtimeListeners.size, 0);
+});
+
+test('media answered by the frame Service Worker is reported once; ordinary responses are not', () => {
+  const page = loadContent({ resources: [
+    { name: 'https://storage.example.test/mediastorage/1/132201720.mp4', initiatorType: 'video', workerStart: 12.5 },
+    { name: 'https://media.example.test/movie.mp4', initiatorType: 'video', workerStart: 0 },
+    { name: 'https://example.test/app.js', initiatorType: 'script', workerStart: 3 },
+  ] });
+  const reports = () => page.sent.filter(message => message.cmd === 'SERVICE_WORKER_MEDIA');
+  assert.deepEqual(reports().map(message => [...message.urls]), [['https://storage.example.test/mediastorage/1/132201720.mp4']]);
+  page.resourceTimings([
+    { name: 'https://storage.example.test/mediastorage/1/132201720.mp4', initiatorType: 'video', workerStart: 20 },
+    { name: 'https://cdn.example.test/clip.webm#t=4', initiatorType: 'fetch', workerStart: 1 },
+  ]);
+  assert.deepEqual([...reports().at(-1).urls], ['https://cdn.example.test/clip.webm'], 'a URL is reported once, without its fragment');
+  assert.equal(reports().length, 2);
+  // Detections carry how the element is shown, for the worker's banner rule.
+  const detected = page.sent.find(message => message.cmd === 'STORE_DETECTED_MEDIA').media;
+  assert.deepEqual({ ...detected.presentation }, { width: 0, height: 0, loop: false, muted: false, autoplay: false });
+  page.fail(new Error('Extension context invalidated.'));
+  page.emitMedia();
+  assert.equal(page.resourceObserver.disconnected, true);
 });

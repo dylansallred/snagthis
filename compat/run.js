@@ -170,7 +170,7 @@ async function main(argv = process.argv.slice(2)) {
   if (flag('--site')) entries = entries.filter((entry) => entry.id === value('--site'));
   if (flag('--tag')) entries = entries.filter((entry) => entry.tags?.includes(value('--tag')));
   if (!entries.length) { await fixture.close(); throw new Error('No matching compatibility entries'); }
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-compat-browser-'));
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-compat-browser-'));
   const extensionPath = path.join(ROOT, 'apps/extension');
   let context;
   try {

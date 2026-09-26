@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { setTimeout: wait } = require('node:timers/promises');
-const { createProcessStopper } = require('../packages/downloader-engine/src/core/ProcessTermination');
+const { createProcessStopper, processTreeSpawnOptions } = require('../packages/downloader-engine/src/core/ProcessTermination');
 
 test('process stopper escalates an ignored SIGTERM and waits for actual close', {
   timeout: 5000,
@@ -49,7 +49,7 @@ test('process stopper accepts graceful termination and clears escalation', { tim
 });
 
 test('process stopper records spawn errors but settles only after close', { timeout: 5000 }, async () => {
-  const child = spawn(`${process.execPath}.vidsnag-missing-executable`, [], { stdio: 'ignore' });
+  const child = spawn(`${process.execPath}.snagthis-missing-executable`, [], { stdio: 'ignore' });
   let signalCalls = 0;
   const kill = child.kill.bind(child);
   child.kill = (...args) => { signalCalls += 1; return kill(...args); };
@@ -61,4 +61,42 @@ test('process stopper records spawn errors but settles only after close', { time
   assert.equal(signalCalls, 0, 'a failed spawn must never receive a process signal');
   assert.equal(observedClose, true);
   stopper.dispose();
+});
+
+test('process-tree stopper also stops a grandchild such as the ffmpeg yt-dlp starts', {
+  timeout: 5000,
+  skip: process.platform === 'win32' ? 'Windows uses taskkill /T, covered separately.' : false,
+}, async (t) => {
+  // The child ignores SIGTERM like a busy downloader; its grandchild would be
+  // orphaned by a plain child.kill().
+  const child = spawn(process.execPath, ['-e', `
+    const { spawn } = require('node:child_process');
+    const grandchild = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], { stdio: 'ignore' });
+    process.on('SIGTERM', () => {});
+    process.stdout.write(grandchild.pid + '\\n');
+    setInterval(() => {}, 1000);
+  `], { stdio: ['ignore', 'pipe', 'ignore'], ...processTreeSpawnOptions() });
+  const [chunk] = await once(child.stdout, 'data');
+  const grandchildPid = Number(String(chunk).trim());
+  t.after(() => { try { process.kill(grandchildPid, 'SIGKILL'); } catch { /* Already stopped. */ } });
+  const stopper = createProcessStopper(child, { graceMs: 150, processTree: true });
+  const result = await stopper.stop();
+  assert.equal(result.signal, 'SIGKILL');
+  let alive = true;
+  for (let attempt = 0; attempt < 40 && alive; attempt += 1) {
+    try { process.kill(grandchildPid, 0); await wait(25); } catch { alive = false; }
+  }
+  assert.equal(alive, false, 'the grandchild must not outlive a stopped download');
+});
+
+test('process-tree stopper uses taskkill /T on Windows', () => {
+  const calls = [];
+  const fakeChild = { pid: 4321, on() {}, once() {}, removeListener() {}, kill() { throw new Error('Windows tree stop must not use child.kill'); } };
+  const spawnImpl = (command, args) => { calls.push([command, ...args]); return { on() {} }; };
+  const stopper = createProcessStopper(fakeChild, { processTree: true, platform: 'win32', spawnImpl, graceMs: 10_000 });
+  void stopper.stop();
+  stopper.dispose();
+  assert.deepEqual(calls, [['taskkill', '/PID', '4321', '/T', '/F']]);
+  assert.deepEqual(processTreeSpawnOptions('win32'), {}, 'Windows children are not detached into a console');
+  assert.deepEqual(processTreeSpawnOptions('darwin'), { detached: true });
 });

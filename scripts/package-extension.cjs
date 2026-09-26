@@ -8,15 +8,24 @@ const { crc32, deflateRawSync } = require('node:zlib');
 // unless they are reviewed here. Development galleries stay in the repository.
 const RUNTIME_FILES = Object.freeze([
   'manifest.json', 'popup.html', 'popup.css', 'popup.js', 'player.html', 'player.js',
-  'service-worker.js',
-  'js/content.js', 'js/detection.js', 'js/media-detector.js', 'js/preview-origin.js', 'js/browser-downloads.js',
-  'popup/titles.js', 'popup/model.js', 'popup/source-preview.js', 'popup/page-preview.js',
-  'shared/strings.js', 'shared/rows.js', 'shared/hls.js', 'shared/selection.js',
+  'service-worker.js', 'js/build-config.js',
+  'js/content.js', 'js/detection.js', 'js/media-detector.js', 'js/preview-origin.js', 'js/browser-downloads.js', 'js/accent-icon.js',
+  'popup/titles.js', 'popup/model.js', 'popup/source-preview.js', 'popup/page-preview.js', 'popup/accent.js', 'popup/pixel.js', 'popup/speed-trace.js',
+  'shared/strings.js', 'shared/rows.js', 'shared/hls.js', 'shared/selection.js', 'shared/audioTracks.js', 'shared/accents.js',
   'vendor/hls.min.js', 'vendor/hls.LICENSE.txt', 'vendor/lucide.LICENSE.txt',
   'fonts/inter-latin.woff2', 'fonts/LICENSE',
-  'img/icon-16.png', 'img/icon-48.png', 'img/icon-128.png', 'img/vidsnag-logo-title.png',
+  'img/icon-16.png', 'img/icon-48.png', 'img/icon-128.png', 'img/snagthis-logo-title.svg',
 ]);
-const SHARED_FILES = ['strings.js', 'rows.js', 'hls.js', 'selection.js'];
+const SHARED_FILES = ['strings.js', 'rows.js', 'hls.js', 'selection.js', 'audioTracks.js', 'accents.js'];
+const DEVELOPMENT_FLAGS = 'Object.freeze({ storeBuild: false })';
+
+// The ZIP is the Chrome Web Store build. It turns off YouTube downloads while
+// unpacked development copies keep them (docs/extension-release.md).
+function storeBuildConfig(data) {
+  const source = data.toString('utf8');
+  if (source.split(DEVELOPMENT_FLAGS).length !== 2) throw new Error('js/build-config.js must declare the development flags exactly once');
+  return Buffer.from(source.replace(DEVELOPMENT_FLAGS, 'Object.freeze({ storeBuild: true })'));
+}
 
 function readRegularFile(file) {
   if (!fs.lstatSync(file).isFile()) throw new Error(`Release input must be a regular file: ${file}`);
@@ -39,6 +48,7 @@ function releaseEntries(root) {
   const entries = RUNTIME_FILES.map(name => {
     let data = readRegularFile(path.join(extension, name));
     if (name === 'popup.html') data = Buffer.from(data.toString('utf8').replace(/^\s*<script src="popup\/demo\.js"><\/script>\r?\n/m, ''));
+    if (name === 'js/build-config.js') data = storeBuildConfig(data);
     return { name, data };
   });
   for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) entries.push({ name, data: readRegularFile(path.join(root, name)) });
@@ -83,7 +93,7 @@ function zipEntries(entries) {
   return Buffer.concat([...local, directory, end]);
 }
 
-function packageExtension({ root = path.resolve(__dirname, '..'), output = path.join(root, 'vidsnag-extension.zip') } = {}) {
+function packageExtension({ root = path.resolve(__dirname, '..'), output = path.join(root, 'snagthis-extension.zip') } = {}) {
   const entries = releaseEntries(root);
   const archive = zipEntries(entries);
   fs.mkdirSync(path.dirname(output), { recursive: true });

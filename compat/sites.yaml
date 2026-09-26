@@ -24,7 +24,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 752,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -54,7 +54,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 3609,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -84,7 +84,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 3416,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -113,7 +113,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 3606,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -142,7 +142,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 3606,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -171,7 +171,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 3670,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -199,7 +199,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 918,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -225,7 +225,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 586,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -253,7 +253,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 1239,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -280,7 +280,7 @@
       "httpStatus": 200,
       "contentType": "audio/mpegurl",
       "bytesRead": 2003,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -310,7 +310,7 @@
       "httpStatus": 200,
       "contentType": "application/x-mpegURL",
       "bytesRead": 12818,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -339,7 +339,7 @@
       "httpStatus": 200,
       "contentType": "application/x-mpegURL",
       "bytesRead": 4726,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -368,7 +368,7 @@
       "httpStatus": 200,
       "contentType": "application/x-mpegURL",
       "bytesRead": 4964,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -398,7 +398,7 @@
       "httpStatus": 200,
       "contentType": "application/x-mpegURL",
       "bytesRead": 41377,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   },
   {
@@ -426,7 +426,7 @@
       "httpStatus": 200,
       "contentType": "application/x-mpegURL",
       "bytesRead": 29585,
-      "scope": "Source reachability and playlist syntax only; not a VidSnag compatibility pass."
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
     }
   }
 ]

@@ -15,7 +15,7 @@ const { createJobProcessor } = require('../packages/downloader-engine/src/core/J
 const QueueManager = require('../packages/downloader-engine/src/core/QueueManager');
 
 async function fixture(t, handler) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-segment-lifecycle-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-segment-lifecycle-'));
   const server = http.createServer(handler);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
@@ -139,4 +139,24 @@ test('a segment disk error ends the job once without network retries or fallback
   assert.equal(fallbackRequests, 0);
   assert.equal(job.activeConnections, 0);
   assert.equal(job._downloadAbort, undefined);
+});
+
+test('an expired signed segment ends an unbounded job as a link-expired failure', { timeout: 10000 }, async t => {
+  const { classifyProblem } = require('../packages/contracts/src/rows');
+  let pieceRequests = 0;
+  const fixtureData = await fixture(t, (request, response) => {
+    if (request.url === '/index.m3u8') {
+      response.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+      response.end('#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\npiece.ts\n#EXT-X-ENDLIST\n');
+    } else {
+      pieceRequests += 1; response.writeHead(403); response.end('Token expired');
+    }
+  });
+  const job = jobFor(fixtureData, '/index.m3u8');
+  job.maxSegmentAttempts = Infinity;
+  await fixtureData.processor.runJob(job);
+  assert.equal(job.status, 'error');
+  assert.equal(job.errorCode, 'SOURCE_EXPIRED');
+  assert.equal(pieceRequests, 3, 'a lasting 403 stops after a short retry instead of looping forever');
+  assert.equal(classifyProblem(job.error).code, 'expired');
 });

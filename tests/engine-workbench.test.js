@@ -10,7 +10,7 @@ const { inspectHlsPlaylist } = require('../packages/downloader-engine/src/core/H
 const { cleanupOldCompletedFiles, cleanupOldSegmentFiles } = require('../packages/downloader-engine/src/services/CleanupService');
 
 async function queueFixture(runner = async () => {}) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-queue-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-queue-'));
   const jobs = new Map();
   const manager = new QueueManager({ queueFilePath: path.join(directory, 'state', 'queue.json'), downloadDir: directory, fsPromises: fs.promises, jobs, runJob: runner, runDirectJob: runner, initialSettings: { autoStart: false, maxConcurrent: 1 } });
   await manager.loadQueue();
@@ -25,7 +25,7 @@ test('a finalizing or pausing runner retains its slot until it exits', async () 
   let runs = 0;
   const fixture = await queueFixture(async (job) => {
     runs += 1;
-    job.status = 'finalizing';
+    job.status = job.id === 'merging' ? 'finalizing' : 'downloading';
     await new Promise((resolve) => { release = resolve; });
     job.status = job.cancelled ? 'cancelled' : 'completed';
   });
@@ -46,6 +46,21 @@ test('a finalizing or pausing runner retains its slot until it exits', async () 
     await idle;
     assert.equal(manager.getActiveCount(), 0);
     assert.equal(manager.jobs.get('first').queueStatus, 'queued');
+
+    // Finalizing merges already-downloaded pieces; pausing it would discard
+    // them, so it keeps its slot and finishes.
+    manager.removeJob('first');
+    manager.removeJob('second');
+    manager.addJob({ id: 'merging', url: 'https://example.test/merge.m3u8' });
+    manager.addJob({ id: 'waiting', url: 'https://example.test/waiting.mp4' });
+    assert.equal(manager.startJob('merging'), true);
+    await turn();
+    assert.equal(manager.pauseJob('merging'), false);
+    assert.equal(manager.startJob('waiting'), false);
+    const merged = manager.waitForJobIdle('merging');
+    release();
+    await merged;
+    assert.equal(manager.jobs.get('merging').queueStatus, 'completed');
   } finally { await fixture.close(); }
 });
 
@@ -131,7 +146,7 @@ test('queue snapshots are atomic, retain latest state, and never persist request
 });
 
 test('cleanup retains completed media and paused pieces regardless of age', async () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-cleanup-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-cleanup-'));
   try {
     const video = path.join(directory, 'saved.mp4');
     const paused = path.join(directory, 'temp-source-job-paused');
@@ -185,7 +200,7 @@ test('refresh accepts only the same VOD topology, preserving partial files on mi
 
 test('a pause during media sniffing stops before starting another manifest request', async () => {
   const { createJobProcessor } = require('../packages/downloader-engine/src/core/JobProcessor');
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-pause-sniff-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-pause-sniff-'));
   let requestCount = 0;
   let finishResponse;
   let notifyRequest;
@@ -231,8 +246,8 @@ test('Chrome browser access requires an explicit per-job choice and a real YouTu
 test('yt-dlp uses the app Node runtime without launching a second Electron app', () => {
   const { buildYtDlpRuntimeOptions } = require('../packages/downloader-engine/src/core/JobProcessor').__test;
   const originalEnvironment = { PATH: '/runtime', ELECTRON_RUN_AS_NODE: '0' };
-  const desktop = buildYtDlpRuntimeOptions({ execPath: '/Applications/VidSnag App/Contents/MacOS/VidSnag', electron: true, env: originalEnvironment });
-  assert.deepEqual(desktop.args, ['--js-runtimes', 'node:/Applications/VidSnag App/Contents/MacOS/VidSnag']);
+  const desktop = buildYtDlpRuntimeOptions({ execPath: '/Applications/SnagThis App/Contents/MacOS/SnagThis', electron: true, env: originalEnvironment });
+  assert.deepEqual(desktop.args, ['--js-runtimes', 'node:/Applications/SnagThis App/Contents/MacOS/SnagThis']);
   assert.equal(desktop.env.ELECTRON_RUN_AS_NODE, '1');
   assert.equal(desktop.env.PATH, originalEnvironment.PATH);
   assert.equal(originalEnvironment.ELECTRON_RUN_AS_NODE, '0', 'only the yt-dlp child receives the Electron runtime flag');

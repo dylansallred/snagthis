@@ -76,7 +76,7 @@ test.beforeAll(async () => {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   stub = { baseUrl: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }) };
-  profile = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-popup-e2e-'));
+  profile = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-popup-e2e-'));
   const extension = path.join(root, 'apps/extension');
   context = await chromium.launchPersistentContext(profile, { channel: 'chromium', headless: true, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--autoplay-policy=no-user-gesture-required'] });
   worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
@@ -174,7 +174,7 @@ test('trailer and movie stay separate, sizes stay truthful, and wider metadata f
     await expect(popup.locator('.video-row')).toHaveCount(2);
     const quality = popup.getByRole('button', { name: 'Choose quality' });
     await expect(quality).toHaveCount(1);
-    await expect(quality.locator('..')).toContainText('about');
+    await expect(popup.locator('.row-status', { has: quality })).toContainText('about');
     await quality.click();
     await expect(popup.getByRole('menuitemradio')).toHaveCount(2);
     await expect(popup.getByRole('menuitemradio').first()).toContainText('1080p');
@@ -203,10 +203,12 @@ test('longest first with real previews for large MP4 and page-context-protected 
     const tabId = await worker.evaluate(async url => (await chrome.tabs.query({})).find(tab => tab.url === url).id, page.url());
     await worker.evaluate(async ({ tabId, base }) => {
       const tab = await chrome.tabs.get(tabId);
-      const sender = { id: chrome.runtime.id, tab, frameId: 0, url: tab.url };
+      // Replay Chrome's own network observation: only that path may carry the
+      // request context (page messages are untrusted hints without headers).
       for (const [name, duration, contentType] of [['direct.mp4', 30, 'video/mp4'], ['index.m3u8', 60, 'application/vnd.apple.mpegurl']]) {
-        await globalThis.handleMessage({ cmd: 'STORE_DETECTED_MEDIA', media: { url: `${base}/cases/preview-context/${name}`, durationSeconds: duration,
-          contentType, height: 1080, sourcePageTitle: 'Movie and trailer', requestHeaders: { Referer: `${base}/`, ...(name.endsWith('m3u8') ? { Origin: base } : {}) } } }, sender);
+        await globalThis.storeMedia(tabId, { url: `${base}/cases/preview-context/${name}`, durationSeconds: duration,
+          contentType, height: 1080, sourcePageTitle: 'Movie and trailer', requestHeaders: { Referer: `${base}/`, ...(name.endsWith('m3u8') ? { Origin: base } : {}) } },
+        0, tab.url, { fromNetwork: true, outermost: true });
       }
     }, { tabId, base: fixture.baseUrl });
     popup = await context.newPage();
@@ -223,7 +225,7 @@ test('longest first with real previews for large MP4 and page-context-protected 
       expect(await row.locator('img.thumb-poster').evaluate(image => {
         const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 18;
         const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0, 32, 18);
-        return window.VidSnagSourcePreview.nonblack(ctx.getImageData(0, 0, 32, 18).data);
+        return window.SnagThisSourcePreview.nonblack(ctx.getImageData(0, 0, 32, 18).data);
       })).toBe(true);
     }
     for (const row of [rows.first(), rows.last()]) {
@@ -336,7 +338,7 @@ test('actual popup: clean looping preview, Download with desktop → Pause → r
     await popup.goto(popupUrl);
     await expect(row()).toContainText('Paused at 34%');
     expect(state.jobs).toHaveLength(1);
-    await row().getByRole('button', { name: 'Resume', exact: true }).click();
+    await row().getByRole('button', { name: 'Resume download', exact: true }).click();
     await expect(row()).toContainText('34%');
     Object.assign(state.jobs[0], { queueStatus: 'completed', status: 'completed', progress: 100 });
     await expect(row()).toContainText('Saved');
@@ -402,7 +404,7 @@ test('popup prepares a verified poster without hover and keeps it across reopen'
   try {
     const row = () => popup.locator('.video-row').first();
     await expect(row()).toBeVisible();
-    await expect(popup.getByText('Save supported files in Chrome. Open VidSnag for streams and more.', { exact: true })).toBeVisible();
+    await expect(popup.getByText('Save supported files in Chrome. Open SnagThis for streams and more.', { exact: true })).toBeVisible();
     const initial = await popup.evaluate(tabId => chrome.runtime.sendMessage({ cmd: 'GET_TAB_MEDIA', tabId }), opened.tabId);
     expect(initial.items[0].thumbnailUrl || '').toBe('');
     await expect(row().locator('img.thumb-poster')).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
@@ -414,7 +416,7 @@ test('popup prepares a verified poster without hover and keeps it across reopen'
     expect(await row().locator('img.thumb-poster').evaluate(image => {
       const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 18;
       const drawing = canvas.getContext('2d'); drawing.drawImage(image, 0, 0, 32, 18);
-      return VidSnagSourcePreview.nonblack(drawing.getImageData(0, 0, 32, 18).data);
+      return SnagThisSourcePreview.nonblack(drawing.getImageData(0, 0, 32, 18).data);
     })).toBe(true);
     await expect.poll(() => popup.evaluate(async tabId => (await chrome.runtime.sendMessage({ cmd: 'GET_TAB_MEDIA', tabId })).items[0].sourcePreviewPoster, opened.tabId)).toBe(poster);
     const enriched = await popup.evaluate(async tabId => (await chrome.runtime.sendMessage({ cmd: 'GET_TAB_MEDIA', tabId })).items[0], opened.tabId);
@@ -473,7 +475,7 @@ test('offline popup previews direct and HLS sources before any desktop job exist
     const mediaPaths = [];
     popup.on('request', request => { if (request.url().startsWith(fixture.baseUrl)) { mediaRequests++; mediaPaths.push(new URL(request.url()).pathname); } });
     try {
-      await expect(popup.getByText('Save supported files in Chrome. Open VidSnag for streams and more.', { exact: true })).toBeVisible();
+      await expect(popup.getByText('Save supported files in Chrome. Open SnagThis for streams and more.', { exact: true })).toBeVisible();
       await expect(popup.locator('#video-list')).not.toHaveAttribute('inert', '');
       const row = popup.locator('.video-row'); const video = row.locator('video.thumb-preview');
       await expect(row).toHaveCount(1);
@@ -541,19 +543,26 @@ test('quality menu overlays the popup without shifting layout and selection appl
       viewport: { width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight, x: scrollX, y: scrollY },
     }));
     const before = await geometry();
+    const fixed = value => ({ ...value, boxes: Object.fromEntries(['.popup-header', '.video-row', '.thumb', '.row-body', '.row-title', '.row-meta'].map(selector => [selector, value.boxes[selector]])) });
     await quality.click();
     const menu = popup.getByRole('menu');
     await expect(menu).toBeVisible();
-    expect(await geometry()).toEqual(before);
+    // A short popup grows (Chrome resizes its window to fit) instead of clipping the menu; rows never move.
+    const grown = await popup.locator('#popup').boundingBox();
+    expect(grown.height).toBeGreaterThanOrEqual(300);
+    await popup.setViewportSize({ width: 480, height: Math.ceil(grown.height) });
+    expect(fixed(await geometry()).boxes).toEqual(fixed(before).boxes);
     const menuBox = await menu.boundingBox();
+    const header = before.boxes['.popup-header'];
     expect(menuBox.x).toBeGreaterThanOrEqual(0);
-    expect(menuBox.y).toBeGreaterThanOrEqual(0);
-    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(before.viewport.width);
-    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(before.viewport.height);
-    expect(await menu.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+    expect(menuBox.y).toBeGreaterThanOrEqual(header.y + header.height);
+    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(480);
+    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(grown.height);
+    expect(await menu.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(false);
     await menu.getByRole('menuitemradio', { name: /^720p/ }).click();
     await expect(menu).toBeHidden();
     await expect(quality.locator('.resolution')).toHaveText('720p');
+    await popup.setViewportSize({ width: 480, height: Math.ceil(initialSize.height) });
     expect(await geometry()).toEqual(before);
   } finally { await popup.close(); await opened.page.close(); }
 });
@@ -563,14 +572,20 @@ test('master variants collapse, unrelated videos remain separate, SPA clears det
   try {
     await expect(master.popup.locator('.video-row')).toHaveCount(1);
     await expect(master.popup.getByRole('button', { name: 'Choose quality', exact: true })).toBeVisible();
-    await expect(master.popup.locator('.row-meta .meta-separator:visible')).toHaveCount(2);
-    for (const separator of await master.popup.locator('.row-meta .meta-separator:visible').all()) {
-      await expect(separator).toBeEmpty();
-      await expect(separator).toHaveCSS('width', '3px');
-      await expect(separator).toHaveCSS('height', '3px');
-      await expect(separator).toHaveAttribute('aria-hidden', 'true');
+    // Quality, size and duration each draw a 3px separator before themselves; a separator
+    // that would start a line falls in the list's clipped 13px strip.
+    const metadataItems = master.popup.locator('.row-meta .meta-item:visible');
+    await expect(metadataItems).toHaveCount(3);
+    for (const item of await metadataItems.all()) {
+      expect(await item.evaluate(node => { const dot = getComputedStyle(node, '::before'); return [dot.content, dot.width, dot.height]; })).toEqual(['""', '3px', '3px']);
     }
-    await expect(master.popup.locator('.row-meta')).toHaveCSS('column-gap', '6px');
+    expect(await master.popup.locator('.row-meta').evaluate(node => {
+      const left = node.getBoundingClientRect().left; const clip = left + 13;
+      return [...node.querySelectorAll('.meta-item')].filter(item => item.offsetParent).every(item => {
+        const start = item.getBoundingClientRect().left;
+        return Math.abs(start - left) < 1 ? start + 8 <= clip : start + 5 >= clip;
+      });
+    })).toBe(true);
     await expect(master.popup.locator('.row-meta')).toHaveCSS('row-gap', '4px');
     await expect(master.popup.locator('.thumb')).toHaveCSS('width', '128px');
     expect(await master.popup.locator('.video-row').evaluate(node => Math.abs(node.querySelector('.thumb').getBoundingClientRect().height - node.clientHeight) < 1)).toBe(true);

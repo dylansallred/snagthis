@@ -1,5 +1,5 @@
 {
-  "name": "vidsnag",
+  "name": "snagthis",
   "private": true,
   "version": "2.0.0",
   "description": "Electron desktop app + Chrome extension for m3u8 downloading",

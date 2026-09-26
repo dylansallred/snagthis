@@ -7,7 +7,7 @@ const preferences = require('../apps/desktop/electron/preferences');
 const { redact, queueSummary } = require('../apps/desktop/electron/diagnostics');
 
 function settingsFile(t) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-preferences-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-preferences-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   return path.join(directory, 'settings.json');
 }
@@ -100,4 +100,27 @@ test('support queue summaries contain counts, never raw source data or custom st
   ]);
   assert.deepEqual(summary, { count: 3, states: { downloading: 1, completed: 1, other: 1 } });
   assert.equal(JSON.stringify(summary).includes('private'), false);
+});
+
+test('the shared accent is validated and the later change wins over an older one', (t) => {
+  const file = settingsFile(t);
+  assert.equal(preferences.read(file).accent, 'orange');
+  assert.equal(preferences.read(file).accentChangedAt, 0);
+  const chosen = preferences.write(file, { accent: 'cobalt' });
+  assert.equal(chosen.accent, 'cobalt');
+  assert.ok(chosen.accentChangedAt > 0, 'a desktop choice is stamped when it is saved');
+  const later = preferences.write(file, { accent: 'mint', accentChangedAt: chosen.accentChangedAt + 5000 });
+  assert.equal(later.accent, 'mint');
+  const stale = preferences.write(file, { accent: 'violet', accentChangedAt: chosen.accentChangedAt - 1 });
+  assert.equal(stale.accent, 'mint', 'an offline Chrome choice older than the saved one is ignored');
+  assert.equal(stale.accentChangedAt, later.accentChangedAt);
+  assert.equal(preferences.write(file, { accentChangedAt: Date.now() }).accentChangedAt, later.accentChangedAt, 'a time without a colour changes nothing');
+  const again = preferences.write(file, { accent: 'magenta' });
+  assert.ok(again.accentChangedAt > later.accentChangedAt, 'a new desktop choice is always later than the saved one');
+  for (const patch of [{ accent: 'teal' }, { accent: 7 }, { accent: 'cobalt', accentChangedAt: -1 }, { accent: 'cobalt', accentChangedAt: 'now' }, { accent: 'cobalt', accentChangedAt: Date.now() + 3 * 86_400_000 }]) {
+    assert.throws(() => preferences.write(file, patch));
+  }
+  fs.writeFileSync(file, JSON.stringify({ accent: 'plaid', accentChangedAt: 'yesterday' }));
+  assert.equal(preferences.read(file).accent, 'orange');
+  assert.equal(preferences.read(file).accentChangedAt, 0);
 });

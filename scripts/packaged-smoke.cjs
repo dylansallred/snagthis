@@ -7,7 +7,7 @@ const { startFixtureServer } = require('../tests/fixtures/server');
 const { probeFile } = require('../tests/fixtures/engine');
 
 async function packagedSmoke(executablePath, resourcesPath) {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-package-smoke-'));
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-package-smoke-'));
   const bin = path.join(resourcesPath, 'bin');
   const realBin = fs.realpathSync(bin);
   const binary = name => path.join(bin, name + (process.platform === 'win32' ? '.exe' : ''));
@@ -31,17 +31,17 @@ async function packagedSmoke(executablePath, resourcesPath) {
     await window.evaluate(outputDirectory => window.desktop.saveSettings({ outputDirectory, notifyOnComplete: false, queueAutoStart: true }), path.join(temporary, 'saved'));
     const runtime = await application.evaluate(({ app }) => ({
       isPackaged: app.isPackaged,
-      protocolRegistered: app.isDefaultProtocolClient('vidsnag'),
+      protocolRegistered: app.isDefaultProtocolClient('snagthis'),
       ffmpeg: process.env.FFMPEG_PATH, ffprobe: process.env.FFPROBE_PATH, ytdlp: process.env.YTDLP_PATH,
     }));
-    assert.equal(runtime.protocolRegistered, true, 'The installed app did not register vidsnag://');
+    assert.equal(runtime.protocolRegistered, true, 'The installed app did not register snagthis://');
     for (const key of ['ffmpeg', 'ffprobe', 'ytdlp']) {
       // Electron resolves macOS /var aliases to /private/var when launching a temp-installed app.
       // Resolve symlinks on both sides so aliases pass while actual escapes still fail.
       assert.ok(runtime[key] && fs.realpathSync(runtime[key]).startsWith(realBin + path.sep), `${key} escaped the packaged resources`);
     }
-    const headers = { Authorization: `Bearer ${info.apiAuthToken}`, 'Content-Type': 'application/json', 'X-Client': 'vidsnag-extension', 'X-Protocol-Version': '1' };
-    const response = await fetch(`${info.apiBaseUrl}/v1/jobs`, { method: 'POST', headers, body: JSON.stringify({ mediaUrl: `${fixture.baseUrl}/media/ts/index.m3u8`, mediaType: 'hls', title: 'VidSnag packaged fixture', settings: { threads: 2 } }) });
+    const headers = { Authorization: `Bearer ${info.apiAuthToken}`, 'Content-Type': 'application/json', 'X-Client': 'snagthis-extension', 'X-Protocol-Version': '1' };
+    const response = await fetch(`${info.apiBaseUrl}/v1/jobs`, { method: 'POST', headers, body: JSON.stringify({ mediaUrl: `${fixture.baseUrl}/media/ts/index.m3u8`, mediaType: 'hls', title: 'SnagThis packaged fixture', settings: { threads: 2 } }) });
     assert.equal(response.ok, true, `Packaged job was rejected (${response.status})`);
     const { jobId } = await response.json();
     assert.ok(jobId);
@@ -54,7 +54,7 @@ async function packagedSmoke(executablePath, resourcesPath) {
       const job = queue.find(item => item.id === jobId);
       if (job?.queueStatus === 'failed') throw new Error(`Packaged fixture failed: ${job.error}`);
       if (job?.queueStatus === 'completed') {
-        const historyResponse = await fetch(`${info.apiBaseUrl}/api/history`, { headers: { ...headers, 'X-Client': 'vidsnag-desktop' } });
+        const historyResponse = await fetch(`${info.apiBaseUrl}/api/history`, { headers: { ...headers, 'X-Client': 'snagthis-desktop' } });
         assert.equal(historyResponse.ok, true, `Desktop history was rejected (${historyResponse.status})`);
         const { items } = await historyResponse.json();
         output = items.find(item => item.jobId === jobId)?.absolutePath;

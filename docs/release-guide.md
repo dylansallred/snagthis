@@ -1,10 +1,10 @@
-# Releasing VidSnag
+# Releasing SnagThis
 
 Desktop and Chrome have separate update channels and version numbers. A desktop `vX.Y.Z` tag builds macOS Apple Silicon, macOS Intel, Windows x64, and a Chrome ZIP. An `extension-vX.Y.Z` tag prepares an extension-only release. Both workflows prepare **drafts in this repository**; a maintainer reviews and publishes them manually. The ZIP is not a Chrome Web Store publication. Follow [the Chrome release guide](extension-release.md) for the store and manual fallback.
 
 ## Readiness and prerequisites
 
-The repository stays private during testing and will become public for launch. Source, installers, extension ZIPs, source packets, and update metadata all stay together in `dylansallred/vidsnag`; no separate distribution repository is needed. Authorized collaborators can download private test artifacts through GitHub. Installed apps cannot anonymously read the private feed or drafts. Before public launch, make this repository public and publish a reviewed desktop release. Do not put a GitHub access token in the installed app. Neither workflow changes repository visibility or publishes a draft automatically.
+The repository stays private during testing and will become public for launch. Source, installers, extension ZIPs, source packets, and update metadata all stay together in `dylansallred/snagthis`; no separate distribution repository is needed. Authorized collaborators can download private test artifacts through GitHub. Installed apps cannot anonymously read the private feed or drafts. Before public launch, make this repository public and publish a reviewed desktop release. Do not put a GitHub access token in the installed app. Neither workflow changes repository visibility or publishes a draft automatically.
 
 The owner has an Apple Developer account and has configured the five Apple repository secrets below. Secret presence alone does not prove that the certificate, password, or notarization credentials work; use the signing check below before preparing a release.
 
@@ -51,15 +51,15 @@ The automated gate checks identity and coverage; a human reviewer must still che
 
 The desktop jobs stage `release-verification-darwin-arm64.json`, `release-verification-darwin-x64.json`, and `release-verification-win32-x64.json`. Download those artifacts from the release run. They contain the exact executable versions, FFmpeg configuration, upstream build/source references, and hashes. Preserve all dependency sources and build instructions needed to reproduce those actual builds, including linked GPL dependencies; an FFmpeg source URL alone is not the complete packet.
 
-Build `vidsnag-corresponding-source.tar.xz` containing the exact tagged VidSnag source plus those dependency sources, licenses, and reproducible build instructions. Do not include signing certificates, tokens, private media, or user data. Next to it create `corresponding-source.json` with this structure (replace every example value and include every actual source component):
+Build `snagthis-corresponding-source.tar.xz` containing the exact tagged SnagThis source plus those dependency sources, licenses, and reproducible build instructions. Do not include signing certificates, tokens, private media, or user data. Next to it create `corresponding-source.json` with this structure (replace every example value and include every actual source component):
 
 ```json
 {
   "releaseTag": "vX.Y.Z",
   "sourceCommit": "40-character Git commit from the verification reports",
-  "archiveSha256": "SHA256 of vidsnag-corresponding-source.tar.xz",
+  "archiveSha256": "SHA256 of snagthis-corresponding-source.tar.xz",
   "components": [
-    { "id": "vidsnag", "version": "X.Y.Z", "path": "vidsnag", "licenseFile": "vidsnag/LICENSE", "buildInstructions": "vidsnag/BUILD.md" },
+    { "id": "snagthis", "version": "X.Y.Z", "path": "snagthis", "licenseFile": "snagthis/LICENSE", "buildInstructions": "snagthis/BUILD.md" },
     { "id": "ffmpeg-mac", "version": "exact revision", "path": "ffmpeg-mac", "licenseFile": "ffmpeg-mac/COPYING.GPLv3", "buildInstructions": "ffmpeg-mac/BUILD.md" },
     { "id": "ffmpeg-win", "version": "exact revision", "path": "ffmpeg-win", "licenseFile": "ffmpeg-win/COPYING.GPLv3", "buildInstructions": "ffmpeg-win/BUILD.md" },
     { "id": "yt-dlp", "version": "exact revision", "path": "yt-dlp", "licenseFile": "yt-dlp/LICENSE", "buildInstructions": "yt-dlp/BUILD.md" }
@@ -86,7 +86,7 @@ Build `vidsnag-corresponding-source.tar.xz` containing the exact tagged VidSnag 
 
 Paths refer to files inside the archive. Each tool's `components` list must also include its relevant linked dependencies/build scripts. Add component records as needed; the example is a schema example, not a complete source bundle.
 
-Calculate both SHA256 values (`shasum -a 256 FILE` on macOS; `sha256sum FILE` on Linux). Make the reviewed archive and manifest available at HTTPS URLs without embedding credentials in workflow inputs. In Actions, run **Prepare corresponding source** on `main`, providing the exact tag, both URLs, and both expected hashes. It downloads only those inputs, verifies the hashes and packet structure, and uploads the named `vidsnag-corresponding-source` artifact. This workflow does not publish a release and does not substitute for final binary/source matching.
+Calculate both SHA256 values (`shasum -a 256 FILE` on macOS; `sha256sum FILE` on Linux). Make the reviewed archive and manifest available at HTTPS URLs without embedding credentials in workflow inputs. In Actions, run **Prepare corresponding source** on `main`, providing the exact tag, both URLs, and both expected hashes. It downloads only those inputs, verifies the hashes and packet structure, and uploads the named `snagthis-corresponding-source` artifact. This workflow does not publish a release and does not substitute for final binary/source matching.
 
 Set `CORRESPONDING_SOURCE_RUN_ID` to that completed run's numeric ID. If draft preparation already failed for a missing source packet, rerun only that failed job after setting the variable. Desktop artifacts expire after 7 days; the source packet expires after 30 days. If required artifacts have expired, rebuild the unchanged tagged release before publication and recheck its source evidence.
 

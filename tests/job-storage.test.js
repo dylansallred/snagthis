@@ -9,7 +9,7 @@ const { createApiServer } = require('../packages/downloader-api/src');
 const { QueueManager, allocateJobStorageDir, sanitizeJobFolderName, isOwnedJobStorageDir } = require('../packages/downloader-engine/src');
 
 test('new jobs use owned title folders with atomic collision suffixes throughout their lifecycle', { timeout: 20000 }, async (t) => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vidsnag-named-folders-'));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-named-folders-'));
   const downloadDir = path.join(dataDir, 'downloads');
   const api = createApiServer({ dataDir, downloadDir, port: 0,
     ffmpegPath: process.execPath, ffprobePath: process.execPath, ytDlpPath: process.execPath, trustBinaryPaths: true,
@@ -90,6 +90,9 @@ test('new jobs use owned title folders with atomic collision suffixes throughout
   const paused = { id: 'paused-job', url: 'https://example.org/paused.mp4', title: 'Paused video', storageDir: pausedDir,
     filePath: path.join(pausedDir, 'paused.mp4'), status: 'paused', queueStatus: 'paused' };
   fs.writeFileSync(`${paused.filePath}.part`, 'partial');
+  // yt-dlp keeps a finished format beside the next format's .part until it merges.
+  fs.writeFileSync(path.join(pausedDir, 'paused-job-Paused_video.f401.mp4'), 'finished video format');
+  fs.writeFileSync(path.join(pausedDir, 'paused-job-Paused_video.f140-12.m4a.part'), 'partial audio');
   manager.queue.push(paused); jobs.set(paused.id, paused);
   assert.equal(manager.resumeJob(paused.id), true);
   assert.equal(paused.storageDir, pausedDir, 'resume reuses its existing directory');
@@ -97,4 +100,44 @@ test('new jobs use owned title folders with atomic collision suffixes throughout
   await manager.persistence;
   assert.equal(fs.existsSync(pausedDir), false, 'removing the queued partial also removes its owned folder and marker');
   assert.equal(fs.existsSync(completed.mp4Path), true, 'removal cannot affect a different completed folder');
+});
+
+test('completed files get byte-bounded, device-safe media names and failed moves leave no empty folder', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-final-names-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 }));
+  const downloadDir = path.join(dataDir, 'downloads');
+  const manager = new QueueManager({ queueFilePath: path.join(dataDir, 'queue.json'), downloadDir,
+    fsPromises: fs.promises, jobs: new Map(), runJob: async () => {}, runDirectJob: async () => {}, initialSettings: { autoStart: false } });
+  await manager.ready;
+  const complete = (id, title, sourceName = `${id}-source.mp4`) => {
+    const directory = allocateJobStorageDir(downloadDir, id, 'video');
+    const filePath = path.join(directory, sourceName);
+    fs.writeFileSync(filePath, 'local fixture media');
+    return { id, title, filePath, mp4Path: filePath, storageDir: directory, status: 'completed', queueStatus: 'completed' };
+  };
+
+  const longTitle = complete('long-title', '电影标题'.repeat(25));
+  manager.relocateCompletedArtifact(longTitle);
+  assert.equal(longTitle.status, 'completed', longTitle.error);
+  assert.ok(Buffer.byteLength(path.basename(longTitle.mp4Path)) <= 255);
+  assert.match(path.basename(longTitle.mp4Path), /^(?:电影标题)+电?影?标?\.mp4$/u, 'truncation keeps whole characters and the extension');
+  assert.equal(fs.existsSync(longTitle.mp4Path), true);
+
+  const device = complete('device-name', 'CON');
+  manager.relocateCompletedArtifact(device);
+  assert.equal(path.basename(device.mp4Path), 'Video CON.mp4');
+
+  const program = complete('program-type', 'Installer', 'program-type-source.exe');
+  program.mp4Path = null;
+  manager.relocateCompletedArtifact(program);
+  assert.equal(path.extname(program.filePath), '.mp4', 'a produced file never keeps a non-media extension');
+
+  const failed = complete('failed-move', 'Failed Move');
+  const originalRename = fs.renameSync;
+  fs.renameSync = (from, to) => { throw Object.assign(new Error(`ENAMETOOLONG: name too long, rename '${from}' -> '${to}'`), { code: 'ENAMETOOLONG' }); };
+  try { manager.relocateCompletedArtifact(failed); } finally { fs.renameSync = originalRename; }
+  assert.equal(failed.status, 'completed-with-errors');
+  assert.equal(failed.error, 'Completed file move failed (ENAMETOOLONG)', 'clients see the cause without local paths');
+  assert.equal(fs.existsSync(path.join(downloadDir, 'Failed Move')), false, 'the empty destination folder is removed');
+  assert.equal(fs.existsSync(failed.mp4Path), true, 'the finished file stays where it was');
 });
