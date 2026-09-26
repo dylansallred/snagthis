@@ -1,10 +1,10 @@
 /* Direct-file capability and Chrome-owned transfers. Never persist source URLs or request headers. */
 (function(root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.VidSnagBrowserDownloads = factory();
+  else root.SnagThisBrowserDownloads = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
-  const RECORD_PREFIX = 'vidsnag:browser-download:';
+  const RECORD_PREFIX = 'snagthis:browser-download:';
   const SAFE_DANGER = new Set(['safe', 'accepted', 'allowlistedByPolicy', 'deepScannedSafe']);
   function httpUrl(value) {
     try { const url = new URL(value); return /^https?:$/.test(url.protocol) && !url.username && !url.password ? url.href : ''; } catch { return ''; }
@@ -53,7 +53,9 @@
   }
   function isSupported(item) { return Boolean(resolveSource(item)); }
   function filenameFor(title, extension) {
-    let value = String(title || 'Video').normalize('NFKC').replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, ' ')
+    // Format characters (bidi overrides, zero-width marks) can disguise the
+    // real extension, as in "Movie\u202Ekcf.mp4". Drop them before sanitising.
+    let value = String(title || 'Video').normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, ' ')
       .replace(/\.(?:mp4|webm)$/i, '').replace(/\s+/g, ' ').replace(/^[. ]+|[. ]+$/g, '').slice(0, 160).replace(/[. ]+$/g, '');
     if (!value || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(value)) value = `Video${value ? ` ${value}` : ''}`;
     return `${value}.${extension}`;
@@ -111,7 +113,7 @@
       const match = /^browser:(\d+)$/.exec(String(jobId));
       if (!match) throw new Error('This is not a Chrome download.');
       const id = Number(match[1]); const result = await chromeApi.storage.local.get(recordKey(id)); const record = result[recordKey(id)];
-      if (!record || record.downloadId !== id) throw new Error('This download is not owned by VidSnag.');
+      if (!record || record.downloadId !== id) throw new Error('This download is not owned by SnagThis.');
       return record;
     }
     async function inspect(record) {

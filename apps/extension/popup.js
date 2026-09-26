@@ -4,13 +4,18 @@
   const $ = id => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const isDemo = location.protocol !== 'chrome-extension:' && ['localhost', '127.0.0.1', ''].includes(location.hostname) && params.has('demo');
-  const model = VidSnagPopupModel;
-  const rows = VidSnagRows;
-  const titles = VidSnagTitles;
+  const model = SnagThisPopupModel;
+  const rows = SnagThisRows;
+  const titles = SnagThisTitles;
+  const strings = SnagThisStrings.strings;
+  const accent = SnagThisPopupAccent;
+  const pixel = SnagThisPixel;
+  const storeBuild = globalThis.SnagThisBuild?.storeBuild === true;
+  const friendly = SnagThisDetection.friendlyError;
   const runtimeVersion = isDemo ? '1.0.0' : chrome.runtime.getManifest().version;
   const apiBase = (!isDemo && !chrome.runtime.getManifest().update_url && model.localApiBase(params.get('apiBase'))) || 'http://127.0.0.1:49732';
-  const RELEASES = 'https://github.com/dylansallred/vidsnag/releases';
-  const HELP = 'https://github.com/dylansallred/vidsnag/blob/main/README.md#troubleshooting';
+  const RELEASES = 'https://github.com/dylansallred/snagthis/releases';
+  const HELP = 'https://github.com/dylansallred/snagthis/blob/main/README.md#troubleshooting';
   const DEFAULT_PREFERENCES = { preferredQuality: 'best', subtitleLanguage: 'none', notifyOnComplete: true, launchAtLogin: false };
   let preferences = { ...DEFAULT_PREFERENCES };
   let appToken = ''; let activeTab = null; let mediaItems = []; let mappings = {}; let queue = []; let desktopQueue = []; let browserQueue = []; let visit = '';
@@ -19,20 +24,24 @@
   let discoveryPending = !isDemo; let discoveryError = false; let connectionChecked = isDemo;
   let menuTrigger = null; let selected = new Map(); let customTitles = {}; let pending = new Map(); let failures = new Map();
   let noticeTimer; let openTimer; let queueTimer; let healthTimer;
-  let posterPreparation = null; let popupClosed = false;
+  let posterPreparation = null; let popupClosed = false; let pageNeedsRefresh = false;
+  let rowsPainted = false; let breathed = false; let menuExit = null;
+  let desktopAudioTracks = isDemo; let sample = null; let sampleDwell = 0; let dwellRow = null;
+  let accentPush = null;
   const rowElements = new Map();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const icons = {
     // Lucide Settings, matching the desktop icon (vendor/lucide.LICENSE.txt).
     gear: '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
-    play: '<path d="m7 4 9 6-9 6Z"/>', pause: '<path d="M7 4v12M13 4v12"/>',
+    play: '<path d="m7 4 9 6-9 6Z"/>', resume: '<circle cx="10" cy="10" r="7.5"/><path d="m8.5 7.2 4.2 2.8-4.2 2.8Z"/>', pause: '<path d="M7 4v12M13 4v12"/>',
     download: '<path d="M10 3v9m-4-4 4 4 4-4M4 12v4h12v-4"/>',
     screen: '<path d="M3 4h14v9H3zM7 17h6M10 13v4"/>', captions: '<path d="M3 5h14v10H3zM6 12h3M12 12h2M6 9h2M11 9h3"/>', bell: '<path d="M5 8a5 5 0 0 1 10 0c0 5 2 6 2 6H3s2-1 2-6M8.5 17a1.7 1.7 0 0 0 3 0"/>', external: '<path d="M12 3h5v5M9 11l8-8M15 11v5H4V5h5"/>', next: '<path d="m8 5 5 5-5 5"/>',
-    close: '<path d="m5 5 10 10M15 5 5 15"/>', down: '<path d="m5 8 5 5 5-5"/>', check: '<path d="m4 10 4 4 8-8"/>',
+    close: '<path d="m5 5 10 10M15 5 5 15"/>', more: '<circle cx="4.5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/>', down: '<path d="m5 8 5 5 5-5"/>', check: '<path d="m4 10 4 4 8-8"/>',
+    // Lucide Palette, matching the desktop's Appearance icon.
+    palette: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>',
   };
-  function icon(name) { const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); node.setAttribute('viewBox', name === 'gear' ? '0 0 24 24' : '0 0 20 20'); node.setAttribute('aria-hidden', 'true'); node.classList.add('icon'); node.innerHTML = icons[name] || icons.play; return node; }
+  function icon(name) { const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); node.setAttribute('viewBox', ['gear', 'palette'].includes(name) ? '0 0 24 24' : '0 0 20 20'); node.setAttribute('aria-hidden', 'true'); node.classList.add('icon'); node.innerHTML = icons[name] || icons.play; return node; }
   function el(tag, className = '', text = '') { const node = document.createElement(tag); if (className) node.className = className; if (text) node.textContent = text; return node; }
-  function metadataSeparator() { const node = el('span', 'meta-separator'); node.setAttribute('aria-hidden', 'true'); return node; }
   function qualityMark(label) {
     const quality = rows.formatQualityBadge(label);
     const mark = el('span', `quality-mark${quality.tier ? '' : ' is-unknown'}`);
@@ -40,10 +49,8 @@
     mark.append(el('span', 'resolution', quality.label));
     return mark;
   }
-  function appendMetadata(status, content) {
-    if (!status.childElementCount) { status.append(content); return; }
-    const part = el('span', 'row-meta-part'); part.append(metadataSeparator(), content); status.append(part);
-  }
+  // Each item draws its own leading separator; the list clips it wherever an item starts a line.
+  function appendMetadata(status, content) { const part = el('span', 'meta-item'); part.append(content); status.append(part); }
   function action(label, handler, style = '', iconName = '') {
     const button = el('button', `action ${style}`); button.type = 'button'; button.setAttribute('aria-label', label);
     const iconOnly = style.split(/\s+/).includes('icon-only') && iconName;
@@ -52,20 +59,22 @@
     button.addEventListener('click', handler); return button;
   }
   function notice(message) { $('notice').textContent = String(message); $('notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 5000); }
-  function external(url) { if (isDemo) { notice('Preview only — no app or page was opened.'); return; } chrome.tabs.create({ url }).catch(() => notice('Open VidSnag from your Applications folder.')); }
+  function external(url) { if (isDemo) { notice('Preview only — no app or page was opened.'); return; } chrome.tabs.create({ url }).catch(() => notice('Open SnagThis from your Applications folder.')); }
   async function request(path, options = {}) {
     if (isDemo) throw new Error('Demo cannot access the desktop app.');
-    const headers = { 'X-Client': 'vidsnag-extension', 'X-Protocol-Version': '1', 'X-Extension-Version': runtimeVersion, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.public ? {} : { Authorization: `Bearer ${appToken}` }) };
-    const response = await fetch(`${apiBase}${path}`, { method: options.body ? 'POST' : 'GET', headers, ...(options.body ? { body: JSON.stringify(options.body) } : {}), signal: AbortSignal.timeout(5000) });
+    const headers = { 'X-Client': 'snagthis-extension', 'X-Protocol-Version': '1', 'X-Extension-Version': runtimeVersion, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.public ? {} : { Authorization: `Bearer ${appToken}` }) };
+    let response;
+    try { response = await fetch(`${apiBase}${path}`, { method: options.body ? 'POST' : 'GET', headers, ...(options.body ? { body: JSON.stringify(options.body) } : {}), signal: AbortSignal.timeout(5000) }); }
+    catch (error) { throw new Error(friendly(error)); }
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) { const error = new Error(data.error?.message || data.error || 'VidSnag could not finish that action.'); error.status = response.status; error.compatibility = data.compatibility; throw error; }
+    if (!response.ok) { const error = new Error(data.error?.message || data.error || 'SnagThis could not finish that action.'); error.status = response.status; error.compatibility = data.compatibility; throw error; }
     return data;
   }
   async function message(value) { return isDemo ? { ok: true } : chrome.runtime.sendMessage(value); }
   function desktopReady() { return reachable && compatible && Boolean(appToken); }
-  function browserSupported(item) { return !isDemo && VidSnagBrowserDownloads.isSupported(item); }
+  function browserSupported(item) { return !isDemo && SnagThisBrowserDownloads.isSupported(item); }
   function openDesktop(view) {
-    const appUrl = view === 'settings' ? 'vidsnag://open/settings' : 'vidsnag://open';
+    const appUrl = view === 'settings' ? 'snagthis://open/settings' : 'snagthis://open';
     if (!reachable) {
       if (getAppFallback) { external(RELEASES); return; }
       external(appUrl); clearTimeout(openTimer);
@@ -89,18 +98,21 @@
     if (!connectionChecked) {
       // A connection check in flight is not evidence that the app is offline.
     } else if (!reachable) {
-      banner.append(el('span', '', 'Save supported files in Chrome. Open VidSnag for streams and more.'), action(getAppFallback ? 'Get the app' : 'Open VidSnag', () => openDesktop(), 'primary'));
+      banner.append(el('span', '', 'Save supported files in Chrome. Open SnagThis for streams and more.'), action(getAppFallback ? 'Get the app' : 'Open SnagThis', () => openDesktop(), 'primary'));
     } else if (!compatible) {
       if (compatibilityIssue === 'extension') banner.append(el('span', '', 'Update the Chrome extension to use desktop downloads.'), action('Update Chrome extension', showExtensionUpdate, 'primary'));
-      else banner.append(el('span', '', 'Update VidSnag to use desktop downloads.'), action('Update', () => external(RELEASES), 'primary'));
+      else banner.append(el('span', '', 'Update SnagThis to use desktop downloads.'), action('Update', () => external(RELEASES), 'primary'));
     } else if (!appToken) {
-      banner.append(el('span', '', 'Save supported files in Chrome. Connect VidSnag for streams and more.'), action('Connect', showPairing, 'primary'));
+      banner.append(el('span', '', 'Save supported files in Chrome. Connect SnagThis for streams and more.'), action('Connect', showPairing, 'primary'));
     }
     $('help-button').hidden = connectionChecked && !reachable;
     const activeCount = queue.filter(job => job.backend !== 'browser' && ['downloading', 'queued'].includes(job.queueStatus)).length;
     const openButton = $('open-app');
-    openButton.replaceChildren(document.createTextNode(connectionChecked && !reachable ? "Don't have the app? Get it" : 'Open VidSnag'));
-    if (reachable && activeCount) openButton.append(el('span', 'count-badge', String(activeCount)));
+    openButton.replaceChildren(document.createTextNode(connectionChecked && !reachable ? "Don't have the app? Get it" : 'Open SnagThis'));
+    if (reachable && activeCount) {
+      const badge = el('span', 'count-badge', String(activeCount)); badge.setAttribute('aria-hidden', 'true'); openButton.append(badge);
+      openButton.setAttribute('aria-label', `Open SnagThis, ${activeCount} active download${activeCount === 1 ? '' : 's'}`);
+    } else openButton.removeAttribute('aria-label');
   }
   function updateThumb(thumb, row) {
     const localPoster = model.resolveThumbnailUrl(row.thumbnailUrl, apiBase);
@@ -116,11 +128,20 @@
     const resolved = isDemo ? row.thumbnailUrl : (reachable && localPoster.startsWith(`${apiBase}/downloads/`) ? localPoster : sourcePoster || localPoster);
     const source = resolved && resolved !== thumb.dataset.failedSource ? resolved : '';
     if (thumb.dataset.source !== source) {
-      thumb.dataset.source = source; thumb.querySelector('.thumb-poster')?.remove();
+      thumb.dataset.source = source;
+      const stale = [...thumb.querySelectorAll('.thumb-poster, .thumb-poster-leaving')];
+      for (const node of stale) node.classList.replace('thumb-poster', 'thumb-poster-leaving');
       const poster = source ? el('img', 'thumb-poster') : el('div', 'thumb-poster placeholder');
-      if (source) { poster.alt = ''; poster.src = source; poster.referrerPolicy = 'no-referrer'; poster.addEventListener('error', () => { if (thumb.dataset.source === source) { thumb.dataset.failedSource = source; delete thumb.dataset.source; updateThumb(thumb, { ...(thumb.closest('.video-row')?.current?.row || row), thumbnailUrl: null }); preparePosters(); } }, { once: true }); }
-      else { poster.setAttribute('aria-hidden', 'true'); for (let index = 0; index < 3; index++) poster.append(el('span', 'thumb-loading-dot')); }
-      thumb.prepend(poster);
+      if (source) {
+        // The new poster fades in over whatever it replaces, then the old layer goes.
+        poster.alt = ''; poster.classList.add('is-loading'); poster.referrerPolicy = 'no-referrer';
+        poster.addEventListener('load', () => { poster.classList.remove('is-loading'); setTimeout(() => { for (const node of stale) node.remove(); }, reducedMotion.matches ? 0 : 150); }, { once: true });
+        poster.src = source; poster.addEventListener('error', () => { if (thumb.dataset.source === source) { thumb.dataset.failedSource = source; delete thumb.dataset.source; updateThumb(thumb, { ...(thumb.closest('.video-row')?.current?.row || row), thumbnailUrl: null }); preparePosters(); } }, { once: true });
+        if (stale.length) stale.at(-1).after(poster); else thumb.prepend(poster);
+      } else {
+        poster.setAttribute('aria-hidden', 'true'); for (let index = 0; index < 3; index++) poster.append(el('span', 'thumb-loading-dot'));
+        for (const node of stale) node.remove(); thumb.prepend(poster);
+      }
     }
   }
   function storeSourcePoster(node, item, previewVisit, poster, sceneStart, sceneScope) {
@@ -147,14 +168,16 @@
       else return;
     }
     if (suspended) return;
-    const node = [...rowElements.values()].find(candidate => !candidate.posterAttempted && visible(candidate) && !candidate.querySelector('.thumb').dataset.source && VidSnagSourcePreview.sourceFor(candidate.current?.item));
+    // Unprompted previews fetch only media Chrome observed for this tab; page
+    // script can report any URL, so those rows wait for a hover instead.
+    const node = [...rowElements.values()].find(candidate => !candidate.posterAttempted && visible(candidate) && !candidate.querySelector('.thumb').dataset.source && SnagThisSourcePreview.sourceFor(candidate.current?.item)?.trusted);
     if (!node) return;
     const item = node.current.item; const previewVisit = visit;
     const video = el('video', 'poster-probe'); video.hidden = true; video.tabIndex = -1; video.setAttribute('aria-hidden', 'true');
     node.posterAttempted = true; node.querySelector('.thumb').append(video);
     const preparation = { node, video, controller: null }; posterPreparation = preparation;
     const finish = () => { if (posterPreparation !== preparation) return; stopPosterPreparation(); queueMicrotask(preparePosters); };
-    preparation.controller = VidSnagSourcePreview.create({ item, video, tabId: activeTab?.id, mediaId: item.id, posterOnly: true, sceneOffset: node.sourceSceneStart, sceneScope: node.sourceSceneScope,
+    preparation.controller = SnagThisSourcePreview.create({ item, video, tabId: activeTab?.id, mediaId: item.id, posterOnly: true, sceneOffset: node.sourceSceneStart, sceneScope: node.sourceSceneScope,
       onMetadata: metadata => storeSourceMetadata(node, item, previewVisit, metadata),
       onPoster: (poster, sceneStart, sceneScope) => { if (posterPreparation !== preparation) return; storeSourcePoster(node, item, previewVisit, poster, sceneStart, sceneScope); finish(); },
       onError: finish,
@@ -178,7 +201,7 @@
     let clipUrl = demoName ? `popup/media/${demoName}.mp4` : reachable && compatible && appToken ? model.previewClipUrl(row.source.previewClipUrl || (node.previewJobId === jobId ? node.previewClipUrl : ''), apiBase) : '';
     if (clipUrl && node.previewFailedUrl === new URL(clipUrl, location.href).pathname) clipUrl = '';
     if (!clipUrl) {
-      if (!node.sourcePreview && !node.sourcePreviewFailed && (item.mediaKind === 'youtube-page' || VidSnagSourcePreview.sourceFor(item))) {
+      if (!node.sourcePreview && !node.sourcePreviewFailed && (item.mediaKind === 'youtube-page' || SnagThisSourcePreview.sourceFor(item))) {
         stopThumbPreview(node);
         const previewVisit = visit;
         const thumb = node.querySelector('.thumb'); const video = el('video', 'thumb-preview'); video.tabIndex = -1; video.setAttribute('aria-hidden', 'true');
@@ -188,8 +211,8 @@
           onError: () => { if (node.previewVideo === video) { node.sourcePreviewFailed = true; stopThumbPreview(node); } },
         };
         node.sourcePreview = item.mediaKind === 'youtube-page'
-          ? VidSnagPagePreview.create({ video, send: message, tabId: activeTab?.id, mediaId: item.id, ...callbacks })
-          : VidSnagSourcePreview.create({ item, video, tabId: activeTab?.id, mediaId: item.id, sceneOffset: node.sourceSceneStart, sceneScope: node.sourceSceneScope, ...callbacks,
+          ? SnagThisPagePreview.create({ video, send: message, tabId: activeTab?.id, mediaId: item.id, ...callbacks })
+          : SnagThisSourcePreview.create({ item, video, tabId: activeTab?.id, mediaId: item.id, sceneOffset: node.sourceSceneStart, sceneScope: node.sourceSceneScope, ...callbacks,
             onMetadata: metadata => storeSourceMetadata(node, item, previewVisit, metadata),
             onPoster: (poster, sceneStart, sceneScope) => {
               if (node.previewVideo === video) storeSourcePoster(node, item, previewVisit, poster, sceneStart, sceneScope);
@@ -237,10 +260,63 @@
     const result = model.browserRow(rows.toRowModel(source, { surface: 'popup', firstQueuedId: firstWaiting, folder: preferences.outputDirectory }), job);
     if (result && audioOnly) { result.qualityLabel = 'Audio only'; if (result.state === 'detected') result.statusLine = 'Audio only'; }
     if (result && !isDemo && !job && ['detected', 'problem'].includes(result.state) && !browserSupported(choice) && !desktopReady()) result.action = { id: 'use-desktop', label: 'Use desktop app', style: 'bordered' };
+    if (result && storeBuild && !job && youtubeItem(item)) {
+      // The store build never downloads YouTube itself or hands it to desktop.
+      Object.assign(result, { state: 'external', tone: 'muted', statusLine: 'Paste this link into the SnagThis desktop app', action: { id: 'copy-link', label: 'Copy link', style: 'bordered' } });
+    }
+    // Its URL only works inside the page's own Service Worker; a download would fail as "expired".
+    if (result && !job && (item.serviceWorkerServed || choice.serviceWorkerServed)) Object.assign(result, { state: 'external', tone: 'muted', statusLine: 'This video only plays inside its own player', action: null });
     return { row: result, choice, jobId };
+  }
+  function youtubeItem(item) { return item.mediaKind === 'youtube-page' || Boolean(SnagThisDetection.youtubeId(item.url)); }
+  function youtubeLink(item) { const id = SnagThisDetection.youtubeId(item.url) || SnagThisDetection.youtubeId(item.sourcePageUrl); return id ? `https://www.youtube.com/watch?v=${id}` : item.url; }
+  async function copyLink(item) {
+    try { await navigator.clipboard.writeText(youtubeLink(item)); notice('Link copied. Paste it into the SnagThis desktop app.'); }
+    catch { notice('Copy the link from the address bar, then paste it into the SnagThis desktop app.'); }
   }
   function mediaSizeLabel(choice) {
     return rows.formatSize(choice.sizeBytes, { estimated: choice.sizeEstimated }) || 'N/A';
+  }
+  function progressAttributes(status, row) {
+    if (['downloading', 'finishing', 'paused', 'problem'].includes(row.state)) {
+      status.setAttribute('role', 'progressbar'); status.setAttribute('aria-valuemin', '0'); status.setAttribute('aria-valuemax', '100'); status.setAttribute('aria-valuenow', String(row.percent)); status.setAttribute('aria-valuetext', row.statusLine);
+    } else { for (const attribute of ['role', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']) status.removeAttribute(attribute); }
+  }
+  function actionIcon(id) { return id === 'download' || id === 'continue' ? 'download' : { pause: 'pause', resume: 'resume', play: 'play' }[id] || ''; }
+  function createRow(item) {
+    const node = el('div', 'video-row'); node.dataset.rowKey = item.id; node.tabIndex = 0; node.setAttribute('role', 'group');
+    const pieces = el('div', 'progress-pieces'); pieces.setAttribute('aria-hidden', 'true');
+    // These cells represent aggregate progress, not individual source segments.
+    for (let index = 0; index < 40; index++) pieces.append(el('span', 'progress-piece'));
+    const thumb = el('div', 'thumb'); const body = el('div', 'row-body'); const titleLine = el('div', 'row-title-line');
+    // Problem rows keep their duration beside the title so the explanation can use two lines.
+    titleLine.append(el('div', 'row-title'), el('span', 'row-title-duration'));
+    const metadata = el('div', 'row-meta'); const durationMeta = el('span', 'meta-item row-duration-meta'); durationMeta.append(el('span', 'row-duration')); metadata.append(el('div', 'row-status'), durationMeta); body.append(titleLine, metadata);
+    // Row extras stay hidden at rest and appear on hover or keyboard focus.
+    const more = el('button', 'row-more'); more.type = 'button'; more.title = 'More';
+    more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-expanded', 'false'); more.append(icon('more'));
+    more.addEventListener('click', () => { if (menuTrigger === more) closeMenu(); else showContext(node.current.item, null, more); });
+    node.append(thumb, body, more, pieces); node.addEventListener('contextmenu', event => { event.preventDefault(); showContext(node.current.item, event.button === 2 ? event : null, more); });
+    // Shift+F10 and the context-menu key open the same menu from the focused row.
+    node.addEventListener('keydown', event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); showContext(node.current.item, null, more); } });
+    node.addEventListener('pointerenter', () => { node.previewHovered = true; node.previewRequestedFor = ''; node.previewFailedUrl = ''; node.sourcePreviewFailed = false; syncThumbPreview(node); });
+    node.addEventListener('pointerleave', () => { node.previewHovered = false; syncThumbPreview(node); });
+    node.addEventListener('focusin', () => { if (!node.previewFocused) { node.previewRequestedFor = ''; node.previewFailedUrl = ''; node.sourcePreviewFailed = false; } node.previewFocused = true; syncThumbPreview(node); });
+    node.addEventListener('focusout', event => { node.previewFocused = node.contains(event.relatedTarget); syncThumbPreview(node); });
+    return node;
+  }
+  // Rows that arrive after the first paint slide in; removed rows collapse away. Re-renders never replay either.
+  function enterRow(node) {
+    if (reducedMotion.matches) return;
+    node.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
+  function exitRow(node) {
+    stopThumbPreview(node); node.trace?.destroy(); node.trace = null;
+    if (reducedMotion.matches || !node.isConnected) { node.remove(); return; }
+    node.dataset.exiting = 'true'; node.inert = true;
+    const height = `${node.offsetHeight}px`;
+    const animation = node.animate([{ height, minHeight: height, opacity: 1 }, { height: '0px', minHeight: '0px', opacity: 0, borderTopWidth: '0px' }], { duration: 180, easing: 'ease-in' });
+    animation.onfinish = () => node.remove(); animation.oncancel = () => node.remove();
   }
   function renderRows() {
     const list = $('video-list');
@@ -248,34 +324,25 @@
     const changed = list.dataset.view !== view;
     list.dataset.view = view; list.setAttribute('aria-busy', String(view === 'loading'));
     $('page-count').textContent = mediaItems.length ? `${mediaItems.length} video${mediaItems.length === 1 ? '' : 's'} on this page` : view === 'loading' ? 'Checking this page…' : view === 'error' ? 'Check this page' : 'No videos yet';
+    titles.setPageItems(mediaItems);
     if (!mediaItems.length) {
-      for (const node of rowElements.values()) stopThumbPreview(node);
+      for (const node of rowElements.values()) { stopThumbPreview(node); node.trace?.destroy(); node.trace = null; }
       rowElements.clear(); stopPosterPreparation();
       if (changed) list.replaceChildren(view === 'empty' ? emptyState() : discoveryState(view));
       renderConnection(); return;
     }
     list.querySelector('.empty-state,.discovery-state')?.remove();
+    const firstPaint = !rowsPainted; rowsPainted = true;
     const valid = new Set();
     for (const item of mediaItems) {
       const { row, choice, jobId } = rowModel(item); if (!row) continue;
       valid.add(item.id);
       let node = rowElements.get(item.id);
-      if (!node) {
-        node = el('div', 'video-row'); node.dataset.rowKey = item.id; node.tabIndex = 0; node.setAttribute('role', 'group');
-        const pieces = el('div', 'progress-pieces'); pieces.setAttribute('aria-hidden', 'true');
-        // These cells represent aggregate progress, not individual source segments.
-        for (let index = 0; index < 40; index++) pieces.append(el('span', 'progress-piece'));
-        const thumb = el('div', 'thumb'); const body = el('div', 'row-body'); const titleLine = el('div', 'row-title-line'); titleLine.append(el('div', 'row-title'));
-        const metadata = el('div', 'row-meta'); const durationMeta = el('span', 'row-meta-part row-duration-meta'); durationMeta.append(metadataSeparator(), el('span', 'row-duration')); metadata.append(el('div', 'row-status'), durationMeta); body.append(titleLine, metadata);
-        node.append(thumb, body, pieces); node.addEventListener('contextmenu', event => { event.preventDefault(); showContext(node.current.item, event); });
-        node.addEventListener('pointerenter', () => { node.previewHovered = true; node.previewRequestedFor = ''; node.previewFailedUrl = ''; node.sourcePreviewFailed = false; syncThumbPreview(node); });
-        node.addEventListener('pointerleave', () => { node.previewHovered = false; syncThumbPreview(node); });
-        node.addEventListener('focusin', () => { if (!node.previewFocused) { node.previewRequestedFor = ''; node.previewFailedUrl = ''; node.sourcePreviewFailed = false; } node.previewFocused = true; syncThumbPreview(node); });
-        node.addEventListener('focusout', event => { node.previewFocused = node.contains(event.relatedTarget); syncThumbPreview(node); });
-        rowElements.set(item.id, node);
-      }
+      const created = !node;
+      if (created) { node = createRow(item); rowElements.set(item.id, node); }
+      const previousState = node.dataset.state;
       node.current = { item, row, choice, jobId };
-      node.setAttribute('aria-label', row.title);
+      node.querySelector('.row-more').setAttribute('aria-label', `More actions: ${row.title}`);
       node.dataset.state = row.state;
       const rowProgress = Math.max(0, Math.min(100, Number(row.progress) || 0));
       node.dataset.progress = String(rowProgress);
@@ -296,89 +363,145 @@
       }
       updateThumb(node.querySelector('.thumb'), row);
       const title = node.querySelector('.row-title'); title.textContent = row.title; title.title = row.title;
-      const duration = node.querySelector('.row-duration'); duration.textContent = row.durationLabel; duration.parentElement.hidden = !row.durationLabel;
+      const problem = ['problem', 'missing'].includes(row.state);
+      for (const duration of node.querySelectorAll('.row-duration, .row-title-duration')) duration.textContent = row.durationLabel;
+      node.querySelector('.row-title-duration').hidden = !row.durationLabel || !problem;
+      node.querySelector('.row-duration-meta').hidden = !row.durationLabel || problem;
       const status = node.querySelector('.row-status'); status.className = `row-status tone-${row.tone}`; status.title = row.statusLine;
       if (row.state === 'detected') {
         status.removeAttribute('role'); status.removeAttribute('aria-valuenow'); status.removeAttribute('aria-valuetext');
         const variants = item.variants || [];
         const sizeLabel = mediaSizeLabel(choice);
-        const signature = `${choice.qualityLabel}|${sizeLabel}|${variants.length}`;
+        const audioLabel = choice.audioTrack && !choice.selection.audioOnly ? choice.audioTrack.shortLabel : '';
+        const signature = `${choice.qualityLabel}|${audioLabel}|${sizeLabel}|${variants.length}`;
         status.title = [choice.qualityLabel, sizeLabel].filter(Boolean).join(' · ');
+        status.classList.add('status-meta');
         if (status.dataset.signature !== signature) {
-          status.dataset.signature = signature; status.classList.add('status-meta');
+          status.dataset.signature = signature;
+          // The quality button survives a size change so it keeps keyboard focus.
           let quality = variants.length > 1 ? status.querySelector('.quality-button') : null;
-          if (quality) { while (quality.nextSibling) quality.nextSibling.remove(); }
+          if (quality) { const part = quality.parentElement; while (part.nextSibling) part.nextSibling.remove(); }
           else status.replaceChildren();
           if (variants.length > 1) {
             if (!quality) {
               quality = el('button', 'quality-button'); quality.type = 'button'; quality.setAttribute('aria-haspopup', 'menu'); quality.setAttribute('aria-expanded', 'false'); quality.setAttribute('aria-label', 'Choose quality');
-              quality.addEventListener('click', () => showQuality(node.current.item, quality)); status.append(quality);
+              quality.addEventListener('click', () => showQuality(node.current.item, quality)); appendMetadata(status, quality);
             }
-            quality.replaceChildren(qualityMark(choice.qualityLabel || 'Quality'), icon('down'));
-          } else if (choice.qualityLabel) status.append(qualityMark(choice.qualityLabel));
+            quality.replaceChildren(qualityMark(choice.qualityLabel || 'Quality'), ...(audioLabel ? [el('span', 'aud', `· ${audioLabel}`)] : []), icon('down'));
+            quality.setAttribute('aria-label', audioLabel ? `Choose quality and audio, ${audioLabel}` : 'Choose quality');
+          } else if (choice.qualityLabel) appendMetadata(status, qualityMark(choice.qualityLabel));
           appendMetadata(status, el('span', '', sizeLabel));
-        } else status.classList.add('status-meta');
+        }
       } else if (row.state === 'saved') {
-        delete status.dataset.signature; status.replaceChildren(); status.className = 'row-status status-meta tone-muted';
-        for (const attribute of ['role', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']) status.removeAttribute(attribute);
-        if (row.qualityLabel) appendMetadata(status, qualityMark(row.qualityLabel));
-        if (row.sizeLabel) appendMetadata(status, el('span', '', row.sizeLabel));
-        const saved = el('span', 'saved-copy'); saved.append(icon('check'), document.createTextNode(row.statusLine)); appendMetadata(status, saved);
+        progressAttributes(status, row); status.className = 'row-status status-meta tone-muted';
+        const signature = `saved|${row.qualityLabel}|${row.sizeLabel}|${row.statusLine}`;
+        if (status.dataset.signature !== signature) {
+          status.dataset.signature = signature; status.replaceChildren();
+          if (row.qualityLabel) appendMetadata(status, qualityMark(row.qualityLabel));
+          if (row.sizeLabel) appendMetadata(status, el('span', '', row.sizeLabel));
+          const saved = el('span', 'saved-copy'); saved.append(icon('check'), document.createTextNode(row.statusLine)); appendMetadata(status, saved);
+        }
+        // Completion moment: the check draws in once when a watched download finishes.
+        if (previousState && previousState !== 'saved') status.querySelector('.saved-copy')?.classList.add('just-saved');
+        if (['downloading', 'finishing'].includes(previousState)) node.snagPending = true;
       } else {
-        delete status.dataset.signature; status.textContent = row.statusLine;
-        if (['downloading', 'finishing', 'paused', 'problem'].includes(row.state)) {
-          status.setAttribute('role', 'progressbar'); status.setAttribute('aria-valuemin', '0'); status.setAttribute('aria-valuemax', '100'); status.setAttribute('aria-valuenow', String(row.percent)); status.setAttribute('aria-valuetext', row.statusLine);
-        } else { for (const attribute of ['role', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']) status.removeAttribute(attribute); }
+        delete status.dataset.signature; status.classList.add('meta-item'); status.textContent = row.statusLine;
+        progressAttributes(status, row);
       }
-      node.querySelector('.row-duration-meta > .meta-separator').hidden = !status.textContent.trim();
+      // Screen readers hear the same status line sighted users see.
+      node.setAttribute('aria-label', [row.title, status.title].filter(Boolean).join('. '));
       const busy = pending.has(item.id) && !pending.get(item.id).optimistic;
       const actionKey = busy ? 'sending' : row.action ? `${row.action.id}:${row.action.style}` : '';
       if (node.dataset.actionKey !== actionKey) {
         node.querySelector(':scope > .action')?.remove(); node.dataset.actionKey = actionKey;
         if (busy) { const button = action('Starting download', () => {}, 'primary'); button.replaceChildren(el('span', 'spinner')); button.disabled = true; node.append(button); }
         else if (row.action) {
-          const iconName = row.action.id === 'download' ? 'download' : ['pause', 'resume', 'play'].includes(row.action.id) ? row.action.id === 'pause' ? 'pause' : 'play' : '';
-          const style = row.action.id === 'download' ? 'primary icon-only' : row.action.style === 'icon' ? 'icon-only' : row.action.style;
-          node.append(action(row.action.label, () => handleAction(node.current), style, iconName));
+          const primary = ['download', 'continue'].includes(row.action.id);
+          const style = primary ? 'primary icon-only' : row.action.style === 'icon' ? 'icon-only' : row.action.style;
+          // Resume carries its own icon and name so it never reads as Play.
+          const label = row.action.id === 'resume' ? strings.resumeDownload : row.action.label;
+          node.append(action(label, () => handleAction(node.current), style, actionIcon(row.action.id)));
         }
       }
-      if (node.parentElement !== list) list.append(node);
+      syncTrace(node, row, jobId, previousState);
+      // Snag moment: only for a download this popup watched finish, never on opening.
+      if (node.snagPending) { node.snagPending = false; pixel.snag(node.querySelector(':scope > .action') || status, row.source.backend === 'browser' ? null : $('open-app')); }
+      if (created && !firstPaint) enterRow(node);
       syncThumbPreview(node);
     }
-    for (const [key, node] of rowElements) if (!valid.has(key)) { stopThumbPreview(node); node.remove(); rowElements.delete(key); }
-    for (const [index, key] of Array.from(valid).entries()) {
+    for (const [key, node] of rowElements) if (!valid.has(key)) { rowElements.delete(key); exitRow(node); }
+    // Order live rows around any that are still collapsing away.
+    let anchor = list.firstElementChild;
+    for (const key of valid) {
       const node = rowElements.get(key);
-      if (list.children[index] !== node) list.insertBefore(node, list.children[index] || null);
+      while (anchor && anchor.dataset.exiting) anchor = anchor.nextElementSibling;
+      if (anchor === node) anchor = anchor.nextElementSibling; else list.insertBefore(node, anchor);
     }
+    // Only the first Download button of this popup opening breathes, twice.
+    if (!breathed) { const first = list.querySelector('.video-row > .action.primary.icon-only:not(:disabled)'); if (first) { breathed = true; first.classList.add('breathe'); } }
     renderConnection();
     preparePosters();
   }
-  function emptyState() {
-    const node = el('section', 'empty-state'); const tile = el('div', 'empty-icon'); tile.append(icon('play'));
-    node.append(tile, el('h2', '', 'Press play on the video'), el('p', '', 'VidSnag spots a video once it starts playing. Start it, then open this again.'), action('Check again', checkAgain, 'bordered')); return node;
+  // Speed trace (desktop jobs only): downloading, paused and finishing rows keep one; a watched save turns it mint and fades it.
+  function syncTrace(node, row, jobId, previousState) {
+    const desktopJob = Boolean(jobId) && row.source.backend !== 'browser';
+    if (row.state === 'saved' && ['downloading', 'finishing'].includes(previousState)) node.traceSavedUntil = performance.now() + 1100;
+    const saving = row.state === 'saved' && performance.now() < (node.traceSavedUntil || 0);
+    const state = !desktopJob ? null : ['downloading', 'paused', 'finishing'].includes(row.state) ? row.state : saving ? 'saved' : null;
+    const body = node.querySelector('.row-body');
+    if (!state) { node.trace?.destroy(); node.trace = null; body.classList.remove('has-trace'); return; }
+    if (!node.trace) { node.trace = SnagThisSpeedTrace.create(); body.append(node.trace.element); }
+    body.classList.add('has-trace');
+    node.trace.set(String(jobId), state);
+    if (state === 'saved') { clearTimeout(node.traceTimer); node.traceTimer = setTimeout(() => { if (node.current) syncTrace(node, node.current.row, node.current.jobId, 'saved'); }, node.traceSavedUntil - performance.now() + 20); }
   }
+  function speedJobs(jobs) { return jobs.filter(job => job.backend !== 'browser' && job.queueStatus === 'downloading' && !/finaliz|convert|remux/i.test(job.status || '')); }
+  function emptyState() {
+    const node = el('section', 'empty-state'); const tile = pixel.mascot('waiting');
+    // A tab opened before install or update can refuse injection (for example
+    // while it is still loading). Only a reload attaches detection then.
+    if (pageNeedsRefresh) node.append(tile, el('h2', '', 'Refresh this page to find videos'), el('p', '', 'SnagThis was installed or updated after this page opened. Refresh it, then open this again.'), action('Refresh page', refreshPage, 'bordered'));
+    else node.append(tile, el('h2', '', 'Press play on the video'), el('p', '', 'SnagThis spots a video once it starts playing. Start it, then open this again.'), action('Check again', checkAgain, 'bordered'));
+    return node;
+  }
+  function refreshPage() { if (isDemo || !activeTab?.id) return; chrome.tabs.reload(activeTab.id).catch(() => {}); window.close(); }
   function discoveryState(view) {
     const node = el('section', 'discovery-state'); node.setAttribute('role', 'status');
     if (view === 'error') {
-      node.append(el('p', '', "Couldn't check this page."), action('Try again', checkAgain, 'bordered'));
+      node.append(pixel.mascot('dozing'), el('p', '', "Couldn't check this page."), action('Try again', checkAgain, 'bordered'));
     } else {
-      const dots = el('span', 'discovery-dots'); dots.setAttribute('aria-hidden', 'true');
-      for (let index = 0; index < 3; index++) dots.append(el('i', 'thumb-loading-dot'));
-      node.append(dots, el('p', '', 'Looking for videos…'));
+      // Skeleton rows hold the shape of the list while the page is checked.
+      node.classList.add('is-loading');
+      for (let index = 0; index < 3; index++) { const row = el('div', 'skeleton-row'); row.setAttribute('aria-hidden', 'true'); row.append(el('span', 'skeleton-thumb'), el('span', 'skeleton-bar'), el('span', 'skeleton-bar short')); node.append(row); }
+      node.append(el('p', 'sr-only', 'Looking for videos…'));
+      loadingMascot(node);
     }
     return node;
+  }
+  // While the page is checked, the first skeleton thumbnail holds the pixel button, pressing now and then.
+  function loadingMascot(node) {
+    const thumb = node?.querySelector('.skeleton-thumb');
+    if (!thumb || thumb.querySelector('.pixel-button')) return;
+    const holder = el('span', 'skeleton-mascot'); holder.setAttribute('aria-hidden', 'true'); holder.append(pixel.button(32)); thumb.append(holder);
   }
   async function checkAgain() {
     if (isDemo) return;
     discoveryPending = true; discoveryError = false; renderRows();
-    if (activeTab?.id) await chrome.tabs.sendMessage(activeTab.id, { cmd: 'SCAN_PAGE' }).catch(() => {});
+    if (activeTab?.id) {
+      const scan = () => chrome.tabs.sendMessage(activeTab.id, { cmd: 'SCAN_PAGE' }).then(() => true, () => false);
+      // No receiver means this tab predates the installed content script.
+      let reached = await scan();
+      if (!reached && /^https?:/.test(activeTab.url || '') && (await message({ cmd: 'PREPARE_PAGE', tabId: activeTab.id }).catch(() => null))?.ok) reached = await scan();
+      pageNeedsRefresh = !reached && /^https?:/.test(activeTab.url || '');
+    }
     // A scan acknowledges its writes; read after any earlier snapshot finishes.
     if (refreshBusy) await refreshBusy;
     discoveryPending = false; await refresh();
   }
   async function handleAction(current) {
     const { item, row, jobId } = current;
-    if (isDemo) { if (row.action.id === 'play') { showDemoVideo(item); return; } VidSnagDemo.act(item.id, row.action.id); queue = VidSnagDemo.state.queue; renderRows(); return; }
+    if (row.action.id === 'copy-link') { await copyLink(item); return; }
+    if (isDemo) { if (row.action.id === 'play') { showDemoVideo(item); return; } SnagThisDemo.act(item.id, row.action.id); queue = SnagThisDemo.state.queue; renderRows(); return; }
     if (row.action.id === 'use-desktop') { useDesktop(item); return; }
     if (row.source.backend === 'browser') {
       if (row.action.id === 'chrome-details') { showBrowserDetails(current); return; }
@@ -386,6 +509,7 @@
       await browserAction(jobId, row.action.id); return;
     }
     if (row.action.id === 'download' || (row.action.id === 'retry' && !jobId)) { await startDownload(item); return; }
+    if (row.action.id === 'continue') { await continueDownload(item, jobId); return; }
     if (row.action.id === 'open-page') { external(item.sourcePageUrl || activeTab?.url); return; }
     if (['choose-folder', 'locate', 'details'].includes(row.action.id)) {
       if (row.action.id === 'details') showProblem(row); else openDesktop(row.action.id === 'choose-folder' ? 'settings' : undefined); return;
@@ -405,6 +529,7 @@
       const sourcePoster = rowElements.get(item.id)?.sourcePoster;
       const choice = model.selectMedia(sourcePoster ? { ...item, thumbnailUrl: sourcePoster } : item, preferences, selected.get(item.id));
       const payload = model.buildDownloadPayload(choice, customTitles[item.id] || '');
+      if (payload.selection?.audioTrack && !desktopAudioTracks) throw new Error('Update SnagThis to download a chosen audio track.');
       // Preserve processing intent before payload normalization can flatten a
       // directly observed alternative back into a standalone file.
       const chosenBackend = backend || (browserSupported(choice) ? 'browser' : 'desktop');
@@ -415,12 +540,17 @@
       await refresh();
     } catch (error) { failures.set(item.id, error.message); } finally { clearTimeout(timer); pending.delete(item.id); renderRows(); }
   }
+  // An expired link continues from its saved pieces with the address the page is playing now.
+  async function continueDownload(item, jobId) {
+    if (isDemo || !jobId) return;
+    try { const choice = model.selectMedia(item, preferences, selected.get(item.id)); const result = await message({ cmd: 'REFRESH_MEDIA_SOURCE', tabId: activeTab.id, mediaId: item.id, jobId, payload: model.buildDownloadPayload(choice, customTitles[item.id] || ''), apiBase }); if (!result.ok) throw new Error(result.error || 'This video could not be matched to the previous download.'); await refresh(); } catch (error) { notice(error.message); }
+  }
   function useDesktop(item) {
     if (desktopReady()) { startDownload(item, 'desktop'); return; }
     if (reachable && !compatible) { if (compatibilityIssue === 'extension') showExtensionUpdate(); else external(RELEASES); return; }
     if (reachable && !appToken) { showPairing(); return; }
     const content = openSheet('Use desktop app'); const pad = el('div', 'sheet-pad');
-    pad.append(el('p', '', 'Open VidSnag and connect Chrome to try this download. The desktop app handles supported streams, audio and subtitle choices, and your VidSnag library.'), action(getAppFallback ? 'Get the app' : 'Open VidSnag', () => openDesktop(), 'primary'));
+    pad.append(el('p', '', 'Open SnagThis and connect Chrome to try this download. The desktop app handles supported streams, audio and subtitle choices, and your SnagThis library.'), action(getAppFallback ? 'Get the app' : 'Open SnagThis', () => openDesktop(), 'primary'));
     content.append(pad);
   }
   async function browserAction(jobId, command) {
@@ -429,27 +559,56 @@
   }
   function showBrowserDetails(current) {
     const content = openSheet('Chrome download'); const pad = el('div', 'sheet-pad'); const job = current.row.source;
-    pad.append(el('p', '', 'Chrome manages this file in your browser’s download folder. It is separate from the VidSnag desktop library.'));
+    pad.append(el('p', '', 'Chrome manages this file in your browser’s download folder. It is separate from the SnagThis desktop library.'));
     if (job.fileName) pad.append(el('p', '', job.fileName));
     if (job.error) pad.append(el('p', '', typeof job.error === 'string' ? job.error : job.error.message || job.error.code || 'Check this download in Chrome.'));
     pad.append(action('Open Chrome downloads', () => external('chrome://downloads/'), 'primary')); content.append(pad);
   }
-  function closeMenu(restoreFocus = true) { $('menu').hidden = true; $('menu').replaceChildren(); if (menuTrigger?.isConnected) { menuTrigger.setAttribute('aria-expanded', 'false'); if (restoreFocus) menuTrigger.focus({ preventScroll: true }); } menuTrigger = null; }
+  // A short popup grows while a menu or sheet is open so neither is clipped.
+  function syncPopupHeight(menuNeed = 0) { $('popup').style.minHeight = $('sheet').open ? '430px' : menuNeed ? `${Math.min(560, Math.max(300, menuNeed))}px` : ''; }
+  function closeMenu(restoreFocus = true) {
+    stopSample('close');
+    const menu = $('menu');
+    const finish = () => { menuExit = null; menu.hidden = true; menu.replaceChildren(); menu.style.pointerEvents = ''; syncPopupHeight(); };
+    if (menuTrigger?.isConnected) { menuTrigger.setAttribute('aria-expanded', 'false'); if (restoreFocus) menuTrigger.focus({ preventScroll: true }); }
+    menuTrigger = null;
+    if (menu.hidden || menuExit) return;
+    menuExit = menu.animate(reducedMotion.matches ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }], { duration: reducedMotion.matches ? 80 : 100, easing: 'ease-out' });
+    menuExit.onfinish = finish; menu.style.pointerEvents = 'none';
+  }
+  // Menu keyboard support is wired once, independent of startup succeeding.
+  $('menu').addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); if (!stopSample('escape')) closeMenu(); return; }
+    if (event.key === 'Tab') { event.preventDefault(); closeMenu(); return; }
+    const track = event.target.closest?.('.atrack');
+    if (track && event.key === ' ') { event.preventDefault(); if (sample?.row === track) stopSample('user'); else startSample(track); return; }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault(); const buttons = Array.from($('menu').querySelectorAll('button')); const index = buttons.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length; buttons[next]?.focus();
+  });
   function openMenu(trigger, point) {
-    const menu = $('menu'); menu.replaceChildren(); menu.hidden = false;
+    const menu = $('menu');
+    menu.getAnimations().forEach(animation => animation.cancel()); menuExit = null; menu.style.pointerEvents = '';
+    menu.replaceChildren(); menu.hidden = false; menu.style.maxHeight = ''; menu.classList.remove('wide');
     menuTrigger?.setAttribute('aria-expanded', 'false'); menuTrigger = trigger?.focus ? trigger : null; menuTrigger?.setAttribute('aria-expanded', 'true');
     const bounds = trigger?.getBoundingClientRect();
     menu.style.left = `${Math.max(6, Math.min($('popup').getBoundingClientRect().right - 256, point?.clientX ?? bounds?.left ?? 130))}px`;
-    menu.style.top = `${Math.max(4, Math.min(window.innerHeight - 42, point?.clientY ?? bounds?.bottom ?? 60))}px`;
+    // The menu opens below its trigger (or pointer), flipping above only when the popup cannot grow enough.
+    menu.anchor = point ? { x: point.clientX, top: point.clientY, bottom: point.clientY } : bounds ? { x: bounds.left + bounds.width / 2, top: bounds.top - 4, bottom: bounds.bottom + 4 } : { x: 130, top: 60, bottom: 60 };
     return menu;
   }
   function fitMenu(menu) {
-    const top = Number.parseFloat(menu.style.top);
+    const { anchor } = menu; const height = menu.offsetHeight;
+    const popupTop = $('popup').getBoundingClientRect().top;
+    syncPopupHeight(anchor.bottom + height + 6 - popupTop);
     const bounds = $('popup').getBoundingClientRect();
-    const minTop = Math.max(0, bounds.top) + 6;
-    const bottom = Math.min(window.innerHeight, bounds.bottom) - 6;
+    const minTop = Math.max(0, bounds.top) + 6; const bottom = bounds.bottom - 6;
     menu.style.maxHeight = `${Math.max(0, bottom - minTop)}px`;
-    menu.style.top = `${Math.max(minTop, Math.min(top, bottom - menu.offsetHeight))}px`;
+    const below = anchor.bottom + height <= bottom; const above = anchor.top - height >= minTop;
+    const top = below || !above ? Math.max(minTop, Math.min(anchor.bottom, bottom - height)) : anchor.top - height;
+    menu.style.top = `${top}px`;
+    menu.style.transformOrigin = `${Math.max(0, anchor.x - Number.parseFloat(menu.style.left))}px ${!below && above ? '100%' : '0'}`;
+    menu.animate(reducedMotion.matches ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: reducedMotion.matches ? 80 : 140, easing: 'ease-out' });
     menu.querySelector('button')?.focus({ preventScroll: true });
   }
   function menuItem(menu, label, handler, options = {}) {
@@ -457,6 +616,89 @@
     if (options.radio) { button.setAttribute('aria-checked', String(Boolean(options.checked))); const check = el('span', 'menu-check'); if (options.checked) check.append(icon('check')); button.append(check); }
     button.append(document.createTextNode(label)); if (options.value) button.append(el('span', 'menu-value', options.value));
     button.addEventListener('click', event => { closeMenu(event.detail === 0); handler(); }); menu.append(button); return button;
+  }
+  const speaker = '<svg class="px" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" shape-rendering="crispEdges"><path fill="currentColor" d="M2 6h3v4h-3zM5 5h1v6h-1zM6 4h1v8h-1zM7 3h1v10h-1z"/><path class="waves" fill="currentColor" d="M10 6h1v4h-1zM12 4h1v8h-1zM14 3h1v10h-1z"/></svg>';
+  function audioTrackItem(menu, item, track, checked, choose) {
+    const row = el('div', 'atrack'); row.dataset.track = track.key; row.sampleItem = item; row.sampleTrack = track;
+    const button = el('button', 'menu-item'); button.type = 'button'; button.setAttribute('role', 'menuitemradio');
+    button.setAttribute('aria-checked', String(checked)); button.setAttribute('aria-label', track.ariaLabel); button.setAttribute('aria-describedby', 'sample-hint');
+    const check = el('span', 'menu-check'); if (checked) check.append(icon('check'));
+    const label = el('span', 'alabel'); const name = el('b', '', track.title);
+    for (const tag of track.tags) { const chip = el('span', tag === 'AD' ? 'chip ad' : 'chip', tag); if (tag === 'AD') chip.title = 'Audio description'; name.append(chip); }
+    label.append(name, el('small', '', track.detail)); label.lastChild.hidden = !track.detail;
+    button.append(check, label);
+    const hear = el('span', 'hear'); hear.setAttribute('aria-hidden', 'true'); hear.innerHTML = speaker;
+    const progress = el('span', 'aprog'); progress.append(el('i'));
+    row.append(button, hear, progress, el('span', 'hear-dwell'));
+    button.addEventListener('click', event => { stopSample('choose'); closeMenu(event.detail === 0); choose(); });
+    // Resting the pointer, or keyboard focus, on a track for half a second plays it.
+    row.addEventListener('pointerenter', () => armSample(row));
+    row.addEventListener('pointerleave', () => disarmSample(row));
+    button.addEventListener('focus', () => armSample(row));
+    button.addEventListener('blur', () => disarmSample(row));
+    menu.append(row);
+  }
+  function announceSample(text) { $('sample-status').textContent = text; }
+  function armSample(row) {
+    if (dwellRow === row || sample?.row === row) return;
+    clearTimeout(sampleDwell); dwellRow?.classList.remove('dwelling');
+    dwellRow = row; row.classList.add('dwelling');
+    sampleDwell = setTimeout(() => { row.classList.remove('dwelling'); if (dwellRow === row) dwellRow = null; if (row.isConnected && sample?.row !== row) startSample(row); }, 500);
+  }
+  function disarmSample(row) {
+    const focused = row.contains(document.activeElement); const hovered = row.matches(':hover');
+    if (focused || hovered) return;
+    if (dwellRow === row) { clearTimeout(sampleDwell); row.classList.remove('dwelling'); dwellRow = null; }
+    if (sample?.row === row) stopSample('leave');
+  }
+  function paintSample(row, state, progress = 0) {
+    row.classList.toggle('is-loading', state === 'loading'); row.classList.toggle('is-playing', state === 'playing');
+    row.style.setProperty('--p', String(reducedMotion.matches ? Math.floor(progress * 10) / 10 : progress));
+  }
+  // One sample at a time. Returns whether a sample was playing or loading.
+  function stopSample(reason) {
+    clearTimeout(sampleDwell); dwellRow?.classList.remove('dwelling'); dwellRow = null;
+    if (!sample) return false;
+    const current = sample; sample = null;
+    current.controller?.stop();
+    paintSample(current.row, 'idle');
+    if (['escape', 'user'].includes(reason)) announceSample('Sample stopped.');
+    return true;
+  }
+  function startSample(row) {
+    const item = row.sampleItem; const track = row.sampleTrack;
+    if (!item || !track) return;
+    stopSample('switch');
+    const current = { row }; sample = current;
+    row.classList.remove('is-failed'); paintSample(row, 'loading');
+    const detail = row.querySelector('.alabel small'); detail.textContent = track.detail; detail.hidden = !track.detail;
+    announceSample(`Loading a sample of ${track.title}…`);
+    const failed = () => {
+      if (sample !== current) return;
+      sample = null; paintSample(row, 'idle'); row.classList.add('is-failed');
+      detail.textContent = 'Sample unavailable · you can still choose it'; detail.hidden = false;
+      announceSample(`Sample unavailable for ${track.title}. You can still choose it.`);
+    };
+    const callbacks = {
+      onPlaying: () => { if (sample === current) { paintSample(row, 'playing'); announceSample(`Playing a sample of ${track.title} from 25% in. Press Escape to stop.`); } },
+      onProgress: progress => { if (sample === current) paintSample(row, 'playing', progress); },
+      onEnded: () => { if (sample === current) { sample = null; paintSample(row, 'idle'); announceSample('Sample finished.'); } },
+      onError: failed,
+    };
+    current.controller = isDemo ? demoSample(item, track, callbacks)
+      : SnagThisSourcePreview.createAudioSample?.({ item, rendition: track.renditions.find(rendition => rendition.url), tabId: activeTab?.id, mediaId: item.id, ...callbacks }) || null;
+    if (!current.controller) failed();
+  }
+  // Development gallery only: each fixture track plays a different bundled film's sound.
+  function demoSample(item, track, { onPlaying, onProgress, onEnded, onError }) {
+    const audio = new Audio(`popup/media/${['sintel', 'big-buck-bunny', 'tears-of-steel'][(track.ordinal - 1) % 3]}.mp4`);
+    let start = 0; let stopped = false;
+    const stop = () => { stopped = true; audio.pause(); audio.removeAttribute('src'); audio.load(); };
+    audio.volume = .5;
+    audio.addEventListener('loadedmetadata', () => { start = audio.duration * .25; audio.currentTime = start; audio.play().then(() => { if (!stopped) onPlaying(); }).catch(() => { if (!stopped) { stop(); onError(); } }); });
+    audio.addEventListener('timeupdate', () => { if (stopped) return; const progress = (audio.currentTime - start) / 10; onProgress(progress); if (progress >= 1) { stop(); onEnded(); } });
+    audio.addEventListener('error', () => { if (!stopped) { stop(); onError(); } });
+    return { stop };
   }
   function showQuality(item, trigger) {
     const menu = openMenu(trigger); const choice = model.selectMedia(item, preferences, selected.get(item.id));
@@ -466,6 +708,17 @@
       menuItem(menu, variant.height ? `${variant.height}p` : `Quality ${index + 1}`, () => choose({ variantUrl: variant.url, audioOnly: false }), { radio: true, checked: !choice.selection.audioOnly && choice.selection.variantUrl === variant.url, value: mediaSizeLabel(variantChoice) });
     }
     if ((item.audio || []).some(audio => audio.url)) menuItem(menu, 'Audio only', () => choose({ audioOnly: true }), { radio: true, checked: choice.selection.audioOnly });
+    const tracks = choice.audioTracks || [];
+    if (tracks.length > 1) {
+      // Labels 2 · Plain language, with Sample 3 · Hover to hear (docs/design/prototypes/audio-tracks).
+      menu.classList.add('wide');
+      menu.style.left = `${Math.max(6, Math.min($('popup').getBoundingClientRect().right - 292, Number.parseFloat(menu.style.left)))}px`;
+      menu.prepend(el('div', 'menu-title', 'Quality'));
+      const title = el('div', 'menu-title', 'Audio '); title.append(el('small', '', `${tracks.length} tracks`));
+      menu.append(el('hr'), title);
+      for (const track of tracks) audioTrackItem(menu, item, track, track === choice.audioTrack, () => choose({ audioTrack: track.key }));
+      if (tracks.some(track => track.unknown)) menu.append(el('p', 'menu-note', 'This site doesn’t name its tracks. Rest on one to check.'));
+    }
     if ((item.subtitles || []).length) {
       menu.append(el('hr'), el('div', 'menu-title', 'Subtitles'));
       for (const subtitle of item.subtitles) { const language = subtitle.language || subtitle.name; menuItem(menu, subtitle.name || language, () => choose({ subtitleLang: language }), { radio: true, checked: choice.selection.subtitleLang === language }); }
@@ -473,18 +726,17 @@
     }
     fitMenu(menu);
   }
-  function showContext(item, event) {
-    const menu = openMenu(null, event); const job = model.jobFor(item, mappings, queue); const jobId = job?.id || job?.jobId || null;
+  function showContext(item, event, trigger) {
+    const menu = openMenu(trigger, event); const job = model.jobFor(item, mappings, queue); const jobId = job?.id || job?.jobId || null;
+    const storeYoutube = storeBuild && youtubeItem(item);
+    if (storeYoutube) menuItem(menu, 'Copy link', () => copyLink(item));
     menuItem(menu, 'Rename', () => showRename(item));
     menuItem(menu, 'Hide', async () => { const ids = (item.detectedStreams || [item]).map(value => value.id); if (isDemo) mediaItems = mediaItems.filter(value => value.id !== item.id); else await message({ cmd: 'HIDE_MEDIA', tabId: activeTab.id, mediaIds: ids }); renderRows(); await refresh(); });
     menuItem(menu, 'Preview', () => preview(item));
-    if ((!jobId || (job?.backend === 'browser' && ['failed', 'completed', 'cancelled'].includes(job.queueStatus))) && browserSupported(model.selectMedia(item, preferences, selected.get(item.id)))) menuItem(menu, 'Download with desktop', () => useDesktop(item));
-    if (!jobId) {
+    if (!item.serviceWorkerServed && (!jobId || (job?.backend === 'browser' && ['failed', 'completed', 'cancelled'].includes(job.queueStatus))) && browserSupported(model.selectMedia(item, preferences, selected.get(item.id)))) menuItem(menu, 'Download with desktop', () => useDesktop(item));
+    if (!jobId && !storeYoutube) {
       const expired = queue.filter(job => job.queueStatus === 'failed' && job.sourcePageUrl === item.sourcePageUrl && rows.classifyProblem(job.error).code === 'expired');
-      if (expired.length === 1) menuItem(menu, 'Continue previous download', async () => {
-        if (isDemo) return;
-        try { const choice = model.selectMedia(item, preferences, selected.get(item.id)); const result = await message({ cmd: 'REFRESH_MEDIA_SOURCE', tabId: activeTab.id, mediaId: item.id, jobId: expired[0].id, payload: model.buildDownloadPayload(choice, customTitles[item.id] || ''), apiBase }); if (!result.ok) throw new Error(result.error || 'This video could not be matched to the previous download.'); await refresh(); } catch (error) { notice(error.message); }
-      });
+      if (expired.length === 1) menuItem(menu, 'Continue previous download', () => continueDownload(item, expired[0].id));
     }
     if (!jobId && ((item.audio || []).length || (item.subtitles || []).length)) menuItem(menu, 'Quality and subtitles', () => showQuality(item, rowElements.get(item.id)?.querySelector('.row-status')));
     menu.append(el('hr'));
@@ -492,13 +744,14 @@
     if (job?.backend === 'browser') {
       menuItem(menu, 'Download details', () => showBrowserDetails(rowElements.get(item.id).current));
       if (['downloading', 'queued', 'paused'].includes(job.queueStatus)) menuItem(menu, 'Cancel download', () => browserAction(jobId, 'cancel'));
-    } else if (jobId) menuItem(menu, 'Open in VidSnag', () => openDesktop());
+    } else if (jobId) menuItem(menu, 'Open in SnagThis', () => openDesktop());
     fitMenu(menu);
   }
   async function preview(item) {
     if (item.mediaKind === 'youtube-page') { external(item.sourcePageUrl || item.url); return; }
     if (isDemo) { showDemoVideo(item); return; }
-    const result = await message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: item.url, sourcePageUrl: item.sourcePageUrl, title: customTitles[item.id] || titles.getDisplayTitle(item), declaredType: item.type, requestHeaders: item.requestHeaders } });
+    const credentialed = item.networkObserved === true;
+    const result = await message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: item.url, sourcePageUrl: item.sourcePageUrl, title: customTitles[item.id] || titles.getDisplayTitle(item), declaredType: item.type, credentialed, requestHeaders: credentialed ? item.requestHeaders : {} } });
     if (result.ok) external(chrome.runtime.getURL(`player.html?session=${encodeURIComponent(result.sessionId)}`)); else notice(result.error || 'Preview is unavailable.');
   }
   function showDemoVideo(item) {
@@ -518,14 +771,14 @@
     $('sheet').addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); }, { once: true });
     video.play().catch(() => {});
   }
-  function openSheet(title) { closeMenu(); $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); $('popup').style.minHeight = '430px'; if (!$('sheet').open) $('sheet').showModal(); syncThumbPreviews(); return $('sheet-content'); }
+  function openSheet(title) { closeMenu(); $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); if (!$('sheet').open) $('sheet').showModal(); syncPopupHeight(); syncThumbPreviews(); return $('sheet-content'); }
   function showProblem(row) {
     const content = openSheet('Video details'); const pad = el('div', 'sheet-pad');
-    const youtube = VidSnagDetection.youtubeId(row.source.sourcePageUrl) || VidSnagDetection.youtubeId(row.source.url || row.source.mediaUrl);
+    const youtube = SnagThisDetection.youtubeId(row.source.sourcePageUrl) || SnagThisDetection.youtubeId(row.source.url || row.source.mediaUrl);
     pad.append(el('p', '', row.statusLine));
     if (row.problem?.code === 'authentication' && youtube) {
-      pad.append(el('p', '', 'Open VidSnag and choose Use Chrome sign-in for this video. VidSnag will ask before using your Chrome sign-in for this download.'));
-      pad.append(action('Open VidSnag', () => openDesktop(), 'primary'));
+      pad.append(el('p', '', 'Open SnagThis and choose Use Chrome sign-in for this video. SnagThis will ask before using your Chrome sign-in for this download.'));
+      pad.append(action('Open SnagThis', () => openDesktop(), 'primary'));
       pad.append(action('Open page', () => external(row.source.sourcePageUrl || `https://www.youtube.com/watch?v=${youtube}`)));
     } else {
       pad.append(el('p', '', row.problem?.raw || 'Open the source page and try again.'));
@@ -539,50 +792,118 @@
     const save = action('Save', () => form.requestSubmit(), 'primary'); form.append(label, input, el('div', 'sheet-actions')); form.lastChild.append(save); content.append(form);
     form.addEventListener('submit', async event => { event.preventDefault(); const title = input.value.trim(); if (!title) return; customTitles[item.id] = title; titles.setCustomTitleOverride(item, title); await message({ cmd: 'RENAME_MEDIA', tabId: activeTab?.id, mediaId: item.id, title }); $('sheet').close(); renderRows(); }); input.focus(); input.select();
   }
-  function showHelp() { const content = openSheet('No video?'); content.append(emptyState()); const pad = el('div', 'sheet-pad'); pad.append(el('p', '', 'Start playback, then check again. Some protected videos cannot be saved. During this prerelease, installation instructions are in the project README.'), action('Troubleshooting', () => external(HELP), 'bordered')); content.append(pad); }
+  function showHelp() {
+    const content = openSheet('No video?'); const help = emptyState();
+    const link = el('button', 'text-link', 'troubleshooting'); link.type = 'button'; link.addEventListener('click', () => external(HELP));
+    const note = el('p', 'help-note', 'Some sites protect their videos. See '); note.append(link, '.');
+    help.querySelector('p').after(note); content.append(help);
+  }
   function showPairing() {
-    const content = openSheet('Connect VidSnag'); const form = el('form', 'sheet-pad');
-    form.append(el('p', '', '1. In the VidSnag desktop app, open Settings → Chrome extension → Show connection code.'), el('p', '', '2. Paste that code below, then choose Connect. You only need to do this once.'));
-    const label = el('label', '', 'Connection code'); label.htmlFor = 'pairing-code'; const input = el('input', 'text-input'); input.id = 'pairing-code'; input.inputMode = 'numeric'; input.autocomplete = 'one-time-code'; input.pattern = '[0-9]{6}'; input.maxLength = 6; input.required = true; input.placeholder = '000000';
+    const content = openSheet('Connect SnagThis'); const form = el('form', 'sheet-pad');
+    form.append(el('p', '', '1. In the SnagThis desktop app, open Settings → Chrome extension → Show connection code.'), el('p', '', '2. Paste that code below. It connects as soon as all six digits are in, and you only need to do this once.'));
+    const label = el('label', '', 'Connection code'); label.htmlFor = 'pairing-code'; const input = el('input', 'text-input'); input.id = 'pairing-code'; input.inputMode = 'numeric'; input.autocomplete = 'one-time-code'; input.pattern = '[0-9]{6}'; input.maxLength = 16; input.required = true; input.placeholder = '000000';
     const help = el('p', '', 'Six digits from the desktop app. Codes expire after 5 minutes.'); help.id = 'pairing-code-help'; input.setAttribute('aria-describedby', help.id);
     const errorText = el('p', 'sheet-error'); errorText.setAttribute('role', 'alert'); const actions = el('div', 'sheet-actions');
     actions.append(action('Connect', () => form.requestSubmit(), 'primary'), action('Open app settings', () => openDesktop('settings'), 'bordered'));
     form.append(label, input, help, actions, errorText); content.append(form);
-    form.addEventListener('submit', async event => { event.preventDefault(); if (!form.reportValidity() || isDemo) return; const submit = actions.firstElementChild; submit.disabled = true; errorText.textContent = '';
-      try { const result = await request('/v1/pair/complete', { body: { code: input.value.trim() }, public: true }); if (!result.token) throw new Error('Enter the code currently shown in VidSnag.'); appToken = result.token; await chrome.storage.local.set({ appToken }); $('sheet').close(); notice('Connected to VidSnag. Play a video in Chrome, then choose Download.'); await loadPreferences(); await refresh(); renderConnection(); }
-      catch (error) { errorText.textContent = [400, 401, 403].includes(error.status) ? 'This code is incorrect or expired. In the desktop app, get the current code from Settings → Chrome extension and try again.' : error.status === 429 ? 'Too many attempts. Wait up to 5 minutes, then try again with a current code.' : !error.status ? 'Could not reach VidSnag. Open the desktop app, then try again.' : error.message; }
+    // Pasted codes may carry spaces or dashes; six digits submit on their own.
+    let submitted = '';
+    input.addEventListener('input', () => {
+      const digits = input.value.replace(/\D/g, '').slice(0, 6);
+      if (input.value !== digits) input.value = digits;
+      if (digits.length === 6 && digits !== submitted && !actions.firstElementChild.disabled) form.requestSubmit();
+    });
+    form.addEventListener('submit', async event => { event.preventDefault(); if (!form.reportValidity() || isDemo) return; const submit = actions.firstElementChild; submitted = input.value; submit.disabled = true; errorText.textContent = '';
+      try { const result = await request('/v1/pair/complete', { body: { code: input.value.trim() }, public: true }); if (!result.token) throw new Error('Enter the code currently shown in SnagThis.'); appToken = result.token; await chrome.storage.local.set({ appToken }); $('sheet').close(); notice('Connected to SnagThis. Play a video in Chrome, then choose Download.'); await loadPreferences(); await refresh(); renderConnection(); }
+      catch (error) { errorText.textContent = [400, 401, 403].includes(error.status) ? 'This code is incorrect or expired. In the desktop app, get the current code from Settings → Chrome extension and try again.' : error.status === 429 ? 'Too many attempts. Wait up to 5 minutes, then try again with a current code.' : !error.status ? 'Could not reach SnagThis. Open the desktop app, then try again.' : error.message; }
       finally { submit.disabled = false; }
     }); input.focus();
   }
-  async function savePreference(key, value) {
+  async function savePreference(key, value, confirm) {
     const previous = preferences[key]; preferences[key] = value;
-    try { if (!isDemo) { if (reachable && appToken) await request('/v1/settings', { body: { [key]: value } }); await chrome.storage.local.set({ preferences }); } renderRows(); }
+    try { if (!isDemo) { if (reachable && appToken) await request('/v1/settings', { body: { [key]: value } }); await chrome.storage.local.set({ preferences }); } renderRows(); confirm?.(); }
     catch (error) { preferences[key] = previous; notice(error.message); showSettings(); }
+  }
+  // Accent: kept in this browser, shared with the desktop when it is connected; the later change wins.
+  function syncAccent(remote) {
+    const result = accent.reconcile(remote);
+    if (result === 'push') pushAccent();
+    if (result === 'pulled') for (const input of document.querySelectorAll('.accent-swatch input')) input.checked = input.value === accent.current().accent;
+  }
+  function pushAccent() {
+    if (isDemo || accentPush || !desktopReady()) return;
+    const { accent: id, changedAt } = accent.current();
+    accentPush = request('/v1/settings', { body: { accent: id, accentChangedAt: changedAt } })
+      .then(reply => { if (reply.appearance) accent.reconcile(reply.appearance); })
+      .catch(() => { /* Kept locally; the next queue poll or reconnect tries again. */ })
+      .finally(() => { accentPush = null; });
+  }
+  async function chooseAccent(id, confirm) {
+    await accent.choose(id); confirm();
+    pushAccent();
+  }
+  // A brief green "Saved" beside a setting, as on the desktop, also announced.
+  function savedConfirmation(row, label) {
+    return () => {
+      const title = row.querySelector('.setting-description label, .setting-description .setting-title');
+      row.querySelector('.saved-mark')?.remove(); clearTimeout(row.savedTimer);
+      const mark = el('span', 'saved-mark'); mark.append(icon('check'), document.createTextNode('Saved')); title?.append(mark);
+      $('sample-status').textContent = `${label} saved`;
+      row.savedTimer = setTimeout(() => mark.remove(), 2000);
+    };
+  }
+  function accentPicker() {
+    const row = el('div', 'setting-row accent-row'); const description = el('div', 'setting-description');
+    const title = el('span', 'setting-title', 'Accent colour'); title.id = 'accent-colour-label';
+    const hint = el('small', '', 'Buttons, focus, the logo and the toolbar icon. Shared with the desktop app.'); hint.id = 'accent-colour-hint';
+    const group = el('div', 'accent-swatches'); group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-labelledby', title.id); group.setAttribute('aria-describedby', hint.id);
+    const confirm = savedConfirmation(row, 'Accent colour');
+    for (const { id, name, swatch } of SnagThisAccents.ACCENTS) {
+      const label = el('label', 'accent-swatch'); label.style.setProperty('--swatch', swatch);
+      const input = el('input'); input.type = 'radio'; input.name = 'accent-colour'; input.value = id; input.checked = accent.current().accent === id;
+      input.addEventListener('change', () => { if (input.checked) chooseAccent(id, confirm); });
+      const dot = el('span', 'accent-dot'); dot.setAttribute('aria-hidden', 'true'); dot.append(icon('check'));
+      label.append(input, dot, el('span', 'accent-name', name)); group.append(label);
+    }
+    description.append(title, hint, group); row.append(description);
+    return row;
   }
   function showSettings() {
     const content = openSheet('Settings');
+    // Browser preferences and Appearance fit without scrolling.
+    $('popup').style.minHeight = '540px';
     function setting(label, note, control) { const row = el('div', 'setting-row'); const description = el('div', 'setting-description'); const labelNode = el('label', '', label); if (control.id) labelNode.htmlFor = control.id; description.append(labelNode); if (note) description.append(el('small', '', note)); row.append(description, control); content.append(row); }
-    function select(key, values) { const control = el('select', 'setting-control'); control.disabled = !reachable || !appToken; control.id = `setting-${key}`; for (const [value, label] of values) { const option = el('option', '', label); option.value = value; control.append(option); } control.value = preferences[key]; control.addEventListener('change', () => savePreference(key, control.value)); return control; }
-    function toggle(key) { const control = el('input', 'switch'); control.disabled = !reachable || !appToken; control.type = 'checkbox'; control.id = `setting-${key}`; control.setAttribute('role', 'switch'); control.checked = Boolean(preferences[key]); control.addEventListener('change', () => savePreference(key, control.checked)); return control; }
+    const confirmSaved = (control, label) => () => { const row = control.closest('.setting-row'); if (row) savedConfirmation(row, label)(); };
+    function select(key, values, label) { const control = el('select', 'setting-control'); control.disabled = !reachable || !appToken; control.id = `setting-${key}`; for (const [value, text] of values) { const option = el('option', '', text); option.value = value; control.append(option); } control.value = preferences[key]; control.addEventListener('change', () => savePreference(key, control.value, confirmSaved(control, label))); return control; }
+    function toggle(key, label) { const control = el('input', 'switch'); control.disabled = !reachable || !appToken; control.type = 'checkbox'; control.id = `setting-${key}`; control.setAttribute('role', 'switch'); control.checked = Boolean(preferences[key]); control.addEventListener('change', () => savePreference(key, control.checked, confirmSaved(control, label))); return control; }
     // Only what makes sense from the browser lives here; everything else is one link into the app.
-    const group = el('div', 'setting-group'); const list = content; const title = el('h3', 'setting-group-title', 'This browser'); list.append(title, group);
+    const group = el('div', 'setting-group'); const list = content; const title = el('h3', 'setting-group-title', 'This browser');
+    list.append(title, el('p', 'setting-group-description', 'Used for downloads you send to SnagThis from Chrome.'), group);
     const into = (label, note, control, glyph) => { setting(label, note, control); const row = list.lastElementChild; const badge = el('span', 'setting-icon'); badge.setAttribute('aria-hidden', 'true'); badge.append(icon(glyph)); row.prepend(badge); group.append(row); };
-    into('Preferred quality', 'Used when a video offers it', select('preferredQuality', [['best', 'Best'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']]), 'screen');
-    into('Subtitles', 'Included when available', select('subtitleLanguage', [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']]), 'captions');
-    into('Tell me when desktop downloads finish', '', toggle('notifyOnComplete'), 'bell');
-    const more = el('button', 'setting-link'); more.type = 'button'; more.append(icon('external'), el('span', '', 'Desktop folder, speed and more in VidSnag'), icon('next')); more.addEventListener('click', () => openDesktop('settings')); list.append(more);
+    into('Preferred quality', 'Used when a video offers it', select('preferredQuality', [['best', 'Best'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']], 'Preferred quality'), 'screen');
+    into('Subtitles', 'Included when available', select('subtitleLanguage', [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']], 'Subtitles'), 'captions');
+    into('Tell me when desktop downloads finish', '', toggle('notifyOnComplete', 'Tell me when desktop downloads finish'), 'bell');
+    // Appearance works without the app; it is shared with the desktop once they are connected.
+    const appearance = el('div', 'setting-group'); const accentRow = accentPicker();
+    const badge = el('span', 'setting-icon warm'); badge.setAttribute('aria-hidden', 'true'); badge.append(icon('palette')); accentRow.prepend(badge); appearance.append(accentRow);
+    list.append(el('h3', 'setting-group-title', 'Appearance'), appearance);
+    const more = el('button', 'setting-link'); more.type = 'button'; more.append(icon('external'), el('span', '', 'Desktop folder, speed and more in SnagThis'), icon('next')); more.addEventListener('click', () => openDesktop('settings')); list.append(more);
     if (!appToken) { const connect = action('Connect Chrome', showPairing, 'bordered'); connect.classList.add('setting-connect'); list.append(connect); }
   }
   async function loadPreferences() {
     if (!appToken || !reachable || isDemo) return;
-    try { const data = await request('/v1/settings'); preferences = { ...preferences, ...(data.settings || data) }; await chrome.storage.local.set({ preferences }); } catch { /* Existing local preferences remain usable while the app starts. */ }
+    try {
+      const data = await request('/v1/settings'); const { accent: remoteAccent, accentChangedAt, ...remote } = data.settings || data;
+      preferences = { ...preferences, ...remote }; await chrome.storage.local.set({ preferences });
+      syncAccent({ accent: remoteAccent, accentChangedAt });
+    } catch { /* Existing local preferences remain usable while the app starts. */ }
   }
   function showExtensionUpdate() {
     const content = openSheet('Update Chrome extension'); const pad = el('div', 'sheet-pad');
     const fromStore = !isDemo && Boolean(chrome.runtime.getManifest().update_url);
     pad.append(el('p', '', fromStore
-      ? 'Chrome updates extensions from the Chrome Web Store automatically. To check now, open Extensions, turn on Developer mode, and choose Update. Close VidSnag’s popup so Chrome can apply the update.'
-      : 'For this unpacked copy, download the latest extension ZIP, replace the files in the same folder, and choose Reload in Chrome Extensions. Keep the same installation to preserve its connection to VidSnag.'));
+      ? 'Chrome updates extensions from the Chrome Web Store automatically. To check now, open Extensions, turn on Developer mode, and choose Update. Close SnagThis’s popup so Chrome can apply the update.'
+      : 'For this unpacked copy, download the latest extension ZIP, replace the files in the same folder, and choose Reload in Chrome Extensions. Keep the same installation to preserve its connection to SnagThis.'));
     pad.append(el('p', '', 'Refresh the video page after updating so detection uses the new version.'));
     pad.append(action('Open Chrome extensions', () => external('chrome://extensions/'), 'primary'));
     if (!fromStore) pad.append(action('Download extension ZIP', () => external(RELEASES), 'bordered'));
@@ -591,7 +912,7 @@
   async function checkHealth() {
     if (healthBusy || isDemo) return; healthBusy = true;
     const wasReachable = reachable;
-    try { const health = await request('/v1/health', { public: true }); reachable = health.status === 'ok'; compatibilityIssue = model.compatibilityIssue(health, runtimeVersion); compatible = !compatibilityIssue; if (reachable) getAppFallback = false; }
+    try { const health = await request('/v1/health', { public: true }); reachable = health.status === 'ok'; desktopAudioTracks = Array.isArray(health.features) && health.features.includes('audio-track'); compatibilityIssue = model.compatibilityIssue(health, runtimeVersion); compatible = !compatibilityIssue; if (reachable) getAppFallback = false; }
     catch { reachable = false; }
     finally { healthBusy = false; connectionChecked = true; renderRows(); }
     if (reachable && !wasReachable) { await loadPreferences(); await refresh(); }
@@ -608,8 +929,9 @@
         if (visit && media.visit !== visit) { selected.clear(); pending.clear(); failures.clear(); customTitles = {}; }
         visit = media.visit; mediaItems = model.sortMediaByDuration(media.items || []); mappings = media.mappings || {}; customTitles = media.titles || customTitles; browserQueue = media.browserQueue || [];
       } else if (activeTab?.id) discoveryError = true;
-      if (results[1].status === 'fulfilled' && results[1].value) desktopQueue = results[1].value.queue || [];
+      if (results[1].status === 'fulfilled' && results[1].value) { desktopQueue = results[1].value.queue || []; syncAccent(results[1].value.appearance); }
       queue = [...desktopQueue, ...browserQueue];
+      SnagThisSpeedTrace.record(speedJobs(desktopQueue));
       if (results[1].status === 'rejected' && results[1].reason?.status === 401) { appToken = ''; await chrome.storage.local.remove('appToken'); }
       if (results[1].status === 'rejected' && results[1].reason?.status === 426) { compatible = false; compatibilityIssue = model.compatibilityIssue(results[1].reason.compatibility, runtimeVersion); }
       renderRows();
@@ -617,26 +939,30 @@
     return refreshBusy;
   }
   async function initialize() {
-    $('sheet').addEventListener('close', () => { $('popup').style.minHeight = ''; syncThumbPreviews(); });
+    $('sheet').addEventListener('close', () => { syncPopupHeight(); syncThumbPreviews(); });
     reducedMotion.addEventListener('change', syncThumbPreviews);
     document.addEventListener('visibilitychange', syncThumbPreviews);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stopSample('hidden'); });
     $('video-list').addEventListener('scroll', preparePosters, { passive: true });
+    // One logo shine per pointer entry, at most once a second; CSS removes it under reduced motion.
+    const logo = document.querySelector('.logo-finish'); let lastShine = -Infinity;
+    logo.addEventListener('pointerenter', () => { const now = performance.now(); if (now - lastShine < 1000) return; lastShine = now; logo.classList.remove('shining'); void logo.offsetWidth; logo.classList.add('shining'); });
+    logo.addEventListener('animationend', () => logo.classList.remove('shining'));
     $('settings-button').append(icon('gear')); $('close-sheet').append(icon('close'));
     $('settings-button').addEventListener('click', showSettings); $('close-sheet').addEventListener('click', () => $('sheet').close()); $('help-button').addEventListener('click', showHelp);
-    $('open-app').addEventListener('click', () => !reachable ? external(RELEASES) : !appToken ? showPairing() : openDesktop());
-    document.addEventListener('pointerdown', event => { if (!$('menu').hidden && !$('menu').contains(event.target) && event.target !== menuTrigger) closeMenu(); });
-    $('menu').addEventListener('keydown', event => {
-      if (event.key === 'Escape') { event.preventDefault(); closeMenu(); return; }
-      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-      event.preventDefault(); const buttons = Array.from($('menu').querySelectorAll('button')); const index = buttons.indexOf(document.activeElement);
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length; buttons[next]?.focus();
-    });
+    $('open-app').addEventListener('click', () => { $('open-app').classList.remove('snag-pip'); if (!reachable) external(RELEASES); else if (!appToken) showPairing(); else openDesktop(); });
+    loadingMascot($('video-list').querySelector('.discovery-state'));
+    document.addEventListener('pointerdown', event => { if (!$('menu').hidden && !$('menu').contains(event.target) && !menuTrigger?.contains(event.target)) closeMenu(false); });
     if (isDemo) {
-      const data = VidSnagDemo.init(params.get('demo')); activeTab = data.tab; mediaItems = model.sortMediaByDuration(data.items); mappings = data.mappings; queue = data.queue; preferences = { ...preferences, ...data.preferences }; reachable = data.reachable; appToken = params.get('demo') === 'pairing' ? '' : 'demo-only'; compatible = data.compatible; titles.setActiveTab(activeTab); renderRows();
-      if (params.get('demo') === 'pairing') showPairing(); if (params.get('demo') === 'settings') showSettings(); if (params.get('demo') === 'quality') showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
+      const data = SnagThisDemo.init(params.get('demo')); discoveryPending = params.get('demo') === 'loading'; discoveryError = params.get('demo') === 'error'; activeTab = data.tab; mediaItems = model.sortMediaByDuration(data.items); mappings = data.mappings; queue = data.queue; preferences = { ...preferences, ...data.preferences }; reachable = data.reachable; appToken = params.get('demo') === 'pairing' ? '' : 'demo-only'; compatible = data.compatible; titles.setActiveTab(activeTab);
+      SnagThisSpeedTrace.record(speedJobs(queue)); renderRows();
+      // Sample speeds keep moving so the gallery shows live traces; 'snag' also finishes a download.
+      SnagThisDemo.live?.(() => { queue = SnagThisDemo.state.queue; SnagThisSpeedTrace.record(speedJobs(queue)); renderRows(); });
+      if (params.get('demo') === 'pairing') showPairing(); if (params.get('demo') === 'settings') showSettings(); if (['quality', 'audio'].includes(params.get('demo'))) showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
       return;
     }
     const stored = await chrome.storage.local.get(['appToken', 'preferences']); appToken = stored.appToken || ''; preferences = { ...preferences, ...(stored.preferences || {}) };
+    await accent.load();
     const tabId = Number(params.get('tab'));
     activeTab = tabId > 0 ? await chrome.tabs.get(tabId).catch(() => null) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0] || null;
     titles.setActiveTab(activeTab);
@@ -646,8 +972,8 @@
     await checkAgain();
     await health;
     queueTimer = setInterval(refresh, 1000); healthTimer = setInterval(checkHealth, 2000);
-    chrome.storage.onChanged.addListener((changes, area) => { if (area === 'session' && activeTab?.id && changes[`vidsnag:tab:${activeTab.id}`]) refresh(); });
+    chrome.storage.onChanged.addListener((changes, area) => { if (area === 'session' && activeTab?.id && changes[`snagthis:tab:${activeTab.id}`]) refresh(); });
   }
-  window.addEventListener('pagehide', () => { popupClosed = true; stopPosterPreparation(); clearInterval(queueTimer); clearInterval(healthTimer); clearTimeout(openTimer); for (const node of rowElements.values()) stopThumbPreview(node); });
+  window.addEventListener('pagehide', () => { stopSample('hidden'); popupClosed = true; stopPosterPreparation(); clearInterval(queueTimer); clearInterval(healthTimer); clearTimeout(openTimer); for (const node of rowElements.values()) stopThumbPreview(node); });
   initialize().catch(error => { discoveryPending = false; discoveryError = true; renderRows(); notice(error.message); });
 })();

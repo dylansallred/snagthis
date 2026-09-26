@@ -1,7 +1,7 @@
 /* Small, ephemeral source previews. No desktop job, persistent media or remote redirect. */
 (function(root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.VidSnagSourcePreview = factory();
+  else root.SnagThisSourcePreview = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
   const MAX_BYTES = 16 * 1024 * 1024;
@@ -16,13 +16,16 @@
       if (!/^https?:$/.test(primary.protocol) || primary.username || primary.password) return null;
       const hls = item.type === 'hls' || item.streamType === 'hls';
       const variant = hls && [...(item.variants || item.manifest?.variants || [])].filter(value => value.url).sort((a, b) => (a.height || Infinity) - (b.height || Infinity) || (a.bandwidth || Infinity) - (b.bandwidth || Infinity))[0];
-      return { url: variant?.url || primary.href, hls, origin: item.requestHeadersOrigin || primary.origin, headers: item.requestHeaders || {}, duration: Number(item.durationSeconds) || 0, contentType: item.contentType || 'video/mp4' };
+      // A URL only reported by page script is an untrusted hint: preview it
+      // without cookies or captured headers. Chrome-observed media keeps its context.
+      const trusted = item.networkObserved === true;
+      return { url: variant?.url || primary.href, hls, trusted, origin: item.requestHeadersOrigin || primary.origin, headers: trusted ? item.requestHeaders || {} : {}, duration: Number(item.durationSeconds) || 0, contentType: item.contentType || 'video/mp4' };
     } catch { return null; }
   }
   function fetchOptions(source, url, headers = {}, signal) {
     const target = new URL(url);
     if (!/^https?:$/.test(target.protocol) || target.username || target.password) throw new Error('Unsupported preview source');
-    const sameOrigin = target.origin === source.origin;
+    const sameOrigin = source.trusted === true && target.origin === source.origin;
     const safeHeaders = new Headers();
     if (sameOrigin) for (const [key, value] of Object.entries(source.headers)) {
       if (/^[!#$%&'*+.^_`|~0-9a-z-]{1,64}$/i.test(key) && !blockedHeaders.test(key) && typeof value === 'string' && value.length <= 8192 && !/[\r\n\x00]/.test(value)) safeHeaders.set(key, value);
@@ -47,6 +50,103 @@
     }
     return count > 0 && light / count > .12 && sum / count > 12 && squared / count - (sum / count) ** 2 > 18;
   }
+  // Fetch cannot set Origin or Referer itself. A trusted worker session restores
+  // only the page context captured for this media host, for the session's lifetime.
+  function openOriginSession(source, tabId, mediaId, onClosed) {
+    if (!Object.keys(source.headers).some(name => /^(origin|referer)$/i.test(name)) || !globalThis.chrome?.runtime?.connect) return { ready: Promise.resolve(), close() {} };
+    let close = () => {};
+    const ready = new Promise((resolve, reject) => {
+      let port; let heartbeat;
+      close = () => {
+        clearInterval(heartbeat);
+        try { port?.disconnect(); } catch { /* Popup already closed. */ }
+        reject(new Error('Preview stopped'));
+      };
+      try {
+        port = chrome.runtime.connect({ name: 'snagthis-source-preview' });
+        port.onMessage.addListener(message => {
+          if (message?.cmd !== 'ready') return;
+          if (message.ok) resolve();
+          else reject(new Error('Preview request context is unavailable'));
+        });
+        port.onDisconnect.addListener(() => {
+          clearInterval(heartbeat);
+          reject(new Error('Preview request context closed'));
+          onClosed?.();
+        });
+        port.postMessage({ cmd: 'start', tabId, mediaId });
+        heartbeat = setInterval(() => {
+          try { port.postMessage({ cmd: 'keepalive' }); } catch { onClosed?.(); }
+        }, 10000);
+      } catch (error) { reject(error); }
+    });
+    return { ready, close: () => close() };
+  }
+  // Every preview byte passes through this counter: bounded bytes, requests and time.
+  function createBoundedFetch({ source, ready, isDisposed, maxBytes = MAX_BYTES, maxRequests = MAX_REQUESTS }) {
+    let bytes = 0; let requests = 0;
+    const controllers = new Set();
+    async function fetchBytes(url, range = {}, controller = new AbortController(), limit = maxBytes, requireComplete = false) {
+      await ready;
+      if (isDisposed() || bytes >= maxBytes || ++requests > maxRequests) throw new Error('Preview request limit reached');
+      controllers.add(controller);
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(url, fetchOptions(source, url, range, controller.signal));
+        if (!response.ok || !response.body) throw new Error('Preview unavailable');
+        const reader = response.body.getReader(); const chunks = []; let length = 0; let ended = false;
+        while (!isDisposed()) {
+          const chunk = await reader.read(); if (chunk.done) { ended = true; break; }
+          const allowed = Math.min(chunk.value.length, limit - length, maxBytes - bytes);
+          if (allowed > 0) { chunks.push(chunk.value.subarray(0, allowed)); length += allowed; bytes += allowed; }
+          if (allowed < chunk.value.length || length >= limit || bytes >= maxBytes) {
+            if (requireComplete && allowed === chunk.value.length) ended = (await reader.read()).done;
+            await reader.cancel(); break;
+          }
+        }
+        if (isDisposed()) throw new Error('Preview stopped');
+        const data = new Uint8Array(length); let offset = 0;
+        for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
+        const rangeTotal = /\/([0-9]+)$/.exec(response.headers.get('content-range') || '')?.[1];
+        const fullLength = response.status === 206 ? Number(rangeTotal) : Number(response.headers.get('content-length'));
+        const complete = fullLength > 0 ? length >= fullLength : response.status === 200 && ended;
+        return { response, data, complete, ended, fullLength };
+      } finally {
+        // An HTTP error can still carry a streaming body. Cancel it before
+        // dropping the controller, so a failed preview cannot keep downloading.
+        controller.abort(); clearTimeout(timeout); controllers.delete(controller);
+      }
+    }
+    return {
+      fetchBytes,
+      exhausted: () => bytes >= maxBytes || requests >= maxRequests,
+      abort() { for (const controller of controllers) controller.abort(); controllers.clear(); },
+    };
+  }
+  // Hls.js loader API backed exclusively by bounded fetch, never XHR/native redirects.
+  // `skip(context)` may stop loading before a fragment outside the excerpt is fetched.
+  function boundedHlsLoader(fetchBytes, { isDisposed, skip = () => false }) {
+    return class BoundedFetchLoader {
+      constructor() { this.controller = new AbortController(); this.stats = { aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0, loading: { start: 0, first: 0, end: 0 }, parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 } }; }
+      load(context, _config, callbacks) {
+        this.context = context; this.stats.loading.start = performance.now();
+        if (skip(context)) return;
+        const range = context.rangeEnd > 0 ? { Range: `bytes=${context.rangeStart || 0}-${context.rangeEnd - 1}` } : {};
+        const playlist = context.responseType !== 'arraybuffer';
+        fetchBytes(context.url, range, this.controller, playlist ? 5 * 1024 * 1024 : 8 * 1024 * 1024, playlist).then(({ response, data, ended }) => {
+          if (this.stats.aborted || isDisposed()) return;
+          if (playlist && !ended) throw new Error('Preview playlist exceeds the supported size');
+          this.response = response; this.stats.loaded = this.stats.total = data.byteLength;
+          this.stats.loading.first = this.stats.loading.end = performance.now();
+          callbacks.onSuccess({ url: response.url, data: context.responseType === 'arraybuffer' ? data.buffer : new TextDecoder().decode(data), code: response.status }, this.stats, context, response);
+        }).catch(error => { if (!this.stats.aborted && !isDisposed()) callbacks.onError({ code: 0, text: error.message }, context, this.response, this.stats); });
+      }
+      abort() { this.stats.aborted = true; this.controller.abort(); }
+      destroy() { this.abort(); }
+      getCacheAge() { return null; }
+      getResponseHeader(name) { return this.response?.headers.get(name) || null; }
+    };
+  }
   function create({ item, video, tabId, mediaId, posterOnly = false, sceneOffset, sceneScope, onPoster, onMetadata, onPlaying, onError }) {
     const source = sourceFor(item);
     if (!source) return null;
@@ -62,20 +162,18 @@
       : sceneCandidates(source.duration);
     const selectedStart = () => sceneScope !== 'prefix' && Number.isFinite(sceneOffset) && sceneOffset >= source.duration * .25 && sceneOffset < source.duration
       ? sceneOffset : sceneStart(source.duration);
-    let disposed = false; let hls = null; let objectUrl = ''; let bytes = 0; let requests = 0;
+    let disposed = false; let hls = null; let objectUrl = '';
     let start = selectedStart();
     let end = start + 10; let captured = false; let sampleAt = -1; let frameAttempts = 0;
     const triedScenes = new Set();
-    const controllers = new Set();
     const listeners = [];
     let frameCallback = null; let decodedTime = null;
-    let closeOriginSession = () => {};
     const listen = (name, callback) => { video.addEventListener(name, callback); listeners.push([name, callback]); };
     const destroy = () => {
       if (disposed) return; disposed = true; clearTimeout(deadline);
       if (frameCallback !== null) video.cancelVideoFrameCallback?.(frameCallback);
-      closeOriginSession();
-      for (const controller of controllers) controller.abort(); controllers.clear();
+      origin.close();
+      fetcher.abort();
       if (hls) { hls.destroy(); hls = null; }
       for (const [name, callback] of listeners) video.removeEventListener(name, callback);
       video.pause(); video.removeAttribute('src'); video.load();
@@ -83,42 +181,15 @@
     };
     const fail = () => { if (!disposed) { destroy(); onError?.(); } };
     const deadline = setTimeout(fail, 15000);
-    // Fetch cannot set these headers itself. A trusted worker session restores
-    // only the page context captured for this media host, for this preview's lifetime.
-    let originReady = Promise.resolve();
-    if (Object.keys(source.headers).some(name => /^(origin|referer)$/i.test(name)) && globalThis.chrome?.runtime?.connect) {
-      originReady = new Promise((resolve, reject) => {
-        let port; let heartbeat;
-        closeOriginSession = () => {
-          clearInterval(heartbeat);
-          try { port?.disconnect(); } catch { /* Popup already closed. */ }
-          reject(new Error('Preview stopped'));
-        };
-        try {
-          port = chrome.runtime.connect({ name: 'vidsnag-source-preview' });
-          port.onMessage.addListener(message => {
-            if (message?.cmd !== 'ready') return;
-            if (message.ok) resolve();
-            else reject(new Error('Preview request context is unavailable'));
-          });
-          port.onDisconnect.addListener(() => {
-            clearInterval(heartbeat);
-            reject(new Error('Preview request context closed'));
-            if (!disposed) fail();
-          });
-          port.postMessage({ cmd: 'start', tabId, mediaId });
-          heartbeat = setInterval(() => {
-            try { port.postMessage({ cmd: 'keepalive' }); } catch { fail(); }
-          }, 10000);
-        } catch (error) { reject(error); }
-      });
-      // The media loader attaches asynchronously after the video is mounted.
-      originReady.catch(fail);
-    }
+    const origin = openOriginSession(source, tabId, mediaId, () => { if (!disposed) fail(); });
+    // The media loader attaches asynchronously after the video is mounted.
+    origin.ready.catch(fail);
+    const fetcher = createBoundedFetch({ source, ready: origin.ready, isDisposed: () => disposed });
+    const fetchBytes = fetcher.fetchBytes;
     function nextScene() {
       triedScenes.add(start);
       const next = candidates().find(candidate => !triedScenes.has(candidate));
-      if ((!hls && !objectUrl) || next === undefined || (hls && (bytes >= MAX_BYTES || requests >= MAX_REQUESTS))) { fail(); return; }
+      if ((!hls && !objectUrl) || next === undefined || (hls && fetcher.exhausted())) { fail(); return; }
       hls?.stopLoad(); start = next; end = Math.min(start + 10, (partialDirect ? bufferedPrefixEnd() : source.duration) - .05); frameAttempts = 0; sampleAt = -1;
       video.currentTime = start; hls?.startLoad(start);
     }
@@ -134,37 +205,6 @@
         if (Math.abs(video.currentTime - start) > .05) video.currentTime = start;
       }
       if (available > start + .1) end = Math.min(start + 10, available - .05);
-    }
-    async function fetchBytes(url, range = {}, controller = new AbortController(), limit = MAX_BYTES, requireComplete = false) {
-      await originReady;
-      if (disposed || bytes >= MAX_BYTES || ++requests > MAX_REQUESTS) throw new Error('Preview request limit reached');
-      controllers.add(controller);
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      try {
-        const response = await fetch(url, fetchOptions(source, url, range, controller.signal));
-        if (!response.ok || !response.body) throw new Error('Preview unavailable');
-        const reader = response.body.getReader(); const chunks = []; let length = 0; let ended = false;
-        while (!disposed) {
-          const chunk = await reader.read(); if (chunk.done) { ended = true; break; }
-          const allowed = Math.min(chunk.value.length, limit - length, MAX_BYTES - bytes);
-          if (allowed > 0) { chunks.push(chunk.value.subarray(0, allowed)); length += allowed; bytes += allowed; }
-          if (allowed < chunk.value.length || length >= limit || bytes >= MAX_BYTES) {
-            if (requireComplete && allowed === chunk.value.length) ended = (await reader.read()).done;
-            await reader.cancel(); break;
-          }
-        }
-        if (disposed) throw new Error('Preview stopped');
-        const data = new Uint8Array(length); let offset = 0;
-        for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
-        const rangeTotal = /\/([0-9]+)$/.exec(response.headers.get('content-range') || '')?.[1];
-        const fullLength = response.status === 206 ? Number(rangeTotal) : Number(response.headers.get('content-length'));
-        const complete = fullLength > 0 ? length >= fullLength : response.status === 200 && ended;
-        return { response, data, complete, ended, fullLength };
-      } finally {
-        // An HTTP error can still carry a streaming body. Cancel it before
-        // dropping the controller, so a failed preview cannot keep downloading.
-        controller.abort(); clearTimeout(timeout); controllers.delete(controller);
-      }
     }
     function capture() {
       updateDirectBounds();
@@ -232,30 +272,10 @@
     observeFrame();
     if (source.hls) {
       if (!globalThis.Hls?.isSupported()) { queueMicrotask(fail); return { destroy }; }
-      // Hls.js loader API backed exclusively by bounded fetch, never XHR/native redirects.
-      class PreviewFetchLoader {
-        constructor() { this.controller = new AbortController(); this.stats = { aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0, loading: { start: 0, first: 0, end: 0 }, parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 } }; }
-        load(context, _config, callbacks) {
-          this.context = context; this.stats.loading.start = performance.now();
-          // An unknown-duration VOD playlist must choose its scene before
-          // any opening fragment is fetched. LEVEL_LOADED restarts at 35%.
-          if (context.frag && !source.duration) { hls?.stopLoad(); return; }
-          if (context.frag?.start >= end) { hls?.stopLoad(); return; }
-          const range = context.rangeEnd > 0 ? { Range: `bytes=${context.rangeStart || 0}-${context.rangeEnd - 1}` } : {};
-          const playlist = context.responseType !== 'arraybuffer';
-          fetchBytes(context.url, range, this.controller, playlist ? 5 * 1024 * 1024 : 8 * 1024 * 1024, playlist).then(({ response, data, ended }) => {
-            if (this.stats.aborted || disposed) return;
-            if (playlist && !ended) throw new Error('Preview playlist exceeds the supported size');
-            this.response = response; this.stats.loaded = this.stats.total = data.byteLength;
-            this.stats.loading.first = this.stats.loading.end = performance.now();
-            callbacks.onSuccess({ url: response.url, data: context.responseType === 'arraybuffer' ? data.buffer : new TextDecoder().decode(data), code: response.status }, this.stats, context, response);
-          }).catch(error => { if (!this.stats.aborted && !disposed) callbacks.onError({ code: 0, text: error.message }, context, this.response, this.stats); });
-        }
-        abort() { this.stats.aborted = true; this.controller.abort(); }
-        destroy() { this.abort(); }
-        getCacheAge() { return null; }
-        getResponseHeader(name) { return this.response?.headers.get(name) || null; }
-      }
+      // An unknown-duration VOD playlist must choose its scene before
+      // any opening fragment is fetched. LEVEL_LOADED restarts at 35%.
+      const PreviewFetchLoader = boundedHlsLoader(fetchBytes, { isDisposed: () => disposed,
+        skip: context => { if ((context.frag && !source.duration) || context.frag?.start >= end) { hls?.stopLoad(); return true; } return false; } });
       hls = new globalThis.Hls({ loader: PreviewFetchLoader, enableWorker: false, autoStartLoad: false, startPosition: start, startLevel: 0, capLevelToPlayerSize: true,
         maxBufferLength: 2, maxMaxBufferLength: 2, maxBufferSize: MAX_BYTES, backBufferLength: 10, lowLatencyMode: false,
         manifestLoadingMaxRetry: 0, levelLoadingMaxRetry: 0, fragLoadingMaxRetry: 0, enableWebVTT: false, enableIMSC1: false });
@@ -296,5 +316,114 @@
     }
     return { destroy };
   }
-  return { create, sourceFor, fetchOptions, nonblack, sceneStart, sceneCandidates, MAX_BYTES, MAX_REQUESTS, DIRECT_BYTES, POSTER_BYTES };
+  // Hover-to-hear: a short excerpt of one HLS audio rendition, from 25% in,
+  // fetched through the same bounded loader and restored request context.
+  const SAMPLE_SECONDS = 10;
+  const SAMPLE_BYTES = 4 * 1024 * 1024;
+  const SAMPLE_REQUESTS = 16;
+  const SAMPLE_VOLUME = .5;
+  function audioSampleSource(item, rendition) {
+    const base = sourceFor(item);
+    if (!base?.hls || typeof rendition?.url !== 'string') return null;
+    try {
+      const url = new URL(rendition.url);
+      return /^https?:$/.test(url.protocol) && !url.username && !url.password ? { ...base, url: url.href } : null;
+    } catch { return null; }
+  }
+  function createAudioSample({ item, rendition, tabId, mediaId, audio = new Audio(), seconds = SAMPLE_SECONDS, volume = SAMPLE_VOLUME, onPlaying, onProgress, onEnded, onError }) {
+    const source = audioSampleSource(item, rendition);
+    if (!source || !globalThis.Hls?.isSupported()) return null;
+    let disposed = false; let playing = false; let finishing = false; let hls = null; let fadeTimer = 0;
+    // 25% in catches dialogue rather than an intro. A CDN can lack a segment
+    // there, so a sample that cannot start moves a little later instead.
+    const fractions = [.25, .3, .4, .5]; let attempt = 0;
+    let start = source.duration > 0 ? source.duration * .25 : 0;
+    let end = source.duration > 0 ? Math.min(start + seconds, source.duration - .05) : Infinity;
+    const listeners = [];
+    const listen = (name, callback) => { audio.addEventListener(name, callback); listeners.push([name, callback]); };
+    const destroy = () => {
+      if (disposed) return; disposed = true; clearTimeout(deadline); clearInterval(fadeTimer);
+      origin.close(); fetcher.abort();
+      if (hls) { hls.destroy(); hls = null; }
+      for (const [name, callback] of listeners) audio.removeEventListener(name, callback);
+      audio.pause(); audio.removeAttribute('src'); audio.load();
+    };
+    const fail = () => { if (!disposed) { destroy(); onError?.(); } };
+    const deadline = setTimeout(fail, 15000);
+    const fade = (target, duration, done) => {
+      clearInterval(fadeTimer);
+      const from = audio.volume; const began = performance.now();
+      fadeTimer = setInterval(() => {
+        const progress = Math.min(1, (performance.now() - began) / duration);
+        audio.volume = Math.max(0, Math.min(1, from + (target - from) * progress));
+        if (progress >= 1) { clearInterval(fadeTimer); done?.(); }
+      }, 30);
+    };
+    // Fade out, then release everything. `ended` distinguishes a finished sample.
+    const stop = (ended = false) => {
+      if (disposed || finishing) return; finishing = true;
+      if (!playing) { destroy(); if (ended) onEnded?.(); return; }
+      fade(0, 200, () => { destroy(); if (ended) onEnded?.(); });
+    };
+    const origin = openOriginSession(source, tabId, mediaId, fail);
+    origin.ready.catch(fail);
+    const fetcher = createBoundedFetch({ source, ready: origin.ready, isDisposed: () => disposed, maxBytes: SAMPLE_BYTES, maxRequests: SAMPLE_REQUESTS });
+    const Loader = boundedHlsLoader(fetcher.fetchBytes, { isDisposed: () => disposed,
+      // The excerpt starts at 25% of the rendition's own duration, known only
+      // once its playlist loads; never fetch an opening or trailing fragment.
+      skip: context => { if (context.frag && context.frag.sn !== 'initSegment' && (!(end < Infinity) || context.frag.start >= end)) { hls?.stopLoad(); return true; } return false; } });
+    audio.preload = 'auto'; audio.muted = false; audio.volume = 0;
+    listen('canplay', () => {
+      if (disposed || playing || finishing) return;
+      if (Math.abs(audio.currentTime - start) > .5) { audio.currentTime = start; return; }
+      audio.play().then(() => {
+        if (disposed) return;
+        playing = true; clearTimeout(deadline); fade(volume, 400); onPlaying?.();
+      }).catch(fail);
+    });
+    listen('timeupdate', () => {
+      if (!playing || disposed) return;
+      onProgress?.(Math.max(0, Math.min(1, (audio.currentTime - start) / Math.max(.1, end - start))));
+      if (audio.currentTime >= end - .1) stop(true);
+    });
+    listen('ended', () => stop(true));
+    listen('error', fail);
+    hls = new globalThis.Hls({ loader: Loader, enableWorker: false, autoStartLoad: false, startPosition: start,
+      maxBufferLength: seconds, maxMaxBufferLength: seconds, maxBufferSize: SAMPLE_BYTES, backBufferLength: 0, lowLatencyMode: false,
+      // One retry absorbs a CDN's transient 5xx; the request bound still applies.
+      manifestLoadingMaxRetry: 1, levelLoadingMaxRetry: 1, fragLoadingMaxRetry: 1, enableWebVTT: false, enableIMSC1: false });
+    hls.on(globalThis.Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(source.url));
+    hls.on(globalThis.Hls.Events.MANIFEST_PARSED, () => hls.startLoad(start));
+    hls.on(globalThis.Hls.Events.LEVEL_LOADED, (_event, data) => {
+      const total = data.details?.totalduration;
+      if (data.details?.live !== false || !(total > 0) || end < Infinity && Math.abs(total - source.duration) < 1) return;
+      // The rendition's own playlist is authoritative for where 25% falls.
+      source.duration = total; start = total * fractions[attempt]; end = Math.min(start + seconds, total - .05);
+      hls.startLoad(start); audio.currentTime = start;
+    });
+    hls.on(globalThis.Hls.Events.FRAG_BUFFERED, () => {
+      for (let index = 0; index < audio.buffered.length; index++) if (audio.buffered.start(index) <= start + .1 && audio.buffered.end(index) >= end - .2) hls.stopLoad();
+    });
+    hls.on(globalThis.Hls.Events.ERROR, (_event, data) => {
+      if (!data.fatal || disposed) return;
+      const missingPiece = data.type === globalThis.Hls.ErrorTypes.NETWORK_ERROR && data.frag;
+      // Already audible: a missing later piece ends the sample where its buffer ends.
+      if (missingPiece && playing) {
+        let buffered = audio.currentTime;
+        for (let index = 0; index < audio.buffered.length; index++) if (audio.buffered.start(index) <= audio.currentTime + .1) buffered = Math.max(buffered, audio.buffered.end(index));
+        end = Math.min(end, buffered);
+        if (audio.currentTime >= end - .1) stop(true);
+        return;
+      }
+      if (missingPiece && source.duration > 0 && attempt + 1 < fractions.length && !fetcher.exhausted()) {
+        attempt += 1; start = source.duration * fractions[attempt]; end = Math.min(start + seconds, source.duration - .05);
+        audio.currentTime = start; hls.startLoad(start);
+        return;
+      }
+      fail();
+    });
+    hls.attachMedia(audio);
+    return { destroy, stop: () => stop(false) };
+  }
+  return { create, createAudioSample, audioSampleSource, sourceFor, fetchOptions, nonblack, sceneStart, sceneCandidates, MAX_BYTES, MAX_REQUESTS, DIRECT_BYTES, POSTER_BYTES, SAMPLE_SECONDS };
 });

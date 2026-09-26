@@ -21,6 +21,8 @@
   let displayTitle = String(params.get('title') || 'Stream Player').trim();
   let sourcePageUrl = '';
   let requestHeaders = {};
+  // Cookies travel only for media Chrome itself observed on the source tab.
+  let credentialed = true;
 
   let hls = null;
   let usingFallback = false;
@@ -129,7 +131,7 @@
     return {
       ...extra,
       headers,
-      credentials: sameOrigin ? 'include' : 'omit',
+      credentials: sameOrigin && credentialed ? 'include' : 'omit',
       cache: 'no-store',
       // XHR cannot control redirect credential forwarding. Fetch rejects a
       // redirect before captured site headers can reach another destination.
@@ -308,6 +310,7 @@
     requestHeaders = session.requestHeaders && typeof session.requestHeaders === 'object'
       ? session.requestHeaders
       : {};
+    credentialed = session.credentialed !== false;
   }
 
   async function init() {

@@ -52,7 +52,7 @@
     }
 
     chrome.runtime.onConnect.addListener(port => {
-      if (port.name !== 'vidsnag-source-preview') return;
+      if (port.name !== 'snagthis-source-preview') return;
       if (!trustedPage(port.sender || {})) { port.disconnect(); return; }
       const session = { closed: false, started: false, context: null, timer: null };
       function close() {
@@ -85,7 +85,9 @@
         if (session.closed) return;
         const item = page?.items?.find(value => value.id === message.mediaId);
         if (!item) throw new Error('The preview source is no longer available.');
-        const headers = Object.entries(item.requestHeaders || {});
+        // Only context Chrome captured for a response it delivered to this tab
+        // is restored; a page-reported URL never gains Origin or Referer.
+        const headers = item.networkObserved === true ? Object.entries(item.requestHeaders || {}) : [];
         const origins = headers.filter(([name]) => name.toLowerCase() === 'origin').map(([, value]) => value);
         const referers = headers.filter(([name]) => name.toLowerCase() === 'referer').map(([, value]) => value);
         if (!origins.length && !referers.length) { respond(true); return; }

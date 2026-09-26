@@ -1,7 +1,7 @@
 /* A bounded recording supplied by this tab's content script, never a desktop job. */
 (function(root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.VidSnagPagePreview = factory();
+  else root.SnagThisPagePreview = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
   function clipBlob(dataUrl) {

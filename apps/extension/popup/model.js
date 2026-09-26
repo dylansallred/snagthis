@@ -1,7 +1,7 @@
 (function(root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./titles'), require('../../../packages/contracts/src/hls'), require('../../../packages/contracts/src/selection'), require('../js/detection'));
-  else root.VidSnagPopupModel = factory(root.VidSnagTitles, root.VidSnagHls, root.VidSnagSelection, root.VidSnagDetection);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function(titles, hls, selection, detection) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./titles'), require('../../../packages/contracts/src/hls'), require('../../../packages/contracts/src/selection'), require('../js/detection'), require('../../../packages/contracts/src/audioTracks'));
+  else root.SnagThisPopupModel = factory(root.SnagThisTitles, root.SnagThisHls, root.SnagThisSelection, root.SnagThisDetection, root.SnagThisAudioTracks);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function(titles, hls, selection, detection, audioTracks) {
   'use strict';
   function sortMediaByDuration(items = []) {
     const duration = item => {
@@ -15,8 +15,14 @@
     return [...items].sort((a, b) => duration(b) - duration(a));
   }
   function chooseVariant(item, preferredQuality) {
-    const variants = [...(item.variants || item.manifest?.variants || [])].sort((a, b) => (b.height || 0) - (a.height || 0) || (b.bandwidth || 0) - (a.bandwidth || 0));
-    return variants.find(variant => variant.height === Number.parseInt(preferredQuality, 10)) || variants[0] || null;
+    // Highest rendition the page's own player loaded (proven to play on this
+    // CDN), else the highest broadly playable one, capped at the preference.
+    return hls.defaultVariant(item.variants || item.manifest?.variants || [], preferredQuality);
+  }
+  // Separate HLS audio renditions a download can choose between, labelled in
+  // plain language and collapsed across codec groups.
+  function audioTracksFor(item) {
+    return audioTracks.describeAudioTracks((item.audio || item.manifest?.audio || []).filter(value => value.url));
   }
   function selectMedia(item, preferences = {}, chosen = {}) {
     const variant = (item.variants || []).find(value => value.url === chosen.variantUrl) || chooseVariant(item, preferences.preferredQuality);
@@ -26,17 +32,20 @@
     const subtitle = language && language !== 'none' ? subtitles.find(value => value.language === language || value.name === language) : null;
     const selected = {};
     if (variant) { selected.variantUrl = variant.url; if (variant.height) selected.height = variant.height; }
-    if (chosen.audioOnly && audio.length) {
-      selected.audioOnly = true; delete selected.height;
-      if (audio[0].language) selected.audioLang = audio[0].language;
-    }
+    if (chosen.audioOnly && audio.length) { selected.audioOnly = true; delete selected.height; }
+    // The DEFAULT rendition is what the engine picks unaided; only a different
+    // choice travels, by rendition identity rather than (often absent) language.
+    const tracks = audioTracksFor(item);
+    const defaultTrack = audioTracks.defaultAudioTrack(tracks);
+    const audioTrack = tracks.find(track => track.key === chosen.audioTrack) || defaultTrack;
+    if (audioTrack && audioTrack !== defaultTrack) selected.audioTrack = audioTrack.key;
     if (subtitle) selected.subtitleLang = subtitle.language || subtitle.name;
     else selected.subtitleLang = 'none';
     const estimatedSize = variant ? hls.estimateSizeBytes(variant.averageBandwidth || variant.bandwidth, item.durationSeconds) : null;
     const isPlaylist = item.type === 'hls' || item.streamType === 'hls' || item.mediaKind === 'hls-manifest' || item.mediaKind === 'dash-manifest' || item.manifest;
     const sizeBytes = selected.audioOnly ? null : variant?.sizeBytes || (variant ? estimatedSize : (!isPlaylist && item.contentLength) || item.sizeBytes || null);
     const sizeEstimated = Boolean(sizeBytes && (variant ? variant.sizeBytes ? variant.sizeEstimated : estimatedSize : item.sizeEstimated));
-    return { ...item, ...chosen, height: selected.audioOnly ? null : variant?.height || item.height || null, sizeBytes, sizeEstimated, selection: selected, qualityLabel: selected.audioOnly ? 'Audio only' : variant?.height ? `${variant.height}p` : item.height ? `${item.height}p` : '' };
+    return { ...item, ...chosen, height: selected.audioOnly ? null : variant?.height || item.height || null, sizeBytes, sizeEstimated, selection: selected, audioTracks: tracks, audioTrack: tracks.length > 1 ? audioTrack : null, qualityLabel: selected.audioOnly ? 'Audio only' : variant?.height ? `${variant.height}p` : item.height ? `${item.height}p` : '' };
   }
   function mappingFor(item, mappings = {}) {
     return mappings[item.id] || (item.detectedStreams || []).map(stream => mappings[stream.id]).find(Boolean) || null;
@@ -144,5 +153,5 @@
     if (/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value)) return value;
     try { const url = new URL(value); return /^https?:$/.test(url.protocol) && !url.username && !url.password ? url.href : ''; } catch { return ''; }
   }
-  return { sortMediaByDuration, chooseVariant, selectMedia, mappingFor, jobFor, browserRow, buildDownloadPayload, compatible, compatibilityIssue, localApiBase, previewClipUrl, resolveThumbnailUrl };
+  return { sortMediaByDuration, chooseVariant, audioTracksFor, selectMedia, mappingFor, jobFor, browserRow, buildDownloadPayload, compatible, compatibilityIssue, localApiBase, previewClipUrl, resolveThumbnailUrl };
 });

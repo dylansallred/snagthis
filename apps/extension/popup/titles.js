@@ -1,8 +1,10 @@
 (function(root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.VidSnagTitles = factory();
+  else root.SnagThisTitles = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
 let activeTab = null;
+// Pages whose detections carry different captured titles, such as a gallery of several films.
+let multiTitlePages = new Set();
 const customTitleOverrides = new Map();
 function getSendKey(item) {
   if (item && item.id) return String(item.id);
@@ -167,8 +169,24 @@ function scoreDisplayTitleCandidate(value, source, pageTitle, tvContextFromUrl) 
   return score;
 }
 
+function setPageItems(items) {
+  const titlesByPage = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    const page = String(item && item.sourcePageUrl || '').trim();
+    const title = String(item && item.sourcePageTitle || '').trim();
+    if (!page || !title) continue;
+    if (!titlesByPage.has(page)) titlesByPage.set(page, new Set());
+    titlesByPage.get(page).add(title);
+  }
+  multiTitlePages = new Set([...titlesByPage].filter(([, values]) => values.size > 1).map(([page]) => page));
+}
+
 function getSourcePageTitle(item, fallback = '') {
   const sourcePageUrl = String(item && item.sourcePageUrl || '').trim();
+  const ownTitle = String(item && item.sourcePageTitle || '').trim();
+  // Several differently titled detections on one page each keep their own name;
+  // the shared tab title would collapse them into identical rows.
+  if (ownTitle && multiTitlePages.has(sourcePageUrl)) return ownTitle;
   // The tab title may settle after the first media request on a client-rendered
   // page. Only use its fresh value for this exact page, never after navigation.
   if (activeTab && sourcePageUrl && sourcePageUrl === String(activeTab.url || '').trim()) {
@@ -833,9 +851,12 @@ function buildJobPayload(item, titleOverride = '') {
     titleHints,
     youtubeMetadata,
     thumbnailUrl,
+    // A playlist answered to a POST cannot be fetched again by URL. The worker
+    // re-attaches (or removes) this text for the URL it finally sends.
+    ...(typeof item.manifestSnapshot === 'string' && item.manifestSnapshot && mediaUrl === item.url ? { manifestText: item.manifestSnapshot } : {}),
   };
 }
 
 
-return { getDisplayTitle, inferTitleHints, stripTitleNoise, buildJobPayload, setCustomTitleOverride, getCustomTitleOverride, setActiveTab(tab) { activeTab = tab; } };
+return { getDisplayTitle, inferTitleHints, stripTitleNoise, buildJobPayload, setCustomTitleOverride, getCustomTitleOverride, setPageItems, setActiveTab(tab) { activeTab = tab; } };
 });

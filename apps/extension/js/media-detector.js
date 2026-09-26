@@ -1,9 +1,9 @@
 /* Page-world observation of standard fetch/XHR; never modifies requests or consumes the page's response. */
 (() => {
   'use strict';
-  if (window.__vidsnagObserver) return;
-  window.__vidsnagObserver = true;
-  const CHANNEL = 'vidsnag:media';
+  if (window.__snagthisObserver) return;
+  window.__snagthisObserver = true;
+  const CHANNEL = 'snagthis:media';
   const MAX_MANIFEST = 5 * 1024 * 1024;
   function resolveRequestUrl(input) {
     if (typeof input === 'string') return input;
@@ -21,13 +21,21 @@
     if (/\.mpd(?:[?#]|$)/i.test(url) || /dash\+xml/i.test(contentType)) return 'dash';
     return /\.(?:mp4|m4v|mov|webm|mkv|mp3|m4a|ogg)(?:[?#]|$)/i.test(url) || /^(?:video|audio)\//i.test(contentType) ? 'file' : null;
   }
-  function emit(url, contentType, contentLength, body, requestHeaders) {
-    const resolved = absolute(url); const type = typeFor(resolved, contentType, body);
-    if (!resolved || !type) return;
-    window.postMessage({ source: CHANNEL, pageUrl: location.href, media: { url: resolved, type, contentType, contentLength: Number(contentLength) || 0, manifestText: type === 'hls' && /^\uFEFF?\s*#EXTM3U/.test(body || '') ? body : '', requestHeaders, detectedAt: Date.now() } }, '*');
+  // A POST (or other non-GET) response cannot be replayed by URL. It is only
+  // reported with its playlist text, which then is the one usable copy.
+  // A blob: playlist the player makes from that text has no fetchable URL
+  // and stays unreported (absolute() rejects it): it is the same playlist.
+  function requestMethod(input, init) {
+    try {
+      const value = (init && init.method) || (input && typeof input === 'object' && typeof input.method === 'string' ? input.method : '');
+      return String(value || 'GET').toUpperCase();
+    } catch { return 'GET'; }
   }
-  function headersOf(value) {
-    try { return Object.fromEntries(new Headers(value || {}).entries()); } catch { return {}; }
+  function emit(url, contentType, contentLength, body, method = 'GET') {
+    const resolved = absolute(url); const type = typeFor(resolved, contentType, body);
+    const manifestText = type === 'hls' && /^\uFEFF?\s*#EXTM3U/.test(body || '') ? body : '';
+    if (!resolved || !type || (method !== 'GET' && !manifestText)) return;
+    window.postMessage({ source: CHANNEL, pageUrl: location.href, media: { url: resolved, type, contentType, contentLength: Number(contentLength) || 0, manifestText, method, detectedAt: Date.now() } }, '*');
   }
   async function inspectBody(response) {
     const reader = response.clone().body?.getReader();
@@ -48,33 +56,27 @@
   const originalFetch = window.fetch;
   window.fetch = function(...args) {
     const requestUrl = absolute(resolveRequestUrl(args[0]));
-    const requestHeaders = headersOf(args[1]?.headers || args[0]?.headers);
+    const method = requestMethod(args[0], args[1]);
     const pageUrl = location.href;
     const result = originalFetch.apply(this, args);
     result.then(async response => {
       if (!response.ok || pageUrl !== location.href) return;
       const url = response.url || requestUrl; const type = response.headers.get('content-type') || '';
       const size = response.headers.get('content-length');
-      const scopedHeaders = absolute(url) && requestUrl && new URL(url).origin === new URL(requestUrl).origin ? requestHeaders : {};
-      emit(url, type, size, '', scopedHeaders);
+      emit(url, type, size, '', method);
       if (/mpegurl/i.test(type) || /\.m3u8(?:[?#]|$)/i.test(url) || !type || /^(?:text\/|image\/|application\/octet-stream)/i.test(type)) {
         const body = await inspectBody(response);
-        if (pageUrl === location.href && body) emit(url, type, size, body, scopedHeaders);
+        if (pageUrl === location.href && body) emit(url, type, size, body, method);
       }
     }).catch(() => {});
     return result;
   };
   const originalOpen = XMLHttpRequest.prototype.open;
-  const originalSetHeader = XMLHttpRequest.prototype.setRequestHeader;
   const requests = new WeakMap();
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
     requests.get(this)?.cleanup?.();
-    requests.set(this, { url: absolute(resolveRequestUrl(url)), page: location.href, headers: {} });
+    requests.set(this, { url: absolute(resolveRequestUrl(url)), method: String(method || 'GET').toUpperCase(), page: location.href });
     return originalOpen.call(this, method, url, ...rest);
-  };
-  XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
-    const request = requests.get(this); if (request) request.headers[name] = String(value);
-    return originalSetHeader.call(this, name, value);
   };
   const originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function(...args) {
@@ -101,8 +103,7 @@
         if (text.length <= MAX_MANIFEST && /^\uFEFF?\s*#EXTM3U/.test(text)) body = text;
       } catch { /* Unsupported or unreadable responses remain header-only. */ }
       if (request.page !== location.href) return;
-      const scopedHeaders = request.url && new URL(url).origin === new URL(request.url).origin ? request.headers : {};
-      emit(url, contentType, contentLength, body, scopedHeaders);
+      emit(url, contentType, contentLength, body, request.method);
     };
     if (request) request.cleanup = cleanup;
     this.addEventListener('load', onLoad);

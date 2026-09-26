@@ -1,7 +1,10 @@
 /* Isolated-world page metadata and video observation. Source pages never receive app credentials. */
 (() => {
   'use strict';
-  const CHANNEL = 'vidsnag:media';
+  // The worker injects this file into tabs opened before install or update.
+  // A live copy from the manifest keeps ownership; an orphaned one does not.
+  if (globalThis.__snagthisContent?.live()) return;
+  const CHANNEL = 'snagthis:media';
   const MAX_MANIFEST = 5 * 1024 * 1024;
   let lastPage = location.href;
   let scanTimer;
@@ -9,12 +12,16 @@
   let pagePreview = null;
   const events = new AbortController();
   const watchedVideos = new WeakMap();
+  const reportedWorkerMedia = new Set();
+  let resourceObserver = null;
+  globalThis.__snagthisContent = { live: () => { try { return !retired && Boolean(chrome.runtime?.id); } catch { return false; } } };
   function retire() {
     if (retired) return;
     retired = true;
     cancelPagePreview();
     clearTimeout(scanTimer);
     observer.disconnect();
+    resourceObserver?.disconnect();
     events.abort();
     try { chrome.runtime.onMessage.removeListener(onRuntimeMessage); } catch { /* The extension may already be unloaded. */ }
   }
@@ -189,9 +196,13 @@
     ].map(item => ({ source: item.source, value: String(item.value || '').trim().slice(0, 255) })).filter(item => item.value);
     const url = new URL(location.href);
     const id = /(^|\.)youtube\.com$/.test(url.hostname) ? url.searchParams.get('v') || /^\/(?:shorts|live|embed)\/([^/]+)/.exec(url.pathname)?.[1] : url.hostname === 'youtu.be' ? url.pathname.slice(1) : '';
+    // YouTube keeps the first page's share tags (or its generic logo card)
+    // after in-page navigation, so trust them only when they name this video.
+    const shareTagsCurrent = Boolean(id) && String(meta('meta[property="og:url"]') || '').includes(id);
+    const shareImage = shareTagsCurrent ? absolute(meta('meta[property="og:image"]')) : '';
     const youtube = /^[\w-]{6,20}$/.test(id || '') ? {
-      videoId: id, title: (meta('meta[property="og:title"]') || document.title).replace(/\s*[-|]\s*YouTube\s*$/i, ''),
-      thumbnailUrl: absolute(meta('meta[property="og:image"]')) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      videoId: id, title: ((shareTagsCurrent && meta('meta[property="og:title"]')) || document.title).replace(/^\(\d+\)\s*/, '').replace(/\s*[-|]\s*YouTube\s*$/i, ''),
+      thumbnailUrl: /^https:\/\/i\d?\.ytimg\.com\//.test(shareImage) && shareImage.includes(`/${id}/`) ? shareImage : `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
       durationSeconds: video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null,
       channelName: document.querySelector('[itemprop="author"] [itemprop="name"]')?.getAttribute('content') || '',
     } : null;
@@ -210,15 +221,44 @@
         mediaSourceUrl: String(video?.currentSrc || video?.src || '').startsWith('blob:') ? 'blob:' : absolute(video?.currentSrc || video?.src),
         thumbnailUrl, poster: absolute(video?.poster), durationSeconds: video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null,
         height: video?.videoHeight || null,
+        ...(video ? { presentation: presentation(video) } : {}),
         ...(frame ? { sourcePreviewPoster: frame, sourcePreviewSceneStart: video.currentTime, sourcePreviewSceneScope: 'source' } : {}),
       } : {}),
       youtubeMetadata: youtube, pageEpisodeHint, pageIsTvContext: Boolean(pageEpisodeHint), pageContextCollectedAt: Date.now(),
     };
   }
+  // How the element is shown: a tiny looping or muted autoplay clip is a
+  // banner, not the page's video. The worker weighs this with its duration.
+  function presentation(video) {
+    let rect = null; try { rect = video.getBoundingClientRect(); } catch { /* Detached element. */ }
+    return { width: Math.round(rect?.width || 0), height: Math.round(rect?.height || 0), loop: Boolean(video.loop), muted: Boolean(video.muted), autoplay: Boolean(video.autoplay) };
+  }
+  // A response answered by this frame's Service Worker (workerStart > 0) can
+  // be a URL that only that worker understands. Report direct media files.
+  function reportWorkerServedMedia(entries) {
+    if (retired) return;
+    const urls = [];
+    for (const entry of entries) {
+      if (!(entry.workerStart > 0)) continue;
+      const url = absolute(entry.name).split('#')[0];
+      if (!url || reportedWorkerMedia.has(url)) continue;
+      if (!['video', 'audio'].includes(entry.initiatorType) && !/\.(?:mp4|m4v|mov|webm|mkv)(?:[?#]|$)/i.test(url)) continue;
+      reportedWorkerMedia.add(url); urls.push(url);
+    }
+    if (urls.length) send({ cmd: 'SERVICE_WORKER_MEDIA', pageUrl: location.href, urls: urls.slice(0, 20) });
+  }
+  function watchWorkerServedMedia() {
+    try {
+      reportWorkerServedMedia(performance.getEntriesByType('resource'));
+      resourceObserver = new PerformanceObserver(list => reportWorkerServedMedia(list.getEntries()));
+      resourceObserver.observe({ type: 'resource' });
+    } catch { /* Resource timing is unavailable in this frame. */ }
+  }
   function navigation() {
     if (retired) return;
     if (lastPage === location.href) return;
     cancelPagePreview();
+    reportedWorkerMedia.clear();
     lastPage = location.href;
     send({ cmd: 'PAGE_NAVIGATED', pageUrl: lastPage });
     scheduleScan();
@@ -268,8 +308,15 @@
     if (event.data.pageUrl && event.data.pageUrl !== location.href) return;
     const incoming = event.data.media;
     if (!incoming || typeof incoming.url !== 'string' || !absolute(incoming.url)) return;
-    if (String(incoming.manifestText || '').length > MAX_MANIFEST) return;
-    send({ cmd: 'STORE_DETECTED_MEDIA', media: { ...incoming, ...collectPageContext(absolute(incoming.url)) } });
+    const manifestText = typeof incoming.manifestText === 'string' ? incoming.manifestText : '';
+    if (manifestText.length > MAX_MANIFEST) return;
+    // Any page script can post on this channel. Forward only a detection hint;
+    // request context (Origin, Referer, credentials) comes from Chrome's own
+    // network events, never from page-supplied fields.
+    const url = absolute(incoming.url);
+    const method = /^[A-Z]{3,7}$/.test(String(incoming.method || '')) ? incoming.method : 'GET';
+    send({ cmd: 'STORE_DETECTED_MEDIA', media: { url, contentType: String(incoming.contentType || '').slice(0, 200),
+      contentLength: Number(incoming.contentLength) || 0, manifestText, method, ...collectPageContext(url) } });
   }, { signal: events.signal });
   function onRuntimeMessage(message, sender, respond) {
     if (message?.cmd === 'SCAN_PAGE') {
@@ -296,6 +343,7 @@
     if (retired) return;
     observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['src', 'poster', 'content', 'name', 'property', 'itemprop', 'type'] });
     scan();
+    watchWorkerServedMedia();
   }
   if (document.documentElement) start(); else document.addEventListener('DOMContentLoaded', start, { once: true, signal: events.signal });
 })();
