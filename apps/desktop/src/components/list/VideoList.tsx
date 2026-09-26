@@ -28,14 +28,98 @@ const StableVideoRow = memo(function StableVideoRow({ row, handlers, ...props }:
   return (Object.keys(next) as (keyof StableRowProps)[]).every((key) => key === 'row' || previous[key] === next[key]);
 });
 
-export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyId, hasMore, loadingMore, onLoadMore, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview }: {
-  rows: RowModel[]; apiBase: string; folder: string; expandedId: string | null; renamingId: string | null; busyId: string | null;
+const EASE_OUT = 'cubic-bezier(.2, .8, .2, 1)';
+// Filters, searches and paging change many rows at once; those swap instantly.
+const MAX_ANIMATED_CHANGES = 3;
+type Leaving = { row: RowModel; after: string | null };
+
+function withLeaving(rows: RowModel[], leaving: Leaving[]) {
+  const present = new Set(rows.map((row) => row.id));
+  const result = [...rows];
+  for (const { row, after } of leaving) {
+    if (present.has(row.id)) continue;
+    result.splice(after === null ? 0 : result.findIndex((item) => item.id === after) + 1 || result.length, 0, row);
+  }
+  return result;
+}
+
+export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyIds, hasMore, loadingMore, onLoadMore, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview, motionScope = '' }: {
+  motionScope?: string;
+  rows: RowModel[]; apiBase: string; folder: string; expandedId: string | null; renamingId: string | null; busyIds: ReadonlySet<string>;
   hasMore: boolean; loadingMore: boolean; onLoadMore: () => void; onToggle: (row: RowModel) => void;
   onCommand: (row: RowModel, command: RowCommand) => void; onRename: (row: RowModel, title: string | null) => Promise<void>;
   onRefreshLink: (row: RowModel, url: string) => Promise<void>; onMoveTo: (sourceId: string, targetId: string) => void;
   onRequestPreview: RequestThumbnailPreview;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const [leaving, setLeaving] = useState<Leaving[]>([]);
+  const animatedLeaving = useRef(new Set<string>());
+  const order = rows.map((row) => row.id).join('\n');
+  const motion = useRef<{ order: string | null; scope: string; rows: RowModel[]; tops: Map<string, number> | null }>({ order: null, scope: motionScope, rows, tops: null });
+  // Row motion needs the old positions, which only exist before React commits a new order.
+  if (motion.current.order !== null && motion.current.order !== order && !motion.current.tops && list.current) {
+    motion.current.tops = new Map(Array.from(list.current.querySelectorAll<HTMLElement>(':scope > [data-item-key]'), (element) => [element.dataset.itemKey!, element.getBoundingClientRect().top]));
+  }
+  useLayoutEffect(() => {
+    const state = motion.current;
+    if (state.order === order) { state.rows = rows; state.scope = motionScope; return; }
+    const { rows: previousRows, tops, order: previousOrder, scope } = state;
+    Object.assign(state, { order, rows, tops: null, scope: motionScope });
+    const container = list.current;
+    // A row that returns while collapsing (Undo) takes its element back at full size.
+    for (const element of container?.querySelectorAll<HTMLElement>(':scope > .leaving') ?? []) {
+      if (!order.split('\n').includes(element.dataset.itemKey!)) continue;
+      element.classList.remove('leaving');
+      element.removeAttribute('aria-hidden');
+      element.getAnimations().forEach((animation) => animation.cancel());
+    }
+    if (previousOrder === null || !tops || !container || scope !== motionScope || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const current = new Set(rows.map((row) => row.id));
+    const previous = new Set(previousRows.map((row) => row.id));
+    const entered = rows.filter((row) => !previous.has(row.id));
+    const left = previousRows.flatMap((row, index) => current.has(row.id) ? [] : [{ row, after: index ? previousRows[index - 1].id : null }]);
+    if (entered.length + left.length > MAX_ANIMATED_CHANGES) return;
+    const item = (id: string) => container.querySelector<HTMLElement>(`:scope > [data-item-key="${CSS.escape(id)}"]`);
+    if (entered.length || left.length) {
+      // New rows open from nothing and slide down; removed rows stay long enough to collapse. Neighbours follow the height.
+      for (const row of entered) {
+        const element = item(row.id);
+        if (!element) continue;
+        element.animate([
+          { height: '0px', opacity: 0, transform: 'translateY(-6px)', overflow: 'hidden' },
+          { height: `${element.offsetHeight}px`, opacity: 1, transform: 'none', overflow: 'hidden' },
+        ], { duration: 220, easing: EASE_OUT });
+      }
+      if (left.length) setLeaving((items) => [...items.filter((entry) => !current.has(entry.row.id)), ...left]);
+      return;
+    }
+    // Reorders and completions: each row glides from where it was (FLIP).
+    for (const element of container.querySelectorAll<HTMLElement>(':scope > [data-item-key]')) {
+      const before = tops.get(element.dataset.itemKey!);
+      const offset = before === undefined ? 0 : before - element.getBoundingClientRect().top;
+      if (Math.abs(offset) > .5) element.animate([{ transform: `translateY(${offset}px)` }, { transform: 'none' }], { duration: 280, easing: EASE_OUT });
+    }
+  }, [order, motionScope, rows]);
+  useLayoutEffect(() => {
+    const container = list.current;
+    if (!container) return;
+    for (const { row } of leaving) {
+      if (animatedLeaving.current.has(row.id)) continue;
+      const element = container.querySelector<HTMLElement>(`:scope > [data-item-key="${CSS.escape(row.id)}"]`);
+      if (!element) continue;
+      animatedLeaving.current.add(row.id);
+      element.classList.add('leaving');
+      element.setAttribute('aria-hidden', 'true');
+      const animation = element.animate([
+        { height: `${element.offsetHeight}px`, opacity: 1, overflow: 'hidden' },
+        { height: '0px', opacity: 0, overflow: 'hidden', borderTopWidth: '0px' },
+      ], { duration: 180, easing: 'ease-in', fill: 'forwards' });
+      const done = () => { animatedLeaving.current.delete(row.id); setLeaving((items) => items.filter((entry) => entry.row !== row)); };
+      animation.finished.then(done, done);
+    }
+  }, [leaving]);
+  const shown = leaving.length ? withLeaving(rows, leaving) : rows;
   const handlers = useRef<RowHandlers>({ onToggle, onCommand, onRename, onRefreshLink, onMoveTo });
   // Events from a memoized row must use the latest committed App callbacks.
   useLayoutEffect(() => { handlers.current = { onToggle, onCommand, onRename, onRefreshLink, onMoveTo }; });
@@ -60,7 +144,7 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
     observer.observe(sentinel.current);
     return () => observer.disconnect();
   }, [hasMore, loadingMore, onLoadMore]);
-  return <div role="list" aria-label="Videos" className="video-list" data-input-mode={inputMode} onKeyDown={(event) => {
+  return <div ref={list} role="list" aria-label="Videos" className="video-list" data-input-mode={inputMode} onKeyDown={(event) => {
     if (!['ArrowUp', 'ArrowDown'].includes(event.key) || (event.target as HTMLElement).matches('input,select,textarea,[role="menuitem"]')) return;
     const rowElements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-row-key]'));
     const active = (event.target as HTMLElement).closest('[data-row-key]');
@@ -68,7 +152,7 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
     const next = Math.max(0, Math.min(rowElements.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
     if (rowElements[next]) { event.preventDefault(); rowElements[next].focus(); }
   }}>
-    {rows.map((row) => <StableVideoRow key={row.id} row={row} inputMode={inputMode} apiBase={apiBase} folder={folder} expanded={expandedId === row.id} renaming={renamingId === row.id} busy={busyId === row.id}
+    {shown.map((row) => <StableVideoRow key={row.id} row={row} inputMode={inputMode} apiBase={apiBase} folder={folder} expanded={expandedId === row.id} renaming={renamingId === row.id} busy={busyIds.has(row.id)}
       handlers={handlers} onRequestPreview={onRequestPreview} />)}
     {hasMore && <div ref={sentinel} className="load-more"><button className="row-action" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? ui.loading : ui.loadMore}</button></div>}
   </div>;

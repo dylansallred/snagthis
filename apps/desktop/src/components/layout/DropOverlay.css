@@ -1,0 +1,26 @@
+/* Unique look 6 · Drop to snag. Only visible during a link drag; it never takes pointer input. */
+.drop-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: hsl(215 22% 4% / .86); backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity 160ms ease-out; }
+/* Only the visible overlay may claim the window: Electron maps app regions by geometry,
+   ignoring opacity and pointer-events, so a hidden no-drag layer would disable header dragging. */
+.drop-overlay.show { opacity: 1; -webkit-app-region: no-drag; }
+/* Marching pixel borders, three steps per 600ms. */
+.drop-overlay-ants { position: absolute; inset: 16px; opacity: .75;
+  background: linear-gradient(90deg, var(--color-primary-hover) 50%, transparent 0) 0 0 / 12px 2px repeat-x,
+    linear-gradient(90deg, var(--color-primary-hover) 50%, transparent 0) 0 100% / 12px 2px repeat-x,
+    linear-gradient(0deg, var(--color-primary-hover) 50%, transparent 0) 0 0 / 2px 12px repeat-y,
+    linear-gradient(0deg, var(--color-primary-hover) 50%, transparent 0) 100% 0 / 2px 12px repeat-y; }
+.drop-overlay.show .drop-overlay-ants { animation: drop-overlay-ants 600ms steps(3) infinite; }
+@keyframes drop-overlay-ants { to { background-position: 12px 0, -12px 100%, 0 -12px, 100% 12px; } }
+.drop-overlay-center { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.drop-overlay-catcher { transition: transform 200ms steps(3); }
+.drop-overlay.near .drop-overlay-catcher { transform: scale(1.12); }
+.drop-overlay-title { display: flex; align-items: center; gap: 10px; color: var(--color-foreground); font-size: 30px; font-weight: 650; line-height: 1; letter-spacing: .04em; text-transform: uppercase; }
+.drop-overlay-snag { display: block; fill: var(--accent-bevel-face, #fa5d0e); }
+.drop-overlay p { margin: -6px 0 0; color: var(--color-foreground-muted); font-size: 12.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The overlay still fades in and out; borders stay still and nothing presses or grows. */
+  .drop-overlay.drop-overlay { transition: opacity 160ms ease-out !important; }
+  .drop-overlay.show .drop-overlay-ants { animation: none !important; }
+  .drop-overlay.near .drop-overlay-catcher { transform: none; }
+}

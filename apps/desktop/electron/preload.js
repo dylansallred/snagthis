@@ -1,7 +1,22 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
+  // The header clears the macOS traffic lights or the Windows/Linux caption buttons.
+  platform: process.platform,
+  getWindowState: () => ipcRenderer.invoke('window:get-state'),
+  onWindowState: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('window:state', handler);
+    return () => ipcRenderer.removeListener('window:state', handler);
+  },
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
+  // Read once, synchronously, so the saved accent is on <html> before the first paint.
+  initialAccent: (() => { try { return ipcRenderer.sendSync('settings:get-accent-sync'); } catch { return null; } })(),
+  onAccentChange: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('settings:accent', handler);
+    return () => ipcRenderer.removeListener('settings:accent', handler);
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   chooseOutputDirectory: () => ipcRenderer.invoke('settings:choose-output-directory'),
@@ -27,7 +42,7 @@ contextBridge.exposeInMainWorld('desktop', {
     return () => ipcRenderer.removeListener('app:info-update', handler);
   },
   onOpenSettings: (cb) => {
-    const handler = () => cb();
+    const handler = (_event, options) => cb(options && typeof options === 'object' ? { section: options.section || undefined } : {});
     ipcRenderer.on('app:open-settings', handler);
     ipcRenderer.invoke('app:settings-listener-ready').catch(() => {});
     return () => ipcRenderer.removeListener('app:open-settings', handler);

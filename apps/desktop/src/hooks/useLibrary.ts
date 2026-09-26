@@ -48,7 +48,7 @@ export function useLibrary(api: ApiClient | null, query: string) {
     let fallback: ReturnType<typeof setInterval> | undefined;
     const connect = () => {
       if (disposed) return;
-      socket = new WebSocket(toWebSocketUrl(api.baseUrl), ['vidsnag', `vidsnag-auth.${api.authToken}`]);
+      socket = new WebSocket(toWebSocketUrl(api.baseUrl), ['snagthis', `snagthis-auth.${api.authToken}`]);
       socket.onopen = () => {
         if (disposed) { socket?.close(); return; }
         clearInterval(fallback); fallback = undefined;

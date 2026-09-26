@@ -1,13 +1,13 @@
-import { useLayoutEffect, useRef, type PointerEvent, type RefObject } from 'react';
+import { useLayoutEffect, useRef, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { Link2, LoaderCircle, Search, X } from 'lucide-react';
-import logo from '@/assets/vidsnag-logo-title.png';
+import { SnagThisLogo } from './BrandLockup';
 import { ui } from '@/lib/strings';
 
 export type ListFilter = 'all' | 'downloading' | 'saved';
-export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit, filter, onFilter, searchOpen, onSearchOpen, search, onSearch, checking, error, firstLaunch, gallery }: {
-  brandRef: RefObject<HTMLImageElement | null>;
+export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit, filter, onFilter, showNavigation, searchOpen, onSearchOpen, search, onSearch, checking, error, firstLaunch, gallery, viewToggle, savedDot = false }: {
+  brandRef: RefObject<SVGSVGElement | null>; viewToggle?: ReactNode; savedDot?: boolean;
   pasteRef: RefObject<HTMLTextAreaElement | null>; searchRef: RefObject<HTMLInputElement | null>; value: string; onValue: (value: string) => void;
-  onSubmit: () => void; filter: ListFilter; onFilter: (filter: ListFilter) => void;
+  onSubmit: () => void; filter: ListFilter; onFilter: (filter: ListFilter) => void; showNavigation: boolean;
   searchOpen: boolean; onSearchOpen: (open: boolean) => void; search: string; onSearch: (search: string) => void;
   checking: boolean; error: string; firstLaunch: boolean; gallery: boolean;
 }) {
@@ -25,7 +25,18 @@ export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit
     const observer = new ResizeObserver(place);
     observer.observe(nav);
     return () => observer.disconnect();
-  }, [filter, searchOpen]);
+  }, [filter, searchOpen, showNavigation]);
+  const lastShine = useRef(0);
+  // One shine per pointer entry, at most once a second; CSS removes it under reduced motion.
+  const shine = (event: PointerEvent<HTMLElement>) => {
+    const now = performance.now();
+    if (now - lastShine.current < 1000) return;
+    lastShine.current = now;
+    const brand = event.currentTarget;
+    brand.classList.remove('shining');
+    void brand.offsetWidth;
+    brand.classList.add('shining');
+  };
   const followPointer = (event: PointerEvent<HTMLElement>) => {
     const button = (event.target as HTMLElement).closest<HTMLElement>('button');
     if (!button) return;
@@ -33,9 +44,13 @@ export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit
     event.currentTarget.style.setProperty('--tab-hover-width', `${button.offsetWidth}px`);
     event.currentTarget.classList.add('hovering');
   };
+  // The header is the window's title bar: empty space drags (and double-click zooms/maximises);
+  // controls are no-drag. Real window buttons are inset by platform classes (lib/windowChrome.ts);
+  // the browser gallery draws placeholder lights instead.
   return <header className="top-bar drag-region">
     {gallery && <div className="window-lights" aria-hidden="true"><i /><i /><i /></div>}
-    <div className="app-brand"><img ref={brandRef} className="app-wordmark" src={logo} alt="VidSnag" /></div>
+    {/* no-drag so the pointer reaches the logo's hover shine; the rest of the header drags the window. */}
+    <div className="app-brand no-drag" onPointerEnter={shine} onAnimationEnd={(event) => event.currentTarget.classList.remove('shining')}><SnagThisLogo ref={brandRef} className="app-wordmark" /></div>
     <form className={`paste-form no-drag${firstLaunch ? ' first-launch' : ''}`} onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
       <div className="paste-field">
         {checking ? <LoaderCircle className="spin" /> : <Link2 />}
@@ -46,11 +61,13 @@ export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit
       </div>
       {error && <div className="paste-error" role="alert">{error}</div>}
     </form>
-    <div className="top-navigation no-drag">
+    {/* An empty library has nothing to filter or search; the tabs arrive with the first video. */}
+    {showNavigation && <div className="top-navigation no-drag">
       {searchOpen ? <div className="search-field"><Search /><input ref={searchRef} value={search} onChange={(event) => onSearch(event.target.value)} placeholder={ui.searchPlaceholder} aria-label={ui.searchPlaceholder} onKeyDown={(event) => { if (event.key === 'Escape') { onSearch(''); onSearchOpen(false); } }} /><button className="row-action" aria-label={ui.closeSearch} onClick={() => { onSearch(''); onSearchOpen(false); }}><X /></button></div> : <>
-        <nav className="list-tabs" aria-label="Filter videos" ref={tabs} onPointerOver={followPointer} onPointerLeave={(event) => event.currentTarget.classList.remove('hovering')}><i className="tab-hover" aria-hidden="true" /><i className="tab-indicator" aria-hidden="true" />{(['all', 'downloading', 'saved'] as const).map((item) => <button key={item} aria-current={filter === item ? 'page' : undefined} className={filter === item ? 'selected' : ''} onClick={() => onFilter(item)}>{ui[item]}</button>)}</nav>
+        <nav className="list-tabs" aria-label="Filter videos" ref={tabs} onPointerOver={followPointer} onPointerLeave={(event) => event.currentTarget.classList.remove('hovering')}><i className="tab-hover" aria-hidden="true" /><i className="tab-indicator" aria-hidden="true" />{(['all', 'downloading', 'saved'] as const).map((item) => <button key={item} data-tab={item} aria-current={filter === item ? 'page' : undefined} className={filter === item ? 'selected' : ''} onClick={() => onFilter(item)}>{ui[item]}{item === 'saved' && savedDot && <i className="snag-pip" aria-hidden="true" />}</button>)}</nav>
+        {viewToggle}
         <button className="row-action" aria-label={ui.search} title="Search (⌘F)" onClick={() => onSearchOpen(true)}><Search /></button>
       </>}
-    </div>
+    </div>}
   </header>;
 }

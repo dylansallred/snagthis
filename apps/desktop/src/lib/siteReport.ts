@@ -26,7 +26,7 @@ export function buildSiteReportUrl(diagnostics: Record<string, unknown> | null, 
     `### ${ui.reportStages}`,
     ...stages.map((stage, index) => `- S${index + 1} ${stage}: ${ui.reportNotChecked}`),
   ].join('\n');
-  const url = new URL('https://github.com/dylansallred/vidsnag/issues/new');
+  const url = new URL('https://github.com/dylansallred/snagthis/issues/new');
   url.searchParams.set('title', ui.reportTitle);
   url.searchParams.set('body', body);
   return url.href;

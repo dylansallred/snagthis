@@ -13,75 +13,39 @@
   background: var(--color-surface-chrome);
 }
 
+/* The same 120 × 22 pixel grid as the header artwork, drawn at whole-pixel scale. */
 .startup-logo-artwork {
   position: absolute;
   top: 0;
   left: 0;
-  width: 280px;
-  aspect-ratio: 830 / 164;
   transform-origin: top left;
   pointer-events: none;
 }
 
-.startup-logo-piece {
+.startup-logo-words {
   position: absolute;
-  top: 0;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.startup-logo-button {
+  position: absolute;
+  display: block;
   transform-origin: center;
 }
 
-.startup-logo-piece img {
-  position: absolute;
-  top: 0;
+.startup-logo-press {
+  display: block;
+  width: 100%;
   height: 100%;
-  max-width: none;
-  object-fit: fill;
-  user-select: none;
-  pointer-events: none;
+  overflow: visible;
 }
 
-.startup-logo-words {
-  left: 0;
-  width: calc(679 / 830 * 100%);
-  clip-path: inset(0 100% 0 0);
-}
-
-.startup-logo-words img {
-  left: 0;
-  width: calc(830 / 679 * 100%);
-}
-
-.startup-logo-mark {
-  left: calc(679 / 830 * 100%);
-  width: calc(151 / 830 * 100%);
-  opacity: 0;
-}
-
-.startup-logo-mark img {
-  left: calc(-679 / 151 * 100%);
-  width: calc(830 / 151 * 100%);
-}
-
-.startup-logo-shine {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  opacity: 0;
-  mask-position: center;
-  mask-repeat: no-repeat;
-  mask-size: 100% 100%;
-  -webkit-mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: 100% 100%;
-}
-
-.startup-logo-beam {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 28%;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 88%), transparent);
-}
+/* The first launch types the capitals and pops the button in; animations reveal each piece. */
+.startup-logo-overlay[data-mode="full"] :is(.startup-logo-letter, .startup-logo-cursor, .startup-logo-button) { opacity: 0; }
+.startup-logo-overlay[data-mode="short"] .startup-logo-cursor { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .startup-logo-overlay { display: none; }

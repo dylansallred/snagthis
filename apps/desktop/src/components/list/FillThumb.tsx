@@ -26,12 +26,18 @@ export function FillThumb({ row, apiBase, previewUrl, previewActive = false }: {
   row: RowModel; apiBase: string; previewUrl?: string | null; previewActive?: boolean;
 }) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  const [settledUrl, setSettledUrl] = useState<string | null>(null);
   const url = resolveThumbnailUrl(row.thumbnailUrl, apiBase);
   const resolvedPreview = resolveThumbnailUrl(previewUrl, apiBase);
   const showImage = !!url && failedUrl !== url;
+  const loaded = showImage && loadedUrl === url;
   return (
     <div className="fill-thumb thumb" aria-hidden="true">
-      {showImage ? <img className="thumb-fill thumb-poster" src={url!} alt="" draggable={false} onError={() => setFailedUrl(url)} /> : <div className="thumb-fill thumb-placeholder"><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /></div>}
+      {/* The dots stay underneath until the poster has decoded, then the two crossfade. */}
+      {!(loaded && settledUrl === url) && <div className={`thumb-fill thumb-placeholder${loaded ? ' done' : ''}`}><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /></div>}
+      {/* Lazy: a long library only fetches and decodes the posters near the viewport. */}
+      {showImage && <img loading="lazy" decoding="async" className={`thumb-fill thumb-poster${loaded ? ' ready' : ''}`} src={url!} alt="" draggable={false} onLoad={() => setLoadedUrl(url)} onTransitionEnd={() => setSettledUrl(url)} onError={() => setFailedUrl(url)} />}
       {previewActive && resolvedPreview && <MotionPreview key={resolvedPreview.split(/[?#]/, 1)[0]} url={resolvedPreview} />}
     </div>
   );

@@ -4,7 +4,9 @@ import { normalizeLocalApiBase } from '@/lib/network';
 
 export interface LibraryPage { items: HistoryItem[]; total: number; nextCursor: string | null }
 export interface ThumbnailPreview { status: 'pending' | 'ready' | 'unavailable'; previewClipUrl?: string | null; previewClipDurationSeconds?: number }
-export interface MediaSelection { variantUrl?: string; height?: number; audioLang?: string; subtitleLang?: string; audioOnly?: boolean }
+export interface MediaSelection { variantUrl?: string; height?: number; audioLang?: string; audioTrack?: string; subtitleLang?: string; audioOnly?: boolean }
+export interface AudioRendition { language?: string | null; name?: string | null; url?: string | null; groupId?: string | null; default?: boolean; channels?: string | null; characteristics?: string | null; role?: string | null; streamIndex?: number }
+export interface AudioSampleRequest { mediaUrl: string; renditionUrl?: string; streamIndex?: number; durationSeconds?: number; headers?: Record<string, string> }
 export interface MediaInspection {
   mediaUrl?: string;
   mediaType?: 'hls' | 'file';
@@ -14,8 +16,8 @@ export interface MediaInspection {
   headers?: Record<string, string>;
   isDrm?: boolean;
   isLive?: boolean | null;
-  variants?: { url: string; height?: number; bandwidth?: number; estimatedSizeBytes?: number; sizeBytes?: number; audioGroupId?: string }[];
-  audio?: { language?: string; name?: string; url?: string }[];
+  variants?: { url: string; height?: number; bandwidth?: number; estimatedSizeBytes?: number; sizeBytes?: number; audioGroupId?: string; observed?: boolean }[];
+  audio?: AudioRendition[];
   subtitles?: { language?: string; name?: string; url?: string }[];
   durationSeconds?: number;
 }
@@ -26,7 +28,7 @@ export function createApiClient(baseUrl: string, authToken = '') {
   async function request<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
     const headers = new Headers(options.headers);
     headers.set('Content-Type', 'application/json');
-    headers.set('X-Client', 'vidsnag-desktop');
+    headers.set('X-Client', 'snagthis-desktop');
     if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
     const response = await fetch(`${base}${path}`, { ...options, headers });
     const data = await response.json().catch(() => null);
@@ -57,6 +59,14 @@ export function createApiClient(baseUrl: string, authToken = '') {
     inspectMedia: async (url: string) => {
       try { return await post<MediaInspection>('/api/media/inspect', { mediaUrl: url }); }
       catch (error) { throw new MediaInspectionError(error instanceof Error ? error.message : 'Could not check this video link.'); }
+    },
+    // A short AAC excerpt of one audio track, 25% in; the renderer plays it on hover.
+    audioSample: async (sample: AudioSampleRequest, signal?: AbortSignal) => {
+      const headers = new Headers({ 'Content-Type': 'application/json', 'X-Client': 'snagthis-desktop' });
+      if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+      const response = await fetch(`${base}/api/media/audio-sample`, { method: 'POST', headers, body: JSON.stringify(sample), signal });
+      if (!response.ok) { await response.body?.cancel(); throw new Error('Sample unavailable'); }
+      return response.blob();
     },
     startJob: (jobId: string) => post(`/api/queue/${id(jobId)}/start`),
     pauseJob: (jobId: string) => post(`/api/queue/${id(jobId)}/pause`),

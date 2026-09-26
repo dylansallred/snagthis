@@ -1,11 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { SPEED_STEP_MS, speedSeries, subscribeSpeedSamples } from '@/lib/speedHistory';
 
+// A line through a handful of zeros reads as a crash, so the chart stays hidden until it has real history.
+const MIN_SAMPLES = 8;
+
 // Decorative live speed backdrop. The speed and peak are stated as text beside it.
 export function SpeedChart({ jobId }: { jobId: string }) {
   const line = useRef<SVGPathElement>(null);
   const area = useRef<SVGPathElement>(null);
   const dot = useRef<HTMLElement>(null);
+  const chart = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     let frame = 0;
@@ -13,7 +17,8 @@ export function SpeedChart({ jobId }: { jobId: string }) {
     const draw = (now: number) => {
       const data = speedSeries(jobId);
       if (!data || !line.current || !area.current) return;
-      const { samples, tickAt } = data;
+      const { samples, tickAt, recorded } = data;
+      chart.current?.classList.toggle('ready', recorded >= MIN_SAMPLES);
       const count = samples.length;
       const step = 600 / (count - 3);
       const fraction = preference.matches ? 0 : Math.min(1, (now - tickAt) / SPEED_STEP_MS);
@@ -54,13 +59,13 @@ export function SpeedChart({ jobId }: { jobId: string }) {
       document.removeEventListener('visibilitychange', updateMotion);
     };
   }, [jobId]);
-  return <div className="speed-chart" aria-hidden="true">
+  return <div ref={chart} className="speed-chart" aria-hidden="true">
     <svg viewBox="0 0 600 100" preserveAspectRatio="none">
       <defs>
         <linearGradient id="speed-chart-fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" stopOpacity=".85" /><stop offset="1" stopColor="#fff" stopOpacity="0" /></linearGradient>
         <mask id="speed-chart-mask"><rect width="600" height="100" fill="url(#speed-chart-fade)" /></mask>
       </defs>
-      <path ref={area} fill="#fa5d0e" mask="url(#speed-chart-mask)" />
+      <path ref={area} style={{ fill: 'var(--speed-chart-fill)' }} mask="url(#speed-chart-mask)" />
       <path ref={line} fill="none" stroke="var(--speed-chart-line)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
     <i ref={dot} className="speed-chart-dot" />

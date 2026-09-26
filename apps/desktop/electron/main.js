@@ -1,12 +1,14 @@
-const { app, BrowserWindow, ipcMain, shell, session, Notification, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, session, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const preferences = require('./preferences');
 const diagnostics = require('./diagnostics');
 const { resolveMediaPage } = require('./mediaPageResolver');
-const { autoUpdater } = require('electron-updater');
+// electron-updater takes ~50ms to load; loadAutoUpdater() defers it until an update check.
+let autoUpdater = null;
 const { API } = require('@m3u8/contracts');
+const { isMediaFilePath } = require('@m3u8/downloader-api/src/utils/mediaFiles');
 
 let mainWindow = null;
 let apiServer = null;
@@ -21,12 +23,34 @@ let apiPort = Number(process.env.M3U8_API_PORT ?? API.port);
 let apiStartupState = 'starting';
 let apiStartupError = null;
 let requestedView = null;
+// Deep links and the extension open Settings on Chrome extension; the app menu reopens the last section.
+let requestedSettingsSection = null;
 let settingsListenerReady = false;
-const explicitUserData = process.env.VID_SNAG_USER_DATA || process.env.E2E_USER_DATA_DIR || app.commandLine.getSwitchValue('user-data-dir');
-const userDataDirectory = explicitUserData ? path.resolve(explicitUserData) : path.join(app.getPath('appData'), app.isPackaged ? 'VidSnag' : 'VidSnag-development');
+const explicitUserData = process.env.SNAGTHIS_USER_DATA || process.env.E2E_USER_DATA_DIR || app.commandLine.getSwitchValue('user-data-dir');
+const userDataDirectory = explicitUserData ? path.resolve(explicitUserData) : path.join(app.getPath('appData'), app.isPackaged ? 'SnagThis' : 'SnagThis-development');
+// Builds before the SnagThis rename kept data under the VidSnag name. Adopt that
+// folder once, rewriting the absolute paths the queue and history store inside it.
+function adoptLegacyUserData(target, legacy) {
+  if (fs.existsSync(target) || !fs.existsSync(legacy)) return;
+  try {
+    fs.renameSync(legacy, target);
+  } catch (error) {
+    console.warn(`Could not move ${legacy} to ${target}: ${error.message}`);
+    return;
+  }
+  const escaped = directory => JSON.stringify(directory + path.sep).slice(1, -1);
+  for (const name of ['queue.json', 'history-index.json']) {
+    const file = path.join(target, 'data', name);
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    fs.writeFileSync(`${file}.tmp`, text.split(escaped(legacy)).join(escaped(target)));
+    fs.renameSync(`${file}.tmp`, file);
+  }
+}
+if (!explicitUserData) adoptLegacyUserData(userDataDirectory, path.join(app.getPath('appData'), app.isPackaged ? 'VidSnag' : 'VidSnag-development'));
 fs.mkdirSync(userDataDirectory, { recursive: true });
 app.setPath('userData', userDataDirectory);
-app.setAppUserModelId('org.vidsnag.desktop');
+app.setAppUserModelId('com.snagthisvid.desktop');
 const UPDATER_CHECK_TIMEOUT_MS = 45_000;
 const UPDATER_STARTUP_CHECK_DELAY_MS = 3_000;
 const UPDATER_PERIODIC_CHECK_MS = 6 * 60 * 60 * 1000;
@@ -68,12 +92,23 @@ function currentSettings() {
   return queueSettings ? { ...saved, queueMaxConcurrent: Number(queueSettings.maxConcurrent) || 1, queueAutoStart: queueSettings.autoStart !== false } : saved;
 }
 
+// The accent is read on every extension queue poll, so it is cached rather than read from disk.
+let accentCache = null;
+function accentState() {
+  if (!accentCache) { const saved = readSettings(); accentCache = { accent: saved.accent, accentChangedAt: saved.accentChangedAt }; }
+  return accentCache;
+}
+
 function saveSettings(next) {
   const input = preferences.validatePatch(next);
   if ('launchAtLogin' in input && ['darwin', 'win32'].includes(process.platform)) {
     app.setLoginItemSettings({ openAtLogin: input.launchAtLogin });
   }
+  const before = accentState();
   const merged = writeSettings(input);
+  accentCache = { accent: merged.accent, accentChangedAt: merged.accentChangedAt };
+  // The renderer and the extension (via /v1/queue) follow a change from either side.
+  if (accentCache.accent !== before.accent || accentCache.accentChangedAt !== before.accentChangedAt) sendToRenderer('settings:accent', accentCache);
   const queuePatch = {};
   if ('queueMaxConcurrent' in input) queuePatch.maxConcurrent = merged.queueMaxConcurrent;
   if ('queueAutoStart' in input) queuePatch.autoStart = merged.queueAutoStart;
@@ -105,7 +140,9 @@ function rendererUrl() {
 }
 
 function apiAllowedOrigins() {
-  const origins = ['null'];
+  // The built renderer is a file:// page: fetch sends Origin "null", but its
+  // WebSocket handshake sends "file://". Without it, live updates never connect.
+  const origins = ['null', 'file://'];
   if (!app.isPackaged && process.env.VITE_DEV_SERVER_URL) {
     const devUrl = new URL(process.env.VITE_DEV_SERVER_URL);
     if (!['http:', 'https:'].includes(devUrl.protocol)
@@ -144,7 +181,7 @@ async function openExternal(url) {
 }
 
 async function historyRequest(historyId, action) {
-  if (apiStartupState !== 'ready' || !apiServer) return { ok: false, error: 'VidSnag is still starting' };
+  if (apiStartupState !== 'ready' || !apiServer) return { ok: false, error: 'SnagThis is still starting' };
   if (typeof historyId !== 'string' || !historyId.trim()) return { ok: false, error: 'Missing history item' };
   try {
     const route = `/api/history/${encodeURIComponent(historyId)}${action === 'trash' ? '?mode=trash' : `/${action}`}`;
@@ -451,8 +488,8 @@ function normalizeReleaseNotes(updateInfo) {
   return [];
 }
 
-function focusMainWindow(view) {
-  if (view === 'settings') requestedView = 'settings';
+function focusMainWindow(view, settingsSection = 'chrome') {
+  if (view === 'settings') { requestedView = 'settings'; requestedSettingsSection = settingsSection; }
   if (!app.isReady()) return;
   if (!mainWindow || mainWindow.isDestroyed()) createWindow();
   if (mainWindow.isMinimized()) {
@@ -461,7 +498,7 @@ function focusMainWindow(view) {
   mainWindow.show();
   mainWindow.focus();
   if (requestedView === 'settings' && settingsListenerReady) {
-    sendToRenderer('app:open-settings');
+    sendToRenderer('app:open-settings', { section: requestedSettingsSection });
     requestedView = null;
   }
 }
@@ -508,7 +545,11 @@ function reconcileUpdaterInstallState() {
   const attemptedAt = state.attemptedAt ? new Date(state.attemptedAt).toLocaleString() : 'an unknown time';
   updaterState.phase = 'error';
   updaterState.message = 'Previous update install did not complete';
-  updaterState.error = `Tried to install ${state.targetVersion} on ${attemptedAt}, but the app reopened on ${currentVersion}. Move the app to /Applications and retry.`;
+  // Only macOS installs depend on the app living in /Applications.
+  const recovery = process.platform === 'darwin'
+    ? 'Move the app to /Applications and retry.'
+    : 'Check for updates again, or run the latest SnagThis installer.';
+  updaterState.error = `Tried to install ${state.targetVersion} on ${attemptedAt}, but the app reopened on ${currentVersion}. ${recovery}`;
   updaterState.lastCheckedAt = Date.now();
   console.warn('[desktop] Previous updater install did not complete', {
     fromVersion: state.fromVersion,
@@ -543,6 +584,12 @@ function scheduleUpdaterReminder(delayMs, intervalMs) {
 
     scheduleUpdaterReminder(safeInterval, safeInterval);
   }, safeDelay);
+}
+
+function loadAutoUpdater() {
+  if (autoUpdater) return;
+  autoUpdater = require('electron-updater').autoUpdater;
+  configureAutoUpdater();
 }
 
 function configureAutoUpdater() {
@@ -582,7 +629,7 @@ function configureAutoUpdater() {
     const currentVersion = app.getVersion();
     const releaseNoteSummary = summarizeReleaseNote(info);
     showUpdateNotification(
-      `VidSnag ${info.version} is downloading`,
+      `SnagThis ${info.version} is downloading`,
       releaseNoteSummary
         ? `Current version: ${currentVersion}. Downloading in the background. ${releaseNoteSummary}`
         : `Current version: ${currentVersion}. Downloading in the background now.`,
@@ -635,10 +682,10 @@ function configureAutoUpdater() {
     sendToRenderer('updater:event', updaterState);
     const releaseNoteSummary = summarizeReleaseNote(info);
     showUpdateNotification(
-      `VidSnag ${info.version} is ready`,
+      `SnagThis ${info.version} is ready`,
       releaseNoteSummary
-        ? `Restart VidSnag to install. ${releaseNoteSummary}`
-        : 'Restart VidSnag to install this update.',
+        ? `Restart SnagThis to install. ${releaseNoteSummary}`
+        : 'Restart SnagThis to install this update.',
     );
   });
 
@@ -666,6 +713,7 @@ async function checkForUpdatesNow() {
     setUpdaterUnsupportedState(support.message);
     return { ok: false, unsupported: true, error: support.message };
   }
+  loadAutoUpdater();
 
   if (updaterCheckPromise) {
     return { ok: true, inFlight: true };
@@ -800,6 +848,8 @@ async function startLocalApi() {
     onResolvePage: resolveMediaPage,
     onTrashFile: async (filePath) => { await shell.trashItem(filePath); },
     onOpenFile: async (filePath) => {
+      // openPath launches whatever handler owns the extension; allow media only.
+      if (!isMediaFilePath(filePath)) throw new Error('Only video and audio files can be opened');
       const error = await shell.openPath(filePath);
       if (error) throw new Error(error);
     },
@@ -815,6 +865,7 @@ async function startLocalApi() {
     onExtensionConnected: () => sendToRenderer('app:info-update', appInfo()),
     onGetSettings: currentSettings,
     onSaveSettings: saveSettings,
+    onGetAppearance: accentState,
     onDownloadComplete: (job) => {
       try {
         if (!readSettings().notifyOnComplete || !Notification.isSupported()) return;
@@ -835,6 +886,63 @@ async function startLocalApi() {
   }
 }
 
+// Unified header (spec §6): the app's dark top bar is the title bar. These
+// match --color-surface-chrome and --color-foreground-muted in globals.css;
+// accent themes never change them, so the overlay colours stay fixed.
+const WINDOW_CHROME = {
+  background: '#080a0c',
+  symbol: '#9f9793',
+  // Header is 53px including its 1px accent line; 52 keeps the line visible.
+  overlayHeight: 52,
+  // Vertically centres the 12px traffic lights in the 52px bar.
+  trafficLights: { x: 20, y: 20 },
+};
+
+function windowChromeOptions() {
+  if (process.platform === 'darwin') {
+    return { titleBarStyle: 'hiddenInset', trafficLightPosition: WINDOW_CHROME.trafficLights };
+  }
+  return {
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: WINDOW_CHROME.background, symbolColor: WINDOW_CHROME.symbol, height: WINDOW_CHROME.overlayHeight },
+  };
+}
+
+function windowState(window) {
+  return { fullScreen: !!window && !window.isDestroyed() && window.isFullScreen() };
+}
+
+// macOS keeps a standard application menu so ⌘C/⌘V/⌘Z, ⌘W, ⌘M, ⌘Q and full
+// screen keep working. Windows and Linux get no menu bar: the header is the
+// title bar, and Chromium handles Ctrl+C/V/X/Z/A in text fields natively.
+function installApplicationMenu() {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  const isDev = !!process.env.VITE_DEV_SERVER_URL;
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu', submenu: [
+      { role: 'about' },
+      { type: 'separator' },
+      { label: 'Settings…', accelerator: 'Command+,', click: () => focusMainWindow('settings', null) },
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+      { type: 'separator' },
+      { role: 'quit' },
+    ] },
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { label: 'View', submenu: [
+      ...(isDev ? [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }] : []),
+      { role: 'togglefullscreen' },
+    ] },
+    { role: 'windowMenu' },
+  ]));
+}
+
 function createWindow() {
   settingsListenerReady = false;
   mainWindow = new BrowserWindow({
@@ -843,6 +951,9 @@ function createWindow() {
     minWidth: 640,
     minHeight: 480,
     show: false,
+    // Dark chrome from the first frame, so a slow or failed load is never a white window.
+    backgroundColor: WINDOW_CHROME.background,
+    ...windowChromeOptions(),
     icon: getWindowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -855,10 +966,44 @@ function createWindow() {
   const window = mainWindow;
   window.once('ready-to-show', () => window.show());
   window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
+  // A crashed or killed renderer otherwise leaves a dead window while downloads
+  // continue. Reload it, backing off, and stop if it keeps crashing on load.
+  const rendererCrashes = [];
+  window.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[desktop] Renderer process gone: ${details.reason} (${details.exitCode})`);
+    if (details.reason === 'clean-exit') return;
+    const now = Date.now();
+    while (rendererCrashes.length && now - rendererCrashes[0] > 60_000) rendererCrashes.shift();
+    rendererCrashes.push(now);
+    if (rendererCrashes.length > 3) return;
+    setTimeout(() => { if (!window.isDestroyed()) window.webContents.reload(); }, 1000 * rendererCrashes.length);
+  });
+  // The header drops its traffic-light inset in macOS full screen.
+  const sendWindowState = () => { if (!window.isDestroyed()) window.webContents.send('window:state', windowState(window)); };
+  window.on('enter-full-screen', sendWindowState);
+  window.on('leave-full-screen', sendWindowState);
+  if (process.platform !== 'darwin' && process.env.VITE_DEV_SERVER_URL) {
+    // Without a menu bar, keep the developer tools shortcuts in development.
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) { event.preventDefault(); window.webContents.toggleDevTools(); }
+      else if (input.control && !input.shift && input.key.toLowerCase() === 'r') { event.preventDefault(); window.webContents.reload(); }
+    });
+  }
+  // Outside macOS the last window's close quits the app. Ask while the window
+  // still exists, so "Keep downloading" leaves it open instead of hidden.
+  window.on('close', (event) => {
+    if (process.platform === 'darwin' || quitConfirmed || apiShutdownPromise || updaterInstallRequested) return;
+    const activeDownloads = activeDownloadCount();
+    if (activeDownloads === 0 || BrowserWindow.getAllWindows().length > 1) return;
+    event.preventDefault();
+    confirmQuitWithActiveDownloads(activeDownloads);
+  });
   window.webContents.on('did-finish-load', () => {
+    sendWindowState();
     sendToRenderer('app:info-update', appInfo());
     if (requestedView === 'settings' && settingsListenerReady) {
-      sendToRenderer('app:open-settings');
+      sendToRenderer('app:open-settings', { section: requestedSettingsSection });
       requestedView = null;
     }
   });
@@ -905,10 +1050,16 @@ function createWindow() {
 
 function registerIpc() {
   handleIpc('app:get-info', async () => appInfo());
+  handleIpc('window:get-state', async (event) => windowState(BrowserWindow.fromWebContents(event.sender)));
   handleIpc('settings:get', async () => currentSettings());
   handleIpc('settings:save', async (_event, next) => saveSettings(next));
+  // The preload reads the accent synchronously so it is applied before the first paint.
+  ipcMain.on('settings:get-accent-sync', (event) => {
+    const trusted = mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
+    event.returnValue = trusted ? accentState() : { accent: 'orange', accentChangedAt: 0 };
+  });
   handleIpc('app:get-pairing-info', async () => {
-    if (apiStartupState !== 'ready') throw new Error('VidSnag is still starting');
+    if (apiStartupState !== 'ready') throw new Error('SnagThis is still starting');
     return apiServer.getPairingInfo();
   });
   handleIpc('app:get-connection-state', async () => apiServer?.getConnectionState?.() || { extensionConnected: false, pairedExtensions: 0 });
@@ -916,7 +1067,7 @@ function registerIpc() {
   handleIpc('app:settings-listener-ready', async () => {
     settingsListenerReady = true;
     if (requestedView === 'settings') {
-      sendToRenderer('app:open-settings');
+      sendToRenderer('app:open-settings', { section: requestedSettingsSection });
       requestedView = null;
     }
   });
@@ -1027,7 +1178,7 @@ function registerIpc() {
       return { ok: false, error };
     }
     if (!isInstalledInApplicationsFolder()) {
-      const error = 'Auto-update only works when VidSnag is installed in /Applications';
+      const error = 'Auto-update only works when SnagThis is installed in /Applications';
       updaterState.phase = 'error';
       updaterState.message = 'Update install blocked';
       updaterState.error = error;
@@ -1114,24 +1265,24 @@ async function bootstrap() {
   const handleProtocol = (url) => {
     try {
       const parsed = new URL(url);
-      if (parsed.protocol !== 'vidsnag:' || parsed.hostname !== 'open') return;
+      if (parsed.protocol !== 'snagthis:' || parsed.hostname !== 'open') return;
       focusMainWindow(parsed.pathname === '/settings' ? 'settings' : undefined);
     } catch { /* Ignore unrelated launch arguments. */ }
   };
   app.on('second-instance', (_event, argv) => {
-    const url = argv.find((value) => value.startsWith('vidsnag://'));
+    const url = argv.find((value) => value.startsWith('snagthis://'));
     if (url) handleProtocol(url);
     else focusMainWindow();
   });
   app.on('open-url', (event, url) => { event.preventDefault(); handleProtocol(url); });
-  const initialProtocol = process.argv.find((value) => value.startsWith('vidsnag://'));
+  const initialProtocol = process.argv.find((value) => value.startsWith('snagthis://'));
   if (initialProtocol) handleProtocol(initialProtocol);
 
   await app.whenReady();
-  if (app.isPackaged) app.setAsDefaultProtocolClient('vidsnag');
+  if (app.isPackaged) app.setAsDefaultProtocolClient('snagthis');
   reconcileUpdaterInstallState();
   registerIpc();
-  configureAutoUpdater();
+  installApplicationMenu();
   createWindow();
   // Paint the usable window before synchronous binary discovery and API startup.
   const firstWindow = mainWindow;
@@ -1142,8 +1293,8 @@ async function bootstrap() {
   } catch (error) {
     apiStartupState = 'failed';
     apiStartupError = error?.code === 'EADDRINUSE'
-      ? 'Another app is using VidSnag’s connection port. Close the other copy and reopen VidSnag.'
-      : 'VidSnag could not start its download service. Reopen the app or export diagnostics from Settings.';
+      ? 'Another app is using SnagThis’s connection port. Close the other copy and reopen SnagThis.'
+      : 'SnagThis could not start its download service. Reopen the app or export diagnostics from Settings.';
     console.error('[desktop] Download service startup failed:', safeDiagnostics(String(error?.message || error)));
   }
   sendToRenderer('app:info-update', appInfo());
@@ -1162,17 +1313,65 @@ async function bootstrap() {
     }, UPDATER_PERIODIC_CHECK_MS);
   }
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
 }
+
+// Tests and scripted quits must not wait on a native prompt nobody can answer.
+const skipQuitConfirmation = process.env.NODE_ENV === 'test' || process.env.SNAGTHIS_SKIP_QUIT_CONFIRM === '1';
+
+// macOS apps keep running without a window so downloads continue; the Dock
+// icon reopens it. Elsewhere closing the last window quits (with the prompt).
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+app.on('activate', () => {
+  if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
+});
 
 let apiShutdownPromise = null;
 let apiShutdownComplete = false;
+let quitConfirmed = false;
+let quitPrompt = null;
+
+function activeDownloadCount() {
+  if (!apiServer || typeof apiServer.getState !== 'function' || skipQuitConfirmation) return 0;
+  try {
+    return apiServer.getState().queue.filter((job) => job && job.queueStatus === 'downloading').length;
+  } catch {
+    return 0;
+  }
+}
+
+function confirmQuitWithActiveDownloads(count) {
+  if (quitPrompt) return;
+  const options = {
+    type: 'question',
+    buttons: ['Quit', 'Keep downloading'],
+    defaultId: 1,
+    cancelId: 1,
+    message: count === 1 ? 'A download is still in progress.' : `${count} downloads are still in progress.`,
+    detail: 'Quitting pauses them. They continue the next time you open SnagThis.',
+  };
+  const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  quitPrompt = Promise.resolve(owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options))
+    .then(({ response }) => {
+      if (response !== 0) return;
+      quitConfirmed = true;
+      app.quit();
+    }, () => {})
+    .finally(() => { quitPrompt = null; });
+}
 
 app.on('before-quit', (event) => {
+  // Ask before a normal quit interrupts downloads. An update install already
+  // asked the user, and a quit already in progress must stay non-interactive.
+  if (!updaterInstallRequested && !quitConfirmed && !apiShutdownPromise) {
+    const activeDownloads = activeDownloadCount();
+    if (activeDownloads > 0) {
+      event.preventDefault();
+      confirmQuitWithActiveDownloads(activeDownloads);
+      return;
+    }
+  }
   const installingUpdate = updaterInstallRequested;
   updaterInstallRequested = false;
   clearUpdaterInstallTimer();

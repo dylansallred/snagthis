@@ -1,0 +1,54 @@
+/* Command palette (unique-look option 11): the launch terminal's prompt and block cursor. */
+.command-palette { --palette-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace; }
+.command-palette-overlay { position: fixed; inset: 0; z-index: 60; background: rgb(0 0 0 / .5); }
+.command-palette { position: fixed; z-index: 61; top: 84px; left: 50%; width: min(540px, calc(100vw - 32px)); translate: -50% 0; display: flex; flex-direction: column; max-height: calc(100dvh - 120px); background: var(--color-popover); color: var(--color-foreground); border-radius: 9px; box-shadow: 0 24px 60px rgb(0 0 0 / .8), 0 0 0 1px rgb(255 255 255 / .05); overflow: hidden; transform-origin: 50% 0; outline: none; font-size: 13px; }
+.command-palette[data-state="open"] { animation: palette-in 140ms ease-out; }
+.command-palette[data-state="closed"] { animation: palette-out 100ms ease-out forwards; }
+.command-palette-overlay[data-state="open"] { animation: palette-fade-in 140ms ease-out; }
+.command-palette-overlay[data-state="closed"] { animation: palette-fade-out 100ms ease-out forwards; }
+@keyframes palette-in { from { opacity: 0; transform: scale(.97); } }
+@keyframes palette-out { to { opacity: 0; transform: scale(.97); } }
+@keyframes palette-fade-in { from { opacity: 0; } }
+@keyframes palette-fade-out { to { opacity: 0; } }
+
+.palette-input { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--color-border-subtle); font-family: var(--palette-mono); }
+.palette-prompt { color: var(--color-primary-hover); font-weight: 600; }
+.palette-field { position: relative; flex: 1; min-width: 0; height: 20px; overflow: hidden; display: flex; align-items: center; }
+.palette-field input { position: absolute; inset: 0; width: 100%; padding: 0; border: 0; background: none; color: var(--color-foreground); font: 13px/20px var(--palette-mono); caret-color: transparent; outline: none; }
+.palette-field input::placeholder { color: var(--color-foreground-subtle); font-family: var(--font-sans); }
+.palette-field input:placeholder-shown { text-indent: 14px; }
+.palette-field input:focus-visible { outline: none; }
+/* The mirror measures the typed text so the block cursor sits right after it. */
+.palette-mirror { visibility: hidden; white-space: pre; font: 13px/20px var(--palette-mono); max-width: calc(100% - 8px); overflow: hidden; }
+.palette-cursor { flex-shrink: 0; width: 8px; height: 16px; background: var(--color-primary-hover); animation: palette-blink 1.06s steps(1) infinite; }
+@keyframes palette-blink { 50% { opacity: 0; } }
+.palette-input kbd { margin-left: auto; padding: 0 5px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 500 10.5px/16px var(--font-sans); }
+
+.palette-results { flex: 1; min-height: 0; max-height: 330px; overflow: auto; padding: 6px; scrollbar-width: none; }
+.palette-group { padding: 8px 10px 4px; color: var(--color-foreground-subtle); font: 600 10px var(--palette-mono); letter-spacing: .12em; text-transform: uppercase; }
+.palette-empty { padding: 14px 10px; }
+.palette-option { position: relative; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px 0 14px; border-radius: 6px; color: hsl(20 12% 82%); cursor: pointer; }
+.palette-option > svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--color-foreground-muted); }
+.palette-option.selected { background: var(--color-background-active); color: var(--color-foreground); }
+.palette-option.selected::before { content: ""; position: absolute; left: 4px; top: 11px; width: 4px; height: 12px; background: var(--color-primary-hover); }
+.palette-option.selected > svg:first-child { color: var(--color-primary-hover); }
+.palette-label { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.palette-hint { flex-shrink: 0; margin-left: auto; color: var(--color-foreground-subtle); font: 11px var(--palette-mono); }
+.palette-option > .palette-current { margin-left: auto; width: 14px; height: 14px; color: var(--color-foreground-muted); }
+.palette-poster { flex-shrink: 0; width: 36px; height: 20px; overflow: hidden; background: #1a2029; }
+.palette-poster img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.palette-swatch { flex-shrink: 0; width: 13px; height: 13px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .12); }
+
+.palette-footer { display: flex; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--color-border-subtle); color: var(--color-foreground-subtle); font: 10.5px var(--palette-mono); }
+.palette-footer b { color: var(--color-foreground-muted); font-weight: 600; }
+
+/* Footer hint that opens the palette. */
+.footer-palette-hint { display: inline-flex; align-items: center; gap: 5px; height: 30px; margin-right: 6px; padding: 0 6px; border: 0; border-radius: 7px; background: none; color: var(--color-foreground-subtle); font-size: 11.5px; }
+.footer-palette-hint:hover { color: var(--color-foreground-muted); background: var(--color-background-active); }
+.footer-palette-hint kbd { padding: 0 5px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 500 10.5px/16px var(--font-sans); }
+
+@media (prefers-reduced-motion: reduce) {
+  .command-palette[data-state="open"], .command-palette-overlay[data-state="open"] { animation: palette-fade-in 80ms ease-out; }
+  .command-palette[data-state="closed"], .command-palette-overlay[data-state="closed"] { animation: palette-fade-out 80ms ease-out forwards; }
+  .palette-cursor { animation: none; }
+}

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ChevronRight, Eye, EyeOff, LoaderCircle, X, FolderOpen, MonitorPlay, Captions, Bell, Power, SlidersHorizontal } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LoaderCircle, X, FolderOpen, MonitorPlay, Captions, Bell, Power } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
@@ -9,17 +9,39 @@ import type { UpdaterState } from '@/types/updater';
 import type { ApiClient } from '@/lib/api';
 import { ui } from '@/lib/strings';
 import { buildSiteReportUrl } from '@/lib/siteReport';
+import { defaultSettings } from '@/hooks/useAppInit';
+import { NumberSetting, SettingTitle, SettingsFormContext, TextSetting, type Draft, type SettingsForm } from './settingsFields';
+import { AccentPicker } from './AccentPicker';
+import { settingsSections, type SettingsSectionId } from './settingsSections';
+import './settings.css';
 
 const languages = [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']];
-export function SettingsSheet({ open, onOpenChange, settings, onSave, updater, appInfo, api, gallery }: {
-  open: boolean; onOpenChange: (open: boolean) => void; settings: DesktopSettings; onSave: (next: Partial<DesktopSettings>) => Promise<void>;
+const namingHints: Record<DesktopSettings['fileNaming'], string> = { title: ui.titleNamingHint, resource: ui.resourceNamingHint, custom: ui.customNamingHint };
+/** Advanced values that "Restore defaults" resets. Credentials and update choices are left alone. */
+const speedAndNaming = ['queueMaxConcurrent', 'downloadThreads', 'queueAutoStart', 'fileNaming', 'customFilename'] as const;
+const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Desktop Settings as a 640px sheet with a section rail (settings-refresh option 2). The owner of
+ * `section` keeps it for the app session and points deep links, such as Connect Chrome, at a section.
+ */
+export function SettingsSheet({ open, onOpenChange, section, onSectionChange, settings, onSave, updater, appInfo, api, gallery }: {
+  open: boolean; onOpenChange: (open: boolean) => void; section: SettingsSectionId; onSectionChange: (section: SettingsSectionId) => void;
+  settings: DesktopSettings; onSave: (next: Partial<DesktopSettings>) => Promise<void>;
   updater: UpdaterState; appInfo: AppInfo | null; api: ApiClient | null; gallery: boolean;
 }) {
   const [busy, setBusy] = useState('');
-  const [showKeys, setShowKeys] = useState(false);
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
   const [pairingNow, setPairingNow] = useState(Date.now);
   const [codeCopied, setCodeCopied] = useState(false);
+  const [saved, setSaved] = useState({ key: '', announcement: '' });
+  const savedTimer = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const customNameRef = useRef<HTMLInputElement>(null);
+  const revealNext = useRef<HTMLElement | null>(null);
+  const focusCustomName = useRef(false);
+  const drafts = useRef(new Map<string, Draft>());
   const pairingSeconds = pairing ? Math.max(0, Math.ceil((pairing.expiresAt - pairingNow) / 1000)) : 0;
   useEffect(() => {
     if (!open || !pairing) return;
@@ -31,26 +53,75 @@ export function SettingsSheet({ open, onOpenChange, settings, onSave, updater, a
     return () => window.clearInterval(timer);
   }, [open, pairing]);
   useEffect(() => { if (appInfo?.extensionConnected) setPairing(null); }, [appInfo?.extensionConnected]);
+  useEffect(() => () => window.clearTimeout(savedTimer.current), []);
+  useEffect(() => {
+    if (!focusCustomName.current || settings.fileNaming !== 'custom') return;
+    focusCustomName.current = false;
+    customNameRef.current?.focus();
+  }, [settings.fileNaming]);
   const run = async (name: string, action: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(name);
     try { await action(); } catch (err) { toast.error(err instanceof Error ? err.message : ui.downloadingError); }
     finally { setBusy(''); }
   };
-  const save = (patch: Partial<DesktopSettings>) => { run('settings', () => onSave(patch)); };
+  const flashSaved = useCallback((key: string, label: string) => {
+    window.clearTimeout(savedTimer.current);
+    setSaved({ key, announcement: ui.savedAnnouncement.replace('{label}', label) });
+    savedTimer.current = window.setTimeout(() => setSaved({ key: '', announcement: '' }), 1800);
+  }, []);
+  // Settings saves are not gated on `busy`: two quick toggles must both be saved, never silently dropped.
+  const commit = useCallback(async (patch: Partial<DesktopSettings>, key: string, label: string) => {
+    try { await onSave(patch); }
+    catch (err) { toast.error(err instanceof Error ? err.message : ui.downloadingError); return false; }
+    flashSaved(key, label);
+    return true;
+  }, [onSave, flashSaved]);
+  const register = useCallback((id: string, draft: Draft) => { drafts.current.set(id, draft); return () => { drafts.current.delete(id); }; }, []);
+  const form = useMemo<SettingsForm>(() => ({ commit, savedKey: saved.key, register }), [commit, saved.key, register]);
+  const save = (patch: Partial<DesktopSettings>, key: string, label: string) => { void commit(patch, key, label); };
+  const close = (next: boolean) => {
+    // Closing with the pointer or ⌘W keeps a typed value; invalid values are discarded.
+    if (!next) for (const draft of drafts.current.values()) if (draft.dirty()) draft.commit();
+    onOpenChange(next);
+  };
+  const escape = (event: KeyboardEvent) => {
+    const active = document.activeElement;
+    const draft = active instanceof HTMLInputElement ? drafts.current.get(active.id) : undefined;
+    if (draft?.dirty()) { event.preventDefault(); draft.revert(); }
+  };
+  /** Brings a just-opened disclosure's header near the top of the pane so its content is visible. */
+  const reveal = useCallback((element: HTMLElement) => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const top = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12;
+    scroller.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }, []);
+  const onDisclosureToggle = (event: React.SyntheticEvent<HTMLDetailsElement>) => {
+    const details = event.currentTarget;
+    if (details.open && revealNext.current === details) requestAnimationFrame(() => reveal(details));
+    revealNext.current = null;
+  };
+  // Only a person's click or key press on a summary scrolls; restoring a remembered open state does not.
+  const markReveal = (event: React.MouseEvent<HTMLElement>) => { revealNext.current = event.currentTarget.parentElement; };
   const showPairing = () => run('pairing', async () => {
     const next = gallery ? { code: '483921', expiresAt: Date.now() + 300000 } : await window.desktop.getPairingInfo();
     setPairingNow(Date.now()); setCodeCopied(false); setPairing(next);
   });
   const chooseFolder = () => run('folder', async () => {
-    if (gallery) return onSave({ outputDirectory: '~/Movies/VidSnag' });
+    if (gallery) { await commit({ outputDirectory: '~/Movies/SnagThis' }, 'save-folder', ui.saveVideosTo); return; }
     const result = await window.desktop.chooseOutputDirectory();
     if (result.cancelled) return;
     if (!result.ok || !result.path) throw new Error(result.error || 'Could not select this folder');
-    await onSave({ outputDirectory: result.path });
+    await commit({ outputDirectory: result.path }, 'save-folder', ui.saveVideosTo);
+  });
+  const openFolder = () => run('open-folder', async () => {
+    if (gallery) return;
+    const result = await window.desktop.openSaveFolder();
+    if (!result.ok) throw new Error(result.error);
   });
   const diagnostics = async (copyOnly = false) => {
-    const data = gallery ? { app: 'VidSnag', mode: 'design gallery', credentials: '[redacted]' } : await api?.getDiagnostics();
+    const data = gallery ? { app: 'SnagThis', mode: 'design gallery', credentials: '[redacted]' } : await api?.getDiagnostics();
     if (copyOnly) { await navigator.clipboard.writeText(JSON.stringify(data, null, 2)); toast.success('Diagnostics copied'); return; }
     if (gallery) { toast.success('Support bundle preview ready'); return; }
     const result = await window.desktop.exportSupportBundle(data);
@@ -64,47 +135,104 @@ export function SettingsSheet({ open, onOpenChange, settings, onSave, updater, a
     const result = await window.desktop.openExternal(buildSiteReportUrl(data || null, appInfo?.version));
     if (!result.ok) throw new Error(result.error || ui.reportOpenError);
   };
-  return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="settings-sheet" showCloseButton={false}>
-      <div className="sheet-heading"><DialogTitle>{ui.settings}</DialogTitle><button className="row-action" aria-label={ui.closeSettings} onClick={() => onOpenChange(false)}><X /></button></div>
-      <DialogDescription className="sr-only">Choose how VidSnag saves your videos.</DialogDescription>
-      <div className="sheet-scroll">
-        <h3 className="settings-group-title">{ui.chrome}</h3>
-        <section className="settings-group pairing-settings" aria-label="Chrome extension setup">
-          <p role="status">{appInfo?.extensionConnected && !pairing ? 'Chrome is connected. Keep VidSnag open while downloading.' : 'Connect the extension once to send videos from Chrome to this app.'}</p>
-          {(!appInfo?.extensionConnected || pairing) && <ol className="pairing-steps"><li>Show a code here and copy it.</li><li>In Chrome, click Extensions (the puzzle icon) → VidSnag → Connect.</li><li>Paste the code there and choose Connect.</li></ol>}
-          {pairing && pairingSeconds > 0 ? <div className="pairing-code"><label htmlFor="chrome-connection-code">{ui.pairingHelp}</label><div className="pairing-code-actions"><output id="chrome-connection-code" aria-label="Connection code">{pairing.code}</output><button className="row-action labelled" disabled={!!busy} onClick={() => run('copy-code', async () => { await navigator.clipboard.writeText(pairing.code); setCodeCopied(true); })}>{codeCopied ? 'Copied' : 'Copy code'}</button></div><small>Expires in {Math.floor(pairingSeconds / 60)}:{String(pairingSeconds % 60).padStart(2, '0')}. Keep VidSnag open.</small></div>
-            : <>{pairing && <p className="tone-attention" role="status">This code expired. Get a new code and try again.</p>}<button className="row-action labelled" disabled={!!busy || (!gallery && appInfo?.apiStartupState !== 'ready')} onClick={showPairing}>{busy === 'pairing' ? 'Getting code…' : pairing ? 'Get a new code' : appInfo?.extensionConnected ? 'Connect another browser' : 'Show connection code'}</button></>}
-          {!appInfo?.extensionConnected && <button className="detail-refresh pairing-install" onClick={() => run('install-extension', async () => { if (!gallery) await window.desktop.openExternal('https://github.com/dylansallred/vidsnag#run-locally'); })}>Need the extension? Add to Chrome</button>}
-        </section>
-        <h3 className="settings-group-title">{ui.groupDownloads}</h3>
-        <div className="settings-group">
-        <div className="preference-row"><span className="setting-icon warm" aria-hidden="true"><FolderOpen /></span><div><label>{ui.saveVideosTo}</label><small title={settings.outputDirectory}>{settings.outputDirectory || 'Downloads/VidSnag'}</small></div><button className="row-action labelled" disabled={busy === 'folder'} onClick={chooseFolder}>{busy === 'folder' ? <LoaderCircle className="spin" /> : ui.change}</button></div>
-        <div className="preference-row"><span className="setting-icon" aria-hidden="true"><MonitorPlay /></span><label htmlFor="preferred-quality">{ui.preferredQuality}</label><select id="preferred-quality" value={settings.preferredQuality} onChange={(event) => save({ preferredQuality: event.target.value as DesktopSettings['preferredQuality'] })}><option value="best">{ui.best}</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></div>
-        <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Captions /></span><label htmlFor="subtitle-language">{ui.subtitles}</label><select id="subtitle-language" value={settings.subtitleLanguage} onChange={(event) => save({ subtitleLanguage: event.target.value })}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
+  const advancedAreDefaults = speedAndNaming.every((key) => settings[key] === defaultSettings[key]);
+  const restoreDefaults = () => save(Object.fromEntries(speedAndNaming.map((key) => [key, defaultSettings[key]])), 'restore-defaults', ui.restoreDefaults);
+  const folderPath = settings.outputDirectory || ui.defaultFolder;
+  const updatesAvailable = gallery || !!appInfo?.isPackaged;
+  const tabs = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
+  const current = settingsSections.find((entry) => entry.id === section) || settingsSections[0];
+  // A new section starts at its top; the rail swaps the pane without animation.
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [section]);
+  const onRailKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const index = settingsSections.findIndex((entry) => entry.id === section);
+    const last = settingsSections.length - 1;
+    const next = { ArrowDown: index === last ? 0 : index + 1, ArrowUp: index === 0 ? last : index - 1, Home: 0, End: last }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    const id = settingsSections[next].id;
+    onSectionChange(id);
+    tabs.current.get(id)?.focus();
+  };
+  const sub = (id: string, title: string, children: React.ReactNode) => <div className="advanced-group" role="group" aria-labelledby={id}><h4 id={id}>{title}</h4>{children}</div>;
+  const panes: Record<SettingsSectionId, () => React.ReactNode> = {
+    chrome: () => <section className="settings-group pairing-settings" aria-label="Chrome extension setup">
+      <p role="status">{appInfo?.extensionConnected && !pairing ? 'Chrome is connected. Keep SnagThis open while downloading.' : 'Connect the extension once to send videos from Chrome to this app.'}</p>
+      {(!appInfo?.extensionConnected || pairing) && <ol className="pairing-steps">{ui.pairingSteps.map((step) => <li key={step}>{step}</li>)}</ol>}
+      {pairing && pairingSeconds > 0 ? <div className="pairing-code"><label htmlFor="chrome-connection-code">{ui.pairingHelp}</label><div className="pairing-code-actions"><output id="chrome-connection-code" aria-label="Connection code">{pairing.code}</output><button type="button" className="row-action labelled" disabled={!!busy} onClick={() => run('copy-code', async () => { await navigator.clipboard.writeText(pairing.code); setCodeCopied(true); })}>{codeCopied ? 'Copied' : 'Copy code'}</button></div><small>Expires in {Math.floor(pairingSeconds / 60)}:{String(pairingSeconds % 60).padStart(2, '0')}. Keep SnagThis open.</small></div>
+        : <>{pairing && <p className="tone-attention" role="status">This code expired. Get a new code and try again.</p>}<button type="button" className="row-action labelled" disabled={!!busy || (!gallery && appInfo?.apiStartupState !== 'ready')} onClick={showPairing}>{busy === 'pairing' ? 'Getting code…' : pairing ? 'Get a new code' : appInfo?.extensionConnected ? 'Connect another browser' : 'Show connection code'}</button></>}
+      {!appInfo?.extensionConnected && <button type="button" className="detail-refresh pairing-install" onClick={() => run('install-extension', async () => { if (!gallery) await window.desktop.openExternal('https://github.com/dylansallred/snagthis#run-locally'); })}>Need the extension? Add to Chrome</button>}
+    </section>,
+    downloads: () => <div className="settings-group">
+      <div className="preference-row folder-row">
+        <span className="setting-icon warm" aria-hidden="true"><FolderOpen /></span>
+        <div className="setting-text"><SettingTitle id="save-folder">{ui.saveVideosTo}</SettingTitle><span className="folder-path" id="save-folder-path" title={folderPath}>{folderPath}</span></div>
+        <div className="settings-actions folder-actions">
+          <button type="button" className="row-action labelled" aria-describedby="save-folder-path" aria-label={ui.changeFolderLabel} disabled={!!busy} onClick={chooseFolder}>{busy === 'folder' ? <LoaderCircle className="spin" /> : ui.changeFolder}</button>
+          <button type="button" className="row-action labelled" aria-describedby="save-folder-path" aria-label={ui.saveFolder} disabled={!!busy} onClick={openFolder}>{ui.openFolderShort}</button>
         </div>
-        <h3 className="settings-group-title">{ui.groupApp}</h3>
-        <div className="settings-group">
-        <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Bell /></span><label htmlFor="notify-complete">{ui.notify}</label><Switch id="notify-complete" checked={settings.notifyOnComplete} onCheckedChange={(value) => save({ notifyOnComplete: value })} /></div>
-        <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Power /></span><label htmlFor="launch-login">{ui.login}</label><Switch id="launch-login" checked={settings.launchAtLogin} onCheckedChange={(value) => save({ launchAtLogin: value })} /></div>
-        </div>
-        <h3 className="settings-group-title">{ui.groupMore}</h3>
-        <details className="advanced-settings settings-group">
-          <summary><span className="setting-icon" aria-hidden="true"><SlidersHorizontal /></span><span>{ui.advanced}</span><small>{ui.advancedHint}</small><ChevronRight /></summary>
-          <div className="preference-row"><label htmlFor="downloads-at-once">{ui.atOnce}</label><input id="downloads-at-once" type="number" min={1} max={16} defaultValue={settings.queueMaxConcurrent} onBlur={(event) => save({ queueMaxConcurrent: Math.max(1, Math.min(16, Number(event.target.value) || 1)) })} /></div>
-          <div className="preference-row"><label htmlFor="download-connections">{ui.connections}</label><input id="download-connections" type="number" min={1} max={16} defaultValue={settings.downloadThreads} onBlur={(event) => save({ downloadThreads: Math.max(1, Math.min(16, Number(event.target.value) || 1)) })} /></div>
-          <div className="preference-row"><label htmlFor="auto-start">{ui.autoStart}</label><Switch id="auto-start" checked={settings.queueAutoStart} onCheckedChange={(value) => save({ queueAutoStart: value })} /></div>
-          <div className="preference-row"><label htmlFor="file-naming">{ui.naming}</label><select id="file-naming" value={settings.fileNaming} onChange={(event) => save({ fileNaming: event.target.value as DesktopSettings['fileNaming'] })}><option value="title">{ui.titleNaming}</option><option value="resource">{ui.resourceNaming}</option><option value="custom">{ui.customNaming}</option></select></div>
-          {settings.fileNaming === 'custom' && <div className="preference-row stack"><label htmlFor="custom-filename">{ui.customFilename}</label><input id="custom-filename" defaultValue={settings.customFilename} onBlur={(event) => save({ customFilename: event.target.value })} /></div>}
-          <div className="preference-row stack"><label htmlFor="tmdb-key">{ui.tmdbKey}</label><div className="key-field"><input id="tmdb-key" type={showKeys ? 'text' : 'password'} defaultValue={settings.tmdbApiKey || ''} autoComplete="off" spellCheck={false} onBlur={(event) => save({ tmdbApiKey: event.target.value })} /><button className="row-action" aria-label={showKeys ? ui.hideKey : ui.showKey} onClick={() => setShowKeys(!showKeys)}>{showKeys ? <EyeOff /> : <Eye />}</button></div></div>
-          <div className="preference-row stack"><label htmlFor="subdl-key">{ui.subdlKey}</label><div className="key-field"><input id="subdl-key" type={showKeys ? 'text' : 'password'} defaultValue={settings.subdlApiKey || ''} autoComplete="off" spellCheck={false} onBlur={(event) => save({ subdlApiKey: event.target.value })} /><button className="row-action" aria-label={showKeys ? ui.hideKey : ui.showKey} onClick={() => setShowKeys(!showKeys)}>{showKeys ? <EyeOff /> : <Eye />}</button></div></div>
-          <div className="advanced-group"><h3>{ui.updates}</h3><div className="preference-row inset"><label htmlFor="update-startup">{ui.checkStartup}</label><Switch id="update-startup" checked={settings.checkUpdatesOnStartup} onCheckedChange={(value) => save({ checkUpdatesOnStartup: value })} /></div><p>{updater.message || `Version ${appInfo?.version || 'development'}`}</p>{updater.error && <p className="tone-attention">{updater.error}</p>}{updater.phase === 'downloading' && <progress value={updater.progress} max={100} aria-label="Update download" />}
-            <div className="settings-actions"><button className="row-action labelled" disabled={!!busy || (!gallery && !appInfo?.isPackaged) || ['checking', 'downloading', 'installing'].includes(updater.phase)} onClick={() => run('update', async () => { if (gallery) { toast.success('You’re up to date.'); return; } const result = await window.desktop.checkForUpdates(); if (!result.ok) throw new Error('Could not check for updates'); })}>{ui.checkUpdates}</button>{updater.phase === 'downloaded' && <><button className="row-action labelled" onClick={() => run('install', async () => { if (!gallery) { const result = await window.desktop.installUpdateNow(); if (!result.ok) throw new Error(result.error); } })}>{ui.install}</button><button className="row-action" onClick={() => run('later', async () => { if (!gallery) await window.desktop.remindLater(30); })}>{ui.later}</button></>}</div>
-            {notes.length > 0 && <details className="release-notes"><summary>What’s new</summary>{notes.map((note, index) => <p key={index}>{note}</p>)}</details>}
-          </div>
-          <div className="advanced-group"><h3>{ui.diagnostics}</h3><div className="settings-actions"><button className="row-action labelled" onClick={() => run('diagnostics', () => diagnostics())}>{ui.exportDiagnostics}</button><button className="row-action" onClick={() => run('copy', () => diagnostics(true))}>{ui.copyDiagnostics}</button></div><button className="detail-refresh" onClick={() => run('report', reportSite)}>{ui.reportSite}</button><button className="detail-refresh" onClick={() => run('temporary', async () => { if (!gallery) await api?.clearTempDownloads(); toast.success('Stale temporary download data cleared'); })}>{ui.clearTemp}</button></div>
-        </details>
       </div>
+      <div className="preference-row"><span className="setting-icon" aria-hidden="true"><MonitorPlay /></span><div className="setting-text"><SettingTitle id="preferred-quality" htmlFor="preferred-quality">{ui.preferredQuality}</SettingTitle><small>{ui.qualityHint}</small></div><select id="preferred-quality" value={settings.preferredQuality} onChange={(event) => save({ preferredQuality: event.target.value as DesktopSettings['preferredQuality'] }, 'preferred-quality', ui.preferredQuality)}><option value="best">{ui.best}</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></div>
+      <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Captions /></span><div className="setting-text"><SettingTitle id="subtitle-language" htmlFor="subtitle-language">{ui.subtitles}</SettingTitle><small>{ui.subtitlesHint}</small></div><select id="subtitle-language" value={settings.subtitleLanguage} onChange={(event) => save({ subtitleLanguage: event.target.value }, 'subtitle-language', ui.subtitles)}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
+    </div>,
+    app: () => <div className="settings-group">
+      <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Bell /></span><div className="setting-text"><SettingTitle id="notify-complete" htmlFor="notify-complete">{ui.notify}</SettingTitle></div><Switch id="notify-complete" checked={settings.notifyOnComplete} onCheckedChange={(value) => save({ notifyOnComplete: value }, 'notify-complete', ui.notify)} /></div>
+      <div className="preference-row"><span className="setting-icon" aria-hidden="true"><Power /></span><div className="setting-text"><SettingTitle id="launch-login" htmlFor="launch-login">{ui.login}</SettingTitle></div><Switch id="launch-login" checked={settings.launchAtLogin} onCheckedChange={(value) => save({ launchAtLogin: value }, 'launch-login', ui.login)} /></div>
+    </div>,
+    appearance: () => <div className="settings-group"><AccentPicker onSaved={() => flashSaved('accent-colour', ui.accentColour)} /></div>,
+    advanced: () => <div className="settings-group">
+      {sub('advanced-speed', ui.advancedSpeed, <>
+        <NumberSetting id="downloads-at-once" settingKey="queueMaxConcurrent" label={ui.atOnce} hint={ui.atOnceHint} value={settings.queueMaxConcurrent} min={1} max={16} />
+        <NumberSetting id="download-connections" settingKey="downloadThreads" label={ui.connections} hint={ui.connectionsHint} value={settings.downloadThreads} min={1} max={16} />
+        <div className="preference-row"><div className="setting-text"><SettingTitle id="auto-start" htmlFor="auto-start">{ui.autoStart}</SettingTitle><small>{ui.autoStartHint}</small></div><Switch id="auto-start" checked={settings.queueAutoStart} onCheckedChange={(value) => save({ queueAutoStart: value }, 'auto-start', ui.autoStart)} /></div>
+      </>)}
+      {sub('advanced-names', ui.advancedNames, <>
+        <div className="preference-row"><div className="setting-text"><SettingTitle id="file-naming" htmlFor="file-naming">{ui.naming}</SettingTitle><small id="file-naming-hint">{namingHints[settings.fileNaming]}</small></div><select id="file-naming" aria-describedby="file-naming-hint" value={settings.fileNaming} onChange={(event) => { const next = event.target.value as DesktopSettings['fileNaming']; focusCustomName.current = next === 'custom'; save({ fileNaming: next }, 'file-naming', ui.naming); }}><option value="title">{ui.titleNaming}</option><option value="resource">{ui.resourceNaming}</option><option value="custom">{ui.customNaming}</option></select></div>
+        {settings.fileNaming === 'custom' && <TextSetting id="custom-filename" settingKey="customFilename" label={ui.customFilename} hint={ui.customFilenameHint} value={settings.customFilename} placeholder={ui.customFilenamePlaceholder} inputRef={customNameRef}
+          validate={(draft) => /[/\\]/.test(draft) ? ui.customFilenameSlash : draft.length > 200 ? ui.customFilenameLong : ''} />}
+        <div className="settings-actions restore-defaults"><button type="button" className="detail-refresh" disabled={advancedAreDefaults} onClick={restoreDefaults}>{advancedAreDefaults ? ui.usingDefaults : ui.restoreDefaults}</button></div>
+      </>)}
+      {sub('advanced-lookups', ui.advancedLookups, <>
+        <TextSetting id="tmdb-key" settingKey="tmdbApiKey" label={ui.tmdbKey} hint={ui.tmdbHint} value={settings.tmdbApiKey || ''} placeholder={ui.keyPlaceholder} secret />
+        <TextSetting id="subdl-key" settingKey="subdlApiKey" label={ui.subdlKey} hint={ui.subdlHint} value={settings.subdlApiKey || ''} placeholder={ui.keyPlaceholder} secret />
+      </>)}
+    </div>,
+    about: () => <div className="settings-group">
+      {sub('advanced-updates', ui.updates, <>
+        <div className="preference-row inset"><SettingTitle id="update-startup" htmlFor="update-startup">{ui.checkStartup}</SettingTitle><Switch id="update-startup" checked={settings.checkUpdatesOnStartup} onCheckedChange={(value) => save({ checkUpdatesOnStartup: value }, 'update-startup', ui.checkStartup)} /></div>
+        <p>{updater.message || `Version ${appInfo?.version || 'development'}`}</p>{!updatesAvailable && <p>{ui.updatesInstalledOnly}</p>}{updater.error && <p className="tone-attention">{updater.error}</p>}{updater.phase === 'downloading' && <progress value={updater.progress} max={100} aria-label="Update download" />}
+        <div className="settings-actions"><button type="button" className="row-action labelled" disabled={!!busy || !updatesAvailable || ['checking', 'downloading', 'installing'].includes(updater.phase)} onClick={() => run('update', async () => { if (gallery) { toast.success('You’re up to date.'); return; } const result = await window.desktop.checkForUpdates(); if (!result.ok) throw new Error('Could not check for updates'); })}>{ui.checkUpdates}</button>{updater.phase === 'downloaded' && <><button type="button" className="row-action labelled" onClick={() => run('install', async () => { if (!gallery) { const result = await window.desktop.installUpdateNow(); if (!result.ok) throw new Error(result.error); } })}>{ui.install}</button><button type="button" className="row-action" onClick={() => run('later', async () => { if (!gallery) await window.desktop.remindLater(30); })}>{ui.later}</button></>}</div>
+        {notes.length > 0 && <details className="release-notes" onToggle={onDisclosureToggle}><summary onClick={markReveal}>What’s new</summary>{notes.map((note, index) => <p key={index}>{note}</p>)}</details>}
+      </>)}
+      {sub('advanced-diagnostics', ui.diagnostics, <>
+        <div className="settings-actions"><button type="button" className="row-action labelled" onClick={() => run('diagnostics', () => diagnostics())}>{ui.exportDiagnostics}</button><button type="button" className="row-action labelled" onClick={() => run('copy', () => diagnostics(true))}>{ui.copyDiagnostics}</button></div>
+        <button type="button" className="detail-refresh" onClick={() => run('report', reportSite)}>{ui.reportSite}</button>
+        <button type="button" className="detail-refresh" onClick={() => run('temporary', async () => { if (!gallery) await api?.clearTempDownloads(); toast.success('Stale temporary download data cleared'); })}>{ui.clearTemp}</button>
+      </>)}
+    </div>,
+  };
+  return <Dialog open={open} onOpenChange={close}>
+    <DialogContent ref={contentRef} className="settings-sheet settings-sidebar" showCloseButton={false} onEscapeKeyDown={escape}
+      // Start on the sheet itself rather than lighting up the close button; Tab reaches it first.
+      onOpenAutoFocus={(event) => { event.preventDefault(); contentRef.current?.focus({ preventScroll: true }); }}>
+      <div className="sheet-heading"><DialogTitle>{ui.settings}</DialogTitle><button type="button" className="row-action" aria-label={ui.closeSettings} title={ui.closeSettingsHint} onClick={() => close(false)}><X /></button></div>
+      <DialogDescription className="sr-only">{ui.settingsDescription}</DialogDescription>
+      <p className="sr-only" role="status" aria-live="polite">{saved.announcement}</p>
+      <SettingsFormContext.Provider value={form}>
+      <div className="settings-split">
+        <div className="settings-rail">
+          <div role="tablist" aria-orientation="vertical" aria-label={ui.settingsSections} onKeyDown={onRailKey}>
+            {settingsSections.map(({ id, title, icon: Icon }) => <button key={id} type="button" role="tab" id={`settings-tab-${id}`} aria-controls="settings-pane" aria-selected={id === section} tabIndex={id === section ? 0 : -1}
+              ref={(element) => { if (element) tabs.current.set(id, element); else tabs.current.delete(id); }} onClick={() => onSectionChange(id)}><Icon aria-hidden="true" />{title}</button>)}
+          </div>
+          <span className="settings-version">{ui.appVersion.replace('{version}', appInfo?.version || 'development')}</span>
+        </div>
+        <div className="settings-pane" id="settings-pane" role="tabpanel" aria-labelledby={`settings-tab-${current.id}`} ref={scrollRef}>
+          <h3 className="settings-pane-title">{current.title}</h3>
+          <p className="settings-pane-description">{current.description}</p>
+          {panes[current.id]()}
+        </div>
+      </div>
+      </SettingsFormContext.Provider>
     </DialogContent>
   </Dialog>;
 }

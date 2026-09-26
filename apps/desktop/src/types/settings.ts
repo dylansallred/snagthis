@@ -12,4 +12,7 @@ export interface DesktopSettings {
   launchAtLogin: boolean;
   fileNaming: 'title' | 'resource' | 'custom';
   customFilename: string;
+  accent?: 'orange' | 'cobalt' | 'violet' | 'mint' | 'magenta';
+  /** When the accent was last chosen, in ms; the later change between desktop and Chrome wins. */
+  accentChangedAt?: number;
 }

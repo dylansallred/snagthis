@@ -6,7 +6,7 @@ const { spawnSync } = require('node:child_process');
 
 const outputDir = path.resolve(__dirname, '../bin');
 const isWindows = process.platform === 'win32';
-const releaseBuild = process.env.VIDSNAG_RELEASE === '1';
+const releaseBuild = process.env.SNAGTHIS_RELEASE === '1';
 
 function resolveDownloads() {
   const explicit = [process.env.FFMPEG_DOWNLOAD_URL, process.env.FFPROBE_DOWNLOAD_URL];
@@ -47,7 +47,7 @@ function resolveDownloads() {
 function download(url, destination, redirects = 5) {
   return new Promise((resolve, reject) => {
     if (new URL(url).protocol !== 'https:') return reject(new Error('Tool downloads must use HTTPS'));
-    const req = https.get(url, { headers: { 'User-Agent': 'VidSnag-Build/1.0' } }, (res) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'SnagThis-Build/1.0' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         res.resume();
         download(new URL(res.headers.location, url).href, destination, redirects - 1).then(resolve, reject);
@@ -117,7 +117,7 @@ async function main() {
       const version = run(destination, ['-version']);
       const configuration = run(destination, ['-buildconf']);
       const license = run(destination, ['-L']);
-      if (/--enable-nonfree|nonfree and unredistributable/i.test(configuration + license)) throw new Error(`${name} is a nonfree build and cannot be distributed with VidSnag`);
+      if (/--enable-nonfree|nonfree and unredistributable/i.test(configuration + license)) throw new Error(`${name} is a nonfree build and cannot be distributed with SnagThis`);
       if (releaseBuild && !/GNU (?:General|Lesser General) Public License/i.test(license)) throw new Error(`${name} did not report a recognized redistributable license`);
       if (process.platform === 'darwin') {
         const libraries = run('otool', ['-L', destination]).split('\n').slice(1).map(line => line.trim().split(' (')[0]).filter(Boolean);

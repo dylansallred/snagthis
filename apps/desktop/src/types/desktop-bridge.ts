@@ -25,8 +25,19 @@ export interface ConnectionState {
   pairedExtensions: number;
 }
 
+export interface WindowState {
+  fullScreen: boolean;
+}
+
 export interface DesktopBridge {
+  platform: string;
+  getWindowState(): Promise<WindowState>;
+  onWindowState(cb: (state: WindowState) => void): () => void;
   getAppInfo(): Promise<AppInfo>;
+  /** The saved accent at load time (settings.json), read synchronously by the preload. */
+  initialAccent?: { accent: string; accentChangedAt: number } | null;
+  /** Accent changes from Settings or the Chrome extension. */
+  onAccentChange?(cb: (state: { accent: string; accentChangedAt: number }) => void): () => void;
   getSettings(): Promise<DesktopSettings>;
   saveSettings(settings: Partial<DesktopSettings>): Promise<DesktopSettings>;
   chooseOutputDirectory(): Promise<{ ok: boolean; path?: string; cancelled?: boolean; error?: string }>;
@@ -47,7 +58,8 @@ export interface DesktopBridge {
   openSettings(): Promise<DesktopActionResult>;
   openExternal(url: string): Promise<DesktopActionResult>;
   onAppInfoUpdate(cb: (info: AppInfo) => void): () => void;
-  onOpenSettings(cb: () => void): () => void;
+  /** `section` is 'chrome' for the extension and deep links; absent for the app menu (reopen the last section). */
+  onOpenSettings(cb: (options: { section?: 'chrome' }) => void): () => void;
   onUpdaterEvent(cb: (event: UpdaterState) => void): () => void;
 }
 

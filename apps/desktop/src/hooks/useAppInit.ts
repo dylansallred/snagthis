@@ -12,7 +12,7 @@ export const defaultSettings: DesktopSettings = {
 
 export function useAppInit(gallery = false) {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
-  const [settings, setSettings] = useState<DesktopSettings>(gallery ? { ...defaultSettings, outputDirectory: '~/Downloads/VidSnag' } : defaultSettings);
+  const [settings, setSettings] = useState<DesktopSettings>(gallery ? { ...defaultSettings, outputDirectory: '~/Downloads/SnagThis' } : defaultSettings);
   const [updater, setUpdater] = useState<UpdaterState>({ phase: 'idle', message: gallery ? 'You’re up to date.' : '', progress: 0 });
   const [error, setError] = useState('');
   const generation = useRef(0);
@@ -20,7 +20,7 @@ export function useAppInit(gallery = false) {
   const updaterRevision = useRef(0);
   const initialize = useCallback(async () => {
     if (gallery) return;
-    if (!window.desktop) { setError('Open the VidSnag desktop app to see your downloads.'); return; }
+    if (!window.desktop) { setError('Open the SnagThis desktop app to see your downloads.'); return; }
     const current = generation.current;
     const revision = infoRevision.current;
     const updatesRevision = updaterRevision.current;
@@ -34,7 +34,7 @@ export function useAppInit(gallery = false) {
       setError('');
     } catch (err) {
       if (current !== generation.current) return;
-      setError(err instanceof Error ? err.message : 'VidSnag could not start');
+      setError(err instanceof Error ? err.message : 'SnagThis could not start');
     }
   }, [gallery]);
   useEffect(() => {

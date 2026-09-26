@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, ExternalLink, Folder, FolderOpen, Link2, Trash2, X } from 'lucide-react';
 import { formatSize, type RowModel } from '@m3u8/contracts/src/rows.mjs';
+import { selectionAudioLabel } from '@m3u8/contracts/src/audioTracks.mjs';
 import { SegmentHeatmap } from '@/components/queue/SegmentHeatmap';
 import { formatBytesPerSecond } from '@/lib/utils';
 import { ui } from '@/lib/strings';
@@ -35,7 +36,8 @@ export function RowDetails({ row, folder, onCommand, onRefreshLink }: {
   // Shorten the home folder and emphasise the final folder; the path stays complete.
   const shownDirectory = directory.replace(/^(?:\/Users|\/home)\/[^/]+(?=\/|$)/, '~');
   const folderSplit = shownDirectory.replace(/[\\/]+$/, '').match(/^(.*[\\/])([^\\/]+)$/);
-  const qualityDetails = [source.selection?.audioLang && `${source.selection.audioLang} audio`, source.selection?.subtitleLang && source.selection.subtitleLang !== 'none' && `${source.selection.subtitleLang} subtitles`].filter(Boolean).join(' · ');
+  const audioLabel = selectionAudioLabel(source.selection);
+  const qualityDetails = [audioLabel && `${audioLabel} audio`, source.selection?.subtitleLang && source.selection.subtitleLang !== 'none' && (source.subtitleMissing ? ui.subtitlesUnavailable.replace('{lang}', source.selection.subtitleLang) : `${source.selection.subtitleLang} subtitles`)].filter(Boolean).join(' · ');
   const quality = [row.qualityLabel, qualityDetails].filter(Boolean).join(' · ');
   const downloaded = formatSize(source.bytesDownloaded) || '—';
   const total = Number.isFinite(source.totalBytes) && source.totalBytes > 0
@@ -74,14 +76,14 @@ export function RowDetails({ row, folder, onCommand, onRefreshLink }: {
               </dl>
             </div>
             {row.problem?.code === 'expired' && <>
-              <button className="detail-refresh" onClick={() => setShowLink(!showLink)}>{ui.refreshLink}</button>
+              <button className="row-action labelled refresh-link-toggle" aria-expanded={showLink} onClick={() => setShowLink(!showLink)}>{ui.refreshLink}</button>
               {showLink && <form className="refresh-link-form" onSubmit={async (event) => {
                 event.preventDefault(); setSaving(true);
                 try { await onRefreshLink(newLink); setShowLink(false); } finally { setSaving(false); }
               }}><input type="url" required value={newLink} onChange={(event) => setNewLink(event.target.value)} placeholder={ui.refreshPlaceholder} aria-label={ui.refreshPlaceholder} /><button className="row-action labelled" disabled={saving}>{ui.replaceLink}</button></form>}
             </>}
             {pieces && <div className="pieces-panel"><div className="pieces-caption"><span>{ui.pieces}</span>{pieceProgressAvailable && <span>{completed} of {source.totalSegments}{retrying ? ` · ${retrying} retrying` : ''}</span>}</div>{pieceProgressAvailable ? <><SegmentHeatmap totalSegments={source.totalSegments} segmentStates={source.segmentStates} /><div className="pieces-legend" aria-label="Segment status colours"><span><i className="piece-completed" aria-hidden="true" />Completed</span><span><i className="piece-downloading" aria-hidden="true" />Downloading</span><span><i className="piece-retrying" aria-hidden="true" />Retrying</span><span><i className="piece-pending" aria-hidden="true" />Pending</span></div></> : <p className="pieces-unavailable">Segment progress is unavailable for this download</p>}</div>}
-            {row.problem?.raw && <p className="detail-problem">{row.problem.raw}</p>}
+            {row.problem?.raw && <details className="problem-detail"><summary><ChevronRight aria-hidden="true" />{ui.technicalDetail}</summary><p className="detail-problem">{row.problem.raw}</p></details>}
           </div>
         </div>
         <div className="detail-links">
