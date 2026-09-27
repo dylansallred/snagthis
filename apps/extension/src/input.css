@@ -276,6 +276,8 @@
 
 /* ── Accent colour (unique-look option 9), shared with the desktop (apps/desktop/src/lib/accentTheme.css).
    The @theme values above stay orange; popup/accent.js overrides them on <html> before the first paint. */
+/* No rubber-band bounce past the ends of any scrolling area (macOS elastic scrolling). */
+*{overscroll-behavior:none}
 :root{--accent-logo:#fa5d0e;--accent-bevel-face:#fa5d0e;--accent-bevel-light:#ffb238;--accent-bevel-dark:#bd3f00}
 /* Registered so a change crossfades every consumer at once (header line, buttons, focus ring). */
 @property --color-primary{syntax:"<color>";inherits:true;initial-value:hsl(18 96% 40%)}
