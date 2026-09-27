@@ -9,6 +9,11 @@ module.exports = defineConfig({
   },
   fullyParallel: true,
   workers: '50%',
+  // CI runners are slower and noisier than a laptop. One retry turns a timing flake into a
+  // reported "flaky" result instead of a failed run (and a second full run of minutes), and the
+  // retry records a trace so the cause can be found.
+  retries: process.env.CI ? 1 : 0,
+  use: { trace: 'on-first-retry' },
   reporter: [
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],

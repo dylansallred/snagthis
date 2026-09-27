@@ -1,13 +1,20 @@
 name: CI
 
-# Runs only when asked, to save Actions minutes: add the run-ci label to a PR (it then reruns
-# on each push until the label is removed), start it by hand, or tag a release. The cheap
-# "CI gate" job is the required check, and it passes when the suite was skipped.
+# Runs only when asked, to save Actions minutes. On a PR, the run-ci label runs Linux (the
+# full suite plus browser tests) and run-ci-all adds macOS and Windows; either reruns on each
+# push until removed. Docs- and site-only PRs skip the suite. Start it by hand with
+# `gh workflow run ci.yml --ref <branch> [-f platforms=all]`. Release tags always run all three.
+# The cheap "CI gate" job is the required check, and it passes when the suite was skipped.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
+      platforms:
+        description: 'Test suite platforms: linux (cheapest) or all (adds macOS and Windows)'
+        type: choice
+        options: [linux, all]
+        default: linux
       verify_macos_signing:
         description: 'Only build and verify a signed, notarized macOS installer (no release)'
         type: boolean
@@ -31,16 +38,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  plan:
+    # Decides which platforms run. Skipped (and free) on PRs without a CI label.
     if: >-
       ${{ (github.event_name != 'workflow_dispatch' || (!inputs.verify_macos_signing && !inputs.verify_windows_signing))
-      && (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'run-ci')
-      && (github.event.action != 'labeled' || github.event.label.name == 'run-ci'))) }}
+      && (github.event_name != 'pull_request' || ((contains(github.event.pull_request.labels.*.name, 'run-ci')
+      || contains(github.event.pull_request.labels.*.name, 'run-ci-all'))
+      && (github.event.action != 'labeled' || github.event.label.name == 'run-ci' || github.event.label.name == 'run-ci-all'))) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      os: ${{ steps.plan.outputs.os }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          ALL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'run-ci-all') }}
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          all='["ubuntu-latest","macos-15","windows-latest"]'
+          if [ "$EVENT" = pull_request ]; then
+            # Docs, site and Markdown changes don't touch the app.
+            code=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' \
+              | grep -Ev '^(docs|site)/|\.md$' || true)
+            if [ -z "$code" ]; then
+              echo "Only docs or site files changed, so the suite is skipped." >> "$GITHUB_STEP_SUMMARY"
+              echo 'os=[]' >> "$GITHUB_OUTPUT"
+            elif [ "$ALL_LABEL" = true ]; then echo "os=$all" >> "$GITHUB_OUTPUT"
+            else echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"; fi
+          elif [ "$EVENT" = workflow_dispatch ] && [ "$PLATFORMS" != all ]; then
+            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "os=$all" >> "$GITHUB_OUTPUT"
+          fi
+
+  verify:
+    needs: plan
+    if: ${{ needs.plan.outputs.os != '' && needs.plan.outputs.os != '[]' }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15, windows-latest]
+        os: ${{ fromJSON(needs.plan.outputs.os) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -72,24 +117,27 @@ jobs:
           sudo chown root:root "$sandbox_helper"
           sudo chmod 4755 "$sandbox_helper"
           stat -c '%U:%G %a %n' "$sandbox_helper"
-      - name: Lint, types, unit and media fixtures, production builds, token parity
+      - name: Lint, types, unit and media fixtures, production builds, token parity (tests only on macOS and Windows)
         shell: bash
         run: |
+          # Lint, types, builds and token parity give the same answer on every OS, so only
+          # Linux runs them; macOS and Windows run the unit and media tests.
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             xvfb-run --auto-servernum npm run verify
           else
-            npm run verify
+            npm test
           fi
       - name: Browser and desktop end-to-end checks
         if: runner.os == 'Linux'
         env:
           DEBUG: pw:browser
         run: xvfb-run --auto-servernum npm run test:e2e -- --project=chromium
-      - name: Keep failure evidence
-        if: failure()
+      - name: Keep failure and retry evidence (traces of flaky tests too)
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: checks-${{ runner.os }}
+          retention-days: 7
           path: |
             playwright-report/
             test-results/
@@ -97,16 +145,19 @@ jobs:
 
   gate:
     name: CI gate
-    needs: verify
+    needs: [plan, verify]
     if: ${{ always() && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Pass when the suite passed or wasn't requested
         env:
+          PLAN: ${{ needs.plan.result }}
           RESULT: ${{ needs.verify.result }}
         run: |
+          if [ "$PLAN" != success ] && [ "$PLAN" != skipped ]; then echo "Planning finished with: $PLAN"; exit 1; fi
           if [ "$RESULT" = skipped ]; then
-            echo "The test suite didn't run. Add the run-ci label to this PR to run it." >> "$GITHUB_STEP_SUMMARY"
+            echo "The test suite didn't run. Add the run-ci (Linux) or run-ci-all label to run it." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           [ "$RESULT" = success ] || { echo "The test suite finished with: $RESULT"; exit 1; }
@@ -114,7 +165,7 @@ jobs:
   verify-macos-signing:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_macos_signing }}
     runs-on: ${{ inputs.macos_arch == 'x64' && 'macos-15-intel' || 'macos-15' }}
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       SNAGTHIS_RELEASE: '1'
     steps:
@@ -183,7 +234,7 @@ jobs:
   verify-windows-signing:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_windows_signing }}
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       SNAGTHIS_RELEASE: '1'
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
