@@ -46,7 +46,7 @@ async function loadPopup(page, flags = { storeBuild: false }) {
   const source = fs.readFileSync(path.join(extension, 'popup.js'), 'utf8');
   expect(source).toContain(startup);
   await page.addScriptTag({ content: source.replace(startup,
-    `window.popupFixture = { load(items, jobs, links) { mediaItems = items; queue = jobs; mappings = links; reachable = true; compatible = true; appToken = 'fixture'; selected.clear(); renderRows(); }, pair: () => showCodePairing(), settings: () => showSettings(), connection(isReachable, token) { reachable = isReachable; appToken = token; renderConnection(); } };`,
+    `window.popupFixture = { load(items, jobs, links) { mediaItems = items; queue = jobs; mappings = links; reachable = true; compatible = true; appToken = 'fixture'; selected.clear(); renderRows(); }, pair: () => showCodePairing(), settings: () => showSettings(), check(tab) { activeTab = tab; return checkAgain(); }, connection(isReachable, token) { reachable = isReachable; appToken = token; renderConnection(); } };`,
   ) });
   return errors;
 }
@@ -456,5 +456,37 @@ test('a DRM-protected title is one explanatory row with no download; unprotected
   await page.locator('#close-sheet').click();
   const clear = page.locator('.video-row').filter({ hasText: 'Bad Optics trailer' });
   await expect(clear.getByRole('button', { name: 'Download' })).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test('Check again scans every frame and asks for a reload when the top frame has no SnagThis', async ({ page }) => {
+  const errors = await loadPopup(page);
+  const run = async (prepareOk) => page.evaluate(async (prepareOk) => {
+    const scanned = [];
+    let injected = false;
+    window.chrome.webNavigation = { getAllFrames: async () => [{ frameId: 0 }, { frameId: 5 }] };
+    window.chrome.tabs = { sendMessage: async (tabId, message, options) => {
+      scanned.push(options?.frameId);
+      // A tab opened before install: only a later ad iframe has the content
+      // script, and Chrome answers an untargeted message with that frame.
+      if (options?.frameId === 0 && !injected) throw new Error('Could not establish connection. Receiving end does not exist.');
+      return { ok: true };
+    } };
+    window.chrome.runtime.sendMessage = async (message) => {
+      if (message.cmd === 'PREPARE_PAGE') { injected = prepareOk; return { ok: prepareOk }; }
+      if (message.cmd === 'GET_TAB_MEDIA') return { ok: true, visit: 1, items: [], mappings: {} };
+      return { ok: true };
+    };
+    await window.popupFixture.check({ id: 7, url: 'https://site.example/watch' });
+    return scanned;
+  }, prepareOk);
+
+  const refused = await run(false);
+  expect(refused).toEqual(expect.arrayContaining([0, 5]));
+  expect(refused).not.toContain(undefined);
+  await expect(page.getByRole('heading', { name: 'Refresh this page to find videos' })).toBeVisible();
+
+  await run(true);
+  await expect(page.getByRole('heading', { name: 'Refresh this page to find videos' })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
