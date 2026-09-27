@@ -1,9 +1,8 @@
 name: Site compatibility
 
+# Manual only, to save Actions minutes.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 12 * * 1'
 
 permissions:
   contents: read

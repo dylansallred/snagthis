@@ -1,9 +1,11 @@
 name: CI
 
+# Runs only when asked, to save Actions minutes: add the run-ci label to a PR (it then reruns
+# on each push until the label is removed), start it by hand, or tag a release. The cheap
+# "CI gate" job is the required check, and it passes when the suite was skipped.
 on:
   pull_request:
-  push:
-    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
       verify_macos_signing:
@@ -24,9 +26,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   verify:
-    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.verify_macos_signing && !inputs.verify_windows_signing) }}
+    if: >-
+      ${{ (github.event_name != 'workflow_dispatch' || (!inputs.verify_macos_signing && !inputs.verify_windows_signing))
+      && (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'run-ci')
+      && (github.event.action != 'labeled' || github.event.label.name == 'run-ci'))) }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -85,6 +94,22 @@ jobs:
             playwright-report/
             test-results/
           if-no-files-found: ignore
+
+  gate:
+    name: CI gate
+    needs: verify
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pass when the suite passed or wasn't requested
+        env:
+          RESULT: ${{ needs.verify.result }}
+        run: |
+          if [ "$RESULT" = skipped ]; then
+            echo "The test suite didn't run. Add the run-ci label to this PR to run it." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          [ "$RESULT" = success ] || { echo "The test suite finished with: $RESULT"; exit 1; }
 
   verify-macos-signing:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_macos_signing }}
