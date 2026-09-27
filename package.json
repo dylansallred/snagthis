@@ -19,7 +19,7 @@
     "package:extension": "npm run build:extension:css && node scripts/package-extension.cjs",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --cache --cache-location .eslintcache",
     "lint:fix": "npm run lint -- --fix",
-    "typecheck:desktop": "tsc --noEmit --project apps/desktop/tsconfig.json",
+    "typecheck:desktop": "npm run typecheck --workspace @m3u8/desktop",
     "test": "node --test --test-force-exit tests/*.test.js",
     "test:e2e": "playwright test",
     "dev": "npm run dev:desktop",
@@ -36,10 +36,11 @@
     "eslint-plugin-react-hooks": "^7.0.0",
     "globals": "^16.5.0",
     "js-yaml": "^4.3.2",
-    "typescript-eslint": "^8.46.2"
+    "typescript": "~6.0",
+    "typescript-eslint": "^8.70.1"
   },
   "engines": {
-    "node": ">=22.12 <23"
+    "node": ">=24.11 <25"
   },
   "license": "GPL-3.0-only"
 }
