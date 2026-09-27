@@ -15,7 +15,7 @@ The output is `snagthis-extension.zip` at the repository root. This ZIP is the *
 
 The package step rejects missing runtime files, stale generated shared modules, and differing versions in `apps/extension/manifest.json` and `apps/extension/package.json`. `package:extension` first synchronizes contracts/fonts and rebuilds CSS. The manifest is at the ZIP root, as required by [Chrome's package preparation guide](https://developer.chrome.com/docs/webstore/prepare).
 
-Extension versions have their own release cadence. They do not have to match the desktop version or the private root workspace version. Increase both extension version fields together before uploading a new package to an existing listing. Chrome requires each uploaded version to exceed the previous one. [Updating a store item](https://developer.chrome.com/docs/webstore/update).
+Extension versions have their own release cadence ([version numbers](versioning.md)). They do not have to match the desktop version or the private root workspace version. Increase both extension version fields together before uploading a new package to an existing listing. Chrome requires each uploaded version to exceed the previous one. [Updating a store item](https://developer.chrome.com/docs/webstore/update).
 
 ## Prepare an extension-only GitHub release
 
