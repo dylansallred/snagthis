@@ -1,5 +1,6 @@
 import { mergeRows, type RowModel } from '@m3u8/contracts/src/rows.mjs';
 import type { QueueJob } from '@/types/queue';
+import type { UpdaterState } from '@/types/updater';
 import emberTide from './media/ember-tide.jpg';
 import neonRain from './media/neon-rain.jpg';
 import skyHop from './media/sky-hop.jpg';
@@ -26,6 +27,37 @@ const history = [
   { id: 'missing', jobId: 'missing', fileName: 'Sky Hop.mp4', title: 'Sky Hop — saved copy', sizeBytes: 650_000_000, modifiedAt: now - 86400000, thumbnailUrl: skyHop, durationSeconds: 342, missing: true },
 ];
 export const galleryRows = mergeRows(galleryQueue, history, { surface: 'desktop', now });
+
+// Release notes as main.js delivers them from a GitHub release body: lines, list items prefixed "• ".
+const galleryReleaseNotes = [
+  'What’s new',
+  '• New: Accent colours. Pick Orange, Cobalt, Violet, Mint or Magenta. Chrome follows along.',
+  '• New: Saved shelf previews. Hover a thumbnail to see a few seconds of the video.',
+  '• Better: Expired links. Reopen the page and SnagThis carries on from where it stopped.',
+  '• Fixed: Big files. Downloads over 4 GB no longer stall at 99%.',
+  '• Fixed: Windows. The window remembers its size on high-DPI screens.',
+  'Which file do I need?',
+  '• Mac with Apple Silicon (M1 or later): SnagThis-mac-arm64.dmg',
+  '• Windows: SnagThis-1.1.0-win-x64.exe',
+];
+export const galleryUpdateStates = ['checking', 'uptodate', 'downloading', 'ready', 'notes', 'blocked', 'later', 'installing', 'error'] as const;
+
+/** `?gallery&update=<state>` previews the update sheet and header chip without contacting an update service. */
+export function galleryUpdater(state: string | null): UpdaterState | null {
+  if (!state || !(galleryUpdateStates as readonly string[]).includes(state)) return null;
+  const base: UpdaterState = { phase: 'downloaded', message: '', progress: 100, currentVersion: '1.0.0', updateInfo: { version: '1.1.0' }, releaseNotes: galleryReleaseNotes, lastCheckedAt: Date.now(), error: null, installWhenIdle: false };
+  switch (state) {
+    case 'checking': return { ...base, phase: 'checking', progress: 0, updateInfo: null, releaseNotes: [] };
+    case 'uptodate': return { ...base, phase: 'idle', progress: 0, updateInfo: { version: '1.0.0' }, releaseNotes: [] };
+    case 'downloading': return { ...base, phase: 'downloading', progress: 41, transferredBytes: 38_000_000, totalBytes: 92_000_000, bytesPerSecond: 2_700_000 };
+    case 'later': return { ...base, deferredUntil: Date.now() + 30 * 60_000, nextReminderAt: Date.now() + 30 * 60_000 };
+    case 'blocked': return { ...base, installWhenIdle: true };
+    case 'installing': return { ...base, phase: 'installing' };
+    case 'error': return { ...base, phase: 'error', progress: 41, errorKind: 'download', message: 'Update download failed', transferredBytes: 38_000_000, totalBytes: 92_000_000,
+      error: 'Error: net::ERR_CONNECTION_RESET\n  GET https://github.com/dylansallred/snagthis/releases/download/v1.1.0/SnagThis-1.1.0-arm64-mac.zip\n  at ClientRequest.<anonymous> (electron-updater/out/httpExecutor.js:318)\n  received 38000000 of 92000000 bytes' };
+    default: return base;
+  }
+}
 
 export async function loadGalleryVideo(row: Pick<RowModel, 'thumbnailUrl'>): Promise<string | null> {
   if (!import.meta.env.DEV) return null;

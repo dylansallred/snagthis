@@ -65,7 +65,11 @@ export interface DesktopBridge {
   getUpdaterState(): Promise<UpdaterState>;
   checkForUpdates(): Promise<{ ok: boolean }>;
   installUpdateNow(): Promise<{ ok: boolean; error?: string }>;
-  remindLater(minutes: number): Promise<{ ok: boolean; deferredUntil?: number }>;
+  remindLater(minutes: number): Promise<{ ok: boolean; deferredUntil?: number; error?: string }>;
+  /** Undo for Later: drops the pending reminder. */
+  cancelUpdateReminder(): Promise<{ ok: boolean }>;
+  /** Arms or clears "Install when downloads finish". */
+  installUpdateWhenIdle(enabled: boolean): Promise<{ ok: boolean; installWhenIdle?: boolean; error?: string }>;
   saveDiagnosticsFile(payload: unknown): Promise<{ ok: boolean; filePath?: string; error?: string }>;
   openDiagnosticsFolder(): Promise<{ ok: boolean; folderPath?: string; error?: string }>;
   exportSupportBundle(payload: unknown): Promise<{ ok: boolean; bundlePath?: string; error?: string }>;
@@ -90,6 +94,8 @@ export interface DesktopBridge {
   /** `section` is 'chrome' for the extension and deep links; absent for the app menu (reopen the last section). */
   onOpenSettings(cb: (options: { section?: 'chrome' }) => void): () => void;
   onUpdaterEvent(cb: (event: UpdaterState) => void): () => void;
+  /** An update notification was clicked: show the update sheet. */
+  onOpenUpdate?(cb: () => void): () => void;
 }
 
 declare global {

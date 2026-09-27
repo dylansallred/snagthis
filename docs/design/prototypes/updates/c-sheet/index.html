@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Updates C · Dedicated sheet</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+/* C · Dedicated sheet: a header chip opens a full What's-new sheet with a pixel-art hero. */
+.tchip { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 6px; margin-right: 8px; font-size: 12px; font-weight: 500; color: var(--color-foreground-muted); background: var(--color-background-active); box-shadow: inset 1px 1px 0 hsl(215 14% 24%), inset -1px -1px 0 hsl(215 22% 6%); white-space: nowrap; }
+.tchip .pixel { font-size: 15px; line-height: 1; }
+.tchip.hot { color: #0c0e11; background: var(--accent-bevel-face); box-shadow: inset 1px 1px 0 var(--accent-bevel-light), inset -1px -1px 0 var(--accent-bevel-dark); font-weight: 650; }
+.tchip.hot .pbtn .pb-glyph { fill: var(--accent-bevel-face); }
+.tchip.hot .pbtn .pb-face { fill: #0c0e11; } .tchip.hot .pbtn .pb-light, .tchip.hot .pbtn .pb-dark { fill: #0c0e11; }
+.tchip.hot::after { content: ""; position: absolute; right: -3px; top: -3px; width: 4px; height: 4px; background: var(--accent-bevel-light); box-shadow: 0 0 0 1px #07080a; animation: pip 1.6s steps(1) infinite; }
+@keyframes pip { 50% { opacity: 0; } }
+.tchip.warn { color: var(--color-status-paused); background: color-mix(in srgb, var(--color-status-paused) 12%, var(--color-background-active)); }
+.tchip .upbar { width: 36px; }
+.tchip svg.i { width: 13px; height: 13px; }
+.usheet { position: relative; width: 500px; border-radius: 12px; overflow: hidden; background: var(--color-background-raised); border: 1px solid var(--color-border); box-shadow: 0 30px 80px rgb(0 0 0 / .6); }
+.hero { position: relative; height: 152px; overflow: hidden; }
+.hero svg.scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hero .star.b { animation: twinkle 2.4s steps(1) infinite; } .hero .star.b2 { animation: twinkle 3.1s steps(1) infinite .8s; }
+@keyframes twinkle { 50% { opacity: .15; } }
+.hero .mid { position: absolute; inset: 0 0 18px; display: flex; align-items: center; justify-content: center; gap: 16px; }
+.hero .mid .pbtn { width: 60px; height: 60px; filter: drop-shadow(4px 4px 0 rgb(0 0 0 / .45)); }
+.hero .ver { display: grid; gap: 2px; }
+.hero .ver small { font: 400 16px/1 var(--font-pixel); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-bevel-light); }
+.hero .ver b { font: 400 58px/.9 var(--font-pixel); color: #fff; text-shadow: 4px 4px 0 var(--accent-bevel-dark); letter-spacing: .02em; }
+.hero .x { position: absolute; top: 8px; right: 8px; color: #fff; background: rgb(0 0 0 / .25); }
+.hero.gray .pbtn { filter: grayscale(1) brightness(.7) drop-shadow(4px 4px 0 rgb(0 0 0 / .45)); }
+.hero.gray .ver b { text-shadow: 4px 4px 0 #3a3f48; color: #cfd4da; }
+.hero .badge { position: absolute; left: 50%; top: 50%; }
+.hero .pressing { animation: press 1s cubic-bezier(.3, .7, .3, 1) infinite; transform-origin: 50% 100%; }
+@keyframes press { 0%, 100% { transform: none; } 28% { transform: translateY(6%) scale(.9); } 55% { transform: translateY(4%) scale(.94); } 78% { transform: translateY(-3%) scale(1.03); } }
+.sbody { padding: 18px 22px 16px; display: grid; gap: 12px; }
+.sbody h2 { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 640; letter-spacing: -.01em; }
+.sbody h2 .pixel { font-size: 23px; color: var(--color-primary-hover); }
+.sbody > p { margin: -6px 0 0; color: var(--color-foreground-muted); font-size: 12.5px; }
+.sbody h3 { margin: 4px 0 0; font: 400 17px/1 var(--font-pixel); letter-spacing: .08em; text-transform: uppercase; color: var(--color-foreground-muted); display: flex; align-items: baseline; gap: 8px; }
+.sbody h3 small { font: 12px var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--color-foreground-subtle); }
+.sbody .more { justify-self: start; }
+.sbody .meta { display: flex; justify-content: space-between; margin-top: 7px; font-size: 12px; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; }
+.sbody .scroll { max-height: 190px; overflow: auto; padding-right: 4px; scrollbar-color: var(--color-border) transparent; }
+.waitbox { border-radius: 9px; background: hsl(215 22% 6.5%); border: 1px solid var(--color-border-subtle); overflow: hidden; }
+.waitbox .wr { display: grid; grid-template-columns: 1fr 120px 40px; gap: 12px; align-items: center; padding: 8px 12px; font-size: 12px; border-bottom: 1px solid var(--color-border-subtle); }
+.waitbox .wr .pieces { grid-column: auto; grid-row: auto; margin: 0; grid-template-columns: repeat(12, 1fr); height: 6px; }
+.waitbox .wr span:last-child { text-align: right; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; }
+.waitbox .check { padding: 10px 12px; }
+.sfoot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--color-border-subtle); background: hsl(215 22% 6.5%); }
+.sfoot .left { margin-right: auto; font-size: 12px; color: var(--color-foreground-subtle); display: inline-flex; gap: 6px; align-items: center; }
+.toast { position: absolute; z-index: 25; left: 16px; bottom: 56px; display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 13px; border-radius: 9px; background: var(--color-background-active); border: 1px solid var(--color-border); font-size: 12.5px; box-shadow: 0 10px 30px rgb(0 0 0 / .4); }
+.toast svg.i { width: 14px; height: 14px; color: var(--color-foreground-muted); }
+.toast.static { position: relative; left: auto; bottom: auto; }
+/* Settings ▸ Updates & support stays as a one-row summary that opens the sheet. */
+.srow-card { border: 1px solid var(--color-border-subtle); border-radius: 12px; background: hsl(215 22% 9%); margin-top: 8px; }
+.srow { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
+.srow + .srow { border-top: 1px solid var(--color-border-subtle); margin: 0 14px; padding: 11px 0; }
+.srow > div { flex: 1; min-width: 0; }
+.srow b { display: block; font-size: 13px; font-weight: 500; color: var(--color-foreground); }
+.srow small { display: block; font-size: 12px; color: var(--color-foreground-muted); margin-top: 1px; }
+.srow small .upbar { width: 120px; margin-top: 6px; }
+.sw { width: 32px; height: 18px; border-radius: 99px; background: var(--color-primary); position: relative; flex: none; }
+.sw::after { content: ""; position: absolute; right: 1px; top: 1px; width: 16px; height: 16px; border-radius: 50%; background: var(--color-foreground); }
+.cap { font-size: 12px; font-weight: 600; color: var(--color-foreground); margin: 18px 0 0 2px; }
+.c-well { padding: 20px !important; min-height: 0 !important; align-items: flex-start !important; flex-direction: column; gap: 14px; background: #0b0d11 !important; }
+.c-well .usheet { width: 100%; box-shadow: 0 16px 40px rgb(0 0 0 / .45); }
+.c-well .srow-card { width: 100%; margin: 0; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Updates</a> · <span>C</span>Dedicated sheet</div>
+    <h1>C · Dedicated sheet</h1>
+    <p>A pixel <b>NEW 1.1.0</b> cartridge appears in the header beside the tabs. It opens a <b>What’s-new sheet</b>: a pixel-art hero with the version, the notes, and the install controls in one place. It makes each release feel like an event. Settings keeps a <b>one-row summary</b> that opens the same sheet.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+  <h2 class="section-title">Every state</h2>
+  <p class="section-sub">The sheet for each state, with the Settings ▸ Updates &amp; support summary row under it. Number keys 1–9 switch the live window.</p>
+  <div class="grid" id="grid"></div>
+  <p class="hub-footer">Prototype only; nothing here changes the app. The hero is drawn on a 4px pixel grid from the accent’s bevel shades, so it recolours with the accent.</p>
+</main>
+<script src="../brand.js"></script>
+<script src="../shared.js"></script>
+<script>
+const P = SnagProto, V = P.NEXT;
+// Pixel-art hero: a 125 × 38 grid scaled 4×, sky bands, stars and stepped hills from the accent's shades.
+const steps = (heights, w, base) => 'M0 ' + base + heights.map((h, i) => `V${base - h}H${(i + 1) * w}`).join('') + `V${base}Z`;
+const sceneSVG = (tone = 'accent') => {
+  const tint = (pct, c) => `color-mix(in srgb, ${tone === 'warn' ? 'var(--color-status-paused)' : tone === 'good' ? 'var(--color-status-completed)' : c} ${pct}%, #0a0c10)`;
+  const stars = [[8, 4], [19, 11], [27, 3], [41, 8], [52, 2], [71, 5], [84, 12], [93, 3], [104, 9], [117, 4], [12, 17], [110, 16], [63, 14], [35, 15]];
+  return `<svg class="scene" viewBox="0 0 125 38" preserveAspectRatio="none" shape-rendering="crispEdges" aria-hidden="true">
+    <rect width="125" height="38" fill="#0a0c10"/>
+    <rect y="12" width="125" height="6" style="fill:${tint(10, 'var(--color-primary)')}"/>
+    <rect y="18" width="125" height="5" style="fill:${tint(18, 'var(--color-primary)')}"/>
+    <rect y="23" width="125" height="4" style="fill:${tint(28, 'var(--color-primary)')}"/>
+    ${stars.map(([x, y], i) => `<rect class="star ${i % 3 === 0 ? 'b' : i % 3 === 1 ? 'b2' : ''}" x="${x}" y="${y}" width="1" height="1" fill="#fff" opacity="${i % 2 ? .55 : .8}"/>`).join('')}
+    <path d="${steps([4, 5, 7, 8, 8, 7, 5, 4, 5, 6, 8, 9, 9, 8, 6, 5, 4, 4, 5, 7, 8, 7, 6, 5, 5, 4], 5, 33)}" style="fill:${tint(42, 'var(--accent-bevel-dark)')}"/>
+    <path d="${steps([2, 3, 3, 4, 5, 5, 4, 3, 2, 2, 3, 4, 4, 3, 3, 2, 3, 4, 5, 5, 4, 3, 3, 2, 2, 3], 5, 35)}" style="fill:${tint(22, 'var(--accent-bevel-dark)')}"/>
+    <rect y="34" width="125" height="4" fill="#07080a"/><rect y="34" width="125" height="1" style="fill:${tone === 'warn' ? 'var(--color-status-paused)' : tone === 'good' ? 'var(--color-status-completed)' : 'var(--accent-bevel-face)'}"/>
+  </svg>`;
+};
+const hero = (s) => {
+  const kicker = { checking: 'Checking', uptodate: 'Up to date', downloading: 'Downloading', installing: 'Installing', error: 'Not installed' }[s] || 'New version';
+  const num = (s === 'uptodate' || s === 'checking') ? P.CUR : V;
+  const tone = s === 'error' ? 'warn' : s === 'uptodate' ? 'good' : 'accent';
+  const btn = P.button(60).replace('class="pbtn"', `class="pbtn${s === 'installing' ? ' pressing' : ''}"`);
+  return `<div class="hero${s === 'error' ? ' gray' : ''}">${sceneSVG(tone)}<div class="mid">${btn}<div class="ver"><small>${kicker}</small><b>${num}</b></div></div>${s === 'installing' ? '' : `<button class="iconbtn x" aria-label="Close" data-flip="sheetOpen">${P.icon('x')}</button>`}</div>`;
+};
+const later = '<button class="btn lg" data-go="deferred">Later</button>';
+const install = (disabled) => `<button class="btn lg primary" ${disabled ? 'disabled title="Available when downloads finish"' : 'data-go="installing"'}>Restart &amp; install</button>`;
+const ver = `SnagThis <span class="pixel">${V}</span>`;
+const waitRow = (t, done, pct) => `<div class="wr"><span>${t}</span><div class="pieces live">${Array.from({ length: 12 }, (_, n) => n < done ? '<i class="d"></i>' : n === done ? '<i class="c"></i>' : '<i></i>').join('')}</div><span>${pct}%</span></div>`;
+const sheetBody = (s, ctx) => ({
+  checking: [`<h2>Checking for updates…</h2><p>You’re on SnagThis ${P.CUR}.</p>${P.upbar(null, 32, 10)}`, `<span class="left">Checks each time SnagThis starts</span><button class="btn lg" data-flip="sheetOpen">Close</button>`],
+  uptodate: [`<h2>You’re up to date</h2><p>SnagThis ${P.CUR} is the newest version. Checked just now.</p>`, `<span class="left">${P.icon('check', 'ok')}Checks each time SnagThis starts</span><button class="btn lg" data-flip="sheetOpen">Done</button>`],
+  downloading: [`<h2>Downloading ${ver}</h2><div>${P.upbar(P.PCT, 32, 10)}<div class="meta"><span>${P.GOT} of ${P.SIZE} MB</span><span>about 20 s left</span></div></div><h3>What’s new</h3>${P.notesList(3)}<button class="btn quiet more" data-go="notes">See all 5 changes</button>`, `<span class="left">Installs when you restart</span><button class="btn lg" data-flip="sheetOpen">Keep snagging</button>`],
+  ready: [`<h2>${ver} is ready</h2><p>Restarting takes a few seconds. Your queue picks up where it left off.</p><h3>What’s new</h3>${P.notesList(3)}<button class="btn quiet more" data-go="notes">See all 5 changes</button>`, `<span class="left">You’re on ${P.CUR}</span>${later}${install()}`],
+  notes: [`<h2>${ver} is ready</h2><h3>What’s new <small>5 changes</small></h3><div class="scroll">${P.notesList()}</div><a class="link" href="#" style="font-size:12px">Full release notes on GitHub ↗</a>`, `<span class="left">You’re on ${P.CUR}</span>${later}${install()}`],
+  blocked: [`<h2>${ver} is ready</h2><p>${P.ACTIVE} downloads are still running. Restarting now would interrupt them.</p><div class="waitbox">${waitRow('Neon Rain — night drive', 4, 34)}${waitRow('Behind the pixels', 2, 18)}<label class="check"><input type="checkbox" data-ctx="waitInstall" ${ctx.waitInstall ? 'checked' : ''}>Install when downloads finish</label></div><button class="btn quiet more" data-go="notes">What’s new in ${V}</button>`, `<span class="left">${ctx.waitInstall ? 'Installs in about 5 min' : 'Available when downloads finish'}</span>${later}${install(true)}`],
+  deferred: [`<h2>${ver} is ready</h2><p>Reminding you at ${P.REMIND}. It also installs the next time you quit.</p><h3>What’s new</h3>${P.notesList(3)}`, `<span class="left">${P.icon('clock')}Reminder at ${P.REMIND}</span>${install()}`],
+  installing: [`<h2>Installing ${ver}…</h2><p>SnagThis will close and reopen by itself. Your queue is saved.</p>${P.upbar(null, 32, 10)}`, ''],
+  error: [`<h2>Couldn’t download the update</h2><p>The connection dropped at ${P.GOT} of ${P.SIZE} MB. You’re still on ${P.CUR}; nothing changed.</p>${P.errorDetails()}`, `<a class="btn lg" href="#" style="margin-right:auto">Download installer ${P.icon('ext')}</a><button class="btn lg primary" data-go="downloading">${P.icon('retry')}Try again</button>`],
+}[s]);
+const sheet = (s, ctx) => { const [b, f] = sheetBody(s, ctx); return `<div class="usheet" role="dialog" aria-label="Update">${hero(s)}<div class="sbody">${b}</div>${f ? `<div class="sfoot">${f}</div>` : ''}</div>`; };
+const chip = (s) => ({
+  downloading: `<button class="tchip cart" data-flip="sheetOpen">${P.upbar(P.PCT, 6, 6)}<span class="num">${P.PCT}%</span></button>`,
+  ready: `<button class="tchip hot cart" data-flip="sheetOpen" aria-label="SnagThis ${V} is ready">${P.button(13)}<span class="pixel">NEW ${V}</span></button>`,
+  deferred: `<button class="tchip cart" data-flip="sheetOpen">${P.icon('clock')}<span class="pixel">${V}</span> · ${P.REMIND}</button>`,
+  error: `<button class="tchip warn cart" data-flip="sheetOpen">${P.icon('alert')}Update failed</button>`,
+}[(s === 'notes' || s === 'blocked') ? 'ready' : s] || '');
+const toast = (cls = '') => `<div class="toast ${cls}">${P.icon('clock')}Reminding you at ${P.REMIND}<button class="btn quiet" data-go="ready">Undo</button></div>`;
+const settingsRow = (s) => {
+  const hint = {
+    checking: `Checking for updates…`,
+    uptodate: `Up to date · checked just now`,
+    downloading: `Downloading ${V} · ${P.GOT} of ${P.SIZE} MB${P.upbar(P.PCT, 20, 5)}`,
+    ready: `<span style="color:var(--color-primary-hover)">${V} is ready to install</span>`, notes: `<span style="color:var(--color-primary-hover)">${V} is ready to install</span>`,
+    blocked: `${V} installs after ${P.ACTIVE} downloads finish`,
+    deferred: `${V} is ready · reminding you at ${P.REMIND}`,
+    installing: `Installing ${V}…`,
+    error: `<span class="warn">Couldn’t download ${V}</span>`,
+  }[s];
+  const ctl = ['ready', 'notes', 'blocked', 'deferred', 'downloading', 'error'].includes(s) ? `<button class="btn" data-go="${s === 'error' ? 'error' : s === 'downloading' ? 'downloading' : 'ready'}">${s === 'error' ? 'Details' : 'See update'}</button>` : `<button class="btn" ${s === 'checking' || s === 'installing' ? 'disabled' : ''}>Check now</button>`;
+  return `<div class="srow-card"><div class="srow"><div><b>SnagThis ${P.CUR}</b><small>${hint}</small></div>${ctl}</div><div class="srow"><div><b>Check automatically</b><small>Looks for a new version each time SnagThis starts.</small></div><i class="sw"></i></div></div>`;
+};
+const NOTES = {
+  checking: '<h2>Checking</h2><p>Launch checks are <b>silent</b> and show no chip. The sheet opens for a check only from Settings ▸ Check now or ⌘K <b>Check for updates</b>, so the answer has somewhere to land.</p>',
+  uptodate: '<h2>Up to date</h2><p>Green horizon, the current version as the hero. One button: Done.</p>',
+  downloading: '<h2>Downloading</h2><p>Background downloads only show the header chip with a mini meter and <b>41%</b>. Opening it shows <b>38 of 92 MB</b> on accent pixel cells and the notes to read while waiting.</p>',
+  ready: '<h2>Ready to install</h2><p>The header chip turns into an accent cartridge, <b>NEW 1.1.0</b>, with one blinking sparkle pixel. It sits next to the tabs, the most-looked-at controls. The sheet leads with the version in the hero and <b>SnagThis 1.1.0 is ready</b>.</p><div class="why">Makes a release feel like an event, and gives the notes room to sell the update. Costs one extra click before installing.</div>',
+  notes: '<h2>What’s new</h2><p>All five changes in a scrolling list with pixel tags (<b>New</b>, <b>Better</b>, <b>Fixed</b>) and a link to the full notes. The install controls stay pinned in the sheet footer.</p>',
+  blocked: '<h2>Blocked by active downloads</h2><p>The sheet names the downloads it would interrupt, with their live pieces. <b>Install when downloads finish</b> is on by default; Restart &amp; install is disabled and the footer says why.</p>',
+  deferred: `<h2>Later</h2><p>The sheet closes and a toast confirms <b>Reminding you at ${P.REMIND}</b> with Undo. The chip turns neutral and shows the time. At ${P.REMIND} it turns accent again; the sheet never opens by itself.</p>`,
+  installing: '<h2>Installing</h2><p>The hero’s pixel button does the launch <b>press</b> animation while a marching bar runs. No close button: the window hands over to the installer.</p>',
+  error: '<h2>Error</h2><p>The hero drains to grey with an amber horizon. Plain headline, one line of what happened, <b>Try again</b> as primary, <b>Download installer ↗</b> as the escape hatch, raw error behind <b>Details</b>. The chip turns amber.</p>',
+};
+P.mount({
+  initial: 'ready',
+  ctx: { sheetOpen: true, waitInstall: true },
+  toggles: [{ key: 'sheetOpen', label: 'Sheet open' }],
+  cardMin: '520px',
+  view: (s, ctx) => ({
+    topExtra: chip(s),
+    overlay: s === 'deferred' ? toast() : ctx.sheetOpen ? `<div class="scrim">${sheet(s, ctx)}</div>` : '',
+  }),
+  cardHint: (s) => ({ checking: 'only after Check now', deferred: 'sheet closes; toast + chip' }[s] || ''),
+  card: (s, ctx) => `<div class="well c-well">${s === 'deferred' ? `<div style="display:flex;gap:10px;align-items:center">${chip(s)}<span class="subtle" style="font-size:12px">header chip</span></div>${toast('static')}` : sheet(s, ctx)}<div class="cap" style="margin:0">Settings ▸ Updates</div>${settingsRow(s)}</div>`,
+  notes: (s) => NOTES[s] + `<h3>Settings ▸ Updates &amp; support</h3>${settingsRow(s)}`,
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Updates B · Banner</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+/* B · Banner: one slim bar between the header and the queue, with the primary action inline. */
+.ubanner { position: relative; z-index: 4; flex: none; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px 6px 16px; background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary-muted) 80%, var(--color-surface-row)), var(--color-surface-row) 70%); border-bottom: 1px solid var(--color-border-subtle); font-size: 12.5px; overflow: hidden; }
+.ubanner::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); }
+.ubanner.neutral { background: var(--color-surface-row); }
+.ubanner.neutral::before { background: hsl(215 12% 34%); }
+.ubanner.good::before { background: var(--color-status-completed); }
+.ubanner.good { background: linear-gradient(90deg, hsl(145 40% 12%), var(--color-surface-row) 60%); }
+.ubanner.warn { background: linear-gradient(90deg, hsl(44 50% 11%), var(--color-surface-row) 60%); }
+.ubanner.warn::before { background: var(--color-status-paused); }
+.ubanner .lead { display: grid; place-items: center; width: 18px; }
+.ubanner .lead svg.i { width: 16px; height: 16px; }
+.ubanner .msg { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-foreground-muted); }
+.ubanner .msg b { color: var(--color-foreground); font-weight: 600; }
+.ubanner .msg .pixel { font-size: 16px; color: var(--color-primary-hover); }
+.ubanner .acts { display: flex; align-items: center; gap: 6px; flex: none; }
+.ubanner .dl { display: flex; align-items: center; gap: 10px; flex: none; font-size: 12px; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; }
+.ubanner .dl .upbar { width: 200px; }
+.ubanner .x { width: 26px; height: 26px; }
+.ubanner .x svg.i { width: 13px; height: 13px; }
+.ubanner .sep { width: 1px; height: 18px; background: var(--color-border); margin: 0 2px; }
+.ubanner .check { color: var(--color-foreground); }
+.udrawer { position: relative; z-index: 3; flex: none; padding: 14px 16px 16px 16px; background: hsl(215 22% 6.5%); border-bottom: 1px solid var(--color-border-subtle); }
+.udrawer::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: color-mix(in srgb, var(--color-primary-hover) 40%, transparent); }
+.udrawer.warn::before { background: color-mix(in srgb, var(--color-status-paused) 40%, transparent); }
+.udrawer h4 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; font: 400 18px/1 var(--font-pixel); letter-spacing: .06em; text-transform: uppercase; color: var(--color-foreground); }
+.udrawer h4 small { font: 12px var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--color-foreground-subtle); }
+.udrawer h4 a { margin-left: auto; font: 500 12px var(--font-sans); letter-spacing: 0; text-transform: none; }
+.udrawer .relnotes { grid-template-columns: 1fr 1fr; gap: 10px 28px; }
+.udrawer pre { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--color-background); border: 1px solid var(--color-border-subtle); color: var(--color-foreground-muted); font: 11px/1.5 var(--font-mono); white-space: pre-wrap; word-break: break-all; }
+.foot .later-note { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; color: var(--color-foreground-muted); }
+.foot .later-note svg.i { width: 13px; height: 13px; }
+.b-well { display: block !important; padding: 0 !important; min-height: 0 !important; background: var(--color-background-raised); }
+.b-well .ubanner, .b-well .udrawer { z-index: 0; }
+.b-well .vrow { opacity: .55; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Updates</a> · <span>B</span>Banner</div>
+    <h1>B · Banner</h1>
+    <p>A <b>slim, dismissible bar</b> slides in above the queue, in the same place the eye lands after pasting a link. The primary action sits <b>inline</b>, so installing is one click from the main window. What’s new and error details open as a drawer under the bar; everything else stays one line.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+  <h2 class="section-title">Every state</h2>
+  <p class="section-sub">Each bar at full window width, over the first queue row. Number keys 1–9 switch the live window.</p>
+  <div class="grid" id="grid"></div>
+  <p class="hub-footer">Prototype only; nothing here changes the app. The bar’s left edge reuses the row’s 3px accent edge, so it reads as part of the queue’s language.</p>
+</main>
+<script src="../brand.js"></script>
+<script src="../shared.js"></script>
+<script>
+const P = SnagProto, V = P.NEXT;
+const ver = `SnagThis <span class="pixel">${V}</span>`;
+const x = (go = 'deferred') => `<button class="iconbtn x" aria-label="Dismiss" data-go="${go}">${P.icon('x')}</button>`;
+const later = '<button class="btn" data-go="deferred">Later</button>';
+const install = (disabled) => `<button class="btn primary" ${disabled ? 'disabled title="Available when downloads finish"' : 'data-go="installing"'}>Restart &amp; install</button>`;
+const newsLink = (open) => `<button class="btn quiet" data-go="${open ? 'ready' : 'notes'}">${open ? 'Hide what’s new' : 'What’s new'}</button>`;
+const bar = (cls, lead, msg, acts) => `<div class="ubanner ${cls}" role="status"><span class="lead">${lead}</span><div class="msg">${msg}</div><div class="acts">${acts}</div></div>`;
+const banner = (s, ctx) => ({
+  checking: bar('neutral', P.spin(), '<b>Checking for updates…</b> You’re on SnagThis ' + P.CUR + '.', ''),
+  uptodate: bar('good', P.icon('check', 'ok'), `<b>You’re up to date.</b> SnagThis ${P.CUR} is the newest version.`, x('uptodate')),
+  downloading: bar('neutral', P.button(18), `<b>Downloading ${ver}</b> · installs when you restart`, `<div class="dl">${P.upbar(P.PCT, 24, 8)}<span>${P.GOT} of ${P.SIZE} MB</span></div><span class="sep"></span>${newsLink(false)}${x('downloading')}`),
+  ready: bar('', P.button(18), `<b>${ver} is ready.</b> Restarting takes a few seconds; your queue picks up where it left off.`, `${newsLink(false)}${later}${install()}`),
+  notes: bar('', P.button(18), `<b>${ver} is ready.</b> Restarting takes a few seconds.`, `${newsLink(true)}${later}${install()}`),
+  blocked: bar('', P.button(18), `<b>${ver} is ready.</b> ${P.ACTIVE} downloads are still running.`, `<label class="check"><input type="checkbox" data-ctx="waitInstall" ${ctx.waitInstall ? 'checked' : ''}>Install when downloads finish</label><span class="sep"></span>${later}${install(true)}`),
+  deferred: bar('neutral', P.icon('clock'), `<b>Okay, reminding you at ${P.REMIND}.</b> ${ver} also installs the next time you quit.`, `<button class="btn quiet" data-go="ready">Undo</button>${install()}${x('deferred')}`),
+  installing: bar('', P.spin(), `<b>Installing ${ver}…</b> SnagThis will close and reopen by itself.`, `<div class="dl">${P.upbar(null, 24, 8)}</div>`),
+  error: bar('warn', P.icon('alert', 'warn'), `<b>Couldn’t download the update.</b> The connection dropped at ${P.GOT} of ${P.SIZE} MB; you’re still on ${P.CUR}.`, `<button class="btn quiet" data-flip="details">${ctx.details ? 'Hide details' : 'Details'}</button><a class="btn" href="#">Download installer ${P.icon('ext')}</a><button class="btn primary" data-go="downloading">${P.icon('retry')}Try again</button>`),
+}[s]);
+const drawer = (s, ctx) => {
+  if (s === 'notes') return `<div class="udrawer"><h4>What’s new <small>in ${V} · you’re on ${P.CUR}</small><a class="link" href="#">Full release notes ↗</a></h4>${P.notesList()}</div>`;
+  if (s === 'blocked' && ctx.waitInstall) return '';
+  if (s === 'error' && ctx.details) return `<div class="udrawer warn"><pre>${P.RAW.replace(/</g, '&lt;')}</pre></div>`;
+  return '';
+};
+const waitNote = (s, ctx) => s === 'blocked' && ctx.waitInstall ? `<span class="later-note">${P.button(12)}Installs after ${P.ACTIVE} downloads finish</span>` : s === 'deferred' ? `<span class="later-note">${P.icon('clock')}Update at ${P.REMIND}</span>` : '';
+P.mount({
+  initial: 'ready',
+  ctx: { waitInstall: true, details: false },
+  cardCtx: { details: true },
+  cardMin: '100%',
+  view: (s, ctx) => ({ banner: banner(s, ctx) + drawer(s, ctx), footExtra: waitNote(s, ctx), dim: s === 'installing' }),
+  cardHint: (s) => ({ checking: 'only after Check now', uptodate: 'slides away after 4 s', deferred: 'slides away after 5 s; footer keeps the time', blocked: 'footer shows the promise when ticked' }[s] || ''),
+  card: (s, ctx) => `<div class="well b-well">${banner(s, ctx)}${drawer(s, ctx)}${P.rows().split('<div class="vrow">').slice(0, 2).join('<div class="vrow">')}</div>`,
+  notes: {
+    checking: '<h2>Checking</h2><p>Launch checks are <b>silent</b>. The bar appears for a check only when you ask (Settings ▸ Check now, or ⌘K). Neutral grey edge: nothing to act on yet.</p>',
+    uptodate: '<h2>Up to date</h2><p>Green edge and a check, then the bar slides up after 4 seconds. Only after a manual check.</p>',
+    downloading: '<h2>Downloading</h2><p>Automatic downloads stay <b>quiet</b> by default; this bar appears for a download you started, or if the owner prefers early notice. <b>38 of 92 MB</b> on accent pixel cells, so it never reads as a video download (those stay green). × hides it; the update still arrives.</p>',
+    ready: '<h2>Ready to install</h2><p>The bar arrives with a 240ms slide and stays until acted on. It leads with <b>SnagThis 1.1.0 is ready</b>, and <b>Restart &amp; install</b> sits right there.</p><div class="why">Hard to miss: it sits between the paste field and the queue, the path every session takes. Costs 44px of queue height until dismissed.</div>',
+    notes: '<h2>What’s new</h2><p>Opens as a drawer under the bar in two columns with pixel tags (<b>New</b>, <b>Better</b>, <b>Fixed</b>). The drawer pushes the queue down, which is fine because you asked for it.</p>',
+    blocked: `<h2>Blocked by active downloads</h2><p>The checkbox lives inline; Restart &amp; install stays disabled (tooltip: “Available when downloads finish”). With the box ticked, the footer keeps the promise visible even after the bar is dismissed.</p>`,
+    deferred: `<h2>Later</h2><p>The bar confirms <b>reminding you at ${P.REMIND}</b> with an <b>Undo</b>, then slides away after 5 seconds. The footer keeps a small <b>Update at ${P.REMIND}</b>. At that time the bar returns once.</p>`,
+    installing: '<h2>Installing</h2><p>The bar marches while the queue dims, making it clear the app is about to close. No Cancel: it lasts a second or two.</p>',
+    error: '<h2>Error</h2><p>Amber edge and icon. Headline plus one line of what happened; <b>Try again</b> is primary, <b>Download installer ↗</b> is the escape hatch, and <b>Details</b> opens the raw error in the drawer (shown open in the grid below).</p>',
+  },
+});
+</script>
+</body>
+</html>

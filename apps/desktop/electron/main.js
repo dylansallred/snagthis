@@ -20,6 +20,8 @@ let updaterInstallTimer = null;
 let updaterCheckTimeout = null;
 let updaterCheckPromise = null;
 let updaterInstallRequested = false;
+// "Install when downloads finish" polls the queue while an update waits for active downloads.
+let updaterIdleTimer = null;
 const apiHost = process.env.M3U8_API_HOST || API.host;
 let apiPort = Number(process.env.M3U8_API_PORT ?? API.port);
 let apiStartupState = 'starting';
@@ -28,6 +30,8 @@ let requestedView = null;
 // Deep links and the extension open Settings on Chrome extension; the app menu reopens the last section.
 let requestedSettingsSection = null;
 let settingsListenerReady = false;
+// Clicking an update notification opens the update sheet once the renderer listens.
+let updateListenerReady = false;
 // snagthis://open/pair asks to show the one pending Chrome request; it carries no ID or secret.
 let pairingDialogRequested = false;
 let pairingListenerReady = false;
@@ -47,6 +51,7 @@ const UPDATER_CHECK_TIMEOUT_MS = 45_000;
 const UPDATER_INSTALL_TIMEOUT_MS = 180_000;
 const UPDATER_STARTUP_CHECK_DELAY_MS = 3_000;
 const UPDATER_PERIODIC_CHECK_MS = 6 * 60 * 60 * 1000;
+const UPDATER_IDLE_POLL_MS = 3_000;
 
 const updaterState = {
   phase: 'idle',
@@ -60,6 +65,13 @@ const updaterState = {
   reminderIntervalMs: null,
   lastCheckedAt: null,
   error: null,
+  // 'check' | 'download' | 'install' | 'location', so the window can say what went wrong in plain words.
+  errorKind: null,
+  // From electron-updater's download-progress, for "38 of 92 MB" and the time left.
+  transferredBytes: null,
+  totalBytes: null,
+  bytesPerSecond: null,
+  installWhenIdle: false,
 };
 
 const appSettingsPath = () => path.join(app.getPath('userData'), 'settings.json');
@@ -456,6 +468,7 @@ function setUpdaterIdleState(message, extra = {}) {
 
 function setUpdaterUnsupportedState(message) {
   clearUpdaterReminderTimer();
+  clearInstallWhenIdle();
   clearUpdaterInstallTimer();
   clearUpdaterCheckTimeout();
   updaterCheckPromise = null;
@@ -501,6 +514,7 @@ function normalizeReleaseNotes(updateInfo) {
 
 function focusMainWindow(view, settingsSection = 'chrome') {
   if (view === 'settings') { requestedView = 'settings'; requestedSettingsSection = settingsSection; }
+  if (view === 'update') requestedView = 'update';
   if (!app.isReady()) return;
   if (!mainWindow || mainWindow.isDestroyed()) createWindow();
   if (mainWindow.isMinimized()) {
@@ -508,8 +522,16 @@ function focusMainWindow(view, settingsSection = 'chrome') {
   }
   mainWindow.show();
   mainWindow.focus();
+  deliverRequestedView();
+}
+
+/** Opens Settings or the update sheet once the renderer has said it is listening. */
+function deliverRequestedView() {
   if (requestedView === 'settings' && settingsListenerReady) {
     sendToRenderer('app:open-settings', { section: requestedSettingsSection });
+    requestedView = null;
+  } else if (requestedView === 'update' && updateListenerReady) {
+    sendToRenderer('updater:open', {});
     requestedView = null;
   }
 }
@@ -552,7 +574,7 @@ function showUpdateNotification(title, body) {
       silent: false,
     });
     notification.on('click', () => {
-      focusMainWindow('settings', 'about');
+      focusMainWindow('update');
     });
     notification.show();
   } catch {
@@ -578,6 +600,7 @@ function reconcileUpdaterInstallState() {
 
   const attemptedAt = state.attemptedAt ? new Date(state.attemptedAt).toLocaleString() : 'an unknown time';
   updaterState.phase = 'error';
+  updaterState.errorKind = 'install';
   updaterState.message = 'Previous update install did not complete';
   // Only macOS installs depend on the app living in /Applications.
   const recovery = process.platform === 'darwin'
@@ -620,6 +643,135 @@ function scheduleUpdaterReminder(delayMs, intervalMs) {
   }, safeDelay);
 }
 
+/** Downloads a restart would interrupt; Restart & install and the idle watcher share this rule. */
+function hasUpdateBlockingDownloads() {
+  return !!apiServer?.getState?.().queue?.some((job) =>
+    job.queueStatus === 'downloading' || ['fetching-playlist', 'downloading', 'finalizing'].includes(job.status));
+}
+
+function clearInstallWhenIdle({ notify = false } = {}) {
+  if (updaterIdleTimer) {
+    clearTimeout(updaterIdleTimer);
+    updaterIdleTimer = null;
+  }
+  const wasArmed = updaterState.installWhenIdle;
+  updaterState.installWhenIdle = false;
+  if (notify && wasArmed) sendToRenderer('updater:event', updaterState);
+}
+
+function watchInstallWhenIdle() {
+  if (updaterIdleTimer) clearTimeout(updaterIdleTimer);
+  updaterIdleTimer = setTimeout(() => {
+    updaterIdleTimer = null;
+    if (!updaterState.installWhenIdle) return;
+    if (updaterState.phase !== 'downloaded') { clearInstallWhenIdle({ notify: true }); return; }
+    if (hasUpdateBlockingDownloads()) { watchInstallWhenIdle(); return; }
+    clearInstallWhenIdle();
+    installDownloadedUpdate();
+  }, UPDATER_IDLE_POLL_MS);
+}
+
+/** "Install when downloads finish": installs the ready update once no download is active. */
+function setInstallWhenIdle(enabled) {
+  if (!enabled) {
+    clearInstallWhenIdle({ notify: true });
+    return { ok: true, installWhenIdle: false };
+  }
+  if (updaterState.phase !== 'downloaded') {
+    return { ok: false, error: 'No downloaded update available' };
+  }
+  // Waiting for downloads replaces a Later reminder; choosing Later again clears the wait.
+  clearUpdaterReminderTimer();
+  updaterState.deferredUntil = null;
+  updaterState.nextReminderAt = null;
+  updaterState.reminderIntervalMs = null;
+  updaterState.installWhenIdle = true;
+  sendToRenderer('updater:event', updaterState);
+  watchInstallWhenIdle();
+  return { ok: true, installWhenIdle: true };
+}
+
+function failUpdateInstall(error) {
+  updaterInstallRequested = false;
+  clearUpdaterInstallState();
+  updaterState.phase = 'error';
+  updaterState.errorKind = 'install';
+  updaterState.message = 'Update install failed';
+  updaterState.error = error;
+  sendToRenderer('updater:event', updaterState);
+}
+
+async function installDownloadedUpdate() {
+  if (updaterState.phase !== 'downloaded') {
+    return { ok: false, error: 'No downloaded update available' };
+  }
+  if (!app.isPackaged) {
+    return { ok: false, error: 'Install update is only available in packaged builds' };
+  }
+  const translocated = isTranslocatedMacApp();
+  if (translocated || !isInstalledInApplicationsFolder()) {
+    const error = translocated
+      ? 'Move the app to /Applications before installing updates'
+      : 'Auto-update only works when SnagThis is installed in /Applications';
+    clearInstallWhenIdle();
+    updaterState.phase = 'error';
+    updaterState.errorKind = 'location';
+    updaterState.message = 'Update install blocked';
+    updaterState.error = error;
+    sendToRenderer('updater:event', updaterState);
+    return { ok: false, error };
+  }
+  if (hasUpdateBlockingDownloads()) {
+    const error = 'Pause active downloads or let them finish before restarting to install the update.';
+    updaterState.message = error;
+    sendToRenderer('updater:event', updaterState);
+    return { ok: false, error };
+  }
+
+  clearUpdaterReminderTimer();
+  clearInstallWhenIdle();
+  updaterInstallRequested = true;
+  clearUpdaterInstallTimer();
+  updaterState.phase = 'installing';
+  updaterState.message = 'Installing update and restarting...';
+  updaterState.error = null;
+  updaterState.errorKind = null;
+  sendToRenderer('updater:event', updaterState);
+
+  try {
+    // Keep explicit installs on the direct quitAndInstall() path. Enabling
+    // autoInstallOnAppQuit here breaks MacUpdater because it waits for a
+    // native update-downloaded event that is only triggered by another check.
+    autoUpdater.autoInstallOnAppQuit = false;
+    writeUpdaterInstallState({
+      attemptedAt: new Date().toISOString(),
+      fromVersion: app.getVersion(),
+      targetVersion: updaterState.updateInfo?.version || null,
+      platform: process.platform,
+      exePath: app.getPath('exe'),
+    });
+    setImmediate(() => {
+      try {
+        autoUpdater.quitAndInstall(false, true);
+        updaterInstallTimer = setTimeout(() => {
+          updaterInstallTimer = null;
+          if (updaterState.phase !== 'installing') return;
+          failUpdateInstall('SnagThis didn’t restart to install the update. Try again, or download the installer from snagthisvid.com.');
+          console.error('[desktop] update install did not restart the app');
+        }, UPDATER_INSTALL_TIMEOUT_MS);
+      } catch (err) {
+        failUpdateInstall(String((err && err.message) || err || 'Unknown updater error'));
+        console.error('[desktop] quitAndInstall failed', err);
+      }
+    });
+
+    return { ok: true };
+  } catch (err) {
+    failUpdateInstall(String((err && err.message) || err || 'Unknown updater error'));
+    return { ok: false, error: updaterState.error };
+  }
+}
+
 function loadAutoUpdater() {
   if (autoUpdater) return;
   autoUpdater = require('electron-updater').autoUpdater;
@@ -634,8 +786,10 @@ function configureAutoUpdater() {
     clearUpdaterInstallTimer();
     updaterInstallRequested = false;
     clearUpdaterReminderTimer();
+    clearInstallWhenIdle();
     updaterState.phase = 'checking';
     updaterState.message = 'Checking for updates...';
+    updaterState.errorKind = null;
     updaterState.deferredUntil = null;
     updaterState.nextReminderAt = null;
     updaterState.reminderIntervalMs = null;
@@ -650,10 +804,15 @@ function configureAutoUpdater() {
     clearUpdaterInstallTimer();
     updaterInstallRequested = false;
     clearUpdaterReminderTimer();
+    clearInstallWhenIdle();
     updaterState.phase = 'downloading';
     updaterState.message = `Downloading version ${info.version}...`;
     updaterState.updateInfo = info;
     updaterState.releaseNotes = normalizeReleaseNotes(info);
+    updaterState.transferredBytes = null;
+    updaterState.totalBytes = null;
+    updaterState.bytesPerSecond = null;
+    updaterState.errorKind = null;
     updaterState.deferredUntil = null;
     updaterState.nextReminderAt = null;
     updaterState.reminderIntervalMs = null;
@@ -675,7 +834,9 @@ function configureAutoUpdater() {
     clearUpdaterInstallTimer();
     updaterInstallRequested = false;
     clearUpdaterReminderTimer();
+    clearInstallWhenIdle();
     updaterState.phase = 'idle';
+    updaterState.errorKind = null;
     updaterState.message = `You are up to date on version ${app.getVersion()}.`;
     updaterState.updateInfo = info || null;
     updaterState.releaseNotes = normalizeReleaseNotes(info);
@@ -693,7 +854,12 @@ function configureAutoUpdater() {
     updaterState.phase = 'downloading';
     updaterState.progress = Math.round(progress.percent || 0);
     updaterState.message = `Downloading update... ${updaterState.progress}%`;
+    const bytes = (value) => (Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null);
+    updaterState.transferredBytes = bytes(progress.transferred);
+    updaterState.totalBytes = bytes(progress.total) || null;
+    updaterState.bytesPerSecond = bytes(progress.bytesPerSecond);
     updaterState.error = null;
+    updaterState.errorKind = null;
     updaterState.currentVersion = app.getVersion();
     sendToRenderer('updater:event', updaterState);
   });
@@ -703,7 +869,9 @@ function configureAutoUpdater() {
     clearUpdaterInstallTimer();
     updaterInstallRequested = false;
     clearUpdaterReminderTimer();
+    clearInstallWhenIdle();
     updaterState.phase = 'downloaded';
+    updaterState.errorKind = null;
     updaterState.message = `Update ${info.version} downloaded. Restart to install.`;
     updaterState.updateInfo = info;
     updaterState.releaseNotes = normalizeReleaseNotes(info);
@@ -729,7 +897,9 @@ function configureAutoUpdater() {
     clearUpdaterInstallTimer();
     updaterInstallRequested = false;
     clearUpdaterReminderTimer();
+    clearInstallWhenIdle();
     updaterState.phase = 'error';
+    updaterState.errorKind = failedPhase === 'installing' ? 'install' : failedPhase === 'downloading' ? 'download' : 'check';
     updaterState.message = failedPhase === 'installing' ? 'Update install failed'
       : failedPhase === 'downloading' ? 'Update download failed' : 'Update check failed';
     updaterState.deferredUntil = null;
@@ -757,10 +927,12 @@ async function checkForUpdatesNow() {
     return { ok: true, inFlight: updaterState.phase !== 'downloaded' };
   }
 
+  clearInstallWhenIdle();
   updaterState.phase = 'checking';
   updaterState.message = 'Checking for updates...';
   updaterState.progress = 0;
   updaterState.error = null;
+  updaterState.errorKind = null;
   updaterState.currentVersion = app.getVersion();
   updaterState.lastCheckedAt = Date.now();
   updaterState.deferredUntil = null;
@@ -774,6 +946,7 @@ async function checkForUpdatesNow() {
       updaterCheckTimeout = null;
       if (updaterState.phase !== 'checking') return;
       updaterState.phase = 'error';
+      updaterState.errorKind = 'check';
       updaterState.message = 'Update check timed out';
       updaterState.error = 'The update service did not respond. Try again in a moment.';
       updaterState.progress = 0;
@@ -810,6 +983,7 @@ async function checkForUpdatesNow() {
       return { ok: true };
     } catch (err) {
       updaterState.phase = 'error';
+      updaterState.errorKind = 'check';
       updaterState.message = 'Update check failed';
       updaterState.error = String(err.message || err);
       updaterState.progress = 0;
@@ -987,6 +1161,7 @@ function installApplicationMenu() {
 
 function createWindow() {
   settingsListenerReady = false;
+  updateListenerReady = false;
   pairingListenerReady = false;
   mainWindow = new BrowserWindow({
     width: 820,
@@ -1057,10 +1232,7 @@ function createWindow() {
   window.webContents.on('did-finish-load', () => {
     sendWindowState();
     sendToRenderer('app:info-update', appInfo());
-    if (requestedView === 'settings' && settingsListenerReady) {
-      sendToRenderer('app:open-settings', { section: requestedSettingsSection });
-      requestedView = null;
-    }
+    deliverRequestedView();
   });
   window.webContents.on('will-navigate', (event, url) => {
     if (!sameRendererUrl(url)) { event.preventDefault(); openExternal(url).catch(() => {}); }
@@ -1133,10 +1305,11 @@ function registerIpc() {
   handleIpc('app:open-settings', async () => { focusMainWindow('settings'); return { ok: true }; });
   handleIpc('app:settings-listener-ready', async () => {
     settingsListenerReady = true;
-    if (requestedView === 'settings') {
-      sendToRenderer('app:open-settings', { section: requestedSettingsSection });
-      requestedView = null;
-    }
+    deliverRequestedView();
+  });
+  handleIpc('updater:listener-ready', async () => {
+    updateListenerReady = true;
+    deliverRequestedView();
   });
   handleIpc('app:open-external', async (_event, url) => openExternal(url));
   handleIpc('app:open-save-folder', async () => {
@@ -1229,104 +1402,30 @@ function registerIpc() {
 
   handleIpc('updater:check-now', async () => checkForUpdatesNow());
 
-  handleIpc('updater:install-now', async () => {
-    if (updaterState.phase !== 'downloaded') {
-      return { ok: false, error: 'No downloaded update available' };
-    }
-    if (!app.isPackaged) {
-      return { ok: false, error: 'Install update is only available in packaged builds' };
-    }
-    if (isTranslocatedMacApp()) {
-      const error = 'Move the app to /Applications before installing updates';
-      updaterState.phase = 'error';
-      updaterState.message = 'Update install blocked';
-      updaterState.error = error;
-      sendToRenderer('updater:event', updaterState);
-      return { ok: false, error };
-    }
-    if (!isInstalledInApplicationsFolder()) {
-      const error = 'Auto-update only works when SnagThis is installed in /Applications';
-      updaterState.phase = 'error';
-      updaterState.message = 'Update install blocked';
-      updaterState.error = error;
-      sendToRenderer('updater:event', updaterState);
-      return { ok: false, error };
-    }
-    const activeJobs = apiServer?.getState?.().queue?.some((job) =>
-      job.queueStatus === 'downloading' || ['fetching-playlist', 'downloading', 'finalizing'].includes(job.status));
-    if (activeJobs) {
-      const error = 'Pause active downloads or let them finish before restarting to install the update.';
-      updaterState.message = error;
-      sendToRenderer('updater:event', updaterState);
-      return { ok: false, error };
-    }
+  handleIpc('updater:install-now', async () => installDownloadedUpdate());
 
-    clearUpdaterReminderTimer();
-    updaterInstallRequested = true;
-    clearUpdaterInstallTimer();
-    updaterState.phase = 'installing';
-    updaterState.message = 'Installing update and restarting...';
-    updaterState.error = null;
-    sendToRenderer('updater:event', updaterState);
-
-    try {
-      // Keep explicit installs on the direct quitAndInstall() path. Enabling
-      // autoInstallOnAppQuit here breaks MacUpdater because it waits for a
-      // native update-downloaded event that is only triggered by another check.
-      autoUpdater.autoInstallOnAppQuit = false;
-      writeUpdaterInstallState({
-        attemptedAt: new Date().toISOString(),
-        fromVersion: app.getVersion(),
-        targetVersion: updaterState.updateInfo?.version || null,
-        platform: process.platform,
-        exePath: app.getPath('exe'),
-      });
-      setImmediate(() => {
-        try {
-          autoUpdater.quitAndInstall(false, true);
-          updaterInstallTimer = setTimeout(() => {
-            updaterInstallTimer = null;
-            if (updaterState.phase !== 'installing') return;
-            updaterInstallRequested = false;
-            clearUpdaterInstallState();
-            updaterState.phase = 'error';
-            updaterState.message = 'Update install failed';
-            updaterState.error = 'SnagThis didn’t restart to install the update. Try again, or download the installer from snagthisvid.com.';
-            sendToRenderer('updater:event', updaterState);
-            console.error('[desktop] update install did not restart the app');
-          }, UPDATER_INSTALL_TIMEOUT_MS);
-        } catch (err) {
-          updaterInstallRequested = false;
-          clearUpdaterInstallState();
-          updaterState.phase = 'error';
-          updaterState.message = 'Update install failed';
-          updaterState.error = String((err && err.message) || err || 'Unknown updater error');
-          sendToRenderer('updater:event', updaterState);
-          console.error('[desktop] quitAndInstall failed', err);
-        }
-      });
-
-      return { ok: true };
-    } catch (err) {
-      updaterInstallRequested = false;
-      clearUpdaterInstallState();
-      updaterState.phase = 'error';
-      updaterState.message = 'Update install failed';
-      updaterState.error = String((err && err.message) || err || 'Unknown updater error');
-      sendToRenderer('updater:event', updaterState);
-      return { ok: false, error: updaterState.error };
-    }
-  });
+  handleIpc('updater:install-when-idle', async (_event, enabled) => setInstallWhenIdle(enabled === true));
 
   handleIpc('updater:remind-later', async (event, minutes = 30) => {
     if (updaterState.phase !== 'downloaded') {
       return { ok: false, error: 'No downloaded update to defer' };
     }
     const delayMs = Math.max(1, Number(minutes) || 30) * 60 * 1000;
+    clearInstallWhenIdle();
     updaterState.deferredUntil = Date.now() + delayMs;
     updaterState.message = `Update deferred until ${new Date(updaterState.deferredUntil).toLocaleString()}`;
     scheduleUpdaterReminder(delayMs, delayMs);
     return { ok: true, deferredUntil: updaterState.deferredUntil };
+  });
+
+  // Undo for Later: the update is ready again with no reminder pending.
+  handleIpc('updater:cancel-reminder', async () => {
+    clearUpdaterReminderTimer();
+    updaterState.deferredUntil = null;
+    updaterState.nextReminderAt = null;
+    updaterState.reminderIntervalMs = null;
+    sendToRenderer('updater:event', updaterState);
+    return { ok: true };
   });
 }
 

@@ -28,7 +28,8 @@ function fixture() {
   const sandbox = {
     app, autoUpdater: updater, updaterState: state, path, process: { platform: 'darwin' },
     updaterReminderTimer: null, updaterInstallTimer: null, updaterCheckTimeout: null,
-    updaterCheckPromise: null, updaterInstallRequested: false, UPDATER_CHECK_TIMEOUT_MS: 45000, UPDATER_INSTALL_TIMEOUT_MS: 180000,
+    updaterCheckPromise: null, updaterInstallRequested: false, updaterIdleTimer: null,
+    UPDATER_CHECK_TIMEOUT_MS: 45000, UPDATER_INSTALL_TIMEOUT_MS: 180000, UPDATER_IDLE_POLL_MS: 3000,
     apiServer: { getState: () => ({ queue }) },
     Notification: { isSupported: () => false },
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
@@ -53,6 +54,10 @@ function fixture() {
     check: () => sandbox.checkForUpdatesNow(),
     install: () => handlers.get('updater:install-now')(),
     defer: () => handlers.get('updater:remind-later')(null, 30),
+    undoDefer: () => handlers.get('updater:cancel-reminder')(),
+    installWhenIdle: (enabled) => handlers.get('updater:install-when-idle')(null, enabled),
+    idleTimer: () => timers.get(sandbox.updaterIdleTimer),
+    runIdleTimer() { const id = sandbox.updaterIdleTimer; const timer = timers.get(id); timers.delete(id); timer.callback(); },
     queue(value) { queue = value; },
     flushInstall() { for (const callback of immediate.splice(0)) callback(); },
   };
@@ -177,4 +182,76 @@ test('an incomplete previous update gives platform-appropriate recovery advice',
     assert.match(f.state.error, advice);
     if (forbidden) assert.doesNotMatch(f.state.error, forbidden);
   }
+});
+
+test('update download progress carries bytes so the window can show MB and time left', async () => {
+  const f = fixture();
+  const info = { version: '2.0.45', releaseNotes: '' };
+  f.updater.checkForUpdates = async () => { f.updater.emit('update-available', info); return { updateInfo: info, downloadPromise: Promise.resolve() }; };
+  await f.check();
+  assert.equal(f.state.transferredBytes, null, 'a new download starts without stale bytes');
+  f.updater.emit('download-progress', { percent: 41.3, transferred: 39845888, total: 96468992, bytesPerSecond: 2000000 });
+  assert.equal(f.state.progress, 41);
+  assert.equal(f.state.transferredBytes, 39845888);
+  assert.equal(f.state.totalBytes, 96468992);
+  assert.equal(f.state.bytesPerSecond, 2000000);
+  assert.equal(f.events.at(-1).transferredBytes, 39845888, 'the renderer receives the bytes');
+  assert.equal(f.events.at(-1).totalBytes, 96468992);
+  f.updater.emit('download-progress', { percent: 50 });
+  assert.equal(f.state.transferredBytes, null, 'missing byte counts are unknown, not zero');
+  assert.equal(f.state.totalBytes, null);
+});
+
+test('install when downloads finish waits for the queue, installs once, and Later or a new phase clears it', async () => {
+  const f = fixture();
+  const info = { version: '2.0.45', releaseNotes: '' };
+  f.updater.checkForUpdates = async () => ({ updateInfo: info, downloadPromise: Promise.resolve() });
+  assert.equal((await f.installWhenIdle(true)).ok, false, 'nothing to install before an update is downloaded');
+  assert.notEqual(f.state.installWhenIdle, true);
+  await f.check();
+  f.updater.emit('update-downloaded', info);
+
+  f.queue([{ queueStatus: 'downloading', status: 'downloading' }]);
+  assert.equal((await f.installWhenIdle(true)).ok, true);
+  assert.equal(f.state.installWhenIdle, true);
+  assert.equal(f.events.at(-1).installWhenIdle, true, 'the renderer shows the choice');
+  f.runIdleTimer();
+  assert.equal(f.state.phase, 'downloaded', 'an active download keeps the update waiting');
+  assert.equal(f.state.installWhenIdle, true);
+  f.queue([{ queueStatus: 'paused', status: 'finalizing' }]);
+  f.runIdleTimer();
+  assert.equal(f.state.phase, 'downloaded', 'a file still being finished also waits');
+  assert.ok(f.idleTimer(), 'the watcher keeps polling');
+  f.queue([{ queueStatus: 'paused', status: 'paused' }, { queueStatus: 'completed', status: 'completed' }]);
+  f.runIdleTimer();
+  assert.equal(f.state.phase, 'installing', 'the same install path runs once the queue is idle');
+  assert.equal(f.state.installWhenIdle, false);
+  assert.equal(f.sandbox.updaterIdleTimer, null);
+  f.flushInstall();
+  assert.equal(f.installs.length, 1);
+
+  // Later clears it, and so does leaving the downloaded phase.
+  const g = fixture();
+  g.updater.checkForUpdates = f.updater.checkForUpdates;
+  await g.check();
+  g.updater.emit('update-downloaded', info);
+  g.queue([{ queueStatus: 'downloading', status: 'downloading' }]);
+  await g.defer();
+  assert.ok(g.state.deferredUntil);
+  await g.installWhenIdle(true);
+  assert.equal(g.state.deferredUntil, null, 'waiting for downloads replaces the Later reminder');
+  await g.defer();
+  assert.equal(g.state.installWhenIdle, false, 'Later clears install when downloads finish');
+  assert.equal(g.sandbox.updaterIdleTimer, null);
+  assert.equal(g.installs.length, 0);
+  await g.undoDefer();
+  assert.equal(g.state.deferredUntil, null, 'Undo drops the reminder');
+  assert.equal(g.state.phase, 'downloaded');
+  await g.installWhenIdle(true);
+  g.updater.emit('error', new Error('Fixture updater failure'));
+  assert.equal(g.state.installWhenIdle, false, 'an error clears it');
+  assert.equal(g.state.errorKind, 'check');
+  assert.equal(g.sandbox.updaterIdleTimer, null);
+  g.flushInstall();
+  assert.equal(g.installs.length, 0);
 });
