@@ -56,7 +56,4 @@ Rules:
 
 ## First public release
 
-Nothing has been published yet, so the first version on each track can still be chosen freely. After that, the rules above apply.
-
-- **Extension:** `1.0.0`, as set today.
-- **Desktop:** `1.0.0` is recommended. The current `2.0.44` is carried over from the predecessor project, and SnagThis has no earlier public releases whose installs it would need to update from. Starting both at `1.0.0` also makes the launch easy to talk about, even though the two will drift apart afterwards.
+Both tracks launch at **`1.0.0`**: the first desktop tag is `v1.0.0` and the first extension version is `1.0.0`. The desktop app was `2.0.44` during development, carried over from the predecessor project. It was reset because nothing had been published, so no installed copy needs to update from it. The two versions will drift apart after launch, as described above.
