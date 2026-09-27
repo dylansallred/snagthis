@@ -4,6 +4,7 @@
 
   // Paste the Chrome Web Store listing here once it is live; until then the buttons say "Coming soon".
   const CHROME_STORE_URL = '';
+  const RELEASES = 'https://github.com/dylansallred/snagthis/releases';
 
   const root = document.documentElement;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -160,6 +161,40 @@
         label.textContent = `Download for ${names[os]}`;
       });
     }
+  }
+  // Every Mac browser reports "Intel Mac OS X", so the chip comes from Chromium's client hints and
+  // the GPU name instead. An Apple M GPU wins over an x86 hint: that is Intel Chrome under Rosetta.
+  const MAC_DMG = { arm64: `${RELEASES}/latest/download/SnagThis-mac-arm64.dmg`, x64: `${RELEASES}/latest/download/SnagThis-mac-x64.dmg` };
+  const MAC_CHIP = { arm64: 'Apple Silicon', x64: 'Intel' };
+  function gpuName() {
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      const info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      return info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+    } catch { return ''; }
+  }
+  async function detectMacChip() {
+    const gpu = gpuName();
+    if (/Apple M\d/i.test(gpu)) return 'arm64';
+    try {
+      const hints = await navigator.userAgentData?.getHighEntropyValues(['architecture']);
+      if (hints?.architecture === 'arm') return 'arm64';
+      if (hints?.architecture === 'x86') return 'x64';
+    } catch { /* no client hints */ }
+    return /Intel|AMD|Radeon|NVIDIA/i.test(gpu) ? 'x64' : null;
+  }
+  async function markMacChip() {
+    if (root.dataset.os !== 'mac') return;
+    const chip = await detectMacChip();
+    if (!chip) return; // Unknown (Safari): the note keeps offering both builds.
+    const other = chip === 'arm64' ? 'x64' : 'arm64';
+    $$('.os-btn[data-os="mac"], .os-download').forEach(link => { link.href = MAC_DMG[chip]; });
+    $$('.os-note').forEach(note => {
+      const link = document.createElement('a');
+      link.href = MAC_DMG[other];
+      link.textContent = `${MAC_CHIP[other]} build`;
+      note.replaceChildren(`For ${MAC_CHIP[chip]} Macs, macOS 13 or later. Not right? Get the `, link, '.');
+    });
   }
   function markStore() {
     $$('#cta-chrome, [data-chrome-link]').forEach(link => {
@@ -695,6 +730,7 @@
   buildPickers();
   applyAccent('orange', false);
   markOs();
+  markMacChip();
   markStore();
   if ($('#demo')) initDemo();
   initClips();

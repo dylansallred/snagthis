@@ -84,6 +84,7 @@
       "hardenedRuntime": true
     },
     "dmg": {
+      "artifactName": "${productName}-mac-${arch}.${ext}",
       "sign": true
     },
     "win": {
