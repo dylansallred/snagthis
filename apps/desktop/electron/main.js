@@ -994,7 +994,13 @@ function createWindow() {
   // Without GPU compositing (some Linux desktops, virtual displays) a hidden window can
   // skip its first paint, so ready-to-show never fires. Never leave the app invisible.
   const revealFallback = setTimeout(reveal, 3000);
-  window.on('closed', () => { clearTimeout(revealFallback); if (mainWindow === window) mainWindow = null; });
+  window.on('closed', () => {
+    clearTimeout(revealFallback);
+    if (mainWindow !== window) return;
+    mainWindow = null;
+    // A hidden page-resolver window would otherwise hold off window-all-closed.
+    if (process.platform !== 'darwin') app.quit();
+  });
   // A crashed or killed renderer otherwise leaves a dead window while downloads
   // continue. Reload it, backing off, and stop if it keeps crashing on load.
   const rendererCrashes = [];
@@ -1024,7 +1030,9 @@ function createWindow() {
   window.on('close', (event) => {
     if (process.platform === 'darwin' || quitConfirmed || apiShutdownPromise || updaterInstallRequested) return;
     const activeDownloads = activeDownloadCount();
-    if (activeDownloads === 0 || BrowserWindow.getAllWindows().length > 1) return;
+    // Hidden page-resolver windows are not app windows; only the main
+    // window's close ends the app here.
+    if (activeDownloads === 0 || window !== mainWindow) return;
     event.preventDefault();
     confirmQuitWithActiveDownloads(activeDownloads);
   });
@@ -1366,7 +1374,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('activate', () => {
-  if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
+  // Hidden page-resolver windows do not count: the Dock icon must reopen the app.
+  if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) createWindow();
 });
 
 // yt-dlp runs in its own process group and FFmpeg is not tied to this
