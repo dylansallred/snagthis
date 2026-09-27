@@ -99,6 +99,55 @@ test('an unparseable or newer queue is set aside and a locked queue is never ove
   assert.deepEqual(await corruptCopies(directory, 'queue.json'), []);
 });
 
+test('partial downloads survive temp cleanup when the queue cannot be restored, and crash scratch is swept', { timeout: 15000 }, async (t) => {
+  const directory = await tempDir(t, 'snagthis-unrestored-queue-');
+  const downloadDir = path.join(directory, 'downloads');
+  const partialDir = path.join(downloadDir, 'temp-cdn.example_video-lost1-abc123');
+  const ytDlpFolder = path.join(downloadDir, 'lost2-def456');
+  const jobFolder = path.join(downloadDir, 'Some Movie');
+  const scratch = [path.join(jobFolder, 'native-pieces-Ab12Cd'), path.join(jobFolder, 'local-preview-Xy34Zw'), path.join(downloadDir, 'local-preview-Qq11Rr')];
+  await fs.mkdir(partialDir, { recursive: true });
+  await fs.mkdir(ytDlpFolder, { recursive: true });
+  await fs.writeFile(path.join(partialDir, 'seg-0.ts'), 'downloaded piece');
+  await fs.writeFile(path.join(ytDlpFolder, 'lost2-def456-video.mp4.part'), 'partial yt-dlp download');
+  for (const folder of scratch) {
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, '0.piece'), 'scratch');
+  }
+  await fs.writeFile(path.join(jobFolder, 'keep.mp4'), 'a saved video');
+  // Older than the automatic cleanup age.
+  const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  await fs.utimes(partialDir, old, old);
+  await fs.writeFile(path.join(directory, 'queue.json'), '{"version":1,"queue":[{"id":"lost1-abc123"');
+
+  const startApi = async () => {
+    const api = createApiServer({ dataDir: directory, downloadDir, port: 0,
+      ffmpegPath: process.execPath, ffprobePath: process.execPath, ytDlpPath: process.execPath,
+      trustBinaryPaths: true, initialQueueSettings: { autoStart: false } });
+    const { port } = await api.start();
+    t.after(() => api.stop());
+    await sleep(200); // The cleanup scheduler runs once immediately on start.
+    return { api, port };
+  };
+  const clearTemp = async ({ api, port }) => fetch(`http://127.0.0.1:${port}/api/maintenance/clear-temp-downloads`, {
+    method: 'POST', headers: { Authorization: `Bearer ${api.getAuthToken()}` } });
+
+  const first = await startApi();
+  assert.equal((await corruptCopies(directory, 'queue.json')).length, 1, 'the damaged queue is set aside');
+  assert.equal(fsSync.existsSync(path.join(partialDir, 'seg-0.ts')), true, 'automatic cleanup keeps pieces of an unknown owner');
+  const refused = await clearTemp(first);
+  assert.equal(refused.status, 409);
+  assert.equal(fsSync.existsSync(path.join(ytDlpFolder, 'lost2-def456-video.mp4.part')), true, 'Clear temporary data keeps partials too');
+  for (const folder of scratch) assert.equal(fsSync.existsSync(folder), false, `${path.basename(folder)} left by a crash is removed`);
+  assert.equal(fsSync.existsSync(path.join(jobFolder, 'keep.mp4')), true, 'saved videos next to scratch folders are untouched');
+  await first.api.stop();
+
+  // The next launch finds no queue.json, but the set-aside copy still owns them.
+  const second = await startApi();
+  assert.equal(fsSync.existsSync(path.join(partialDir, 'seg-0.ts')), true);
+  assert.equal((await clearTemp(second)).status, 409);
+});
+
 test('queue and history writes flush the file before replacing the saved copy', async (t) => {
   const directory = await tempDir(t, 'snagthis-flush-');
   const flushed = [];

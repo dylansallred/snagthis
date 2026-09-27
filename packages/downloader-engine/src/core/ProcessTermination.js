@@ -1,4 +1,35 @@
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
+
+// Every long-running tool this process starts. yt-dlp runs in its own process
+// group and FFmpeg is not tied to us either, so neither exits when the app
+// crashes or quits abruptly. The desktop kills whatever is left on exit.
+const liveChildren = new Map();
+
+function trackChildProcess(child, { processTree = false } = {}) {
+  if (!child || !Number.isInteger(child.pid) || child.pid <= 0) return child;
+  liveChildren.set(child, { processTree });
+  const forget = () => liveChildren.delete(child);
+  child.once('exit', forget);
+  child.once('close', forget);
+  return child;
+}
+
+// Synchronous so it can run from process.on('exit').
+function killTrackedChildProcesses({ platform = process.platform, spawnSyncImpl = spawnSync } = {}) {
+  let count = 0;
+  for (const [child, { processTree }] of liveChildren) {
+    liveChildren.delete(child);
+    if (child.exitCode !== null || child.signalCode !== null) continue;
+    count += 1;
+    try {
+      if (platform === 'win32') spawnSyncImpl('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+      else if (processTree) {
+        try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+      } else child.kill('SIGKILL');
+    } catch { /* Best effort while exiting. */ }
+  }
+  return count;
+}
 
 // Spawn options that let a stopper reach grandchildren (for example the ffmpeg
 // yt-dlp starts to merge). POSIX puts the child in its own process group;
@@ -59,6 +90,7 @@ function createProcessStopper(child, { graceMs = 1500, onStop, processTree = fal
 
   child.on('error', onError);
   child.once('close', onClose);
+  trackChildProcess(child, { processTree });
 
   function stop() {
     if (stopped || closed) return completion;
@@ -74,4 +106,4 @@ function createProcessStopper(child, { graceMs = 1500, onStop, processTree = fal
   return { stop, dispose };
 }
 
-module.exports = { createProcessStopper, processTreeSpawnOptions, signalProcessTree };
+module.exports = { createProcessStopper, processTreeSpawnOptions, signalProcessTree, trackChildProcess, killTrackedChildProcesses };

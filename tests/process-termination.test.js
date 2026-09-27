@@ -100,3 +100,34 @@ test('process-tree stopper uses taskkill /T on Windows', () => {
   assert.deepEqual(processTreeSpawnOptions('win32'), {}, 'Windows children are not detached into a console');
   assert.deepEqual(processTreeSpawnOptions('darwin'), { detached: true });
 });
+
+test('children still running at exit are killed, including a detached yt-dlp tree', {
+  timeout: 5000,
+  skip: process.platform === 'win32' ? 'Windows uses taskkill /T, covered separately.' : false,
+}, async (t) => {
+  const { killTrackedChildProcesses, trackChildProcess } = require('../packages/downloader-engine/src/core/ProcessTermination');
+  const tree = spawn(process.execPath, ['-e', `
+    const { spawn } = require('node:child_process');
+    const grandchild = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], { stdio: 'ignore' });
+    process.on('SIGTERM', () => {});
+    process.stdout.write(grandchild.pid + '\\n');
+    setInterval(() => {}, 1000);
+  `], { stdio: ['ignore', 'pipe', 'ignore'], ...processTreeSpawnOptions() });
+  const [chunk] = await once(tree.stdout, 'data');
+  const grandchildPid = Number(String(chunk).trim());
+  const converter = trackChildProcess(spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000);'], { stdio: 'ignore' }));
+  t.after(() => {
+    for (const pid of [grandchildPid, tree.pid, converter.pid]) { try { process.kill(pid, 'SIGKILL'); } catch { /* Already stopped. */ } }
+  });
+  const stopper = createProcessStopper(tree, { processTree: true });
+  t.after(() => stopper.dispose());
+
+  assert.equal(killTrackedChildProcesses(), 2);
+  await Promise.all([once(tree, 'close'), converter.exitCode === null ? once(converter, 'close') : null]);
+  let alive = true;
+  for (let attempt = 0; attempt < 40 && alive; attempt += 1) {
+    try { process.kill(grandchildPid, 0); await wait(25); } catch { alive = false; }
+  }
+  assert.equal(alive, false, 'the grandchild does not outlive the app');
+  assert.equal(killTrackedChildProcesses(), 0, 'nothing is left to kill');
+});

@@ -8,6 +8,8 @@ const { isCurrentPreviewClipPath } = require('./PreviewClip');
 const { normalizeMediaExtension } = require('../utils/mediaFiles');
 
 const { readJsonState, writeFileDurable } = require('../utils/durableJson');
+const { moveFileSync } = require('../utils/moveFile');
+const { redactPaths } = require('../utils/redact');
 
 const FINAL_FILE_NAME_MAX_BYTES = 200;
 const QUEUE_VERSION = 1;
@@ -63,6 +65,10 @@ class QueueManager {
     // Set when queue.json exists but could not be read; it is never
     // overwritten in that session.
     this.persistBlocked = false;
+    // False until queue.json is known to be missing or fully restored. Partial
+    // downloads of an unreadable queue have no known owner, so no cleanup may
+    // treat them as abandoned.
+    this.queueRestored = false;
     this.maxPersistedJobs = maxPersistedJobs;
     this.completedRetentionMs = completedRetentionMs;
     this.fsPromises = fsPromises;
@@ -84,12 +90,19 @@ class QueueManager {
         logger,
         label: 'queue',
       });
+      // Scratch folders never outlive the process that made them; any found
+      // now were left by a crash. This is safe even without a queue.
+      await this.sweepStaleScratchDirectories();
       if (result.status === 'unreadable') {
         // The saved queue may be intact but locked. Never replace it with the
         // empty queue of this session.
         this.persistBlocked = true;
         return;
       }
+      // A queue set aside as unreadable (this or an earlier session) may still
+      // own partial downloads; keep them until that copy is dealt with.
+      const ownershipKnown = !(await this.hasSetAsideQueue());
+      if (result.status === 'missing') this.queueRestored = ownershipKnown;
       if (result.status !== 'loaded') return;
 
       const parsed = result.data;
@@ -149,7 +162,8 @@ class QueueManager {
       });
 
       this.pruneQueueForPersistence();
-      await this.cleanupOrphanTempDirectories();
+      this.queueRestored = ownershipKnown;
+      if (ownershipKnown) await this.cleanupOrphanTempDirectories();
 
       logger.info('Loaded jobs from queue file', { count: this.queue.length });
 
@@ -179,6 +193,47 @@ class QueueManager {
     const legacy = value.match(/-([a-z0-9]+)$/i);
     if (legacy && legacy[1]) return legacy[1];
     return '';
+  }
+
+  async hasSetAsideQueue() {
+    const prefix = `${path.basename(this.queueFilePath)}.corrupt-`;
+    try {
+      return (await this.fsPromises.readdir(path.dirname(this.queueFilePath))).some((name) => name.startsWith(prefix));
+    } catch {
+      return true;
+    }
+  }
+
+  // native-pieces-* spools (up to 512 MiB) and local-preview-* snapshots are
+  // created with mkdtemp inside a job folder (or the download folder) and are
+  // removed when their job ends. Run before any job starts.
+  async sweepStaleScratchDirectories() {
+    const scratchName = /^(?:native-pieces|local-preview)-[A-Za-z0-9]{6}$/;
+    const listDirectories = async (directory) => {
+      try {
+        return (await this.fsPromises.readdir(directory, { withFileTypes: true })).filter((entry) => entry && entry.isDirectory());
+      } catch {
+        return [];
+      }
+    };
+    let removedCount = 0;
+    const sweep = async (directory, depth) => {
+      for (const entry of await listDirectories(directory)) {
+        const entryPath = path.join(directory, entry.name);
+        if (scratchName.test(entry.name)) {
+          try {
+            await this.fsPromises.rm(entryPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 });
+            removedCount += 1;
+          } catch (err) {
+            logger.warn('Failed to remove stale scratch folder', { folder: entry.name, code: err && err.code });
+          }
+        } else if (depth > 0 && entry.name !== '__previews' && !entry.name.startsWith('temp-')) {
+          await sweep(entryPath, depth - 1);
+        }
+      }
+    };
+    await sweep(this.downloadDir, 1);
+    if (removedCount > 0) logger.info('Removed stale scratch folders', { removedCount });
   }
 
   async cleanupOrphanTempDirectories() {
@@ -302,7 +357,7 @@ class QueueManager {
     }
 
     if (targetPath !== resolvedCandidate) {
-      fs.renameSync(resolvedCandidate, targetPath);
+      moveFileSync(resolvedCandidate, targetPath);
     }
 
     return targetPath;
@@ -350,7 +405,7 @@ class QueueManager {
       }
 
       if (targetPath !== resolvedCurrent) {
-        fs.renameSync(resolvedCurrent, targetPath);
+        moveFileSync(resolvedCurrent, targetPath);
       }
 
       if (job.mp4Path && path.resolve(job.mp4Path) === resolvedCurrent) {
@@ -368,10 +423,25 @@ class QueueManager {
         }
       }
 
+      // The video has moved; record where it is before touching sidecars so a
+      // sidecar failure cannot leave the job pointing at the old folder.
+      job.outputPath = targetPath;
+      job.outputDirectory = path.dirname(targetPath);
+      job.storageDir = resolvedTargetDir;
+
       const relocatedSidecars = new Map();
       const relocateSidecar = candidate => {
         if (relocatedSidecars.has(candidate)) return relocatedSidecars.get(candidate);
-        const moved = this.relocateSidecarArtifact(candidate, resolvedTargetDir);
+        let moved = candidate;
+        try {
+          moved = this.relocateSidecarArtifact(candidate, resolvedTargetDir);
+        } catch (err) {
+          logger.warn('Failed to relocate completed sidecar', {
+            jobId: job.id,
+            file: typeof candidate === 'string' ? path.basename(candidate) : null,
+            code: err && err.code,
+          });
+        }
         relocatedSidecars.set(candidate, moved);
         return moved;
       };
@@ -384,16 +454,15 @@ class QueueManager {
       job.subtitlePath = relocateSidecar(job.subtitlePath);
       job.subtitleZipPath = relocateSidecar(job.subtitleZipPath);
       if (currentDir !== resolvedTargetDir && hasJobStorageMarker(currentDir, job.id)) {
-        const remaining = fs.readdirSync(currentDir);
-        if (remaining.every(name => name === JOB_STORAGE_MARKER)) {
-          fs.unlinkSync(path.join(currentDir, JOB_STORAGE_MARKER));
-          fs.rmdirSync(currentDir);
-        }
+        try {
+          const remaining = fs.readdirSync(currentDir);
+          if (remaining.every(name => name === JOB_STORAGE_MARKER)) {
+            fs.unlinkSync(path.join(currentDir, JOB_STORAGE_MARKER));
+            fs.rmdirSync(currentDir);
+          }
+        } catch { /* An empty scratch folder is harmless; the file has moved. */ }
       }
 
-      job.outputPath = targetPath;
-      job.outputDirectory = path.dirname(targetPath);
-      job.storageDir = resolvedTargetDir;
       job.updatedAt = Date.now();
     } catch (err) {
       // Do not leave an empty, marker-only folder behind in the user's folder.
@@ -609,7 +678,7 @@ class QueueManager {
       queuedAt: job.queuedAt,
       startedAt: job.startedAt,
       completedAt: job.completedAt,
-      error: job.error,
+      error: redactPaths(job.error),
       sourcePageUrl: job.sourcePageUrl || null,
       mediaType: job.mediaType || null,
       downloadMode: job.downloadMode || null,
@@ -929,6 +998,7 @@ class QueueManager {
     if (hasPartial) {
       const candidate = { ...job, url, headers, manifestText, sourcePageUrl: sourcePageUrl || job.sourcePageUrl, selection: selection || job.selection, credentialOrigin: parsed.origin };
       const { playlistInfo: info } = await resolveHlsSelection(candidate);
+      if (this.activeJobs.has(jobId) || this.jobs.get(jobId) !== job) return { ok: false, resumable: false, reason: 'Download is still running' };
       if (info.unsupportedReason || info.topologyFingerprint !== job.playlistTopology) {
         return { ok: false, resumable: false, reason: 'The refreshed video has changed. Start a new download to keep the existing pieces safe.' };
       }

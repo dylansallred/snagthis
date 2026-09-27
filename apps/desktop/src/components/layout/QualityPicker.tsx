@@ -145,7 +145,7 @@ export function QualityPicker({ inspection, initial, onDownload, onCancel, busy,
       if (track) { if (playback.current?.key === track.key) stopSample('user'); else startSample(track); }
       return;
     }
-    if (event.key === 'Enter' && target.matches('input[type="radio"]')) { event.preventDefault(); stopSample('close'); onDownload(selection); }
+    if (event.key === 'Enter' && target.matches('input[type="radio"]')) { event.preventDefault(); if (busy) return; stopSample('close'); onDownload(selection); }
   }}>
     {/* Name the video being chosen for, so a paste never downloads the wrong thing unseen. */}
     <div className="quality-heading">{thumbnail && <img src={thumbnail} alt="" onError={() => setThumbnailFailed(true)} />}<div><strong title={inspection.title}>{inspection.title || ui.quality}</strong><small>{[inspection.title && ui.quality, duration].filter(Boolean).join(' · ')}</small></div><button className="row-action" aria-label={ui.cancel} onClick={onCancel}><X /></button></div>

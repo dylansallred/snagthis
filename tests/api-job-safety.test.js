@@ -77,3 +77,66 @@ test('job creation bounds retries, keeps media extensions, refuses to open progr
     assert.equal(result.status, 200, `desktop link ${index + 1}: ${JSON.stringify(result.body)}`);
   }
 });
+
+test('job errors in queue, status and diagnostics payloads never name absolute local paths', { timeout: 20000 }, async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-error-paths-'));
+  const downloadDir = path.join(dataDir, 'downloads');
+  fs.mkdirSync(downloadDir, { recursive: true });
+  const privateDir = path.join(dataDir, 'Private Person', 'My Videos');
+  const rawError = `ENOSPC: no space left on device, write '${path.join(privateDir, 'Holiday clip.mp4')}' (scratch ${path.join(privateDir, 'temp-x', 'seg-1.ts')})`;
+  fs.writeFileSync(path.join(downloadDir, 'queue.json'), JSON.stringify({ queue: [{
+    id: 'failed-disk', title: 'Holiday', status: 'error', queueStatus: 'failed', url: 'https://example.org/a.mp4', error: rawError, completedAt: Date.now(),
+  }], settings: { autoStart: false, maxConcurrent: 1 } }));
+  const api = createApiServer({ dataDir, downloadDir, port: 0,
+    ffmpegPath: process.execPath, ffprobePath: process.execPath, ytDlpPath: process.execPath, trustBinaryPaths: true,
+    initialQueueSettings: { autoStart: false } });
+  const address = await api.start();
+  t.after(async () => { await api.stop(); fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 }); });
+  const get = async (route) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}${route}`, { headers: { Authorization: `Bearer ${api.getAuthToken()}` } });
+    assert.equal(response.status, 200, route);
+    return response.text();
+  };
+  for (const route of ['/api/queue', '/api/jobs/failed-disk', '/api/diagnostics']) {
+    const body = await get(route);
+    assert.equal(body.includes('Private Person'), false, `${route} leaks the local folder: ${body.slice(0, 400)}`);
+    assert.equal(body.includes(dataDir), false, `${route} leaks an absolute path`);
+    assert.match(body, /ENOSPC: no space left on device, write 'Holiday clip\.mp4'/, `${route} keeps the cause and file name`);
+  }
+  assert.equal(api.getState().queue.find(job => job.id === 'failed-disk').error.includes('Private Person'), false);
+});
+
+test('poster downloads survive a malformed redirect instead of crashing the bridge', { timeout: 10000 }, async (t) => {
+  const http = require('node:http');
+  const { downloadRemoteImage } = require('../packages/downloader-api/src/utils/remoteImage');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-poster-redirect-'));
+  const server = http.createServer((req, res) => {
+    if (req.url === '/bad') { res.writeHead(302, { Location: 'http://[not-a-host/poster.jpg' }); res.end(); return; }
+    if (req.url === '/moved') { res.writeHead(301, { Location: '/poster.jpg' }); res.end(); return; }
+    if (req.url === '/to-file') { res.writeHead(302, { Location: 'file:///etc/passwd' }); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+    res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.close(); fs.rmSync(directory, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const target = path.join(directory, 'thumb.jpg');
+
+  assert.equal(await downloadRemoteImage(`${base}/bad`, target), false);
+  assert.equal(await downloadRemoteImage(`${base}/to-file`, target), false);
+  assert.equal(fs.existsSync(target), false);
+  assert.equal(await downloadRemoteImage(`${base}/moved`, target), true, 'an ordinary relative redirect still works');
+  assert.deepEqual(fs.readFileSync(target), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  assert.deepEqual(fs.readdirSync(directory), ['thumb.jpg'], 'no temporary file is left behind');
+});
+
+test('the bridge keeps one copy of its URL check, poster download and job metadata lookup', () => {
+  const read = (relative) => fs.readFileSync(path.join(__dirname, '../packages/downloader-api/src', relative), 'utf8');
+  const jobsRoute = read('routes/jobs.js');
+  const server = read('createApiServer.js');
+  assert.equal(jobsRoute.match(/lookupPoster\(/g).length, 1, 'immediate and queued jobs share one TMDB/SubDL lookup');
+  assert.equal(jobsRoute.match(/await fetchSubtitlesForJob\(/g).length, 1);
+  for (const [name, source] of [['routes/jobs.js', jobsRoute], ['createApiServer.js', server], ['services/audioSample.js', read('services/audioSample.js')]]) {
+    assert.doesNotMatch(source, /function (?:isHttpUrl|isValidHttpUrl|httpUrl|downloadRemoteImage)\(/, `${name} uses utils/urls.js and utils/remoteImage.js`);
+  }
+});

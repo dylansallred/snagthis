@@ -83,4 +83,16 @@ test('desktop paste keeps resolved titles, quality and source metadata, and expl
   await submit(`${fixtureUrl}/empty`);
   await page.getByText('Could not find a video automatically. Open this page in Chrome, press play, then choose it in SnagThis.', { exact: true }).waitFor();
   assert.equal(api.getState().queue.length, 2, 'unsupported pages must not create a doomed download');
+
+  // Enter pressed twice on a quality starts one download, not two.
+  await submit(`${fixtureUrl}/watch-again`);
+  const radio = page.getByRole('radio', { name: '720p' });
+  await radio.waitFor();
+  await radio.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.locator('.quality-picker').waitFor({ state: 'detached' });
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.equal(submissions.length, 3, 'a single job request for a double Enter');
+  assert.equal(api.getState().queue.length, 3);
 });
