@@ -1,0 +1,94 @@
+/* One-click pairing (owner pick: docs/design/prototypes/pairing-polish option 4 · Cartridge):
+ * the Approve dialog, the match code in one pixel-bevel housing, a 12-pip countdown, the celebration. */
+[data-slot="dialog-overlay"]:has(+ .pairing-dialog) { background: rgb(4 5 7 / .74); backdrop-filter: blur(3px) saturate(.7); }
+.pairing-dialog { width: 380px; max-width: calc(100% - 32px); display: grid; justify-items: center; gap: 0; padding: 22px 22px 16px; border-radius: 14px; background: var(--color-popover); border: 1px solid var(--color-border); box-shadow: 0 30px 80px rgb(0 0 0 / .6); text-align: center; outline: none; }
+.pairing-dialog h2 { margin: 12px 0 4px; font-size: 16px; font-weight: 620; color: var(--color-foreground); }
+.pairing-dialog > p { margin: 0 0 16px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.pairing-alert { width: 34px; height: 34px; color: var(--color-status-paused); }
+.pairing-buttons { display: flex; gap: 8px; width: 100%; justify-content: center; }
+.pairing-buttons .row-action { flex: 1; height: 36px; }
+.pairing-buttons .row-action:disabled { cursor: default; }
+.pairing-buttons .row-action.labelled:disabled { opacity: .5; }
+/* Allow's 0.7 s safety delay reads as a fill, not a dimmed button. It stays disabled until ready. */
+.pairing-allow { position: relative; overflow: hidden; }
+.pairing-allow > span { position: relative; }
+.pairing-allow.arming { background: var(--color-primary-muted); color: hsl(20 40% 72%); }
+.pairing-allow.arming::before { content: ""; position: absolute; inset: 0; background: var(--color-primary); transform-origin: left; transform: scaleX(0); animation: pairing-arm 700ms linear forwards; }
+@keyframes pairing-arm { to { transform: scaleX(1); } }
+.pairing-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; width: 100%; margin-top: 12px; font-size: 11.5px; color: var(--color-foreground-subtle); }
+.pairing-tick { font: 500 11.5px var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* The digits as one object built like the logo's play button: light top-left, dark bottom-right, notched corners. */
+.pairing-digits { display: inline-flex; gap: 2px; margin: 2px; padding: 5px; background: #000; box-shadow: inset 2px 2px 0 var(--accent-bevel-light, #ffb238), inset -2px -2px 0 var(--accent-bevel-dark, #bd3f00), 0 0 0 2px var(--accent-bevel-face, #fa5d0e); clip-path: polygon(2px -2px, calc(100% - 2px) -2px, calc(100% - 2px) 0, 100% 0, 100% 2px, calc(100% + 2px) 2px, calc(100% + 2px) calc(100% - 2px), 100% calc(100% - 2px), 100% 100%, calc(100% - 2px) 100%, calc(100% - 2px) calc(100% + 2px), 2px calc(100% + 2px), 2px 100%, 0 100%, 0 calc(100% - 2px), -2px calc(100% - 2px), -2px 2px, 0 2px, 0 0, 2px 0); }
+.pairing-digit { width: 40px; height: 54px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent-bevel-dark, #bd3f00) 16%, #0b0d10); color: #fff4e6; box-shadow: inset 0 2px 0 rgb(255 255 255 / .04); animation: pairing-flip 300ms steps(3) both; animation-delay: calc(var(--i, 0) * 90ms + 80ms); }
+.pairing-digit svg { display: block; }
+@keyframes pairing-flip { 0% { transform: scaleY(0); } }
+.pairing-digits.off { box-shadow: inset 2px 2px 0 hsl(215 15% 26%), inset -2px -2px 0 #000, 0 0 0 2px var(--color-border); }
+.pairing-digits.off .pairing-digit { background: #0b0d10; color: var(--color-foreground-subtle); }
+/* The small copy in Settings while a request waits. */
+.pairing-digits.sm { flex: none; gap: 1px; padding: 3px; margin: 1px; clip-path: none; box-shadow: inset 1px 1px 0 var(--accent-bevel-light, #ffb238), inset -1px -1px 0 var(--accent-bevel-dark, #bd3f00), 0 0 0 1px var(--accent-bevel-face, #fa5d0e); }
+.pairing-digits.sm .pairing-digit { width: 18px; height: 24px; animation: none; }
+
+/* Countdown: 12 pips, one per 10 s; the current one blinks. */
+.pairing-pips { display: flex; gap: 4px; margin-top: 16px; }
+.pairing-pips i { width: 6px; height: 6px; background: var(--accent-bevel-face, #fa5d0e); transition: background-color 300ms; }
+.pairing-pips i.gone { background: var(--color-border); }
+.pairing-pips i.now { animation: pairing-blink 1s steps(1) infinite; }
+@keyframes pairing-blink { 50% { opacity: .25; } }
+.pairing-pips.good { margin: 0 0 18px; }
+.pairing-pips.good i { background: hsl(150 50% 60%); animation: none; }
+
+/* Who is asking: one line that never wraps. */
+.pairing-who { display: flex; align-items: center; gap: 9px; width: 100%; margin: 18px 0 16px; padding: 9px 11px; border-radius: 9px; background: var(--color-background); border: 1px solid var(--color-border-subtle); text-align: left; font-size: 12px; white-space: nowrap; }
+.pairing-who > svg { flex: none; }
+.pairing-who-icon { width: 16px; height: 16px; color: var(--color-foreground-muted); }
+.pairing-who-name { font-weight: 570; color: var(--color-foreground); }
+.pairing-who-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11px var(--font-mono); color: var(--color-foreground-subtle); }
+.pairing-chip { margin-left: auto; flex: none; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 10.5px; font-weight: 600; line-height: 20px; background: var(--color-background-active); color: var(--color-foreground-muted); }
+.pairing-chip[title] { cursor: help; }
+.pairing-chip.good { background: hsl(145 40% 16% / .7); color: hsl(145 50% 70%); }
+
+/* Connected: the logo's button presses while pixels burst; the housing's pips turn green. */
+.pairing-dialog.approved { width: 360px; padding: 30px 22px 20px; }
+.pairing-dialog.approved > * { animation: pairing-rise 420ms cubic-bezier(.2, .8, .2, 1) both; }
+.pairing-dialog.approved > :nth-child(2) { animation-delay: 160ms; }
+.pairing-dialog.approved > :nth-child(3) { animation-delay: 230ms; }
+.pairing-dialog.approved > :nth-child(4) { animation-delay: 300ms; }
+.pairing-dialog.approved > :nth-child(5) { animation-delay: 360ms; }
+@keyframes pairing-rise { from { opacity: 0; transform: translateY(6px); } }
+.pairing-dialog.approved > p { margin-bottom: 18px; }
+.pairing-yay { position: relative; width: 64px; height: 64px; }
+.pairing-burst i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; background: var(--c); opacity: 0; animation: pairing-burst 900ms steps(6) 120ms forwards; }
+@keyframes pairing-burst { 0% { opacity: 1; transform: rotate(var(--a)) translateX(10px); } 80% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--d, 54px)); } }
+.pairing-dialog h2.pairing-yay-title { margin: 16px 0 6px; line-height: 0; color: #fff; }
+.pairing-yay-title svg { display: block; }
+.pairing-done { min-width: 120px; height: 32px; }
+
+/* Settings → Chrome extension: a waiting request. Hidden while the dialog is open, so the code shows once. */
+:root[data-pairing-dialog] :is(.pairing-pending, .settings-pairing-waiting, #chrome-waiting) { display: none; }
+.pairing-pending { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 10px 10px 10px 14px; border-radius: 11px; background: var(--color-surface-row); border: 1px solid var(--color-border); box-shadow: inset 3px 0 0 var(--color-primary-hover); font-size: 12.5px; }
+.pairing-pending .pairing-pending-text { flex: 1; min-width: 0; }
+.pairing-pending b { display: block; line-height: 1.35; font-weight: 570; }
+.pairing-pending small { display: block; line-height: 1.4; color: var(--color-foreground-subtle); font-size: 11.5px; }
+/* A blinking pixel instead of a spinner (the class name predates the Cartridge pick). */
+.pairing-spinner { display: inline-block; width: 8px; height: 8px; flex: none; margin-right: 8px; vertical-align: 1px; background: var(--color-primary-hover); animation: pairing-blink 1.2s steps(1) infinite; }
+.connected-extensions { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
+.connected-extension { display: grid; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface-row); }
+.connected-extension-row { display: flex; align-items: center; gap: 10px; }
+.connected-extension-row > svg { flex: none; width: 16px; height: 16px; color: var(--color-status-completed); }
+.connected-extension-text { flex: 1; min-width: 0; }
+.connected-extension-text b { display: block; font-weight: 570; font-size: 12.5px; line-height: 1.35; }
+.connected-extension-text small { display: block; color: var(--color-foreground-subtle); font-size: 11.5px; line-height: 1.4; }
+.connected-extension-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.row-action.danger-action { color: var(--color-destructive); border: 1px solid color-mix(in srgb, var(--color-destructive) 40%, transparent); }
+.pairing-settings .pairing-note { margin: 0 0 10px; font-size: 11.5px; color: var(--color-foreground-subtle); }
+.pairing-code-fallback { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border-subtle); }
+.pairing-code-fallback > p { margin: 0 0 8px; color: var(--color-foreground-muted); font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pairing-burst { display: none; }
+  .pairing-digit, .pairing-pips i.now, .pairing-spinner, .pairing-dialog.approved > * { animation: none; }
+  .pairing-pips i { transition: none; }
+  /* No sweep: Allow stays muted, then turns primary when it is ready. */
+  .pairing-allow.arming::before { animation: none; }
+}

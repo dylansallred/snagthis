@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · List background and row separation</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="hover.css">
+  <link rel="stylesheet" href="edge.css">
+  <link rel="stylesheet" href="surface.css">
+</head>
+<body>
+<main class="hub" id="hub" data-design="a" data-expanded="" data-count="3" data-hover="none" data-edge="c" data-anim="2" data-sep="lines" data-bar="accent" data-tint="c" data-depth="4">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / 07</div>
+    <h1>Background shades between Today, Deep black and Graphite.</h1>
+    <p>Lines and the orange-line bars are fixed, as chosen. Pick a tint and a depth: 42 shades in the range you liked. The code after “Tint” (for example C4) names the exact shade.</p>
+  </header>
+
+  <h2 class="picker-title">Tint <small>press A–F</small> <output id="readout"></output></h2>
+  <div class="hover-picker tint-picker" role="group" aria-label="Choose a background tint">
+    <button type="button" data-tint="a" aria-pressed="false"><span>A · Neutral</span><small>Pure grey, no tint (Graphite)</small></button>
+    <button type="button" data-tint="b" aria-pressed="false"><span>B · Cool hint</span><small>Barely-there blue, reads as grey</small></button>
+    <button type="button" data-tint="c" aria-pressed="true"><span>C · Blue-grey</span><small>Half of today’s blue</small></button>
+    <button type="button" data-tint="d" aria-pressed="false"><span>D · Today’s blue</span><small>The current tint</small></button>
+    <button type="button" data-tint="e" aria-pressed="false"><span>E · Steel</span><small>A bit more blue than today</small></button>
+    <button type="button" data-tint="f" aria-pressed="false"><span>F · Cool violet</span><small>Blue leaning slightly purple</small></button>
+  </div>
+  <h2 class="picker-title">Depth <small>press 1–7 · darkest to lightest</small></h2>
+  <div class="hover-picker depth-picker" role="group" aria-label="Choose how dark the background is">
+    <button type="button" data-depth="1" aria-pressed="false"><span>1 · Blackest</span><small>Row lightness 5%</small></button>
+    <button type="button" data-depth="2" aria-pressed="false"><span>2 · Deep black</span><small>Row lightness 6.5%</small></button>
+    <button type="button" data-depth="3" aria-pressed="false"><span>3 · Very dark</span><small>Row lightness 8%</small></button>
+    <button type="button" data-depth="4" aria-pressed="true"><span>4 · Dark</span><small>Row lightness 9.5%</small></button>
+    <button type="button" data-depth="5" aria-pressed="false"><span>5 · Today’s depth</span><small>Row lightness 11%</small></button>
+    <button type="button" data-depth="6" aria-pressed="false"><span>6 · Softer</span><small>Row lightness 12.5%</small></button>
+    <button type="button" data-depth="7" aria-pressed="false"><span>7 · Lightest</span><small>Row lightness 14%</small></button>
+  </div>
+
+  <div class="hub-controls">
+    <label for="state">Download state
+      <select id="state">
+        <option value="downloading">Downloading</option>
+        <option value="paused">Paused</option>
+        <option value="attention">Needs the user</option>
+        <option value="saved">Saved</option>
+      </select>
+    </label>
+    <label for="progress">Progress <output id="progress-value">34%</output>
+      <input id="progress" type="range" min="0" max="99" value="34">
+    </label>
+    <button type="button" id="simulate" aria-pressed="false">Animate progress</button>
+    <div class="segmented" role="group" aria-label="Videos on the page">
+      <span>Popup finds</span>
+      <button type="button" data-count="1" aria-pressed="false">1 video</button>
+      <button type="button" data-count="3" aria-pressed="true">3 videos</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <section class="surface" aria-label="Desktop design">
+      <h2>Desktop <small>820 px wide</small></h2>
+      <div class="desk-frame">
+        <div class="titlebar"><i></i><i></i><i></i><span>VidSnag Desktop</span></div>
+        <div class="app" id="desktop"></div>
+      </div>
+    </section>
+    <section class="surface" aria-label="Chrome popup design">
+      <h2>Chrome popup <small>400 px wide</small></h2>
+      <div class="popup-frame"><div class="popup" id="popup"></div></div>
+    </section>
+  </div>
+  <div id="notes" hidden></div>
+
+  <footer class="hub-footer">
+    <p>UI prototype only. Thumbnail clips still play on hover in every option; the effects never cover the video.</p>
+  </footer>
+</main>
+<script src="script.js"></script>
+<script>
+(() => {
+  const hub = document.getElementById('hub');
+  function wire(selector, key, keys) {
+    const buttons = [...document.querySelectorAll(`${selector} button`)];
+    const pick = button => { hub.dataset[key] = button.dataset[key]; buttons.forEach(other => other.setAttribute('aria-pressed', String(other === button))); };
+    buttons.forEach(button => button.addEventListener('click', () => pick(button)));
+    addEventListener('keydown', event => {
+      if (event.target.matches('input, select') || event.metaKey || event.ctrlKey || event.altKey) return;
+      const button = buttons.find(item => keys(item) === event.key.toLowerCase());
+      if (button) pick(button);
+    });
+  }
+  wire('.tint-picker', 'tint', button => button.dataset.tint);
+  wire('.depth-picker', 'depth', button => button.dataset.depth);
+  // Readout so a favourite can be named exactly.
+  const readout = document.getElementById('readout');
+  const hex = value => '#' + value.match(/\d+/g).slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('');
+  function report() {
+    const row = document.querySelector('#desktop .row:not(:hover)') || document.querySelector('#desktop .row');
+    const bar = document.querySelector('#desktop .top-bar');
+    if (row && bar) readout.textContent = `${hub.dataset.tint.toUpperCase()}${hub.dataset.depth} · rows ${hex(getComputedStyle(row).backgroundColor)} · bars ${hex(getComputedStyle(bar).backgroundColor)}`;
+  }
+  new MutationObserver(() => setTimeout(report, 350)).observe(hub, { attributes: true, attributeFilter: ['data-tint', 'data-depth'] });
+  setTimeout(report, 400);
+})();
+</script>
+</body>
+</html>

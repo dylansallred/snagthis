@@ -1,0 +1,81 @@
+export type QueueStatus = 'queued' | 'downloading' | 'paused' | 'completed' | 'failed' | 'cancelled';
+
+export type SegmentStatus = 'pending' | 'downloading' | 'completed' | 'retrying' | 'failed';
+
+export interface SegmentState {
+  status: SegmentStatus;
+  attempt: number;
+}
+
+export interface ThreadState {
+  workerId: number;
+  segmentIndex: number | null;
+  status: string;
+}
+
+export interface TmdbMetadata {
+  overview?: string;
+  runtime?: number;
+  tagline?: string;
+  genres?: string[];
+  mediaType?: 'movie' | 'tv';
+}
+
+export interface YoutubeMetadata {
+  videoId?: string;
+  title?: string;
+  channelName?: string;
+  channelUrl?: string;
+  channelId?: string;
+  uploadDate?: string;
+  thumbnailUrl?: string;
+  description?: string;
+  durationSeconds?: number | null;
+  viewCount?: number | null;
+}
+
+export interface QueueJob {
+  id: string;
+  title: string;
+  url: string;
+  queueStatus: QueueStatus;
+  status: string;
+  progress: number;
+  totalSegments: number;
+  completedSegments: number;
+  bytesDownloaded: number;
+  totalBytes?: number;
+  totalBytesKnown?: boolean;
+  speedBps?: number;
+  etaSeconds?: number | null;
+  activeConnections?: number | null;
+  maxConnections?: number;
+  connectionCountAvailable?: boolean;
+  error: string | null;
+  fallbackUsed: boolean;
+  fallbackUrl: string | null;
+  originalHlsUrl: string | null;
+  createdAt: number;
+  updatedAt: number;
+  thumbnailUrls?: string[];
+  previewClipUrl?: string | null;
+  previewClipDurationSeconds?: number;
+  tmdbId?: number;
+  tmdbTitle?: string;
+  tmdbReleaseDate?: string;
+  tmdbMetadata?: TmdbMetadata | null;
+  manualTitleOverride?: boolean;
+  youtubeMetadata?: YoutubeMetadata | null;
+  segmentStates?: Record<string, SegmentState>;
+  threadStates?: ThreadState[];
+}
+
+export interface QueueSettings {
+  maxConcurrent: number;
+  autoStart: boolean;
+}
+
+export interface QueueData {
+  queue: QueueJob[];
+  settings: QueueSettings;
+}

@@ -6,12 +6,37 @@ node_modules/
 **/downloads/
 *.log
 .vite/
+.cache/
+coverage/
+*.tsbuildinfo
 .eslintcache
 playwright-report/
 test-results/
 compat/results/
+# Local design experiments, research notes, review reports and verification output.
 work/
 .env
 .env.*
 !.env.example
+# Private signing material and locally packed Chrome extensions.
+*.p12
+*.pfx
+*.p8
+*.pem
+*.key
+*.crx
+Thumbs.db
 apps/extension/popup.css
+
+# Release outputs created by package:extension and the release workflow.
+/snagthis-extension.zip
+/*-extension.zip
+/*.zip
+/release-assets/
+/notarization.json
+# Canonical notices are copied here only for extension packaging.
+/apps/extension/LICENSE
+/apps/extension/THIRD_PARTY_NOTICES.md
+
+# Cloudflare Wrangler local state (site/ deploys).
+.wrangler/

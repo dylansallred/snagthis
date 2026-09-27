@@ -1,0 +1,52 @@
+.startup-logo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  isolation: isolate;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.startup-logo-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--color-surface-chrome);
+}
+
+/* The same 120 × 22 pixel grid as the header artwork, drawn at whole-pixel scale. */
+.startup-logo-artwork {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  pointer-events: none;
+}
+
+.startup-logo-words {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.startup-logo-button {
+  position: absolute;
+  display: block;
+  transform-origin: center;
+}
+
+.startup-logo-press {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* The first launch types the capitals and pops the button in; animations reveal each piece. */
+.startup-logo-overlay[data-mode="full"] :is(.startup-logo-letter, .startup-logo-cursor, .startup-logo-button) { opacity: 0; }
+.startup-logo-overlay[data-mode="short"] .startup-logo-cursor { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-logo-overlay { display: none; }
+}

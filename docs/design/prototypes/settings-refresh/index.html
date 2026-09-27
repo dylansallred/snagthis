@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Settings layout options</title>
+<style>
+/* Token values are copied from apps/desktop/src/globals.css (@theme); do not fork them. */
+:root {
+  --color-background: hsl(215 22% 3.5%);
+  --color-background-raised: hsl(215 22% 8%);
+  --color-background-hover: hsl(215 22% 10.5%);
+  --color-background-active: hsl(215 22% 13.5%);
+  --color-surface-chrome: hsl(215 22% 4%);
+  --color-surface-row: hsl(215 22% 8%);
+  --color-surface-row-hover: hsl(215 22% 11.5%);
+  --color-foreground: hsl(20 20% 93%);
+  --color-foreground-muted: hsl(20 6% 60%);
+  --color-foreground-subtle: hsl(20 5% 52%);
+  --color-border: hsl(215 15% 18%);
+  --color-border-subtle: hsl(215 14% 15.5%);
+  --color-primary: hsl(18 96% 40%);
+  --color-primary-strong: hsl(18 96% 36%);
+  --color-primary-hover: hsl(20 96% 52%);
+  --color-status-paused: hsl(44 84% 58%);
+  --color-status-completed: hsl(145 62% 46%);
+  --color-segment-pending: hsl(215 14% 24%);
+  --color-segment-completed: #80bfa6;
+  --color-segment-downloading: #f4c38a;
+  --sheet-bg: hsl(215 22% 6.5%);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #07080a; color: var(--color-foreground); font: 13px/1.45 "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; padding: 0; }
+button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: 2px; }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* Hub, following ui-refresh/controls.html */
+.hub { max-width: 1320px; margin: 0 auto; padding: 40px 28px 56px; }
+.eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--color-foreground-subtle); }
+.eyebrow span { color: var(--color-primary-hover); font-weight: 600; margin-right: 10px; }
+.intro h1 { font-size: 28px; line-height: 1.2; font-weight: 620; margin: 10px 0 8px; letter-spacing: -.01em; }
+.intro p { color: var(--color-foreground-muted); max-width: 760px; margin: 0; font-size: 14px; }
+.intro kbd { font: 600 11px/16px inherit; padding: 1px 6px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground); }
+.picker { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 26px -8px 14px; padding: 8px; background: #07080aee; backdrop-filter: blur(8px); }
+.picker button { text-align: left; padding: 10px 12px; border-radius: 9px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
+.picker button:hover { background: var(--color-background-hover); }
+.picker button[aria-pressed="true"] { border-color: var(--color-primary-hover); background: hsl(16 58% 16% / .35); }
+.picker span { display: block; font-size: 13px; font-weight: 600; }
+.picker small { display: block; color: var(--color-foreground-muted); font-size: 11px; line-height: 15px; margin-top: 2px; }
+@media (max-width: 1100px) { .picker { grid-template-columns: repeat(3, 1fr); } }
+.stage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; margin-top: 18px; }
+.notes { flex: 1; min-width: 260px; max-width: 320px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.notes h2 { margin: 0 0 6px; font-size: 15px; color: var(--color-foreground); }
+.notes ul { padding-left: 18px; margin: 8px 0; } .notes li + li { margin-top: 4px; }
+.notes .tag { display: inline-block; padding: 1px 7px; margin-right: 4px; border-radius: 5px; background: var(--color-background-active); color: var(--color-foreground); font-size: 11px; }
+.notes .try { margin-top: 12px; padding: 10px 12px; border-radius: 9px; background: var(--color-background-raised); }
+.hub-footer { margin-top: 26px; color: var(--color-foreground-subtle); font-size: 12px; }
+
+/* The real desktop window at 960×660 */
+.win { position: relative; width: 960px; height: 660px; flex: none; border-radius: 10px; overflow: hidden; background: var(--color-background-raised); box-shadow: 0 30px 80px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .06); display: flex; flex-direction: column; }
+.top { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 53px; background: var(--color-surface-chrome); border-bottom: 1px solid; border-image: linear-gradient(90deg, var(--color-primary-hover), hsl(20 96% 52% / .25) 45%, var(--color-border-subtle) 80%) 1; }
+.lights { display: flex; gap: 7px; } .lights i { width: 11px; height: 11px; border-radius: 50%; background: #33363c; }
+.wordmark { height: 22px; width: 120px; object-fit: contain; }
+.paste { flex: 1; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-foreground-subtle); }
+.list { flex: 1; overflow: hidden; }
+.vrow { display: flex; height: 85px; border-bottom: 1px solid var(--color-border-subtle); }
+.vrow .thumb { width: 128px; flex: none; }
+.vrow .txt { padding: 12px; min-width: 0; flex: 1; }
+.vrow b { display: block; font-size: 13.5px; font-weight: 570; } .vrow b em { font-style: normal; font-weight: 400; color: var(--color-foreground-subtle); font-size: 12px; margin-left: 6px; }
+.vrow span { font-size: 12px; color: var(--color-foreground-muted); }
+.vrow .lane { display: flex; gap: 3px; margin-top: 10px; } .vrow .lane i { flex: 1; height: 5px; border-radius: 2px; background: var(--color-segment-pending); } .vrow .lane i.d { background: var(--color-segment-completed); opacity: .65; } .vrow .lane i.n { background: var(--color-segment-downloading); }
+.foot { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 42px; background: var(--color-surface-chrome); border-top: 1px solid var(--color-border-subtle); color: var(--color-foreground-subtle); font-size: 12px; }
+.foot .sp { flex: 1; }
+.scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .5); }
+
+/* Settings sheet — same classes and measurements as the desktop */
+.sheet { position: absolute; top: 0; right: 0; bottom: 0; width: 400px; display: flex; flex-direction: column; background: var(--color-background-raised); border-left: 1px solid var(--color-border); animation: sheet-in 220ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes sheet-in { from { opacity: 0; translate: 16px 0; } }
+.sheet.wide { width: 640px; }
+.sheet.w440 { width: 440px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 10px 10px 16px; min-height: 51px; border-bottom: 1px solid var(--color-border-subtle); }
+.head h2 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.x { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; color: var(--color-foreground-muted); } .x:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.scroll { flex: 1; overflow-y: auto; background: var(--sheet-bg); padding-bottom: 16px; scroll-behavior: smooth; }
+.gtitle { margin: 16px 16px 7px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--color-foreground-subtle); }
+.card { margin: 0 12px; border: 1px solid var(--color-border); border-radius: 11px; overflow: hidden; background: var(--color-surface-row); }
+.prow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--color-border-subtle); }
+.card > .prow:first-child, .sub > h3 + .prow { border-top: 0; }
+[hidden] { display: none !important; }
+.sicon { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 8px; background: var(--color-background-active); color: #c4cad3; }
+.sicon.warm { background: hsl(20 96% 52% / .16); color: #ff9a57; }
+.stext { flex: 1; min-width: 0; }
+.stitle { display: flex; align-items: center; gap: 8px; font-weight: 550; font-size: 13px; line-height: 1.4; }
+.stext small { display: block; color: var(--color-foreground-muted); font-size: 12px; margin-top: 2px; }
+.saved { display: none; align-items: center; gap: 3px; color: var(--color-status-completed); font-size: 11.5px; font-weight: 500; }
+.saved.show { display: inline-flex; animation: sheet-in 160ms ease-out; } .saved svg { width: 12px; height: 12px; }
+select.sel { width: 132px; flex: none; height: 28px; padding: 0 26px 0 8px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-background) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a39d99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center; appearance: none; font-size: 12.5px; }
+.sw { position: relative; flex: none; width: 32px; height: 18.4px; border-radius: 99px; background: hsl(215 16% 16.5%); transition: background 150ms; }
+.sw::after { content: ""; position: absolute; left: 1px; top: 1.2px; width: 16px; height: 16px; border-radius: 50%; background: var(--color-foreground); transition: translate 150ms; }
+.sw[aria-checked="true"] { background: var(--color-primary); } .sw[aria-checked="true"]::after { translate: 14px 0; }
+.stepper { display: flex; align-items: center; flex: none; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-background); }
+.stepper button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--color-foreground-muted); } .stepper button:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.stepper output { width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: 7px; font-size: 12.5px; white-space: nowrap; }
+.btn:hover { background: var(--color-background-active); }
+.btn.primary { background: var(--color-primary); border-color: transparent; color: #fff; font-weight: 600; } .btn.primary:hover { background: var(--color-primary-strong); }
+.link { display: block; margin-top: 10px; color: var(--color-foreground-muted); font-size: 12px; text-align: left; } .link:hover { color: var(--color-foreground); }
+.acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.folder { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 12px; row-gap: 8px; align-items: start; }
+.folder .sicon { grid-row: span 2; } .folder .acts { grid-column: 2; }
+.path { color: var(--color-foreground-muted); font-size: 12px; overflow-wrap: anywhere; }
+.keyf { display: flex; gap: 6px; margin-top: 7px; } .keyf input { flex: 1; height: 28px; padding: 0 8px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-background); font-size: 12.5px; }
+.keyf input::placeholder { color: var(--color-foreground-subtle); }
+.prow.stack { display: block; }
+.pair { padding: 14px; } .pair p, .pair ol { margin: 0 0 12px; color: var(--color-foreground-muted); font-size: 12px; line-height: 1.6; } .pair ol { padding-left: 20px; }
+.code { margin-top: 12px; padding: 12px; background: var(--color-background-hover); border-radius: 7px; } .code output { display: block; font-family: ui-monospace, Menlo, monospace; font-size: 24px; letter-spacing: .25em; margin: 4px 0; } .code small { color: var(--color-foreground-muted); font-size: 11px; }
+.adv > summary { display: flex; align-items: center; gap: 12px; padding: 10px 12px; list-style: none; cursor: pointer; font-weight: 550; }
+.adv > summary::-webkit-details-marker { display: none; }
+.adv > summary small { color: var(--color-foreground-muted); font-weight: 400; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adv > summary .chev { margin-left: auto; transition: transform 200ms; } .adv[open] > summary .chev { transform: rotate(90deg); }
+.adv[open] > summary { border-bottom: 1px solid var(--color-border-subtle); }
+.sub { padding: 12px; border-top: 1px solid var(--color-border-subtle); } .adv > summary + .sub { border-top: 0; }
+.sub > h3 { margin: 0 0 4px; font-size: 12.5px; font-weight: 600; }
+.sub > .prow { padding: 9px 0; }
+.muted { color: var(--color-foreground-muted); font-size: 12px; margin: 6px 0 10px; }
+
+/* 2 · Sidebar */
+.split { flex: 1; display: flex; min-height: 0; }
+.nav { width: 172px; flex: none; padding: 10px 8px; border-right: 1px solid var(--color-border-subtle); background: var(--color-background-raised); display: flex; flex-direction: column; gap: 2px; }
+.nav button { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 7px; color: var(--color-foreground-muted); text-align: left; font-size: 12.5px; }
+.nav button:hover { background: var(--color-background-hover); color: var(--color-foreground); }
+.nav button[aria-current="true"] { background: var(--color-background-active); color: var(--color-foreground); box-shadow: inset 2px 0 0 var(--color-primary-hover); }
+.nav .grow { flex: 1; } .nav .ver { padding: 6px 10px; color: var(--color-foreground-subtle); font-size: 11px; }
+.pane { flex: 1; overflow-y: auto; background: var(--sheet-bg); padding-bottom: 16px; }
+.pane > h3.ptitle { margin: 18px 16px 2px; font-size: 16px; font-weight: 620; } .pane > p.pdesc { margin: 0 16px 6px; color: var(--color-foreground-muted); font-size: 12px; }
+
+/* 3 · Search + sticky index */
+.search { display: flex; align-items: center; gap: 8px; margin: 10px 12px 0; height: 32px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-background); color: var(--color-foreground-subtle); }
+.search input { flex: 1; border: 0; background: none; outline: none; color: var(--color-foreground); font-size: 12.5px; }
+.chips { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--color-border-subtle); overflow-x: auto; }
+.chips button { height: 26px; padding: 0 10px; border-radius: 99px; font-size: 12px; color: var(--color-foreground-muted); border: 1px solid var(--color-border-subtle); white-space: nowrap; }
+.chips button:hover { color: var(--color-foreground); }
+.chips button[aria-current="true"] { color: var(--color-foreground); border-color: var(--color-primary-hover); background: hsl(16 58% 16% / .35); }
+mark { background: hsl(20 96% 52% / .28); color: inherit; border-radius: 2px; }
+.empty { padding: 40px 20px; text-align: center; color: var(--color-foreground-muted); }
+
+/* 4 · Simple / Advanced */
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 12px 12px 0; padding: 2px; border-radius: 9px; background: var(--color-background); border: 1px solid var(--color-border); }
+.seg button { height: 28px; border-radius: 7px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.seg button[aria-pressed="true"] { background: var(--color-background-active); color: var(--color-foreground); font-weight: 600; }
+.seghint { margin: 8px 16px 0; color: var(--color-foreground-subtle); font-size: 11.5px; }
+
+/* 5 · Inline expandable rows */
+.xrow { border-top: 1px solid var(--color-border-subtle); } .card > .xrow:first-child { border-top: 0; }
+.xrow > button.sum { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-align: left; }
+.xrow > button.sum:hover { background: var(--color-surface-row-hover); }
+.xrow .val { margin-left: auto; color: var(--color-foreground-muted); font-size: 12.5px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xrow .chev { color: var(--color-foreground-subtle); transition: transform 180ms; }
+.xrow.open .chev { transform: rotate(90deg); }
+.xrow .ed { display: none; padding: 2px 12px 12px 52px; } .xrow.open .ed { display: block; animation: sheet-in 160ms ease-out; }
+.xrow .ed .muted { margin-top: 0; }
+.xrow.plain .ed { padding-left: 12px; }
+
+/* 6 · Full-window view */
+.full { position: absolute; inset: 53px 0 0 0; display: flex; background: var(--color-background-raised); }
+.full .nav { width: 200px; padding-top: 14px; }
+.full .back { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; margin-bottom: 10px; border-radius: 7px; color: var(--color-foreground-muted); font-size: 12.5px; }
+.full .back:hover { background: var(--color-background-hover); color: var(--color-foreground); }
+.full .pane { padding: 6px 0 40px; }
+.full .inner { max-width: 600px; margin: 0 auto; }
+.full .inner > h2 { margin: 18px 16px 0; font-size: 20px; font-weight: 620; }
+.full section { scroll-margin-top: 8px; }
+</style>
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>SnagThis</span>DESIGN STUDIES / SETTINGS LAYOUT</div>
+    <h1>How should Settings be organised?</h1>
+    <p>Six structures for the same desktop settings, shown in the real 960×660 window. Option 1 is today’s sheet with the usability fixes (Advanced scrolls into view, inline “Saved”, steppers). Click an option or press <kbd>1</kbd>–<kbd>6</kbd>; every control in the preview works, and changes flash “Saved”. Nothing is saved for real.</p>
+  </header>
+  <div class="picker" id="picker" role="group" aria-label="Settings layout options"></div>
+  <div class="stage">
+    <div class="win" id="win">
+      <div class="top"><div class="lights"><i></i><i></i><i></i></div><img class="wordmark" src="../../../../apps/desktop/src/assets/snagthis-logo-title.svg" alt="SnagThis"><div class="paste"><svg class="i" viewBox="0 0 24 24"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8"/></svg>Paste a video link</div></div>
+      <div class="list" id="list"></div>
+      <div class="foot"><span>2 downloading · 6.96 MB/s</span><span class="sp"></span><svg class="i" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg><button class="x" id="gear" aria-label="Settings"><svg class="i" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+      <div id="overlay"></div>
+    </div>
+    <aside class="notes" id="notes" aria-live="polite"></aside>
+  </div>
+  <footer class="hub-footer"><p>Prototype only. Settings list and copy come from <code>apps/desktop/src/components/settings/SettingsSheet.tsx</code> and <code>apps/desktop/src/lib/strings.ts</code>; tokens from <code>apps/desktop/src/globals.css</code>.</p></footer>
+</main>
+<script>
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const ICON = {
+  folder: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4M8 21h8M10 7.5v5l4-2.5z"/>',
+  captions: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>',
+  bell: '<path d="M10.27 21a2 2 0 0 0 3.46 0M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"/>',
+  power: '<path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+  sliders: '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+  puzzle: '<path d="M15.39 4.39a1 1 0 0 0 1.68-.47 2.5 2.5 0 1 1 3.02 3.02 1 1 0 0 0-.47 1.68l1.67 1.67a2.41 2.41 0 0 1 0 3.42l-1.6 1.6a1 1 0 0 1-1.7-.48 2.5 2.5 0 1 0-3.21 3.21 1 1 0 0 1 .48 1.7l-1.6 1.6a2.41 2.41 0 0 1-3.42 0l-1.67-1.67a1 1 0 0 0-1.68.47 2.5 2.5 0 1 1-3.02-3.02 1 1 0 0 0 .47-1.68l-1.67-1.67a2.41 2.41 0 0 1 0-3.42l1.6-1.6a1 1 0 0 1 1.7.48 2.5 2.5 0 1 0 3.21-3.21 1 1 0 0 1-.48-1.7l1.6-1.6a2.41 2.41 0 0 1 3.42 0z"/>',
+  download: '<path d="M12 15V3M7 10l5 5 5-5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
+  app: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  chev: '<path d="m9 18 6-6-6-6"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>', check: '<path d="M20 6 9 17l-5-5"/>',
+  minus: '<path d="M5 12h14"/>', plus: '<path d="M5 12h14M12 5v14"/>', eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  back: '<path d="m12 19-7-7 7-7M19 12H5"/>',
+};
+const ic = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
+
+/* Real settings, copy from strings.ts after the Part 1 fixes. */
+const LANGS = [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']];
+const NAMING = [['title', 'Video title'], ['resource', 'Name from link'], ['custom', 'My own name']];
+const NAMING_HINT = { title: 'Uses the video’s title from the page', resource: 'Uses the file name in the video link', custom: 'Uses the name below for every new download' };
+const state = { folder: '~/Movies/SnagThis', quality: 'best', subs: 'none', notify: true, login: false, atonce: 1, conns: 8, autostart: true, naming: 'title', custom: '', tmdb: '', subdl: '', updStartup: true, paired: false, code: null };
+const SECTIONS = {
+  chrome: { title: 'Chrome extension', icon: 'puzzle', desc: 'Send videos from Chrome to this app.' },
+  downloads: { title: 'Downloads', icon: 'download', desc: 'Where videos go and which version you get.' },
+  app: { title: 'App', icon: 'app', desc: 'Notifications and start-up.' },
+  advanced: { title: 'Advanced', icon: 'sliders', desc: 'Speed, file names and online lookups.' },
+  about: { title: 'Updates & support', icon: 'info', desc: 'Version, updates and diagnostics.' },
+};
+const ITEMS = [
+  { id: 'pairing', sec: 'chrome', type: 'pairing', label: 'Connect Chrome', kw: 'pair pairing code extension browser connect chrome' },
+  { id: 'folder', sec: 'downloads', type: 'folder', icon: 'folder', label: 'Save videos to', kw: 'folder location path directory' },
+  { id: 'quality', sec: 'downloads', type: 'select', icon: 'monitor', label: 'Preferred quality', hint: 'When a video offers a choice', options: [['best', 'Best'], ['1080', '1080p'], ['720', '720p'], ['480', '480p']], kw: 'resolution 1080 720 hd' },
+  { id: 'subs', sec: 'downloads', type: 'select', icon: 'captions', label: 'Subtitles', hint: 'Saved with the video if offered', options: LANGS, kw: 'captions language' },
+  { id: 'notify', sec: 'app', type: 'switch', icon: 'bell', label: 'Tell me when a download finishes', kw: 'notification alert done' },
+  { id: 'login', sec: 'app', type: 'switch', icon: 'power', label: 'Start SnagThis when I log in', kw: 'launch startup boot' },
+  { id: 'atonce', sec: 'advanced', sub: 'Speed', type: 'stepper', label: 'Downloads at once', hint: '1–16 · more downloads share your connection', kw: 'concurrent parallel queue' },
+  { id: 'conns', sec: 'advanced', sub: 'Speed', type: 'stepper', label: 'Connections per download', hint: '1–16 · more can speed up segmented videos', kw: 'threads speed' },
+  { id: 'autostart', sec: 'advanced', sub: 'Speed', type: 'switch', label: 'Start new downloads right away', hint: 'When off, new downloads wait until you start them', kw: 'queue auto' },
+  { id: 'naming', sec: 'advanced', sub: 'File names', type: 'select', label: 'File naming', hint: () => NAMING_HINT[state.naming], options: NAMING, kw: 'filename name rename' },
+  { id: 'custom', sec: 'advanced', sub: 'File names', type: 'text', label: 'Name for new downloads', hint: 'Repeats get (2), (3)… Existing files are not renamed.', placeholder: 'e.g. Lecture', showIf: () => state.naming === 'custom', kw: 'custom filename' },
+  { id: 'tmdb', sec: 'advanced', sub: 'Online lookups', type: 'key', label: 'TMDB API key', hint: 'Optional · adds posters and movie or TV names to files', kw: 'poster movie tv metadata api' },
+  { id: 'subdl', sec: 'advanced', sub: 'Online lookups', type: 'key', label: 'SubDL API key', hint: 'Optional · finds subtitles a site doesn’t provide', kw: 'subtitles api' },
+  { id: 'updStartup', sec: 'about', sub: 'Updates', type: 'switch', label: 'Check for updates on startup', kw: 'update version' },
+  { id: 'updNow', sec: 'about', sub: 'Updates', type: 'update', label: 'Version 1.0.0', hint: 'You’re up to date.', kw: 'update version check install' },
+  { id: 'diag', sec: 'about', sub: 'Diagnostics', type: 'diag', label: 'Diagnostics', kw: 'support bundle report site temporary clear logs' },
+];
+const item = id => ITEMS.find(i => i.id === id);
+const hintOf = it => typeof it.hint === 'function' ? it.hint() : it.hint || '';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const hl = (s, q) => { const t = esc(s); if (!q) return t; const i = t.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? t : `${t.slice(0, i)}<mark>${t.slice(i, i + q.length)}</mark>${t.slice(i + q.length)}`; };
+const saved = '<span class="saved">' + ic('check') + 'Saved</span>';
+const valueOf = it => ({
+  folder: state.folder, quality: item('quality').options.find(o => o[0] === state.quality)[1], subs: LANGS.find(o => o[0] === state.subs)[1],
+  notify: state.notify ? 'On' : 'Off', login: state.login ? 'On' : 'Off', atonce: state.atonce, conns: state.conns, autostart: state.autostart ? 'On' : 'Off',
+  naming: NAMING.find(o => o[0] === state.naming)[1], custom: state.custom || 'Not set', tmdb: state.tmdb ? 'Set' : 'Not set', subdl: state.subdl ? 'Set' : 'Not set',
+  updStartup: state.updStartup ? 'On' : 'Off', updNow: '1.0.0', diag: '', pairing: state.paired ? 'Connected' : 'Not connected',
+})[it.id];
+
+function control(it) {
+  const id = it.id;
+  if (it.type === 'switch') return `<button class="sw" role="switch" data-set="${id}" aria-checked="${state[id]}" aria-label="${esc(it.label)}"></button>`;
+  if (it.type === 'select') return `<select class="sel" data-set="${id}" aria-label="${esc(it.label)}">${it.options.map(([v, l]) => `<option value="${v}"${state[id] === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+  if (it.type === 'stepper') return `<div class="stepper"><button data-step="${id}" data-d="-1" aria-label="Decrease ${esc(it.label)}">${ic('minus')}</button><output data-out="${id}">${state[id]}</output><button data-step="${id}" data-d="1" aria-label="Increase ${esc(it.label)}">${ic('plus')}</button></div>`;
+  return '';
+}
+function pairingBlock() {
+  if (state.paired) return `<p>Chrome is connected. Keep SnagThis open while downloading.</p><button class="btn" data-act="code">Connect another browser</button>`;
+  return `<p>Connect the extension once to send videos from Chrome to this app.</p><ol><li>Show a code here and copy it.</li><li>In Chrome, click Extensions (the puzzle icon) → SnagThis → Connect.</li><li>Paste the code there and choose Connect.</li></ol>`
+    + (state.code ? `<div class="code"><small>Paste this code in the SnagThis extension.</small><div class="acts" style="justify-content:space-between;align-items:center"><output>483921</output><button class="btn" data-act="pair">Copy code</button></div><small>Expires in 4:52. Keep SnagThis open. <em>(Click Copy code to simulate pairing.)</em></small></div>` : `<button class="btn" data-act="code">Show connection code</button>`)
+    + `<button class="link">Need the extension? Add to Chrome</button>`;
+}
+/** One setting in the Grouped cards row language. `q` highlights search matches. */
+function row(it, { icons = true, q = '' } = {}) {
+  const icon = icons && it.icon ? `<span class="sicon${it.id === 'folder' ? ' warm' : ''}">${ic(it.icon)}</span>` : '';
+  const hidden = it.showIf && !it.showIf() ? ' hidden' : '';
+  const title = `<div class="stitle"><span>${hl(it.label, q)}</span>${saved}</div>`;
+  if (it.type === 'pairing') return `<div class="pair" data-row="pairing">${pairingBlock()}</div>`;
+  if (it.type === 'folder') return `<div class="prow folder" data-row="folder">${icon || '<span></span>'}<div class="stext">${title}<div class="path" title="${esc(state.folder)}" data-out="folder">${esc(state.folder)}</div></div><div class="acts"><button class="btn" data-act="folder">Change…</button><button class="btn">Open</button></div></div>`;
+  if (it.type === 'key' || it.type === 'text') return `<div class="prow stack" data-row="${it.id}"${hidden}>${title}<small class="muted" style="margin:2px 0 0">${hl(hintOf(it), q)}</small><div class="keyf"><input data-set="${it.id}" type="${it.type === 'key' ? 'password' : 'text'}" placeholder="${it.placeholder || 'Not set'}" value="${esc(state[it.id])}" aria-label="${esc(it.label)}">${it.type === 'key' ? `<button class="x" aria-label="Show key">${ic('eye')}</button>` : ''}</div></div>`;
+  if (it.type === 'update') return `<div class="prow stack" data-row="updNow"><div class="muted" style="margin:0 0 8px">Version 1.0.0 · You’re up to date.</div><div class="acts"><button class="btn" data-act="saved-updNow">Check for updates</button></div></div>`;
+  if (it.type === 'diag') return `<div class="prow stack" data-row="diag"><div class="acts"><button class="btn">Export support bundle</button><button class="btn">Copy diagnostics</button></div><button class="link">Report a site that didn’t work</button><button class="link">Clear temporary download data</button></div>`;
+  return `<div class="prow" data-row="${it.id}"${hidden}>${icon}<div class="stext">${title}${hintOf(it) ? `<small data-hint="${it.id}">${hl(hintOf(it), q)}</small>` : ''}</div>${control(it)}</div>`;
+}
+const inSec = (sec, filter = () => true) => ITEMS.filter(i => i.sec === sec && filter(i));
+/** A section as grouped cards; advanced sections split into titled sub-groups inside one card. */
+function sectionCards(sec, opts = {}) {
+  const items = inSec(sec, opts.filter);
+  if (!items.length) return '';
+  if (sec === 'chrome') return `<div class="card">${items.map(i => row(i, opts)).join('')}</div>`;
+  const subs = [...new Set(items.map(i => i.sub).filter(Boolean))];
+  if (!subs.length) return `<div class="card">${items.map(i => row(i, opts)).join('')}</div>`;
+  return `<div class="card">${subs.map(s => `<div class="sub"><h3>${s}</h3>${items.filter(i => i.sub === s).map(i => row(i, { ...opts, icons: false })).join('')}</div>`).join('')}</div>`;
+}
+const head = (title = 'Settings', extra = '') => `<div class="head"><h2>${title}</h2>${extra}<button class="x" data-act="close" aria-label="Close settings">${ic('x')}</button></div>`;
+
+/* ── The six options ──────────────────────────────── */
+const OPTIONS = [
+  { key: 'cards', name: 'Grouped cards', desc: 'Today’s sheet, with the fixes: Advanced scrolls into view', notes: ['Current approved look; one scrolling column.', 'Advanced is still one step down, but now reveals itself and stays open for the session.', 'Longest scroll: ~2.5 screens with Advanced open.'], try: 'Open Advanced: the header glides to the top of the sheet.', render: renderCards },
+  { key: 'sidebar', name: 'Sidebar sections', desc: 'Wider sheet with Chrome · Downloads · App · Advanced · About', notes: ['Every section is one click from the left rail; almost no scrolling.', '640px sheet covers most of the list (less context while changing things).', 'Familiar from macOS System Settings.'], try: 'Click the rail items; the pane swaps instantly.', render: renderSidebar },
+  { key: 'search', name: 'Search + index', desc: 'One page, sticky section chips and a filter box', notes: ['Nothing hidden: Advanced is simply the lower part of the page.', 'Type “speed”, “subtitle” or “key” to jump straight to a setting.', 'Most powerful, but a search box is a lot of UI for ~15 settings.'], try: 'Type “sub” in the search box, then clear it and click a chip.', render: renderSearch },
+  { key: 'mode', name: 'Everyday / Advanced', desc: 'Segmented toggle at the top replaces the buried disclosure', notes: ['Advanced is visible from the first second, at the top.', 'Keeps the 400px sheet and grouped cards.', 'Two “pages” means a setting lives in exactly one mode; people may not know which.'], try: 'Switch the toggle; the choice is remembered while the sheet is open.', render: renderMode },
+  { key: 'rows', name: 'Value rows', desc: 'Each setting shows its current value; click to edit inline', notes: ['Whole sheet fits in roughly one screen: every value is scannable.', 'Advanced settings are listed as compact rows instead of hidden.', 'Every change takes one more click (open the row first).'], try: 'Click “Downloads at once” or “File naming”.', render: renderRows },
+  { key: 'full', name: 'Full-window view', desc: 'Settings replaces the list, with a section rail and back button', notes: ['Most room: two-column layout, wide text, no overlay.', 'Rail scrolls to sections and highlights where you are.', 'Hides the download list while open; needs a clear “Back to videos”.'], try: 'Click the rail entries, then Back to videos.', render: renderFull },
+];
+let current = 0, open = true;
+const ui = { advancedOpen: false, section: 'downloads', query: '', mode: 'everyday', rowOpen: '' };
+
+function renderCards() {
+  return `<div class="scrim" data-act="close"></div><div class="sheet">${head()}<div class="scroll" id="sc">
+    <h3 class="gtitle">Chrome extension</h3>${sectionCards('chrome')}
+    <h3 class="gtitle">Downloads</h3>${sectionCards('downloads')}
+    <h3 class="gtitle">App</h3>${sectionCards('app')}
+    <h3 class="gtitle">More</h3>
+    <details class="card adv" id="adv"${ui.advancedOpen ? ' open' : ''}><summary><span class="sicon">${ic('sliders')}</span><span>Advanced</span><small>Speed, file names, lookups, updates</small>${ic('chev', 'i chev')}</summary>
+      ${['Speed', 'File names', 'Online lookups', 'Updates', 'Diagnostics'].map(s => `<div class="sub"><h3>${s}</h3>${ITEMS.filter(i => i.sub === s).map(i => row(i, { icons: false })).join('')}</div>`).join('')}
+    </details></div></div>`;
+}
+function renderSidebar() {
+  const s = ui.section;
+  return `<div class="scrim" data-act="close"></div><div class="sheet wide">${head()}<div class="split"><nav class="nav">${Object.entries(SECTIONS).map(([k, v]) => `<button data-sec="${k}" aria-current="${k === s}">${ic(v.icon)}${v.title}</button>`).join('')}<span class="grow"></span><span class="ver">SnagThis 1.0.0</span></nav>
+    <div class="pane"><h3 class="ptitle">${SECTIONS[s].title}</h3><p class="pdesc">${SECTIONS[s].desc}</p><div style="height:8px"></div>${sectionCards(s)}</div></div></div>`;
+}
+function renderSearch() {
+  const q = ui.query.trim().toLowerCase();
+  const match = i => !q || `${i.label} ${hintOf(i)} ${i.kw || ''} ${SECTIONS[i.sec].title} ${i.sub || ''}`.toLowerCase().includes(q);
+  const body = Object.keys(SECTIONS).map(k => { const html = sectionCards(k, { filter: match, q: ui.query.trim() }); return html ? `<section id="s-${k}"><h3 class="gtitle">${SECTIONS[k].title}</h3>${html}</section>` : ''; }).join('');
+  return `<div class="scrim" data-act="close"></div><div class="sheet w440">${head()}<label class="search">${ic('search')}<input id="q" placeholder="Search settings" value="${esc(ui.query)}" aria-label="Search settings"></label>
+    <div class="chips">${Object.entries(SECTIONS).map(([k, v]) => `<button data-jump="${k}" aria-current="${k === 'chrome' && !q}">${v.title}</button>`).join('')}</div>
+    <div class="scroll" id="sc">${body || `<div class="empty">No settings match “${esc(ui.query)}”.</div>`}</div></div>`;
+}
+function renderMode() {
+  const adv = ui.mode === 'advanced';
+  const body = adv
+    ? `<p class="seghint">For people who tune speed, file names and lookups.</p><h3 class="gtitle">Speed &amp; files</h3>${sectionCards('advanced')}<h3 class="gtitle">Updates &amp; support</h3>${sectionCards('about')}`
+    : `<h3 class="gtitle">Chrome extension</h3>${sectionCards('chrome')}<h3 class="gtitle">Downloads</h3>${sectionCards('downloads')}<h3 class="gtitle">App</h3>${sectionCards('app')}`;
+  return `<div class="scrim" data-act="close"></div><div class="sheet">${head()}<div class="seg" role="group" aria-label="Settings level"><button data-mode="everyday" aria-pressed="${!adv}">Everyday</button><button data-mode="advanced" aria-pressed="${adv}">Advanced</button></div><div class="scroll" id="sc">${body}</div></div>`;
+}
+function xrow(it) {
+  const icon = it.icon ? `<span class="sicon${it.id === 'folder' ? ' warm' : ''}">${ic(it.icon)}</span>` : '';
+  const val = valueOf(it);
+  let editor;
+  if (it.type === 'pairing') editor = `<div class="pair" style="padding:0">${pairingBlock()}</div>`;
+  else if (it.type === 'folder') editor = `<div class="path" data-out="folder" style="margin-bottom:8px">${esc(state.folder)}</div><div class="acts"><button class="btn" data-act="folder">Change…</button><button class="btn">Open</button></div>`;
+  else if (it.type === 'key' || it.type === 'text') editor = `<div class="muted">${hintOf(it)}</div><div class="keyf" style="margin:0"><input data-set="${it.id}" type="${it.type === 'key' ? 'password' : 'text'}" placeholder="${it.placeholder || 'Paste key'}" value="${esc(state[it.id])}" aria-label="${esc(it.label)}"></div>`;
+  else if (it.type === 'update' || it.type === 'diag') editor = row(it).replace('class="prow stack"', 'class="stack"');
+  else editor = `<div style="display:flex;align-items:center;gap:12px"><div class="muted" style="flex:1;margin:0" data-hint="${it.id}">${hintOf(it)}</div>${control(it)}</div>`;
+  const plain = !icon ? ' plain' : '';
+  return `<div class="xrow${ui.rowOpen === it.id ? ' open' : ''}${plain}" data-row="${it.id}"${it.showIf && !it.showIf() ? ' hidden' : ''}><button class="sum" data-xrow="${it.id}" aria-expanded="${ui.rowOpen === it.id}">${icon}<span class="stitle">${esc(it.id === 'updNow' ? 'Updates' : it.id === 'pairing' ? 'Chrome extension' : it.label)}${saved}</span><span class="val" data-val="${it.id}">${esc(val)}</span>${ic('chev', 'i chev')}</button><div class="ed">${editor}</div></div>`;
+}
+function renderRows() {
+  const g = (t, ids) => `<h3 class="gtitle">${t}</h3><div class="card">${ids.map(id => xrow(item(id))).join('')}</div>`;
+  return `<div class="scrim" data-act="close"></div><div class="sheet">${head()}<div class="scroll" id="sc">
+    ${g('Chrome', ['pairing'])}${g('Downloads', ['folder', 'quality', 'subs'])}${g('App', ['notify', 'login'])}
+    ${g('Advanced', ['atonce', 'conns', 'autostart', 'naming', 'custom', 'tmdb', 'subdl'])}${g('Updates & support', ['updStartup', 'updNow', 'diag'])}</div></div>`;
+}
+function renderFull() {
+  return `<div class="full"><nav class="nav"><button class="back" data-act="close">${ic('back')}Back to videos</button>${Object.entries(SECTIONS).map(([k, v], i) => `<button data-fjump="${k}" aria-current="${i === 0}">${ic(v.icon)}${v.title}</button>`).join('')}<span class="grow"></span><span class="ver">SnagThis 1.0.0</span></nav>
+    <div class="pane" id="sc"><div class="inner"><h2>Settings</h2>${Object.keys(SECTIONS).map(k => `<section id="f-${k}"><h3 class="gtitle">${SECTIONS[k].title}</h3>${sectionCards(k)}</section>`).join('')}<div style="height:220px"></div></div></div></div>`;
+}
+
+/* ── Rendering and interaction ─────────────────────── */
+const ROWS = [
+  ['Big Buck Bunny — director’s commentary', '24:18', 'Link expired. Reopen the page to continue from 48%.', 'linear-gradient(135deg,#4f6b2e,#1f2d17)', 18, 'amber'],
+  ['Big Buck Bunny — saved copy', '9:56', 'File was moved or deleted', 'linear-gradient(135deg,#5d7a36,#26361b)', 0, 'amber'],
+  ['Sintel — an open movie by Blender', '14:48', '34% · 5 min left', 'linear-gradient(135deg,#6b4a2a,#20170f)', 13, ''],
+  ['Tears of Steel', '12:14', 'Finishing up…', 'linear-gradient(135deg,#46505a,#1b1f24)', 40, ''],
+  ['Behind the scenes — the animation process', '9:54', '18% · 1 min left', 'linear-gradient(135deg,#1c222b,#12161b)', 7, ''],
+  ['Sintel — the making of', '16:40', 'Paused at 48%', 'linear-gradient(135deg,#6b4a2a,#241a10)', 19, ''],
+  ['Big Buck Bunny — full film', '9:56', 'Waiting · starts next', 'linear-gradient(135deg,#4f6b2e,#1f2d17)', 0, ''],
+];
+$('#list').innerHTML = ROWS.map(([t, d, s, g, done, tone]) => `<div class="vrow"><div class="thumb" style="background:${g}"></div><div class="txt"><b>${t}<em>${d}</em></b><span${tone ? ' style="color:var(--color-status-paused)"' : ''}>${s}</span>${done ? `<div class="lane">${Array.from({ length: 40 }, (_, i) => `<i class="${i < done ? 'd' : i === done ? 'n' : ''}"></i>`).join('')}</div>` : ''}</div></div>`).join('');
+
+function render() {
+  const o = OPTIONS[current];
+  $('#overlay').innerHTML = open ? o.render() : '';
+  $('#notes').innerHTML = `<h2>${current + 1} · ${o.name}</h2><div>${o.desc}</div><ul>${o.notes.map(n => `<li>${n}</li>`).join('')}</ul><div class="try"><span class="tag">Try</span>${o.try}</div>`;
+  $$('#picker button').forEach((b, i) => b.setAttribute('aria-pressed', String(i === current)));
+}
+$('#picker').innerHTML = OPTIONS.map((o, i) => `<button type="button" data-opt="${i}"><span>${i + 1} · ${o.name}${i === 0 ? ' (current)' : ''}</span><small>${o.desc}</small></button>`).join('');
+$('#picker').addEventListener('click', e => { const b = e.target.closest('[data-opt]'); if (b) { current = Number(b.dataset.opt); open = true; render(); } });
+addEventListener('keydown', e => {
+  if (e.target.matches('input, select') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const n = Number(e.key); if (n >= 1 && n <= OPTIONS.length) { current = n - 1; open = true; render(); }
+  if (e.key === 'Escape' && open) { open = false; render(); }
+});
+$('#gear').addEventListener('click', () => { open = true; render(); });
+
+let savedTimer;
+function flash(id) {
+  $$('.saved.show').forEach(s => s.classList.remove('show'));
+  const mark = $(`[data-row="${id}"] .saved`); if (!mark) return;
+  mark.classList.add('show'); clearTimeout(savedTimer); savedTimer = setTimeout(() => mark.classList.remove('show'), 1800);
+}
+function refreshValue(id) {
+  const it = item(id); const v = $(`[data-val="${id}"]`); if (v) v.textContent = valueOf(it);
+  $$(`[data-hint="${id}"]`).forEach(h => { h.textContent = hintOf(it); });
+  $$('[data-row="custom"]').forEach(r => { r.hidden = state.naming !== 'custom'; });
+}
+function smoothScrollTo(scroller, el) {
+  const top = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12;
+  scroller.scrollTo({ top: Math.max(0, top), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+$('#overlay').addEventListener('click', e => {
+  const t = e.target.closest('button, [data-act], summary'); if (!t) return;
+  const act = t.dataset.act;
+  if (act === 'close') { open = false; render(); return; }
+  if (act === 'code') { state.code = true; render(); return; }
+  if (act === 'pair') { state.paired = true; state.code = null; render(); return; }
+  if (act === 'folder') { state.folder = state.folder === '~/Movies/SnagThis' ? '/Volumes/Media Drive/Videos/Downloads from SnagThis' : '~/Movies/SnagThis'; $$('[data-out="folder"]').forEach(p => { p.textContent = state.folder; p.title = state.folder; }); const v = $('[data-val="folder"]'); if (v) v.textContent = state.folder; flash('folder'); return; }
+  if (act && act.startsWith('saved-')) { flash(act.slice(6)); return; }
+  if (t.matches('.sw')) { const id = t.dataset.set; state[id] = !state[id]; t.setAttribute('aria-checked', state[id]); refreshValue(id); flash(id); return; }
+  if (t.dataset.step) { const id = t.dataset.step; state[id] = Math.max(1, Math.min(16, state[id] + Number(t.dataset.d))); $(`[data-out="${id}"]`).textContent = state[id]; refreshValue(id); flash(id); return; }
+  if (t.dataset.sec) { ui.section = t.dataset.sec; render(); return; }
+  if (t.dataset.mode) { ui.mode = t.dataset.mode; render(); return; }
+  if (t.dataset.xrow) { const id = t.dataset.xrow; ui.rowOpen = ui.rowOpen === id ? '' : id; const sc = $('#sc'), top = sc.scrollTop; render(); $('#sc').scrollTop = top; if (ui.rowOpen) { const r = $(`[data-row="${id}"]`); const box = r.getBoundingClientRect(), sb = $('#sc').getBoundingClientRect(); if (box.bottom > sb.bottom) smoothScrollTo($('#sc'), r); } return; }
+  if (t.dataset.jump) { const s = $(`#s-${t.dataset.jump}`); if (s) smoothScrollTo($('#sc'), s); $$('.chips button').forEach(b => b.setAttribute('aria-current', String(b === t))); return; }
+  if (t.dataset.fjump) { const s = $(`#f-${t.dataset.fjump}`); if (s) smoothScrollTo($('#sc'), s); $$('.full .nav [data-fjump]').forEach(b => b.setAttribute('aria-current', String(b === t))); return; }
+});
+$('#overlay').addEventListener('toggle', e => {
+  if (e.target.id !== 'adv') return;
+  ui.advancedOpen = e.target.open;
+  if (e.target.open && e.target.dataset.user) requestAnimationFrame(() => smoothScrollTo($('#sc'), e.target));
+  delete e.target.dataset.user;
+}, true);
+$('#overlay').addEventListener('pointerdown', e => { const s = e.target.closest('#adv > summary'); if (s) s.parentElement.dataset.user = '1'; });
+$('#overlay').addEventListener('keydown', e => { const s = e.target.closest('#adv > summary'); if (s && (e.key === 'Enter' || e.key === ' ')) s.parentElement.dataset.user = '1'; });
+$('#overlay').addEventListener('change', e => { const id = e.target.dataset.set; if (!id) return; state[id] = e.target.value; refreshValue(id); flash(id); });
+$('#overlay').addEventListener('input', e => {
+  if (e.target.id !== 'q') return;
+  ui.query = e.target.value; const pos = e.target.selectionStart; render(); const q = $('#q'); q.focus(); q.setSelectionRange(pos, pos);
+});
+$('#overlay').addEventListener('scroll', e => {
+  if (current !== 5 || e.target.id !== 'sc') return;
+  const sc = e.target, top = sc.getBoundingClientRect().top; let active = 'chrome';
+  for (const k of Object.keys(SECTIONS)) { const s = $(`#f-${k}`); if (s && s.getBoundingClientRect().top - top < 80) active = k; }
+  $$('.full .nav [data-fjump]').forEach(b => b.setAttribute('aria-current', String(b.dataset.fjump === active)));
+}, true);
+const initial = Number(new URLSearchParams(location.search).get('option'));
+if (initial >= 1 && initial <= OPTIONS.length) current = initial - 1;
+render();
+</script>
+</body>
+</html>

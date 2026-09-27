@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Thumbnail studies</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="hover.css">
+  <link rel="stylesheet" href="studies.css">
+  <link rel="stylesheet" href="thumbnails.css">
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / THUMBNAILS</div>
+    <h1>While it loads. When it arrives.</h1>
+    <p>Try a quieter loading placeholder, then choose how the thumbnail sits in the row. Both choices combine in the app and extension previews.</p>
+  </header>
+  <div class="hub-controls preview-controls">
+    <label>Thumbnail <select id="sample-image"><option value="placeholder">Loading placeholder</option><option value="loaded">Loaded image</option></select></label>
+    <button type="button" id="pause" aria-pressed="false">Pause motion</button>
+    <label class="check-control"><input type="checkbox" id="reduced-motion"> Reduced motion preview</label>
+    <button type="button" id="reset">Reset to original</button>
+  </div>
+  <section class="study" id="loading" aria-labelledby="loading-title">
+    <h2 class="study-title" id="loading-title">1 · Before the thumbnail arrives <small>the placeholder only; the loaded image stays clear</small></h2>
+    <div class="hover-picker study-picker" aria-label="Loading placeholder options"></div>
+  </section>
+  <section class="study" id="layout" aria-labelledby="layout-title">
+    <h2 class="study-title" id="layout-title">2 · How it fits the row <small>compare spacing, height, and crop</small></h2>
+    <div class="hover-picker study-picker" aria-label="Thumbnail layout options"></div>
+  </section>
+  <section class="preview-section" aria-labelledby="preview-title">
+    <div class="preview-heading"><h2 id="preview-title">Your combination</h2><output id="selection" aria-live="polite"></output></div>
+    <div class="context-previews">
+      <article class="surface popup-surface">
+        <h3>Chrome popup <small>480px</small></h3>
+        <div class="thumbnail-frame popup-preview" id="popup-preview">
+          <header class="preview-bar"><strong class="preview-wordmark">Vid<span>Snag</span></strong><span>2 videos on this page</span></header>
+          <div class="preview-list" id="popup-rows"></div>
+          <footer class="preview-bottom"><span>Settings</span><span>Open VidSnag ↗</span></footer>
+        </div>
+      </article>
+      <article class="surface desktop-surface">
+        <h3>Desktop app <small>820px</small></h3>
+        <div class="thumbnail-frame desktop-preview" id="desktop-preview">
+          <header class="preview-bar"><strong class="preview-wordmark">Vid<span>Snag</span></strong><span class="preview-paste">Paste a video link <kbd>⌘V</kbd></span></header>
+          <div class="preview-tabs"><span class="selected">All</span><span>Downloading</span><span>Saved</span></div>
+          <div class="preview-list" id="desktop-rows"></div>
+          <footer class="preview-bottom"><span>2 videos</span><span>~/Movies/<strong>VidSnag</strong></span></footer>
+        </div>
+      </article>
+    </div>
+    <p class="study-note" id="layout-note"></p>
+    <p class="study-note" id="motion-note"></p>
+  </section>
+  <footer class="hub-footer"><p>Click a numbered option, or hover its section and press a number. The address preserves your choices when you reload.</p><p>Selected direction: Three dots · Flush full height. Other options remain comparisons. Thumbnail motion indicates loading, not download progress. <a href="controls.html">Controls study ↗</a> · <a href="metadata.html">Text and quality study ↗</a></p></footer>
+</main>
+<script src="thumbnails.js"></script>
+</body>
+</html>

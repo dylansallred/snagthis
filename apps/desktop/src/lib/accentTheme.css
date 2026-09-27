@@ -1,0 +1,22 @@
+/* Accent colours (unique-look option 9). Orange defaults; lib/accentTheme.ts overrides them on <html>. */
+:root {
+  --accent-logo: #fa5d0e;
+  --accent-bevel-face: #fa5d0e;
+  --accent-bevel-light: #ffb238;
+  --accent-bevel-dark: #bd3f00;
+}
+
+/* Registered so a theme change can crossfade every consumer at once (header line, buttons, focus ring). */
+@property --color-primary { syntax: "<color>"; inherits: true; initial-value: hsl(18 96% 40%); }
+@property --color-primary-strong { syntax: "<color>"; inherits: true; initial-value: hsl(18 96% 36%); }
+@property --color-primary-hover { syntax: "<color>"; inherits: true; initial-value: hsl(20 96% 52%); }
+@property --color-primary-muted { syntax: "<color>"; inherits: true; initial-value: hsl(16 58% 16%); }
+@property --color-ring { syntax: "<color>"; inherits: true; initial-value: hsl(18 96% 44%); }
+
+/* Only while a change is in flight, so startup never fades in from orange. */
+html.accent-crossfade {
+  transition: --color-primary 240ms ease, --color-primary-strong 240ms ease, --color-primary-hover 240ms ease, --color-primary-muted 240ms ease, --color-ring 240ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.accent-crossfade { transition: none; }
+}

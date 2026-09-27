@@ -1,0 +1,10 @@
+/* Unique look 2 · The snag moment: a transient layer above the app, never taking input. */
+.snag-layer { position: fixed; inset: 0; z-index: 40; pointer-events: none; overflow: hidden; }
+.snag-pixel { position: absolute; width: 4px; height: 4px; }
+.snag-coin { position: absolute; width: 16px; height: 16px; }
+.snag-plus { position: absolute; color: var(--color-primary-hover); filter: drop-shadow(1px 1px 0 var(--accent-bevel-dark, #bd3f00)); }
+.snag-plus svg { display: block; }
+.list-tabs button.snag-bump { animation: snag-tab-bump 240ms steps(3); }
+@keyframes snag-tab-bump { 50% { transform: translateY(-3px); color: var(--color-foreground); } }
+/* Hidden windows and reduced motion: a 5px square dot on Saved until it is visited. */
+.list-tabs .snag-pip { position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; background: var(--color-primary-hover); pointer-events: none; }

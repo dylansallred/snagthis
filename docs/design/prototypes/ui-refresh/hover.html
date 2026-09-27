@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Row hover options</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="hover.css">
+</head>
+<body>
+<main class="hub" id="hub" data-design="a" data-expanded="" data-count="3" data-hover="focus">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / 05</div>
+    <h1>Row hover options, round three: Focus and Frame.</h1>
+    <p>Design A on both surfaces. Pick an effect, then move over the rows. Tip: keep the pointer on a row and press <kbd>1</kbd>–<kbd>9</kbd> to switch effects without moving. Keyboard focus (Tab) uses the same treatment.</p>
+  </header>
+
+  <div class="hover-picker" role="group" aria-label="Choose a hover effect">
+    <button type="button" data-hover="focus" aria-pressed="true"><span>1 · Focus</span><small>Round two, for reference</small></button>
+    <button type="button" data-hover="frame" aria-pressed="false"><span>2 · Frame</span><small>Round two, for reference</small></button>
+    <button type="button" data-hover="focus-frame" aria-pressed="false"><span>3 · Focus + Frame</span><small>Others dim, this row gets the outline</small></button>
+    <button type="button" data-hover="focus-frame-soft" aria-pressed="false"><span>4 · Soft combo</span><small>Gentler dim, thin outline</small></button>
+    <button type="button" data-hover="focus-mono" aria-pressed="false"><span>5 · Focus mono</span><small>Others dim and lose their colour</small></button>
+    <button type="button" data-hover="frame-glow" aria-pressed="false"><span>6 · Frame glow</span><small>Thicker outline with outer glow</small></button>
+    <button type="button" data-hover="frame-neutral" aria-pressed="false"><span>7 · Frame neutral</span><small>White outline, no orange + dim</small></button>
+    <button type="button" data-hover="frame-edge" aria-pressed="false"><span>8 · Frame + edge</span><small>Outline with a heavy left side + dim</small></button>
+    <button type="button" data-hover="corners" aria-pressed="false"><span>9 · Viewfinder</span><small>Orange corner brackets + dim</small></button>
+  </div>
+
+  <div class="hub-controls">
+    <label for="state">Download state
+      <select id="state">
+        <option value="downloading">Downloading</option>
+        <option value="paused">Paused</option>
+        <option value="attention">Needs the user</option>
+        <option value="saved">Saved</option>
+      </select>
+    </label>
+    <label for="progress">Progress <output id="progress-value">34%</output>
+      <input id="progress" type="range" min="0" max="99" value="34">
+    </label>
+    <button type="button" id="simulate" aria-pressed="false">Animate progress</button>
+    <div class="segmented" role="group" aria-label="Videos on the page">
+      <span>Popup finds</span>
+      <button type="button" data-count="1" aria-pressed="false">1 video</button>
+      <button type="button" data-count="3" aria-pressed="true">3 videos</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <section class="surface" aria-label="Desktop design">
+      <h2>Desktop <small>820 px wide</small></h2>
+      <div class="desk-frame">
+        <div class="titlebar"><i></i><i></i><i></i><span>VidSnag Desktop</span></div>
+        <div class="app" id="desktop"></div>
+      </div>
+    </section>
+    <section class="surface" aria-label="Chrome popup design">
+      <h2>Chrome popup <small>400 px wide</small></h2>
+      <div class="popup-frame"><div class="popup" id="popup"></div></div>
+    </section>
+  </div>
+  <div id="notes" hidden></div>
+
+  <footer class="hub-footer">
+    <p>UI prototype only. Thumbnail clips still play on hover in every option; the effects never cover the video.</p>
+  </footer>
+</main>
+<script src="script.js"></script>
+<script>
+(() => {
+  const hub = document.getElementById('hub');
+  const buttons = [...document.querySelectorAll('.hover-picker button')];
+  function pick(button) {
+    hub.dataset.hover = button.dataset.hover;
+    buttons.forEach(other => other.setAttribute('aria-pressed', String(other === button)));
+  }
+  buttons.forEach(button => button.addEventListener('click', () => pick(button)));
+  addEventListener('keydown', event => {
+    if (event.target.matches('input, select') || event.metaKey || event.ctrlKey || event.altKey) return;
+    const button = buttons[Number(event.key) - 1];
+    if (button) pick(button);
+  });
+  // Spotlight: pointer position relative to the hovered row.
+  document.addEventListener('pointermove', event => {
+    const row = event.target.closest?.('.row, .prow');
+    if (!row) return;
+    const box = row.getBoundingClientRect();
+    row.style.setProperty('--mx', `${event.clientX - box.left}px`);
+    row.style.setProperty('--my', `${event.clientY - box.top}px`);
+  });
+})();
+</script>
+</body>
+</html>

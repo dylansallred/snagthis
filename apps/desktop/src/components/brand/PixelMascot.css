@@ -1,0 +1,30 @@
+/* Unique look 1 · Pixel mascot: empty states only, in hard steps (no easing). */
+.pixel-mascot { position: relative; width: max-content; margin: 0 auto 22px; cursor: default; }
+.pixel-mascot-bob { animation: pixel-mascot-bob 2.4s steps(1) infinite; }
+@keyframes pixel-mascot-bob { 0%, 49% { transform: none; } 50%, 100% { transform: translateY(-4px); } }
+/* A pixel shadow that shrinks as the button rises. */
+.pixel-mascot-floor { position: absolute; left: 50%; bottom: -12px; width: 40px; height: 4px; margin-left: -20px; background: #000; opacity: .55; box-shadow: 4px 0 0 #000, -4px 0 0 #000; animation: pixel-mascot-floor 2.4s steps(1) infinite; }
+@keyframes pixel-mascot-floor { 0%, 49% { width: 40px; margin-left: -20px; } 50%, 100% { width: 32px; margin-left: -16px; } }
+.pixel-mascot[data-variant="dozing"] .pixel-mascot-floor { animation: none; }
+/* Dozing: two pixel z's drift up and away in six steps. */
+.pixel-mascot-z { position: absolute; right: -18px; top: -10px; color: var(--color-foreground-muted); opacity: 0; animation: pixel-mascot-z 2.6s steps(6) infinite; }
+.pixel-mascot-z + .pixel-mascot-z { animation-delay: 1.3s; }
+@keyframes pixel-mascot-z { 0% { opacity: 0; transform: translate(0, 8px); } 20% { opacity: .9; } 100% { opacity: 0; transform: translate(12px, -18px); } }
+/* Saved: the button sits on an empty shelf between two dashed, unfilled slots. */
+.pixel-mascot-shelf { position: absolute; left: -52px; right: -52px; bottom: -8px; height: 4px; background: var(--color-border); box-shadow: 0 4px 0 #0008; }
+.pixel-mascot-slot { position: absolute; bottom: -4px; width: 36px; height: 22px; left: -50px;
+  background: linear-gradient(90deg, var(--color-border) 50%, transparent 0) 0 0 / 4px 2px repeat-x,
+    linear-gradient(0deg, var(--color-border) 50%, transparent 0) 0 0 / 2px 4px repeat-y,
+    linear-gradient(0deg, var(--color-border) 50%, transparent 0) 100% 0 / 2px 4px repeat-y; }
+.pixel-mascot-slot + .pixel-mascot-slot { left: auto; right: -50px; }
+
+/* "Nothing downloading" and "No saved videos yet": the line sits under the mascot. */
+.empty-state-quiet { display: flex; flex-direction: column; align-items: center; padding: clamp(40px, 22dvh, 150px) 24px 32px; }
+.empty-state-quiet .pixel-mascot { margin-bottom: 26px; }
+.empty-state-quiet .empty-note { padding: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* A still button: no bob, no z's, no press. */
+  .pixel-mascot-bob, .pixel-mascot-floor { animation: none !important; }
+  .pixel-mascot-z { display: none; }
+}

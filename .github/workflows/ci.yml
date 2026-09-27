@@ -1,0 +1,206 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      verify_macos_signing:
+        description: 'Only build and verify a signed, notarized macOS installer (no release)'
+        type: boolean
+        default: false
+      macos_arch:
+        description: 'Mac architecture to verify: arm64 = Apple Silicon, x64 = Intel'
+        type: choice
+        options: [arm64, x64]
+        default: arm64
+      verify_windows_signing:
+        description: 'Only build and verify an Azure-signed Windows installer (no release)'
+        type: boolean
+        default: false
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.verify_macos_signing && !inputs.verify_windows_signing) }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Fetch portable media tools
+        run: |
+          npm run fetch:ffmpeg --workspace @m3u8/desktop
+          npm run fetch:yt-dlp --workspace @m3u8/desktop
+      - name: Use the bundled tools for media fixtures
+        shell: bash
+        run: node -p "require('path').resolve('apps/desktop/bin')" >> "$GITHUB_PATH"
+      - name: Install browser and Electron display dependencies
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - name: Install browser for renderer regression tests
+        if: runner.os != 'Linux'
+        run: npx playwright install chromium
+      - name: Enable Electron's Linux sandbox helper
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # Materialize Electron before capturing its path: the first require can log a download.
+          node -e "require('electron')"
+          sandbox_helper="$(node -p "require('path').join(require('path').dirname(require('electron')), 'chrome-sandbox')")"
+          test -f "$sandbox_helper"
+          sudo chown root:root "$sandbox_helper"
+          sudo chmod 4755 "$sandbox_helper"
+          stat -c '%U:%G %a %n' "$sandbox_helper"
+      - name: Lint, types, unit and media fixtures, production builds, token parity
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run --auto-servernum npm run verify
+          else
+            npm run verify
+          fi
+      - name: Browser and desktop end-to-end checks
+        if: runner.os == 'Linux'
+        env:
+          DEBUG: pw:browser
+        run: xvfb-run --auto-servernum npm run test:e2e -- --project=chromium
+      - name: Keep failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checks-${{ runner.os }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+
+  verify-macos-signing:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_macos_signing }}
+    runs-on: ${{ inputs.macos_arch == 'x64' && 'macos-15-intel' || 'macos-15' }}
+    timeout-minutes: 60
+    env:
+      SNAGTHIS_RELEASE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Require Apple signing credentials
+        # This check runs on a branch, without creating a release tag.
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: env -u GITHUB_REF_NAME bash scripts/release-preflight.sh --target mac
+      - run: npm ci
+      - name: Fetch portable tools with license and source metadata
+        run: |
+          npm run fetch:ffmpeg --workspace @m3u8/desktop
+          npm run fetch:yt-dlp --workspace @m3u8/desktop
+      - name: Include project notices in the installed app
+        run: |
+          cp LICENSE apps/desktop/bin/SNAGTHIS-LICENSE.txt
+          cp THIRD_PARTY_NOTICES.md apps/desktop/bin/THIRD_PARTY_NOTICES.md
+      - name: Build signed and notarized installers without publishing
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: npm run dist --workspace @m3u8/desktop -- --mac --${{ inputs.macos_arch }} --publish=never -c.forceCodeSigning=true -c.mac.notarize=true
+      - name: Notarize and staple the exact DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for dmg in apps/desktop/dist-electron/*.dmg; do
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --output-format json > notarization.json
+            node -e "if(require('./notarization.json').status!=='Accepted')process.exit(1)"
+            xcrun stapler staple "$dmg"
+          done
+      - name: Verify signatures, Gatekeeper acceptance and real packaged downloads
+        run: env -u GITHUB_REF_NAME node scripts/verify-release.cjs
+      - name: Keep verified private test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-signing-check-${{ inputs.macos_arch }}
+          path: |
+            apps/desktop/dist-electron/*.dmg
+            apps/desktop/dist-electron/*.zip
+            apps/desktop/dist-electron/*.zip.blockmap
+            apps/desktop/dist-electron/release-verification-*.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summarize verification
+        env:
+          VERIFIED_ARCH: ${{ inputs.macos_arch }}
+        run: |
+          printf '## Apple signing verified (%s)\n\nThe app, DMG, and update ZIP passed signature, notarization, Gatekeeper, and real packaged download checks for this architecture. Test artifacts are retained for 7 days. No tag or release was created. Windows signing and a real installed N → N+1 update still require their release checks.\n' "$VERIFIED_ARCH" >> "$GITHUB_STEP_SUMMARY"
+
+  verify-windows-signing:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_windows_signing }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      SNAGTHIS_RELEASE: '1'
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Require Azure signing credentials
+        shell: bash
+        run: env -u GITHUB_REF_NAME bash scripts/release-preflight.sh --target win
+      - run: npm ci
+      - name: Fetch portable tools with license and source metadata
+        run: |
+          npm run fetch:ffmpeg --workspace @m3u8/desktop
+          npm run fetch:yt-dlp --workspace @m3u8/desktop
+      - name: Include project notices in the installed app
+        shell: bash
+        run: |
+          cp LICENSE apps/desktop/bin/SNAGTHIS-LICENSE.txt
+          cp THIRD_PARTY_NOTICES.md apps/desktop/bin/THIRD_PARTY_NOTICES.md
+      - name: Build an Azure-signed installer without publishing
+        shell: bash
+        run: bash scripts/dist-windows-signed.sh --x64
+      - name: Install the exact installer, verify signatures and run a real packaged download
+        shell: bash
+        run: env -u GITHUB_REF_NAME node scripts/verify-release.cjs
+      - name: Keep verified private test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-signing-check-x64
+          path: |
+            apps/desktop/dist-electron/*.exe
+            apps/desktop/dist-electron/*.exe.blockmap
+            apps/desktop/dist-electron/latest.yml
+            apps/desktop/dist-electron/release-verification-*.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summarize verification
+        shell: bash
+        run: |
+          printf '## Windows signing verified (x64)\n\nThe installer and installed app carry valid Azure Artifact Signing signatures and passed a real packaged download. Test artifacts are retained for 7 days. No tag or release was created.\n' >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample media · 1 · Pixel worlds</title>
+<style>
+  @font-face { font-family: 'Jersey 15'; src: url('../../../../../site/fonts/jersey15-latin.woff2') format('woff2'); font-display: swap; }
+  @font-face { font-family: 'Inter'; src: url('../../../../../site/fonts/inter-latin.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+  :root { color-scheme: dark; --bg: #0f1113; --panel: #16191c; --line: #262a2f; --text: #e8eaed; --muted: #9aa0a6; --accent: #fa5d0e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 Inter, system-ui, sans-serif; }
+  main { max-width: 1240px; margin: 0 auto; padding: 40px 24px 64px; }
+  h1 { font: 44px/1 'Jersey 15', monospace; margin: 0 0 6px; letter-spacing: .5px; }
+  h1 span { color: var(--accent); }
+  h2 { font: 26px/1 'Jersey 15', monospace; margin: 48px 0 16px; color: var(--text); }
+  .lede { color: var(--muted); max-width: 760px; margin: 0; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 28px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .card video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; image-rendering: pixelated; }
+  .card .body { padding: 14px 16px 16px; }
+  .card h3 { margin: 0; font: 600 16px/1.3 Inter, sans-serif; }
+  .card p { margin: 4px 0 8px; color: var(--muted); }
+  .meta { font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+  .meta b { color: var(--text); font-weight: 500; }
+  .rows { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; max-width: 560px; }
+  .row { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .row img { width: 120px; height: 68px; border-radius: 4px; object-fit: cover; flex: none; background: #000; }
+  .row .t { font-weight: 600; font-size: 13px; }
+  .row .s { font-size: 12px; color: var(--muted); }
+  .row .bar { height: 3px; background: #2a2e33; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .row .bar i { display: block; height: 100%; background: var(--accent); }
+  .posters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .posters figure { margin: 0; }
+  .posters img { width: 100%; display: block; border-radius: 8px; border: 1px solid var(--line); }
+  .posters figcaption { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .notes { color: var(--muted); max-width: 820px; }
+  .notes li { margin: 6px 0; }
+  code { background: #1d2126; padding: 1px 5px; border-radius: 4px; color: #d7dade; font-size: 12.5px; }
+  @media (max-width: 800px) { .grid, .posters { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pixel <span>worlds</span></h1>
+  <p class="lede">Style 1 of 3 for the demo galleries, README screenshots and website: four original animated pixel-art "videos" drawn on a 320 × 180 grid and shown at 4× (1280 × 720). They use the SnagThis orange family and the pixel bevel play button, which shows up as a billboard, a power-up and the hero of the last clip. Every clip is a seamless 10-second loop.</p>
+
+  <div class="grid" id="clips"></div>
+
+  <h2>Row thumbnails (120 × 68)</h2>
+  <div class="rows" id="rows"></div>
+
+  <h2>Posters</h2>
+  <div class="posters" id="posters"></div>
+
+  <h2>How they were made</h2>
+  <ul class="notes">
+    <li>Everything is procedural and original. <code>generate.mjs</code> (Node, no dependencies) draws each frame pixel by pixel into a 320 × 180 RGB buffer using the scene code in <code>src/</code>. There are no images, sprites, footage, fonts or audio from anyone else; the 3 × 5 HUD letters are hand-defined in <code>src/lib.mjs</code>. The play button uses the geometry from <code>scripts/render-brand-assets.cjs</code>.</li>
+    <li>Motion loops exactly. Every parallax layer is periodic over its own width, which is its speed × 300 frames. Rain, glints, wheels, enemies and particles are periodic functions of the frame number, so the last frame flows straight back into the first.</li>
+    <li>Frames go to ffmpeg as raw video, get scaled 4× with nearest-neighbour (crisp pixels), and are encoded as two-pass H.264 at 640 kb/s, yuv420p, with <code>+faststart</code> and no audio. Deblocking and psy-rd are turned off so hard pixel edges don't smear. Posters are the same pixels saved as JPEG under 80 KB.</li>
+    <li>To re-render: <code>node generate.mjs</code> (all clips), <code>node generate.mjs neon ocean</code> (only some), or <code>node generate.mjs hop --frames 0,150</code> (PNG stills to <code>frames/</code>). A full render takes about 15 s.</li>
+  </ul>
+</main>
+<script>
+  const CLIPS = [
+    { id: 'neon-rain', title: 'Neon Rain — night drive', desc: 'A lone coupe cruises a rain-soaked neon city while signs flicker, a night train passes and the wet street mirrors it all.', duration: '12:37', size: '728 KB' },
+    { id: 'ember-tide', title: 'Ember Tide — sunset crossing', desc: 'A sailboat rides the swell as a banded sun melts into a glittering sea and the lighthouse starts to turn.', duration: '22:14', size: '615 KB' },
+    { id: 'star-courier', title: 'Star Courier — arcade run', desc: 'A tiny orange fighter weaves past a ringed planet, pops drones and grabs a play-button power-up.', duration: '8:05', size: '609 KB' },
+    { id: 'sky-hop', title: 'Sky Hop — a play button’s day out', desc: 'The SnagThis button bounds across floating islands above a sea of clouds, collecting amber gems.', duration: '5:42', size: '548 KB' },
+  ];
+  const el = (tag, props = {}, kids = []) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
+  for (const c of CLIPS) {
+    const v = el('video', { src: `${c.id}.mp4`, poster: `${c.id}.jpg`, muted: true, loop: true, autoplay: true, playsInline: true });
+    v.setAttribute('aria-label', c.title);
+    document.getElementById('clips').append(el('article', { className: 'card' }, [v, el('div', { className: 'body' }, [
+      el('h3', { textContent: c.title }), el('p', { textContent: c.desc }),
+      el('div', { className: 'meta', innerHTML: `<span>Demo length <b>${c.duration}</b></span><span>Clip <b>10 s loop · 1280 × 720 · 30 fps</b></span><span>MP4 <b>${c.size}</b></span>` }),
+    ])]));
+    const pct = 20 + (c.id.length * 7) % 70;
+    document.getElementById('rows').append(el('div', { className: 'row' }, [
+      el('img', { src: `${c.id}.jpg`, alt: '' }),
+      el('div', { style: 'flex:1;min-width:0' }, [el('div', { className: 't', textContent: c.title }), el('div', { className: 's', textContent: `${c.duration} · 1080p · MP4` }), el('div', { className: 'bar', innerHTML: `<i style="width:${pct}%"></i>` })]),
+    ]));
+    document.getElementById('posters').append(el('figure', {}, [el('img', { src: `${c.id}.jpg`, alt: `${c.title} poster` }), el('figcaption', { textContent: `${c.id}.jpg · 1280 × 720` })]));
+  }
+</script>
+</body>
+</html>

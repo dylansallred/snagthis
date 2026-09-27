@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Expand animation and list tabs</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="hover.css">
+  <link rel="stylesheet" href="studies.css">
+  <link rel="stylesheet" href="motion.css">
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / 16</div>
+    <h1>How details open, and how the All · Downloading · Saved tabs look and move.</h1>
+    <p>Desktop only. Click an option, or rest the pointer in a section and press its number key.</p>
+  </header>
+
+  <section class="study" id="expand" data-variant="instant">
+    <h2 class="study-title">1 · Opening and closing details <small>click any row; opening another row closes the first</small></h2>
+    <div class="hover-picker study-picker"></div>
+    <div class="hub-controls"><button type="button" id="e-replay">Close and reopen</button><span>Closing uses the same motion in reverse.</span></div>
+    <div class="stage"><div class="panel desk wide"><div id="e-list"></div></div></div>
+  </section>
+
+  <section class="study" id="tabs" data-variant="today">
+    <h2 class="study-title">2 · All · Downloading · Saved <small>hover across them, then click</small></h2>
+    <div class="hover-picker study-picker"></div>
+    <div class="stage"><div class="panel desk wide"><div id="t-bar"></div><div id="t-list"></div></div></div>
+  </section>
+
+  <footer class="hub-footer"><p>UI prototypes only; nothing is downloaded.</p></footer>
+</main>
+<script src="motion.js"></script>
+</body>
+</html>

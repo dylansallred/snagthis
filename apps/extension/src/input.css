@@ -1,0 +1,481 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: hsl(215 22% 3.5%);
+  --color-background-raised: hsl(215 22% 8%);
+  --color-background-hover: hsl(215 22% 10.5%);
+  --color-background-active: hsl(215 22% 13.5%);
+  --color-surface-chrome: hsl(215 22% 4%);
+  --color-surface-row: hsl(215 22% 8%);
+  --color-surface-row-hover: hsl(215 22% 11.5%);
+
+  --color-foreground: hsl(20 20% 93%);
+  --color-foreground-muted: hsl(20 6% 60%);
+  --color-foreground-subtle: hsl(20 5% 52%);
+
+  --color-border: hsl(215 15% 18%);
+  --color-border-subtle: hsl(215 14% 15.5%);
+
+  --color-primary: hsl(18 96% 40%);
+  --color-primary-strong: hsl(18 96% 36%);
+  --color-primary-hover: hsl(20 96% 52%);
+  --color-primary-foreground: hsl(20 35% 96%);
+  --color-primary-muted: hsl(16 58% 16%);
+
+  --color-accent: hsl(215 20% 12.5%);
+  --color-accent-foreground: hsl(20 20% 93%);
+
+  --color-secondary: hsl(215 18% 14.5%);
+  --color-secondary-foreground: hsl(20 20% 93%);
+
+  --color-muted: hsl(215 18% 12.5%);
+  --color-muted-foreground: hsl(20 8% 58%);
+
+  --color-input: hsl(215 16% 16.5%);
+
+  --color-popover: hsl(215 22% 9.5%);
+  --color-popover-foreground: hsl(20 20% 93%);
+
+  --color-card: hsl(215 22% 8%);
+  --color-card-foreground: hsl(20 20% 93%);
+
+  --color-destructive: hsl(0 80% 64%);
+  --color-destructive-muted: hsl(0 40% 16%);
+
+  --color-ring: hsl(18 96% 44%);
+
+  --color-status-downloading: hsl(18 88% 50%);
+  --color-status-queued: hsl(214 84% 60%);
+  --color-status-paused: hsl(44 84% 58%);
+  --color-status-completed: hsl(145 62% 46%);
+  --color-status-failed: hsl(0 72% 58%);
+  --color-status-cancelled: hsl(220 8% 52%);
+
+  --color-segment-pending: hsl(215 14% 24%);
+  --color-segment-downloading: #f4c38a;
+  --color-segment-completed: #80bfa6;
+  --color-segment-retrying: hsl(44 88% 58%);
+  --color-segment-failed: hsl(0 72% 58%);
+
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-full: 999px;
+
+  --animate-fade-slide-in: fadeSlideIn 200ms ease-out;
+  --animate-shimmer: shimmer 2s ease-in-out infinite;
+
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+
+@font-face{font-family:'Inter Variable';font-style:normal;font-weight:100 900;font-display:swap;src:url('fonts/inter-latin.woff2') format('woff2')}
+.row-title-line{display:flex;align-items:baseline;gap:7px;min-width:0}
+.row-title-line .row-title{min-width:0;flex:0 1 auto}
+.row-duration{flex:none;color:var(--color-foreground-subtle);font:500 10.5px/16px var(--font-mono)}
+.thumb-poster,.thumb-preview{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.thumb-poster.placeholder{background:#1a2029}
+.thumb-loading-dot{position:absolute;top:calc(50% - 2px);left:calc(50% - 14px);width:4px;height:4px;border-radius:50%;background:#8292a6;animation:thumbnail-dots 1.8s ease-in-out infinite}
+.thumb-loading-dot:nth-child(2){left:calc(50% - 2px);animation-delay:.18s}
+.thumb-loading-dot:nth-child(3){left:calc(50% + 10px);animation-delay:.36s}
+@keyframes thumbnail-dots{0%,70%,100%{opacity:.3}30%{opacity:1}}
+@media(prefers-reduced-motion:reduce){.thumb-loading-dot{animation:none}}
+.thumb-preview{visibility:hidden;pointer-events:none}
+.thumb.is-previewing .thumb-preview{visibility:visible}
+/* Focus: the active row gains an orange edge and every other row dims a little; rows that need attention never dim. */
+.video-row{position:relative;isolation:isolate;overflow:hidden;background:var(--color-surface-row);transition:opacity 200ms ease-out,background-color 300ms ease}
+.video-row::after{content:"";position:absolute;z-index:-1;left:0;top:0;bottom:0;width:3px;background:var(--color-primary-hover);pointer-events:none;opacity:0;transform:scaleY(0);transition:transform 380ms cubic-bezier(.4,0,.2,1),opacity 380ms ease}
+.video-row:is(:hover,:focus-visible,:has(:focus-visible),:has(.row-more[aria-expanded="true"]))::after{opacity:1;transform:none;transition:transform 300ms cubic-bezier(.2,.8,.2,1),opacity 160ms ease}
+.video-list:has(.video-row:is(:hover,:focus-visible,:has(:focus-visible),:has(.row-more[aria-expanded="true"]))) .video-row:not(:hover,:focus-visible,:has(:focus-visible),:has(.row-more[aria-expanded="true"]),[data-state="problem"],[data-state="missing"]){opacity:.72}
+.progress-pieces{grid-column:2/-1;grid-row:2;display:grid;grid-template-columns:repeat(40,minmax(0,1fr));gap:3px;height:7px;margin-bottom:12px;align-items:stretch;pointer-events:none}
+.video-row[data-progress-visible="true"]>.thumb{grid-row:1/3}
+.progress-piece{min-width:0;border-radius:1.7px;background:#292f37;border:1px solid #333a44;transition:background 180ms ease,border-color 180ms ease;position:relative}
+.progress-piece.done{background:#80bfa6;border-color:#91cbb4;box-shadow:0 1px 0 #b4dbc51a inset}
+.progress-piece.current{background:#30291f;border-color:#d0a471}
+.video-row[data-progress-active="true"] .progress-piece.current::after{content:"";position:absolute;inset:0;right:calc((1 - max(var(--piece-fill,1),.15))*100%);border-radius:1px;background:#f4c38a;animation:piece-working 1.9s ease-in-out infinite}
+.video-row[data-progress-visible="false"]>.progress-pieces{display:none}
+.video-row[data-progress-active="false"]>.progress-pieces{opacity:.62}
+.video-row[data-progress-active="false"] .progress-piece.current{background:#62513a;border-color:#a18b6b}
+@keyframes piece-working{0%,100%{opacity:.45}50%{opacity:1}}
+/* Spark: the current cell fills with real progress, and each newly finished cell flashes once. */
+.progress-piece.spark{z-index:1;animation:piece-spark 520ms ease-out}
+@keyframes piece-spark{0%{background:#fff;border-color:#fff;box-shadow:0 0 0 0 #ffe2b8,0 0 14px 5px hsl(36 100% 70% / .9)}100%{box-shadow:0 0 0 7px transparent,0 0 14px 5px transparent}}
+@media(prefers-reduced-motion:reduce){.video-row,.video-row::after,.progress-piece{transition:none}.progress-piece.current::after{animation:none!important;display:none}.progress-piece.spark{animation:none}}
+*{box-sizing:border-box}html,body{margin:0;width:480px;background:var(--color-background-raised);color:var(--color-foreground);font-family:var(--font-sans);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;color-scheme:dark}button,input,select{font:inherit}button{border:0;background:none;color:inherit;cursor:pointer}button:disabled{cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--color-primary-hover);outline-offset:2px}[hidden]{display:none!important}.popup{display:flex;flex-direction:column;width:480px;max-height:560px;overflow:hidden}.popup-header{position:relative;z-index:1;height:46px;flex:none;padding:10px 14px;display:flex;align-items:center;gap:18px;background:var(--color-surface-chrome);border-bottom:1px solid;border-image:linear-gradient(90deg,var(--color-primary-hover),color-mix(in srgb,var(--color-primary-hover) 25%,transparent) 45%,var(--color-border-subtle) 80%) 1}.logo-wordmark{display:block;width:120px;height:22px;object-fit:contain;flex:none}.popup-header #page-count{min-width:0;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:11.5px;line-height:18px;color:var(--color-foreground-muted)}.video-list{overflow-y:auto;min-height:0;flex:1;scrollbar-width:thin}.video-row{display:grid;grid-template-columns:128px minmax(0,1fr);align-items:stretch;column-gap:12px;row-gap:0;padding:0 14px 0 0;min-height:96px;border-top:1px solid var(--color-border-subtle)}.video-row:has(>.action){grid-template-columns:128px minmax(0,1fr) auto}.video-row>.thumb{grid-column:1;grid-row:1}.video-row>.row-body{grid-column:2;grid-row:1;align-self:center;padding:12px 0}.video-row>.action{grid-column:3;grid-row:1;align-self:center}.video-row:first-child{border-top:0}.video-row:is(:hover,:focus-visible,:has(:focus-visible)){background:var(--color-surface-row-hover)}.row-body{min-width:0;flex:1}.row-title{font-size:13.5px;font-weight:570;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:19px}.row-status{font-size:12px;color:var(--color-foreground-muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:18px;min-height:18px}.row-status.tone-attention{color:var(--color-status-paused)}.row-status.tone-success{color:var(--color-status-completed)}.status-meta{display:flex;align-items:center;gap:6px}.status-meta>span{overflow:hidden;text-overflow:ellipsis}.quality-button{height:24px;padding:0 6px;margin-left:0;border-radius:6px;background:var(--color-background-active);color:var(--color-foreground);font-size:12px;font-weight:550;display:inline-flex;align-items:center;gap:3px;flex:none;transition:background-color 120ms,color 120ms}.quality-button:hover,.quality-button[aria-expanded="true"]{background:color-mix(in srgb,var(--color-background-active),var(--color-foreground) 8%)}.quality-button .icon{width:10px;height:10px;color:var(--color-primary-hover);stroke-width:2.2}.quality-button[aria-expanded="true"] .icon{transform:rotate(180deg)}.thumb{position:relative;overflow:hidden;width:128px;min-height:96px;height:auto;flex:none;border-radius:0;background:var(--color-background-hover)}.fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.ghost{filter:grayscale(1) brightness(.4)}.live{clip-path:inset(0 calc(100% - var(--p)) 0 0);transition:clip-path 400ms linear}.placeholder.ghost{filter:none;background:repeating-linear-gradient(90deg,#1b1d22 0 14px,#22252b 14px 28px)}.placeholder.live{background:repeating-linear-gradient(90deg,hsl(18 60% 22%) 0 14px,hsl(18 60% 27%) 14px 28px)}.thumb.dimmed .live{opacity:.5}.edge{position:absolute;top:0;bottom:0;left:var(--p);width:2px;margin-left:-1px;background:var(--color-primary-hover);box-shadow:0 0 10px 2px color-mix(in srgb,var(--color-primary-hover) 75%,transparent);transition:left 400ms linear}.duration{position:absolute;right:4px;bottom:4px;border-radius:3px;background:rgba(0,0,0,.72);padding:0 4px;font:500 10.5px/16px var(--font-mono);color:#f1ece9}.action{height:30px;min-width:30px;padding:0 9px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;gap:6px;color:var(--color-foreground-muted);font-size:12.5px;flex:none}.action:hover{color:var(--color-foreground);background:var(--color-background-active)}.action.primary{padding:0 14px;color:#fff;background:var(--color-primary);font-weight:600}.action.primary:hover,.action.primary:active{background:var(--color-primary-strong)}.action.bordered{color:var(--color-foreground);border:1px solid var(--color-border)}.icon{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}.popup-footer{position:relative;z-index:1;height:43px;padding:6px 8px;display:flex;align-items:center;gap:2px;background:var(--color-surface-chrome);border-top:1px solid var(--color-border-subtle);flex:none}.popup-footer .action:hover{background:var(--color-background-active)}.spacer{flex:1}.count-badge{background:var(--color-primary);color:white;font-size:10px;font-weight:600;border-radius:8px;line-height:15px;padding:0 5px}.empty-state{padding:34px 28px 30px;text-align:center}.empty-icon{width:44px;height:44px;border-radius:12px;background:var(--color-background-hover);display:grid;place-items:center;margin:0 auto 14px;color:var(--color-foreground-muted)}.empty-icon .icon{width:20px;height:20px}.empty-state h2{font-size:14px;font-weight:600;margin:0 0 4px}.empty-state p{font-size:12.5px;color:var(--color-foreground-muted);max-width:270px;margin:0 auto 16px}.connection-banner{display:flex;gap:10px;align-items:center;background:hsl(44 60% 12%);border-bottom:1px solid hsl(44 40% 20%);padding:10px 14px;font-size:12.5px;color:hsl(44 80% 78%);flex:none}.connection-banner>span{flex:1}.connection-banner .action{height:26px;padding:0 10px;font-size:12px}.unavailable .video-row{opacity:.45;pointer-events:none}.menu{position:fixed;z-index:20;width:250px;max-height:320px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--color-foreground) 22%,transparent) transparent;scrollbar-gutter:stable;background:var(--color-background-hover);border:0;border-radius:9px;padding:4px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12.5px}.menu-item{display:flex;width:100%;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;text-align:left;min-height:30px}.menu-item:hover,.menu-item:focus-visible{background:var(--color-background-active)}.menu-item[aria-checked=true] .menu-check{color:var(--color-primary-hover)}.menu-check{width:13px;flex:none}.menu-value{margin-left:auto;font-size:11.5px;color:var(--color-foreground-muted)}.menu-title{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--color-foreground-subtle);padding:4px 8px 2px}.menu hr{border:0;border-top:1px solid var(--color-border);margin:4px 0}.sheet{padding:0;margin:0;width:480px;max-width:480px;height:100%;max-height:560px;border:0;background:var(--color-background-raised);color:var(--color-foreground);position:fixed;inset:0;overflow:hidden}.sheet[open]{display:flex;flex-direction:column}.sheet-header{height:42px;display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--color-border-subtle);flex:none}.sheet-header h2{font-size:13.5px;font-weight:570;margin:0;flex:1}.sheet-header .action{height:24px}.sheet-content{overflow:auto;min-height:0;flex:1}.setting-row{display:flex;align-items:center;gap:12px;padding:11px 16px;border-top:1px solid var(--color-border-subtle);min-height:61px}.setting-row:first-child{border-top:0}.setting-description{flex:1;min-width:0}.setting-description label{display:block;font-size:13px;font-weight:550}.setting-description small{display:block;font-size:12px;color:var(--color-foreground-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.setting-control{max-width:132px;height:28px;padding:0 8px;border:1px solid var(--color-border);border-radius:7px;background:transparent;color:var(--color-foreground);font-size:12.5px}.setting-control option{background:var(--color-background-hover)}.switch{appearance:none;width:40px;height:24px;border-radius:12px;background:var(--color-background-active);position:relative;cursor:pointer;flex:none;margin:0}.switch::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:left 160ms ease}.switch:checked{background:var(--color-primary)}.switch:checked::after{left:19px}.advanced{border-top:1px solid var(--color-border-subtle)}.advanced summary{padding:11px 16px;color:var(--color-foreground-muted);font-size:12.5px;cursor:pointer}.advanced-body{padding:0 16px 16px}.advanced-body p{color:var(--color-foreground-muted);font-size:12px}.sheet-pad{padding:18px 16px}.sheet-pad p{font-size:12.5px;color:var(--color-foreground-muted);margin:0 0 14px}.sheet-pad label{display:block;font-size:12.5px;margin-bottom:6px}.text-input{width:100%;padding:9px 10px;color:var(--color-foreground);background:var(--color-background);border:1px solid var(--color-border);border-radius:7px}.sheet-actions{display:flex;align-items:center;gap:8px;margin-top:14px}.sheet-error{color:var(--color-status-paused)!important;margin-top:10px!important}.notice{position:fixed;z-index:40;bottom:47px;left:12px;right:12px;padding:9px 12px;border:1px solid var(--color-border);border-radius:7px;background:var(--color-background-active);font-size:12px;color:var(--color-foreground)}.spinner{width:13px;height:13px;border:1.5px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin 700ms linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.live,.edge{transition:none}.edge{box-shadow:none}.spinner{animation:none}}
+
+/* Source previews remain available while desktop download actions are offline. */
+.unavailable .video-row{opacity:1;pointer-events:auto}
+.unavailable .video-row>.action:disabled{opacity:.45}
+.video-row:focus-visible{outline:none;box-shadow:inset 3px 0 0 var(--color-primary-hover)}
+.video-row>.action.primary.icon-only{width:30px;min-width:30px;padding:0}
+/* Every metadata item draws its separator in the gap before it. The list starts 13px left of the text
+   and clips that strip, so a separator at the start of any line is never shown. */
+.row-meta{display:flex;flex-wrap:wrap;align-items:center;row-gap:4px;min-width:0;margin-top:3px;margin-left:-13px;clip-path:inset(-6px -6px -6px 13px);font-size:12px;color:var(--color-foreground-muted)}
+.meta-item{position:relative;display:inline-flex;align-items:center;flex:none;min-width:0;padding-left:13px;white-space:nowrap}
+.meta-item::before{content:"";position:absolute;left:5px;top:calc(50% - 1.5px);width:3px;height:3px;border-radius:50%;background:var(--color-foreground-subtle)}
+.row-meta>.row-status{min-width:0;margin-top:0}
+.row-meta>.row-status:empty{display:none}
+.row-meta>.row-status.status-meta{display:contents}
+/* Status sentences may use two lines; the separator stays on the first. */
+.row-meta>.row-status.meta-item{flex:0 1 auto;white-space:normal;overflow:hidden;-webkit-line-clamp:2;line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical}
+.row-meta>.row-status.meta-item::before{top:7.5px}
+.thumb-poster{transition:opacity 150ms ease-out}
+.thumb-poster-leaving{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.thumb-poster-leaving.placeholder{background:#1a2029}
+.thumb-poster.is-loading{opacity:0}
+/* Completion moment: the saved check draws itself once. */
+.saved-copy.just-saved .icon path{stroke-dasharray:20;stroke-dashoffset:20;animation:check-draw 360ms cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes check-draw{to{stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){.thumb-poster{transition:none}.saved-copy.just-saved .icon path{animation:none;stroke-dashoffset:0}}
+.row-duration,.row-title-duration{flex:none;font:400 12px/18px var(--font-sans);font-variant-numeric:tabular-nums;color:var(--color-foreground-muted)}
+.quality-mark{display:inline-flex;align-items:center;gap:6px;flex:none;white-space:nowrap;line-height:1.3;vertical-align:middle}
+.quality-mark .tier-badge{display:inline-flex;align-items:center;justify-content:center;min-width:29px;height:19px;padding:0 4px;border:1px solid #d1d9e3;border-radius:3px;background:#d1d9e3;color:#131922;font-size:9px;font-weight:750;letter-spacing:.03em;line-height:1}
+.quality-mark .resolution{color:#a7b0bd;font-variant-numeric:tabular-nums}
+.quality-mark.is-unknown .resolution{color:var(--color-foreground-muted)}
+.saved-copy{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:var(--color-foreground-muted)}
+.saved-copy .icon{width:13px;height:13px;stroke-width:2;color:var(--color-status-completed)}
+/* Two title lines keep long names readable beside the 128px thumbnail. */
+.video-row .row-title{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:18px}
+.row-meta{margin-top:5px;font-variant-numeric:tabular-nums}
+
+/* Download: outlined at rest; fills from the bottom on hover or keyboard focus. */
+.video-row>.action.primary.icon-only{position:relative;overflow:hidden;background:transparent;border:1.5px solid var(--color-primary-hover);color:var(--color-primary-hover);transition:color 160ms ease,box-shadow 200ms ease}
+/* Only the first Download button of an opening breathes, twice, then rests. */
+.video-row>.action.primary.icon-only.breathe{animation:download-breathe 2.8s ease-in-out 2}
+/* Liquid fill: an oversized rounded square rises while turning slowly, so the surface looks wavy. */
+.video-row>.action.primary.icon-only::before{content:"";position:absolute;left:-100%;top:105%;width:300%;height:300%;border-radius:41%;background:var(--color-primary-hover);animation:download-liquid 3.5s linear infinite;transition:top 650ms cubic-bezier(.3,.7,.2,1)}
+@keyframes download-liquid{to{transform:rotate(360deg)}}
+.video-row>.action.primary.icon-only>*{position:relative;z-index:1}
+.video-row>.action.primary.icon-only:is(:hover,:focus-visible):not(:disabled){background:transparent;color:#fff;animation:none!important;box-shadow:0 0 22px color-mix(in srgb,var(--color-primary-hover) 80%,transparent)}
+.video-row>.action.primary.icon-only:is(:hover,:focus-visible):not(:disabled)::before{top:-60%}
+.video-row>.action.primary.icon-only:disabled{animation:none}
+@keyframes download-breathe{0%,100%{box-shadow:0 0 0 transparent,inset 0 0 0 transparent;border-color:color-mix(in srgb,var(--color-primary-hover) 70%,black)}50%{box-shadow:0 0 20px color-mix(in srgb,var(--color-primary-hover) 80%,transparent),inset 0 0 10px color-mix(in srgb,var(--color-primary-hover) 45%,transparent);border-color:color-mix(in oklab,var(--color-primary-hover) 80%,white)}}
+@media(prefers-reduced-motion:reduce){.video-row>.action.primary.icon-only,.video-row>.action.primary.icon-only.breathe{animation:none}.video-row>.action.primary.icon-only::before{animation:none;transition:none}}
+
+/* Grouped settings cards (desktop setting-group / setting-row). */
+.sheet-content{background:hsl(215 22% 6.5%);padding-bottom:12px}
+.setting-group{margin:0 12px;border:1px solid var(--color-border);border-radius:11px;overflow:hidden;background:var(--color-surface-row)}
+.setting-group>.setting-row{padding:10px 12px;min-height:50px}
+.setting-icon{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:8px;background:var(--color-background-active);color:#c4cad3}
+/* Row icons carry their own hover colour and motion, matching the desktop. */
+.video-row>.action:not(.primary):not(.bordered) .icon{transition:transform 240ms cubic-bezier(.2,.8,.2,1)}
+.video-row>.action[aria-label^="Pause"]:hover{background:none;color:#f2c45a}
+.video-row>.action[aria-label^="Pause"]:hover .icon{transform:scale(1.14)}
+.video-row>.action:is([aria-label^="Resume"],[aria-label^="Play"]):not(.bordered):hover{background:none;color:var(--color-primary-hover)}
+.video-row>.action[aria-label^="Play"]:not(.bordered):hover .icon{transform:translateX(2px) scale(1.1);fill:currentColor}
+.video-row>.action[aria-label^="Resume"]:not(.bordered):hover .icon{transform:scale(1.12)}
+.video-row>.action[aria-label^="Resume"]:not(.bordered):hover .icon path{fill:currentColor}
+/* Row extras: "⋯" sits left of the one visible action and appears only on hover or keyboard focus, like the desktop. */
+.video-row{grid-template-columns:128px minmax(0,1fr) auto}
+.video-row:has(>.action){grid-template-columns:128px minmax(0,1fr) auto auto}
+.video-row>.action{grid-column:4}
+.video-row>.row-more{grid-column:3;grid-row:1;align-self:center;width:30px;height:30px;margin-right:-6px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:var(--color-foreground-muted);opacity:0;pointer-events:none;transition:opacity 160ms ease,color 160ms ease,background-color 160ms ease}
+.video-row:is(:hover,:focus-visible,:focus-within)>.row-more,.video-row>.row-more[aria-expanded="true"]{opacity:1;pointer-events:auto}
+.video-row>.row-more:hover,.video-row>.row-more[aria-expanded="true"]{color:var(--color-foreground);background:var(--color-background-active)}
+.row-more .icon{fill:currentColor;stroke:none}
+@media(prefers-reduced-motion:reduce){.video-row>.row-more{transition:none}}
+
+/* Content enters once; Chrome owns the outer popup window's animation. */
+.popup{animation:popup-enter 180ms cubic-bezier(.2,.8,.2,1)}
+.video-list{min-height:96px}
+.video-list[data-view="rows"]{animation:popup-list-reveal 180ms ease-out}
+.discovery-state{min-height:96px;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--color-foreground-muted);font-size:12px}
+.discovery-state p{margin:0}
+/* Loading: three skeleton rows in the real row geometry with a slow shimmer. */
+.discovery-state.is-loading{display:block;padding:0}
+.skeleton-row{display:grid;grid-template-columns:128px minmax(0,1fr);grid-template-rows:auto auto;align-content:center;column-gap:12px;row-gap:9px;min-height:96px;padding-right:60px;border-top:1px solid var(--color-border-subtle)}
+.skeleton-row:first-child{border-top:0}
+.skeleton-thumb,.skeleton-bar{background:linear-gradient(90deg,var(--color-background-hover) 30%,var(--color-background-active) 50%,var(--color-background-hover) 70%) 0 0/300% 100%;animation:skeleton-shimmer 1.6s linear infinite}
+.skeleton-thumb{grid-row:1/3;align-self:stretch;min-height:96px}
+.skeleton-bar{height:10px;width:78%;border-radius:4px;align-self:end}
+.skeleton-bar.short{width:46%;align-self:start}
+@keyframes skeleton-shimmer{from{background-position:100% 0}to{background-position:0 0}}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+@media(prefers-reduced-motion:reduce){.skeleton-thumb,.skeleton-bar{animation:none}}
+@keyframes popup-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes popup-list-reveal{from{opacity:.25}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.popup,.video-list[data-view="rows"]{animation:none}}
+
+.logo-finish { display: block; width: 120px; height: 22px; flex: none; }
+
+/* Hover shine: one pixel-stepped sweep clipped to the artwork's alpha, never its rectangle. */
+.logo-finish { position: relative; }
+.logo-finish::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 40%, rgb(255 244 230 / .6) 50%, transparent 60%);
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  mask: url("img/snagthis-logo-title.svg") center / contain no-repeat;
+  opacity: 0;
+}
+.logo-finish.shining::after { animation: brand-shine 900ms steps(30, end) both; }
+@keyframes brand-shine {
+  0% { background-position: 100% 0; opacity: 1; }
+  100% { background-position: 0% 0; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-finish.shining::after { animation: none; }
+}
+
+/* Sheets slide up and fade in; the backdrop fades with them. Reduced motion keeps only the fade. */
+.sheet{opacity:0;transform:translateY(16px);transition:opacity 160ms ease-in,transform 160ms ease-in,overlay 160ms ease-in allow-discrete,display 160ms ease-in allow-discrete}
+.sheet[open]{opacity:1;transform:none;transition-duration:220ms;transition-timing-function:cubic-bezier(.2,.8,.2,1)}
+@starting-style{.sheet[open]{opacity:0;transform:translateY(16px)}}
+.sheet::backdrop{background:rgb(0 0 0 / 0);transition:background-color 160ms ease-in,overlay 160ms allow-discrete,display 160ms allow-discrete}
+.sheet[open]::backdrop{background:rgb(0 0 0 / .5);transition-duration:220ms}
+@starting-style{.sheet[open]::backdrop{background:rgb(0 0 0 / 0)}}
+@media(prefers-reduced-motion:reduce){.sheet,.sheet[open]{transform:none;transition-property:opacity,overlay,display;transition-duration:120ms}@starting-style{.sheet[open]{transform:none}}}
+
+/* Help: one explanation with an inline troubleshooting link. */
+.help-note{margin-top:-8px!important}
+.text-link{display:inline;padding:0;color:var(--color-primary-hover);text-decoration:underline;text-underline-offset:2px}
+.text-link:hover{color:var(--color-foreground)}
+
+/* Audio tracks in the quality menu: plain-language labels; resting on a track plays a sample
+   (docs/design/prototypes/audio-tracks, Labels 2 · Plain language, Sample 3 · Hover to hear). */
+.menu.wide{width:286px}
+.quality-button .aud{color:var(--color-foreground-muted);font-weight:500;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu-title small{letter-spacing:0;text-transform:none;font-size:11px}
+.menu-note{margin:2px 8px 6px 29px;font-size:11.5px;line-height:15px;color:var(--color-foreground-subtle)}
+.atrack{position:relative;display:flex;align-items:stretch;border-radius:6px}
+.atrack>.menu-item{flex:1;min-width:0}
+.alabel{display:flex;flex-direction:column;min-width:0;line-height:16px}
+.alabel b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alabel small{font-size:11px;color:var(--color-foreground-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atrack.is-failed .alabel small{color:var(--color-status-paused)}
+.chip{display:inline-flex;align-items:center;height:15px;padding:0 4px;margin-left:5px;border-radius:3px;background:var(--color-background-active);color:var(--color-foreground-muted);font:600 9.5px/15px var(--font-mono);letter-spacing:.02em;vertical-align:1px}
+.chip.ad{background:hsl(214 40% 22%);color:hsl(214 84% 82%)}
+.hear{flex:none;width:26px;display:grid;place-items:center;color:var(--color-foreground-subtle);pointer-events:none}
+.hear .waves{opacity:0}
+.atrack.is-playing{background:color-mix(in srgb,var(--color-primary-muted) 35%,transparent)}
+.atrack.is-playing .hear{color:var(--color-primary-hover)}
+.atrack.is-playing .hear .waves{opacity:1;animation:hear 900ms steps(3) infinite}
+@keyframes hear{0%{clip-path:inset(0 55% 0 0)}50%{clip-path:inset(0 25% 0 0)}100%{clip-path:inset(0 0 0 0)}}
+.atrack.is-loading .hear{animation:hear-wait 800ms steps(2) infinite}
+@keyframes hear-wait{50%{color:var(--color-primary-hover)}}
+.aprog{position:absolute;left:29px;right:30px;bottom:1px;height:2px;border-radius:1px;overflow:hidden;pointer-events:none}
+.atrack:is(.is-playing,.is-loading) .aprog{background:var(--color-segment-pending)}
+.aprog i{display:block;height:100%;width:calc(var(--p,0) * 100%);background:var(--color-primary-hover)}
+.hear-dwell{position:absolute;left:29px;bottom:1px;height:2px;width:0;background:var(--color-foreground-subtle);pointer-events:none}
+.atrack.dwelling .hear-dwell{width:40px;transition:width 500ms linear}
+@media(prefers-reduced-motion:reduce){.atrack.is-playing .hear .waves,.atrack.is-loading .hear{animation:none}.atrack.dwelling .hear-dwell{transition:none}}
+
+/* ── Accent colour (unique-look option 9), shared with the desktop (apps/desktop/src/lib/accentTheme.css).
+   The @theme values above stay orange; popup/accent.js overrides them on <html> before the first paint. */
+/* No rubber-band bounce past the ends of any scrolling area (macOS elastic scrolling). */
+*{overscroll-behavior:none}
+:root{--accent-logo:#fa5d0e;--accent-bevel-face:#fa5d0e;--accent-bevel-light:#ffb238;--accent-bevel-dark:#bd3f00}
+/* Registered so a change crossfades every consumer at once (header line, buttons, focus ring). */
+@property --color-primary{syntax:"<color>";inherits:true;initial-value:hsl(18 96% 40%)}
+@property --color-primary-strong{syntax:"<color>";inherits:true;initial-value:hsl(18 96% 36%)}
+@property --color-primary-hover{syntax:"<color>";inherits:true;initial-value:hsl(20 96% 52%)}
+@property --color-primary-muted{syntax:"<color>";inherits:true;initial-value:hsl(16 58% 16%)}
+@property --color-ring{syntax:"<color>";inherits:true;initial-value:hsl(18 96% 44%)}
+html.accent-crossfade{transition:--color-primary 240ms ease,--color-primary-strong 240ms ease,--color-primary-hover 240ms ease,--color-primary-muted 240ms ease,--color-ring 240ms ease}
+@media(prefers-reduced-motion:reduce){html.accent-crossfade{transition:none}}
+/* The header logo is inline pixel paths so "THIS" and the button follow the accent; the pixels swap instantly. */
+.logo-wordmark{overflow:visible}
+.logo-snag{fill:#fff}.logo-this{fill:var(--accent-logo)}.logo-face{fill:var(--accent-bevel-face)}.logo-light{fill:var(--accent-bevel-light)}.logo-dark{fill:var(--accent-bevel-dark)}.logo-glyph{fill:#0c0e11}
+
+/* ── Pixel button (desktop components/brand/PixelButton.css). ── */
+.pixel-button{display:block;overflow:visible}
+.pixel-button-face{fill:var(--accent-bevel-face)}
+.pixel-button-light{fill:var(--accent-bevel-light)}
+.pixel-button-dark,.pixel-button-shade{fill:var(--accent-bevel-dark)}
+.pixel-button-glyph{fill:#0c0e11}
+.pixel-button.pressing{animation:pixel-button-press 520ms cubic-bezier(.3,.7,.3,1);transform-origin:50% 100%}
+.pixel-button.pressing .pixel-button-light{animation:pixel-button-to-dark 520ms steps(1)}
+.pixel-button.pressing .pixel-button-dark{animation:pixel-button-to-light 520ms steps(1)}
+@keyframes pixel-button-press{0%{transform:none}28%{transform:translateY(6%) scale(.9)}55%{transform:translateY(4%) scale(.94)}78%{transform:translateY(-3%) scale(1.03)}100%{transform:none}}
+@keyframes pixel-button-to-dark{0%,70%{fill:var(--accent-bevel-dark)}71%,100%{fill:var(--accent-bevel-light)}}
+@keyframes pixel-button-to-light{0%,70%{fill:var(--accent-bevel-light)}71%,100%{fill:var(--accent-bevel-dark)}}
+
+/* ── Pixel mascot in empty states (desktop PixelMascot.css at 48px, 3 screen pixels per cell). ── */
+.pixel-mascot{position:relative;width:max-content;margin:0 auto 22px;cursor:default}
+.pixel-mascot-bob{animation:pixel-mascot-bob 2.4s steps(1) infinite}
+@keyframes pixel-mascot-bob{0%,49%{transform:none}50%,100%{transform:translateY(-3px)}}
+.pixel-mascot-floor{position:absolute;left:50%;bottom:-9px;width:30px;height:3px;margin-left:-15px;background:#000;opacity:.55;box-shadow:3px 0 0 #000,-3px 0 0 #000;animation:pixel-mascot-floor 2.4s steps(1) infinite}
+@keyframes pixel-mascot-floor{0%,49%{width:30px;margin-left:-15px}50%,100%{width:24px;margin-left:-12px}}
+.pixel-mascot[data-variant="dozing"] .pixel-mascot-floor{animation:none}
+.pixel-mascot-z{position:absolute;right:-14px;top:-8px;color:var(--color-foreground-muted);opacity:0;animation:pixel-mascot-z 2.6s steps(6) infinite}
+.pixel-mascot-z+.pixel-mascot-z{animation-delay:1.3s}
+@keyframes pixel-mascot-z{0%{opacity:0;transform:translate(0,6px)}20%{opacity:.9}100%{opacity:0;transform:translate(9px,-14px)}}
+.empty-state .pixel-mascot{margin-bottom:24px}
+.discovery-state .pixel-mascot{margin:6px auto 14px}
+/* Loading: the first skeleton thumbnail holds the button, pressing in hard steps now and then. */
+.skeleton-thumb{position:relative}
+.skeleton-mascot{position:absolute;left:50%;top:50%;width:32px;height:32px;margin:-16px 0 0 -16px;opacity:.7}
+.skeleton-mascot .pixel-button{animation:skeleton-press 2.4s steps(1) infinite;transform-origin:50% 100%}
+@keyframes skeleton-press{0%,84%{transform:none}85%,92%{transform:translateY(2px) scale(.9)}}
+@media(prefers-reduced-motion:reduce){.pixel-button.pressing,.pixel-button.pressing *,.skeleton-mascot .pixel-button{animation:none!important}.pixel-mascot-bob,.pixel-mascot-floor{animation:none!important}.pixel-mascot-z{display:none}}
+
+/* ── Pixel-grid chrome (desktop PixelChrome.css): a 4px dot grid, 1-in-3 scanlines and an accent glow behind
+   the logo on the header and footer bars. Background layers only; text contrast is unchanged. ── */
+.popup-header,.popup-footer{--pixel-chrome-dots:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='1' height='1' fill='%23ffffff' fill-opacity='.06'/%3E%3C/svg%3E");--pixel-chrome-scanlines:repeating-linear-gradient(0deg,transparent 0 2px,#ffffff07 2px 3px);background-image:var(--pixel-chrome-dots),var(--pixel-chrome-scanlines)}
+.popup-header{background-image:linear-gradient(90deg,color-mix(in srgb,var(--color-primary-hover) 7%,transparent),transparent 35%),var(--pixel-chrome-dots),var(--pixel-chrome-scanlines)}
+
+/* ── Speed trace on downloading desktop rows (desktop globals.css "Collapsed-row speed trace"). ── */
+.speed-trace{--trace-line:color-mix(in oklab,var(--color-primary-hover) 78%,white);--trace-fill:var(--color-primary-hover);--trace-dot:color-mix(in oklab,var(--color-primary-hover) 25%,white);--trace-halo:color-mix(in srgb,var(--color-primary-hover) 60%,transparent);position:relative;min-width:0;margin-block:-2px;pointer-events:none;opacity:0;transition:opacity 400ms ease-out}
+/* The text keeps its natural width; the trace takes what is left of the column, spanning title and status. */
+.row-body.has-trace{display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr);grid-template-rows:auto auto}
+.row-body.has-trace>:not(.speed-trace){grid-column:1}
+.row-body.has-trace>.speed-trace{grid-column:2;grid-row:1/span 2}
+.row-body:not(.has-trace)>.speed-trace{display:none}
+.speed-trace.ready{opacity:1}
+.speed-trace-plot{position:absolute;right:0;top:0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,rgb(0 0 0 / .1),#000 28px);mask-image:linear-gradient(90deg,rgb(0 0 0 / .1),#000 28px)}
+.speed-trace-stop-top{stop-color:var(--trace-fill);stop-opacity:.8}
+.speed-trace-stop-bottom{stop-color:var(--trace-fill);stop-opacity:0}
+.speed-trace-line{fill:none;stroke:var(--trace-line);stroke-width:1.5;stroke-linejoin:round}
+.speed-trace[data-trace-state="downloading"] .speed-trace-line{filter:drop-shadow(0 0 2.5px color-mix(in srgb,var(--trace-line) 60%,transparent))}
+.speed-trace-dot{position:absolute;right:0;top:0;width:4px;height:4px;border-radius:50%;background:var(--trace-dot);box-shadow:0 0 5px 2px var(--trace-halo)}
+.speed-trace.stalled .speed-trace-dot{opacity:.45}
+.speed-trace[data-trace-state="paused"]{--trace-line:color-mix(in srgb,var(--color-foreground-muted) 70%,var(--color-segment-pending));--trace-fill:var(--color-segment-pending)}
+.speed-trace[data-trace-state="paused"].ready{opacity:.6}
+.speed-trace[data-trace-state="finishing"]{--trace-line:var(--color-segment-downloading);--trace-fill:color-mix(in srgb,var(--color-segment-downloading) 85%,black);--trace-dot:color-mix(in srgb,var(--color-segment-downloading) 45%,white)}
+.speed-trace[data-trace-state="finishing"] .speed-trace-dot{opacity:.45;box-shadow:none}
+.speed-trace[data-trace-state="saved"]{--trace-line:var(--color-segment-completed);--trace-fill:var(--color-segment-completed);animation:speed-trace-out 420ms ease-out 520ms forwards}
+.speed-trace:is([data-trace-state="paused"],[data-trace-state="saved"]) .speed-trace-dot{display:none}
+@keyframes speed-trace-out{to{opacity:0}}
+@media(prefers-reduced-motion:reduce){.speed-trace{transition:none;animation:none}.speed-trace .speed-trace-line{filter:none}.speed-trace-dot{box-shadow:none}}
+
+/* ── Snag moment (desktop SnagMoment.css): a transient layer that never takes input. ── */
+.snag-layer{position:fixed;inset:0;z-index:30;pointer-events:none;overflow:hidden}
+.snag-pixel{position:absolute;width:4px;height:4px}
+.snag-plus{position:absolute;color:var(--color-primary-hover);filter:drop-shadow(1px 1px 0 var(--accent-bevel-dark))}
+.snag-plus svg{display:block}
+#open-app{position:relative}
+#open-app.snag-bump{animation:snag-bump 240ms steps(3)}
+@keyframes snag-bump{50%{transform:translateY(-3px);color:var(--color-foreground)}}
+/* Hidden popups and reduced motion: a 5px square dot on Open SnagThis until it is used. */
+#open-app.snag-pip::after{content:"";position:absolute;top:4px;right:3px;width:5px;height:5px;background:var(--color-primary-hover);pointer-events:none}
+
+/* ── Settings sheet, matching the desktop's sections: title, one-line description, grouped card. ── */
+.setting-description .setting-title{display:block;font-size:13px;font-weight:550}
+.setting-description label,.setting-description .setting-title{display:flex;align-items:center;gap:8px}
+.setting-control{appearance:none;width:132px;max-width:132px;padding-right:26px;background-color:var(--color-background);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a39d99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;cursor:pointer;transition:border-color 140ms ease}
+.setting-control:hover:not(:disabled){border-color:hsl(215 15% 26%)}
+.setting-control:disabled{opacity:.55;cursor:default}
+.setting-icon .icon{width:15px;height:15px}
+.setting-icon.warm{background:color-mix(in srgb,var(--color-primary-hover) 16%,transparent);color:color-mix(in oklab,var(--color-primary-hover) 70%,white)}
+.saved-mark{display:inline-flex;align-items:center;gap:3px;color:var(--color-status-completed);font-size:11.5px;font-weight:500;white-space:nowrap;animation:saved-in 160ms ease-out}
+.saved-mark .icon{width:12px;height:12px;stroke-width:2.25}
+@keyframes saved-in{from{opacity:0;transform:translateX(-3px)}}
+@media(prefers-reduced-motion:reduce){.saved-mark{animation:none}}
+/* Accent swatches (desktop AccentPicker): native radios give arrow-key movement and checked state. */
+.setting-row.accent-row{align-items:flex-start}
+.accent-row .setting-description small{white-space:normal}
+.accent-swatches{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0 0 -6px}
+.accent-swatch{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:58px;padding:6px 0 5px;border-radius:8px;color:var(--color-foreground-muted);font-size:11.5px;cursor:pointer}
+.accent-swatch:hover{background:var(--color-background-hover);color:var(--color-foreground)}
+.accent-swatch input{position:absolute;inset:0;margin:0;opacity:0;cursor:pointer}
+.accent-dot{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--swatch);box-shadow:inset 0 0 0 1px rgb(255 255 255 / .14);color:#fff}
+.accent-dot .icon{width:14px;height:14px;stroke-width:2.75;opacity:0}
+.accent-swatch:has(input:checked){color:var(--color-foreground)}
+.accent-swatch:has(input:checked) .accent-dot{box-shadow:0 0 0 2px var(--color-surface-row),0 0 0 4px var(--swatch)}
+.accent-swatch:has(input:checked) .accent-dot .icon{opacity:1}
+.accent-swatch:has(input:focus-visible){outline:2px solid var(--color-primary-hover);outline-offset:0}
+/* ── One-click pairing (owner pick: docs/design/prototypes/pairing-polish option 4 · Cartridge): the four digits in one pixel-bevel housing, a 12-pip countdown, one sentence, the code link in the footer. ── */
+.sheet:is([data-view=pairing],[data-view=connected]) .sheet-content{display:flex;flex-direction:column;padding-bottom:0}
+.pair-pad{flex:1;display:flex;flex-direction:column;padding:0}
+.pair-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:18px 16px 16px;text-align:center}
+.pair-pad p{margin:0;max-width:400px}
+.pair-pad .pair-kicker{font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--color-foreground-subtle);margin:0 0 12px}
+.pair-pad .pair-say{margin:16px 0 0;font-size:13px;color:var(--color-foreground-muted)}
+.pair-say b{color:var(--color-foreground);font-weight:600}
+.pair-cart{display:inline-flex;gap:2px;margin:2px;padding:5px;background:#000;box-shadow:inset 2px 2px 0 var(--accent-bevel-light),inset -2px -2px 0 var(--accent-bevel-dark),0 0 0 2px var(--accent-bevel-face);clip-path:polygon(2px -2px,calc(100% - 2px) -2px,calc(100% - 2px) 0,100% 0,100% 2px,calc(100% + 2px) 2px,calc(100% + 2px) calc(100% - 2px),100% calc(100% - 2px),100% 100%,calc(100% - 2px) 100%,calc(100% - 2px) calc(100% + 2px),2px calc(100% + 2px),2px 100%,0 100%,0 calc(100% - 2px),-2px calc(100% - 2px),-2px 2px,0 2px,0 0,2px 0)}
+.pair-digit{width:40px;height:54px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent-bevel-dark) 16%,#0b0d10);color:#fff4e6;box-shadow:inset 0 2px 0 rgb(255 255 255 / .04);animation:pair-flip 300ms steps(3) both;animation-delay:calc(var(--i,0) * 90ms + 80ms)}
+.pair-digit svg{display:block}
+@keyframes pair-flip{0%{transform:scaleY(0)}}
+.pair-cart.off{box-shadow:inset 2px 2px 0 hsl(215 15% 26%),inset -2px -2px 0 #000,0 0 0 2px var(--color-border)}
+.pair-cart.off .pair-digit{background:#0b0d10;color:var(--color-foreground-subtle);animation:none}
+.pair-pips{display:flex;gap:4px;margin-top:16px}
+.pair-pip{width:6px;height:6px;background:var(--accent-bevel-face);transition:background-color 300ms}
+.pair-pip.gone,.pair-pips.idle .pair-pip{background:var(--color-border)}
+.pair-pip.now{animation:pair-blink 1s steps(1) infinite}
+@keyframes pair-blink{50%{opacity:.25}}
+.pair-pips.good{margin:0 0 18px}
+.pair-pips.good .pair-pip{background:hsl(150 50% 60%)}
+.pair-status{display:inline-flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--color-foreground-subtle)}
+.pair-tick{font:500 11.5px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--color-foreground-muted)}
+.pair-actions{justify-content:center;margin-top:22px}
+.pair-actions .action{height:32px;padding:0 14px}
+.pair-pad .pair-state-title{margin:18px 0 4px;font-size:15px;font-weight:620;color:var(--color-foreground)}
+.pair-pad .pair-state-body{font-size:12.5px;color:var(--color-foreground-muted);max-width:360px}
+.pair-foot{flex:none;height:44px;display:flex;align-items:center;justify-content:center;gap:6px;border-top:1px solid var(--color-border-subtle);font-size:12px;color:var(--color-foreground-subtle)}
+.pair-foot-link{padding:0;font-size:12px;color:var(--color-foreground-muted);text-decoration:underline;text-decoration-color:var(--color-border);text-underline-offset:3px}
+.pair-foot-link:hover{color:var(--color-foreground);text-decoration-color:currentColor}
+.pair-devchip{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:5px;background:var(--color-background-active);color:var(--color-foreground-muted);font:600 9.5px/20px var(--font-mono);letter-spacing:.06em;cursor:help;flex:none}
+.pair-devchip::before{content:"";width:5px;height:5px;background:var(--color-foreground-subtle)}
+.sheet:not([data-view=pairing]) .pair-devchip{display:none}
+.pair-code-link{margin-top:14px;font-size:12px}
+.pair-yay>*{animation:pair-rise 420ms cubic-bezier(.2,.8,.2,1) both}
+.pair-yay>:nth-child(2){animation-delay:160ms}.pair-yay>:nth-child(3){animation-delay:230ms}.pair-yay>:nth-child(4){animation-delay:300ms}.pair-yay>:nth-child(5){animation-delay:360ms}
+@keyframes pair-rise{from{opacity:0;transform:translateY(6px)}}
+.pair-yay-art{position:relative;width:64px;height:64px}
+.pair-burst i{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;background:var(--c);opacity:0;animation:pair-burst 900ms steps(6) 120ms forwards}
+@keyframes pair-burst{0%{opacity:1;transform:rotate(var(--a)) translateX(10px)}80%{opacity:1}100%{opacity:0;transform:rotate(var(--a)) translateX(var(--d,54px))}}
+.pair-yay-title{margin:16px 0 6px;color:#fff;line-height:0}
+.pair-yay-title svg{display:block}
+.pair-pad .pair-yay .pair-say{margin:0 0 18px;font-size:12.5px}
+.pair-yay .action.primary{min-width:120px;height:32px}
+.setting-icon.connected{color:var(--color-status-completed)}
+.action.danger{color:var(--color-destructive);border:1px solid color-mix(in srgb,var(--color-destructive) 40%,transparent)}
+.action.danger:disabled{opacity:.5}
+@media(prefers-reduced-motion:reduce){.pair-burst{display:none}.pair-digit,.pair-pip.now,.pair-yay>*{animation:none}.pair-pip{transition:none}}
+/* ── Popup Settings tabs (docs/design/prototypes/popup-settings option 3 · Icon tab bar). ── */
+.sheet-header .action.sheet-link{height:26px;padding:0 8px;gap:5px;font-size:12px;white-space:nowrap}
+.sheet-link .icon{width:13px;height:13px}
+.sheet[data-view=settings] .sheet-content{display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+.settings-tabs{flex:none;display:flex;height:40px;padding:0 8px;background:var(--color-background-raised);border-bottom:1px solid var(--color-border-subtle)}
+.settings-tabs [role=tab]{position:relative;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;font-size:12.5px;color:var(--color-foreground-muted)}
+.settings-tabs [role=tab]:hover{color:var(--color-foreground);background:var(--color-background-hover)}
+.settings-tabs [role=tab][aria-selected=true]{color:var(--color-foreground);font-weight:550}
+.settings-tabs [role=tab][aria-selected=true] .icon{color:var(--color-primary-hover)}
+/* Pixel-stepped underline: a 2px bar with 2px shoulders, like the logo's stepped corners. */
+.settings-tabs [role=tab][aria-selected=true]::after{content:"";position:absolute;left:16px;right:16px;bottom:-1px;height:2px;background:var(--color-primary-hover)}
+.settings-tabs [role=tab][aria-selected=true]::before{content:"";position:absolute;left:18px;right:18px;bottom:1px;height:2px;background:var(--color-primary-hover);opacity:.45}
+.settings-tabs [role=tab]:focus-visible{outline-offset:-3px;border-radius:6px}
+.settings-tab-status{width:6px;height:6px;flex:none;margin-left:-2px;background:var(--status);box-shadow:0 0 0 1px rgb(0 0 0 / .4)}
+.settings-tab-status.ok{--status:var(--color-status-completed)}
+.settings-tab-status.amber{--status:var(--color-status-paused)}
+.settings-tab-status.grey{--status:var(--color-status-cancelled)}
+.settings-pane{flex:1;min-height:0;overflow:auto;padding-bottom:12px;scrollbar-width:thin}
+.settings-pane:focus-visible{outline:2px solid var(--color-primary-hover);outline-offset:-2px}
+.settings-measure{display:flow-root}
+.settings-pane-title{margin:16px 16px 2px;font-size:15px;font-weight:620}
+.settings-pane-description{margin:0 16px 12px;font-size:12px;color:var(--color-foreground-muted)}
+.settings-hint{margin:8px 16px 0;font-size:12px;color:var(--color-foreground-muted)}
+.settings-hint .text-link{font-size:12px}
+.setting-row.is-off .setting-description,.setting-row.is-off .setting-icon{opacity:.55}
+.switch:disabled{opacity:.45;cursor:default}
+/* One explanation for every disabled row, at the top of the card (never per row). */
+.settings-gate{display:flex;align-items:center;gap:10px;padding:9px 12px;background:hsl(44 60% 12% / .7);border-bottom:1px solid hsl(44 40% 20%);color:hsl(44 80% 78%);font-size:12px}
+.settings-gate.neutral{background:var(--color-background-active);border-color:var(--color-border-subtle);color:var(--color-foreground)}
+.settings-gate>span{flex:1}
+.settings-gate .action{height:26px;font-size:12px}
+.settings-gate .action.primary{padding:0 12px}
+.setting-icon.amber{color:var(--color-status-paused)}
+.setting-icon.grey{color:var(--color-status-cancelled)}
+.setting-title{font-size:13px;font-weight:550}
+.connection-card .setting-description small{white-space:normal}
+.setting-row-link{width:100%;text-align:left;color:var(--color-foreground)}
+.setting-row-link:hover{background:var(--color-background-hover)}
+.setting-row-link:focus-visible{outline-offset:-2px}
+.setting-row-link>.icon{color:var(--color-foreground-muted)}
+.settings-brand{display:flex;align-items:center;gap:12px;margin:4px 12px 12px;padding:12px 14px;border:1px solid var(--color-border);border-radius:11px;background:var(--color-surface-chrome) repeating-linear-gradient(0deg,rgb(255 255 255 / .018) 0 1px,transparent 1px 3px)}
+.settings-version{margin-left:auto;font:12px var(--font-mono);color:var(--color-foreground-muted)}
+.settings-version b{color:var(--color-status-completed);font-weight:400}

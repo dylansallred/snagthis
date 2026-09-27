@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Audio track labels and samples</title>
+<style>
+/* Token values are copied from apps/desktop/src/globals.css (@theme) and
+   apps/extension/src/input.css; do not fork them. */
+:root {
+  --color-background: hsl(215 22% 3.5%);
+  --color-background-raised: hsl(215 22% 8%);
+  --color-background-hover: hsl(215 22% 10.5%);
+  --color-background-active: hsl(215 22% 13.5%);
+  --color-surface-chrome: hsl(215 22% 4%);
+  --color-surface-row: hsl(215 22% 8%);
+  --color-surface-row-hover: hsl(215 22% 11.5%);
+  --color-foreground: hsl(20 20% 93%);
+  --color-foreground-muted: hsl(20 6% 60%);
+  --color-foreground-subtle: hsl(20 5% 52%);
+  --color-border: hsl(215 15% 18%);
+  --color-border-subtle: hsl(215 14% 15.5%);
+  --color-primary: hsl(18 96% 40%);
+  --color-primary-strong: hsl(18 96% 36%);
+  --color-primary-hover: hsl(20 96% 52%);
+  --color-popover: hsl(215 22% 9.5%);
+  --color-status-paused: hsl(44 84% 58%);
+  --color-status-completed: hsl(145 62% 46%);
+  --color-segment-pending: hsl(215 14% 24%);
+  --color-segment-completed: #80bfa6;
+  --color-segment-downloading: #f4c38a;
+  --brand-orange: #fa5d0e; --brand-amber: #ffb238; --brand-deep: #bd3f00; --brand-night: #0c0e11;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #07080a; color: var(--color-foreground); font: 13px/1.45 "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; padding: 0; }
+button:focus-visible, select:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.px { shape-rendering: crispEdges; flex: none; display: block; }
+
+/* Hub, following ui-refresh/controls.html */
+.hub { max-width: 1400px; margin: 0 auto; padding: 40px 28px 56px; }
+.eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--color-foreground-subtle); }
+.eyebrow span { color: var(--color-primary-hover); font-weight: 600; margin-right: 10px; }
+.intro h1 { font-size: 28px; line-height: 1.2; font-weight: 620; margin: 10px 0 8px; letter-spacing: -.01em; }
+.intro p { color: var(--color-foreground-muted); max-width: 860px; margin: 0 0 6px; font-size: 14px; }
+.intro kbd, .notes kbd { font: 600 11px/16px inherit; padding: 1px 6px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground); }
+.findings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+.findings div { padding: 12px 14px; border-radius: 9px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); font-size: 12.5px; color: var(--color-foreground-muted); }
+.findings b { display: block; color: var(--color-foreground); font-size: 13px; margin-bottom: 4px; }
+.findings code { font: 11.5px/1.4 var(--font-mono); color: var(--color-segment-downloading); }
+.study { margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--color-border); }
+.study-title { margin: 0 0 4px; font-size: 19px; font-weight: 620; }
+.study-title small { margin-left: 8px; font-size: 12.5px; font-weight: 400; color: var(--color-foreground-muted); }
+.picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 12px -8px 4px; padding: 8px; }
+.picker button { text-align: left; padding: 10px 12px; border-radius: 9px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
+.picker button:hover { background: var(--color-background-hover); }
+.picker button[aria-pressed="true"] { border-color: var(--color-primary-hover); background: hsl(16 58% 16% / .35); }
+.picker span { display: block; font-size: 13px; font-weight: 600; }
+.picker small { display: block; color: var(--color-foreground-muted); font-size: 11px; line-height: 15px; margin-top: 2px; }
+.sticky { position: sticky; top: 0; z-index: 50; background: #07080aee; backdrop-filter: blur(8px); margin: 0 -8px; padding: 6px 8px; border-bottom: 1px solid var(--color-border-subtle); }
+.sticky .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--color-foreground-muted); }
+.sticky .row b { color: var(--color-foreground); font-weight: 600; font-size: 12px; margin-right: 2px; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
+.seg button { padding: 3px 9px; border-radius: 6px; font-size: 12px; color: var(--color-foreground-muted); }
+.seg button[aria-pressed="true"] { background: var(--color-background-active); color: var(--color-foreground); }
+.sticky label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.stage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; margin-top: 18px; }
+.notes { flex: 1; min-width: 260px; max-width: 1400px; font-size: 12.5px; color: var(--color-foreground-muted); display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 28px; margin-top: 22px; }
+.notes h2 { margin: 0 0 6px; font-size: 15px; color: var(--color-foreground); }
+.notes h3 { margin: 0 0 4px; font-size: 13px; color: var(--color-foreground); }
+.notes ul { padding-left: 18px; margin: 6px 0; } .notes li + li { margin-top: 3px; }
+.notes pre { margin: 6px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--color-background-raised); font: 11px/1.5 var(--font-mono); color: var(--color-foreground); overflow: auto; white-space: pre; }
+.caption { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--color-foreground-subtle); margin: 0 0 8px; }
+.hub-footer { margin-top: 26px; color: var(--color-foreground-subtle); font-size: 12px; }
+
+/* ── The real popup, 480px (apps/extension/src/input.css) ─────────────── */
+.popup { position: relative; width: 480px; height: 560px; flex: none; display: flex; flex-direction: column; overflow: hidden; background: var(--color-background-raised); border-radius: 10px; box-shadow: 0 30px 80px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .06); }
+.popup-header { height: 46px; flex: none; padding: 10px 14px; display: flex; align-items: center; gap: 18px; background: var(--color-surface-chrome); border-bottom: 1px solid; border-image: linear-gradient(90deg, var(--color-primary-hover), hsl(20 96% 52% / .25) 45%, var(--color-border-subtle) 80%) 1; }
+.logo-wordmark { display: block; width: 120px; height: 22px; object-fit: contain; flex: none; }
+.popup-header .count { margin-left: auto; font-size: 11.5px; color: var(--color-foreground-muted); }
+.video-list { flex: 1; overflow: hidden; }
+.video-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; column-gap: 12px; padding: 0 14px 0 0; min-height: 96px; border-top: 1px solid var(--color-border-subtle); }
+.video-row:first-child { border-top: 0; }
+.video-row.dim { opacity: .5; }
+.thumb { position: relative; overflow: hidden; width: 128px; min-height: 96px; background: var(--color-background-hover); }
+.thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.row-body { align-self: center; padding: 12px 0; min-width: 0; }
+.row-title { font-size: 13.5px; font-weight: 570; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 19px; }
+.row-status { font-size: 12px; color: var(--color-foreground-muted); margin-top: 3px; line-height: 18px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.row-status .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--color-foreground-subtle); }
+.quality-button { height: 24px; padding: 0 6px; border-radius: 6px; background: var(--color-background-active); color: var(--color-foreground); font-size: 12px; font-weight: 550; display: inline-flex; align-items: center; gap: 3px; }
+.quality-button .i { width: 10px; height: 10px; color: var(--color-primary-hover); stroke-width: 2.2; transition: transform 160ms; }
+.quality-button[aria-expanded="true"] { background: color-mix(in srgb, var(--color-background-active), var(--color-foreground) 8%); }
+.quality-button[aria-expanded="true"] .i { transform: rotate(180deg); }
+.quality-button .aud { color: var(--color-foreground-muted); font-weight: 500; }
+.action { align-self: center; height: 30px; min-width: 30px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; color: var(--color-foreground); border: 1px solid var(--color-primary-hover); box-shadow: 0 0 10px hsl(20 96% 52% / .25); }
+.popup-footer { height: 43px; flex: none; padding: 6px 8px; display: flex; align-items: center; gap: 2px; background: var(--color-surface-chrome); border-top: 1px solid var(--color-border-subtle); color: var(--color-foreground-muted); font-size: 12.5px; }
+.popup-footer span { padding: 0 9px; display: inline-flex; gap: 6px; align-items: center; }
+
+/* Menu surface shared by both apps (input.css .menu) */
+.menu { position: absolute; z-index: 20; width: 250px; max-height: 320px; overflow-y: auto; background: var(--color-background-hover); border-radius: 9px; padding: 4px; box-shadow: 0 12px 30px rgba(0,0,0,.5); font-size: 12.5px; scrollbar-width: thin; }
+.menu.wide { width: 286px; }
+.menu-item { display: flex; width: 100%; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; text-align: left; min-height: 30px; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--color-background-active); outline: none; }
+.menu-item:focus-visible { box-shadow: inset 0 0 0 1px var(--color-primary-hover); }
+.menu-check { width: 13px; height: 13px; flex: none; color: transparent; }
+.menu-item[aria-checked="true"] .menu-check { color: var(--color-primary-hover); }
+.menu-value { margin-left: auto; font-size: 11.5px; color: var(--color-foreground-muted); white-space: nowrap; }
+.menu-title { display: flex; align-items: baseline; gap: 6px; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--color-foreground-subtle); padding: 4px 8px 2px; }
+.menu-title small { letter-spacing: 0; text-transform: none; font-size: 11px; }
+.menu hr { border: 0; border-top: 1px solid var(--color-border); margin: 4px 0; }
+.menu-note { margin: 2px 8px 6px 29px; font-size: 11.5px; line-height: 15px; color: var(--color-foreground-subtle); }
+.menu-back { color: var(--color-foreground); font-weight: 600; }
+.menu-back .i { width: 13px; height: 13px; color: var(--color-primary-hover); }
+
+/* ── Audio tracks (new) ───────────────────────────────────────────────── */
+.atrack { position: relative; display: flex; align-items: stretch; border-radius: 6px; }
+.atrack > .menu-item, .atrack > .q-radio { flex: 1; min-width: 0; }
+.alabel { display: flex; flex-direction: column; min-width: 0; line-height: 16px; }
+.alabel b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alabel b.unknown { color: var(--color-foreground); }
+.alabel small { font-size: 11px; color: var(--color-foreground-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alabel small .warn { color: var(--color-status-paused); }
+.alabel small.fail { color: var(--color-status-paused); }
+.alabel .named { color: var(--color-segment-completed); }
+.chip { display: inline-flex; align-items: center; height: 15px; padding: 0 4px; margin-left: 5px; border-radius: 3px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 600 9.5px/15px var(--font-mono); letter-spacing: .02em; vertical-align: 1px; }
+.chip.ad { background: hsl(214 40% 22%); color: hsl(214 84% 82%); }
+.chip.code { margin: 0 6px 0 0; min-width: 44px; justify-content: center; background: hsl(215 22% 5%); color: var(--color-segment-downloading); border: 1px solid var(--color-border); }
+.chip.code.q { color: var(--color-foreground-subtle); }
+.native { color: var(--color-foreground-muted); font-weight: 400; margin-left: 5px; }
+
+/* Pixel bevel sample button: the brand play tile, 16×16 logo pixels */
+.sample { position: relative; flex: none; width: 30px; display: grid; place-items: center; border-radius: 6px; }
+.sample:hover, .sample:focus-visible { background: var(--color-background-active); }
+.sample:focus-visible { outline: 2px solid var(--color-primary-hover); outline-offset: -2px; }
+.sample svg { width: 16px; height: 16px; transition: transform 90ms; }
+.sample:active svg { transform: translate(1px, 1px); }
+.sample .spin8 { display: none; }
+.is-loading .sample .tile, .is-loading .sample .stop { display: none; }
+.is-loading .sample .spin8 { display: block; }
+.sample .stop { display: none; }
+.is-playing .sample .tile { display: none; }
+.is-playing .sample .stop { display: block; }
+.is-failed .sample .tile { filter: grayscale(1) brightness(.8); }
+.spin8 rect { animation: px-blink 800ms steps(1) infinite; }
+.spin8 rect:nth-child(2) { animation-delay: 100ms; } .spin8 rect:nth-child(3) { animation-delay: 200ms; } .spin8 rect:nth-child(4) { animation-delay: 300ms; }
+.spin8 rect:nth-child(5) { animation-delay: 400ms; } .spin8 rect:nth-child(6) { animation-delay: 500ms; } .spin8 rect:nth-child(7) { animation-delay: 600ms; } .spin8 rect:nth-child(8) { animation-delay: 700ms; }
+@keyframes px-blink { 0% { fill: var(--brand-orange); } 25% { fill: var(--color-segment-pending); } }
+/* Inline mini progress: a 2px line under the playing track */
+.aprog { position: absolute; left: 29px; right: 38px; bottom: 1px; height: 2px; border-radius: 1px; background: transparent; overflow: hidden; pointer-events: none; }
+.is-playing .aprog, .is-loading .aprog { background: var(--color-segment-pending); }
+.aprog i { display: block; height: 100%; width: calc(var(--p, 0) * 100%); background: var(--color-primary-hover); }
+.is-playing { background: hsl(16 58% 16% / .35); }
+/* Option 2: hover-to-hear shows a speaker that fills in while heard */
+.hear { flex: none; width: 26px; display: grid; place-items: center; color: var(--color-foreground-subtle); }
+.hear .waves { opacity: 0; }
+.is-playing .hear { color: var(--color-primary-hover); }
+.is-playing .hear .waves { opacity: 1; animation: hear 900ms steps(3) infinite; }
+@keyframes hear { 0% { clip-path: inset(0 55% 0 0); } 50% { clip-path: inset(0 25% 0 0); } 100% { clip-path: inset(0 0 0 0); } }
+.hear-dwell { position: absolute; left: 29px; bottom: 1px; height: 2px; width: 0; background: var(--color-foreground-subtle); }
+.dwelling .hear-dwell { width: 40px; transition: width 450ms linear; }
+/* Option 3: pixel level meter replaces the progress line */
+.meter { flex: none; display: none; align-items: flex-end; gap: 1px; height: 16px; margin: auto 2px auto auto; }
+.v-meter .meter { display: flex; }
+.meter i { width: 3px; height: calc(2px + var(--l, 0) * 14px); background: var(--color-segment-pending); transition: height 60ms steps(4); }
+.is-playing .meter i { background: var(--color-primary-hover); }
+.is-playing .meter i:nth-child(n+5) { background: var(--brand-amber); }
+.cells { position: absolute; left: 29px; right: 38px; bottom: 1px; display: none; gap: 1px; height: 3px; }
+.v-meter .is-playing .cells, .v-meter .is-loading .cells { display: flex; }
+.v-meter .aprog { display: none; }
+.cells i { flex: 1; background: var(--color-segment-pending); }
+.cells i.d { background: var(--color-segment-downloading); }
+.clock { font: 10.5px/15px var(--font-mono); color: var(--color-foreground-subtle); margin-left: 4px; }
+/* Option 4: after listening, name it */
+.nameit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 8px 6px 29px; font-size: 11px; color: var(--color-foreground-muted); }
+.nameit button { height: 20px; padding: 0 7px; border-radius: 5px; background: var(--color-background-active); font-size: 11px; color: var(--color-foreground); }
+.nameit button:hover, .nameit button:focus-visible { background: var(--color-primary); color: #fff; }
+.detect { display: flex; align-items: center; gap: 6px; margin: 2px 8px 6px 29px; font-size: 11.5px; color: var(--color-foreground-muted); }
+.detect .i { width: 13px; height: 13px; color: var(--color-status-paused); }
+/* Option 5: language groups */
+.lang-count { margin-left: auto; font: 11px/1 var(--font-mono); color: var(--color-foreground-subtle); }
+.menu-item .i.chev { width: 13px; height: 13px; color: var(--color-foreground-subtle); }
+.lang-head { font-size: 11.5px; font-weight: 600; color: var(--color-foreground); padding: 6px 8px 0; }
+
+/* ── The real desktop window with the paste quality picker ─────────────── */
+.win { position: relative; width: 820px; height: 640px; flex: none; border-radius: 10px; overflow: hidden; background: var(--color-background-raised); box-shadow: 0 30px 80px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .06); display: flex; flex-direction: column; }
+.top { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 53px; background: var(--color-surface-chrome); border-bottom: 1px solid; border-image: linear-gradient(90deg, var(--color-primary-hover), hsl(20 96% 52% / .25) 45%, var(--color-border-subtle) 80%) 1; }
+.lights { display: flex; gap: 7px; } .lights i { width: 11px; height: 11px; border-radius: 50%; background: #33363c; }
+.paste { flex: 1; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--color-primary-hover); background: var(--color-background); color: var(--color-foreground); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.list { flex: 1; overflow: hidden; }
+.vrow { display: flex; height: 72px; border-bottom: 1px solid var(--color-border-subtle); opacity: .55; }
+.vrow .thumb { width: 128px; min-height: 0; }
+.vrow .txt { padding: 12px; min-width: 0; flex: 1; }
+.vrow b { display: block; font-size: 13.5px; font-weight: 570; }
+.vrow span { font-size: 12px; color: var(--color-foreground-muted); }
+.foot { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 42px; background: var(--color-surface-chrome); border-top: 1px solid var(--color-border-subtle); color: var(--color-foreground-subtle); font-size: 12px; }
+.quality-picker { position: absolute; top: 47px; left: 100px; width: 270px; max-height: 580px; overflow-y: auto; z-index: 20; background: var(--color-popover); border: 1px solid var(--color-border); border-radius: 9px; box-shadow: 0 12px 30px #0008; padding: 4px; scrollbar-width: thin; }
+.quality-picker.wide { width: 312px; }
+.quality-heading { display: flex; align-items: center; gap: 10px; padding: 4px 3px 8px 6px; margin-bottom: 4px; border-bottom: 1px solid var(--color-border-subtle); font-size: 12px; color: var(--color-foreground-muted); }
+.quality-heading > img { width: 48px; height: 27px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+.quality-heading > div { flex: 1; min-width: 0; line-height: 16px; }
+.quality-heading strong { display: block; color: var(--color-foreground); font-weight: 550; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quality-heading small { font-size: 11px; }
+.x-btn { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--color-foreground-muted); }
+.quality-picker fieldset { border: 0; margin: 0; padding: 0; }
+.quality-picker legend { padding: 6px 8px 2px; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--color-foreground-subtle); display: flex; gap: 6px; align-items: baseline; }
+.quality-picker legend small { letter-spacing: 0; text-transform: none; font-size: 11px; }
+.q-radio { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; font-size: 12.5px; position: relative; cursor: pointer; }
+.q-radio:hover, .q-radio:has(input:checked) { background: var(--color-background-active); }
+.q-radio input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.q-radio:has(input:focus-visible) { outline: 2px solid var(--color-primary-hover); outline-offset: -2px; }
+.q-radio .menu-check { color: transparent; }
+.q-radio:has(input:checked) .menu-check { color: var(--color-primary-hover); }
+.q-radio small.sz { margin-left: auto; color: var(--color-foreground-muted); font-size: 11.5px; }
+.quality-setting { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--color-border-subtle); padding: 8px; font-size: 12px; margin-top: 4px; }
+.quality-setting select { height: 28px; padding: 0 8px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-background); color: var(--color-foreground); font-size: 12.5px; max-width: 150px; }
+.audio-set { border-top: 1px solid var(--color-border-subtle) !important; margin-top: 4px !important; padding-top: 2px !important; }
+.quality-footer { display: flex; justify-content: flex-end; padding: 8px; border-top: 1px solid var(--color-border-subtle); margin-top: 4px; }
+.primary-action { height: 30px; padding: 0 14px; border-radius: 7px; background: var(--color-primary); color: #fff; font-weight: 600; font-size: 12.5px; }
+
+.live-log { margin-top: 10px; font: 11px/1.4 var(--font-mono); color: var(--color-foreground-subtle); min-height: 16px; }
+body.rm *, body.rm *::before, body.rm *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="hub" id="hub">
+  <header class="intro">
+    <div class="eyebrow"><span>SnagThis</span>DESIGN STUDIES / AUDIO TRACKS</div>
+    <h1>Which audio track is which? Name them, then let people listen.</h1>
+    <p>Two independent choices: <b>how a track is labelled</b> and <b>how a sample is heard</b>. Both previews are live: open menus, press the pixel play button, use the keyboard. Rest the pointer in a section and press its number key to switch options. Sample audio is synthetic (tones and your browser's speech voices); the invented languages behind the cinejoy tracks are for demonstration only.</p>
+    <div class="findings">
+      <div><b>What cinejoy.pk actually sends</b>Master playlist with four renditions: <code>TYPE=AUDIO,GROUP-ID="audio",NAME="Track 1"…"Track 4"</code>, <code>DEFAULT=YES</code> on Track 1 only. No <code>LANGUAGE</code>, <code>CHANNELS</code> or <code>CHARACTERISTICS</code>. Each fMP4 init segment says <code>language=und</code>, AAC stereo 128 kb/s. The site's own player also only says “Track 1–4”.</div>
+      <div><b>So no label can be inferred</b>The four tracks are genuinely different audio (waveforms uncorrelated at the same timestamp), but nothing names them. Only listening tells them apart, so a sample is the fix here, and correct names are the fix everywhere else.</div>
+      <div><b>A sample is cheap</b>One audio rendition is about 17 KB/s. A 10-second sample from 25% in costs about 130 KB and 2–3 requests (<code>audio_2.m3u8</code>, init, one or two segments). The CDN answers with <code>Access-Control-Allow-Origin: *</code> and no Referer is needed.</div>
+    </div>
+  </header>
+
+  <div class="sticky" id="controls">
+    <div class="row">
+      <span><b>Video</b></span>
+      <span class="seg" id="scenario"></span>
+      <label><input type="checkbox" id="fail"> Samples fail</label>
+      <label><input type="checkbox" id="rm"> Reduced motion</label>
+      <button type="button" class="seg" id="stopall" style="padding:3px 9px">Stop sound</button>
+    </div>
+  </div>
+
+  <section class="study" id="labels" data-variant="today">
+    <h2 class="study-title">1 · Track labels <small>what each audio row says</small></h2>
+    <div class="picker" data-study="labels"></div>
+  </section>
+
+  <section class="study" id="preview" data-variant="today">
+    <h2 class="study-title">2 · Hearing a sample <small>open the popup menu or use the desktop picker; press ▶ on a track</small></h2>
+    <div class="picker" data-study="preview"></div>
+    <div class="stage">
+      <div>
+        <p class="caption">Chrome popup · 480px · quality menu</p>
+        <div class="popup" id="popup"></div>
+      </div>
+      <div>
+        <p class="caption">Desktop · paste a link · quality picker</p>
+        <div class="win" id="desk"></div>
+      </div>
+    </div>
+    <div class="live-log" id="log" aria-hidden="true"></div>
+    <div class="sr-only" aria-live="polite" id="announce"></div>
+  </section>
+
+  <section class="notes">
+    <div>
+      <h2>Behaviour in every option</h2>
+      <ul>
+        <li><b>One sample at a time.</b> Starting another track stops the first. Samples are 10 s (6 s here) from 25% of the way in, so they catch dialogue instead of an intro.</li>
+        <li><b>Stops cleanly</b> on <kbd>Esc</kbd> (the first Esc stops the sound, the second closes the menu), on choosing a track, on closing the menu or popup, and when the popup is hidden.</li>
+        <li><b>States:</b> loading (stepped pixel spinner, &lt;1 s), playing (stop square, progress), failed (amber “Sample unavailable”; the track can still be chosen), one track (no Audio group; the trigger stays <code>1080p</code>).</li>
+        <li><b>Keyboard (popup):</b> ↑/↓ move, <kbd>Enter</kbd> chooses, <kbd>Space</kbd> or <kbd>→</kbd> plays/stops the focused track's sample. The sample button is a separate <code>menuitem</code> reached with → and labelled “Play a sample of Track 2”. Status is announced politely.</li>
+        <li><b>Reduced motion:</b> no meter or spinner animation; progress moves in whole seconds.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Label rules (recommended)</h2>
+      <ul>
+        <li>Language from <code>LANGUAGE</code> via <code>Intl.DisplayNames</code>; ignore <code>und</code>, <code>mul</code>, <code>zxx</code>, <code>qaa–qtz</code> and codes it returns unchanged.</li>
+        <li>Keep <code>NAME</code> only when it adds something (“Commentary”, “Director's cut mix”); drop “Track 2”, “Audio”, “und”, or a copy of the code.</li>
+        <li>Tags: channels (<code>1</code> Mono, <code>2</code> Stereo, <code>6</code> 5.1, <code>8</code> 7.1, <code>…/JOC</code> Atmos), <b>AD</b> from <code>public.accessibility.describes-video</code>, Commentary, and “Default” from <code>DEFAULT=YES</code>.</li>
+        <li>Collapse identical tracks repeated across <code>GROUP-ID</code>s; if two labels still match, add “· 2”.</li>
+        <li>Nothing known: “Track 2”, “Unknown language”, and a note to play a sample.</li>
+      </ul>
+<pre id="code"></pre>
+    </div>
+    <div>
+      <h2>Implementation path</h2>
+      <ul>
+        <li><b>Chrome popup:</b> reuse <code>popup/source-preview.js</code>' bounded fetch loader and Origin/Referer session, but load the <i>audio rendition playlist</i> directly into an <code>&lt;audio&gt;</code> with hls.js 1.5.20 (<code>startPosition</code> = 25%, <code>maxBufferLength</code> 10, stop after 10 s). Unmuted playback is allowed because the user clicked. Verified against cinejoy: 3 s played from 5:20 with 132 KB fetched.</li>
+        <li><b>Desktop:</b> <code>POST /v1/media/audio-sample</code> in <code>downloader-api</code> runs bundled ffmpeg with the inspection's scoped headers: <code>-ss 25% -i audio_N.m3u8 -t 10 -vn -c:a aac -b:a 64k</code> → an 84 KB m4a in ~4.6 s; the renderer plays it from the local bridge. Faster: stream fMP4 segments through a bounded proxy and play in the renderer with hls.js.</li>
+        <li><b>Muxed-only sources</b> (no separate audio rendition, DASH, MP4 with several audio streams): desktop ffmpeg <code>-map 0:a:N</code>; the popup shows labels only.</li>
+      </ul>
+    </div>
+  </section>
+  <footer class="hub-footer">UI prototype only; nothing is downloaded. Sample sound is generated in your browser.</footer>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const MEDIA = '../../../../apps/extension/popup/media/';
+  const LOGO = '../../../../apps/extension/img/snagthis-logo-title.svg';
+  const SAMPLE_S = 6; // Product: 10 seconds.
+  const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const P = {
+    chev: '<path d="m6 9 6 6 6-6"/>', check: '<path d="M20 6 9 17l-5-5"/>', right: '<path d="m9 18 6-6-6-6"/>', left: '<path d="m15 18-6-6 6-6"/>',
+    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', dl: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
+    gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    link: '<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>',
+  };
+  // Suggestions: the browser's languages first, then the page's declared language, then common ones.
+  const CHOICES = id => ['English', 'Spanish', 'French', 'German', 'Hindi'].map(n => `<button type="button" data-name="${id}" data-lang="${n}">${n}</button>`).join('') + `<button type="button" data-name="${id}" data-lang="">Not sure</button>`;
+  const icon = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+  // The Pixel bevel play button (apps/desktop/src/components/layout/snagthisLogo.ts), one logo pixel per CSS pixel.
+  const B = {
+    tile: 'M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v1h-16zM0 4h16v1h-16zM0 5h16v1h-16zM0 6h16v1h-16zM0 7h16v1h-16zM0 8h16v1h-16zM0 9h16v1h-16zM0 10h16v1h-16zM0 11h16v1h-16zM0 12h16v1h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z',
+    hi: 'M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM0 6h1v1h-1zM0 7h1v1h-1zM0 8h1v1h-1zM0 9h1v1h-1zM0 10h1v1h-1zM0 11h1v1h-1zM0 12h1v1h-1zM1 13h1v1h-1z',
+    lo: 'M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v1h-1zM15 4h1v1h-1zM15 5h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1zM15 8h1v1h-1zM15 9h1v1h-1zM15 10h1v1h-1zM15 11h1v1h-1zM15 12h1v1h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z',
+    shadow: 'M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z',
+    glyph: 'M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z',
+  };
+  const pxButton = () => `<svg class="px tile" viewBox="0 0 16 16" aria-hidden="true"><path fill="#fa5d0e" d="${B.tile}"/><path fill="#ffb238" d="${B.hi}"/><path fill="#bd3f00" d="${B.lo}"/><path fill="#bd3f00" d="${B.shadow}"/><path fill="#0c0e11" d="${B.glyph}"/></svg>`
+    + `<svg class="px stop" viewBox="0 0 16 16" aria-hidden="true"><path fill="#bd3f00" d="${B.tile}"/><path fill="#fa5d0e" d="${B.lo}"/><path fill="#8a2e00" d="${B.hi}"/><path fill="#0c0e11" d="M5 5h6v6h-6z"/></svg>`
+    + `<svg class="px spin8" viewBox="0 0 16 16" aria-hidden="true">${[[6,2],[10,3],[12,6],[11,10],[7,12],[3,11],[2,7],[3,3]].map(([x, y]) => `<rect x="${x}" y="${y}" width="3" height="3" fill="#2a2f37"/>`).join('')}</svg>`;
+  const speaker = `<svg class="px" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M2 6h3v4h-3zM5 5h1v6h-1zM6 4h1v8h-1zM7 3h1v10h-1z"/><path class="waves" fill="currentColor" d="M10 6h1v4h-1zM12 4h1v8h-1zM14 3h1v10h-1z"/></svg>`;
+
+  // ── Scenario data: what the parser hands the UI (packages/contracts/src/hls.js shape + characteristics) ──
+  const V = (h, bw) => ({ height: h, bandwidth: bw });
+  const SCENARIOS = {
+    cinejoy: { name: 'cinejoy (real)', title: 'Spoiler: Corn Is Delicious · S1 E6', site: 'cinejoy.pk', url: 'https://cinejoy.pk/watch/tv/287620/1/6', thumb: 'ember-tide', duration: 1279,
+      variants: [V(2160, 20e6), V(1080, 6e6), V(720, 3e6), V(360, 0.9e6)], subtitles: [],
+      audio: [1, 2, 3, 4].map(n => ({ groupId: 'audio', name: `Track ${n}`, language: null, default: n === 1, channels: null, voice: ['en-US', 'es-ES', 'fr-FR', 'de-DE'][n - 1] })) },
+    labelled: { name: 'Well labelled', title: 'Sintel', site: 'example.org', url: 'https://example.org/sintel/master.m3u8', thumb: 'neon-rain', duration: 888,
+      variants: [V(1080, 5e6), V(720, 2.8e6), V(480, 1.2e6)], subtitles: ['English', 'Spanish'],
+      audio: [
+        { groupId: 'aac', language: 'en', name: 'English', default: true, channels: '2', voice: 'en-US' },
+        { groupId: 'ec3', language: 'en', name: 'English', channels: '6', voice: 'en-US' },
+        { groupId: 'aac', language: 'en', name: 'English', channels: '2', characteristics: 'public.accessibility.describes-video', voice: 'en-GB', ad: true },
+        { groupId: 'aac', language: 'es-419', name: 'Español (Latinoamérica)', channels: '2', voice: 'es-MX' },
+        { groupId: 'aac', language: 'hin', name: 'hin', channels: '2', voice: 'hi-IN' },
+        { groupId: 'aac', language: 'en', name: 'Director commentary', channels: '2', voice: 'en-AU', commentary: true },
+        { groupId: 'ec3', language: 'es-419', name: 'Español (Latinoamérica)', channels: '2', voice: 'es-MX' },
+      ] },
+    many: { name: 'Many languages', title: 'Tears of Steel', site: 'example.net', url: 'https://example.net/tos/master.m3u8', thumb: 'ember-tide', duration: 734,
+      variants: [V(1080, 5e6), V(720, 2.6e6)], subtitles: ['English'],
+      audio: [['en', '6', 1], ['en', '2'], ['es-ES', '2'], ['es-419', '2'], ['fr-FR', '2'], ['fr-CA', '2'], ['de', '6'], ['de', '2'], ['it', '2'], ['pt-BR', '2'], ['ja', '2'], ['ko', '2'], ['hi', '2'], ['ta', '2']]
+        .map(([language, channels, def]) => ({ groupId: 'aac', language, name: '', channels, default: !!def, voice: language.length === 2 ? { en: 'en-US', de: 'de-DE', it: 'it-IT', ja: 'ja-JP', ko: 'ko-KR', hi: 'hi-IN', ta: 'ta-IN' }[language] : language })) },
+    und: { name: '“und” + duplicates', title: 'Big Buck Bunny', site: 'example.com', url: 'https://example.com/bbb/index.m3u8', thumb: 'sky-hop', duration: 596,
+      variants: [V(720, 2.5e6), V(480, 1.1e6)], subtitles: [],
+      audio: [{ groupId: 'a', name: 'Audio', language: 'und', default: true, voice: 'it-IT' }, { groupId: 'a', name: 'Audio', language: 'und', voice: 'pt-BR' }, { groupId: 'a', name: 'und', language: 'und', voice: 'ja-JP' }] },
+    one: { name: 'One track', title: 'Big Buck Bunny', site: 'example.com', url: 'https://example.com/bbb/index.m3u8', thumb: 'sky-hop', duration: 596,
+      variants: [V(1080, 4.5e6), V(720, 2.5e6)], subtitles: [], audio: [{ groupId: 'a', name: 'English', language: 'en', default: true, channels: '2', voice: 'en-US' }] },
+  };
+
+  // ── Label rules (proposed for packages/contracts) ────────────────────
+  const NO_LANGUAGE = /^(?:und|mul|zxx|mis|root|q[a-t][a-z])$/i;
+  const GENERIC_NAME = /^(?:(?:audio|track|stream|sound|default|main|alt(?:ernate)?|a)\s*[#:.-]?\s*\d*|\d+)$/i;
+  function languageName(code, locale = 'en') {
+    if (!code || NO_LANGUAGE.test(code)) return null;
+    try {
+      const name = new Intl.DisplayNames([locale], { type: 'language', languageDisplay: 'standard' }).of(code);
+      return name && name.toLowerCase() !== code.toLowerCase() ? name : null;
+    } catch { return null; }
+  }
+  function channelsLabel(value) {
+    if (!value) return null;
+    if (/JOC/i.test(value)) return 'Atmos';
+    const n = parseInt(value, 10);
+    return ({ 1: 'Mono', 2: 'Stereo', 6: '5.1', 8: '7.1' })[n] || (n > 0 ? `${n} ch` : null);
+  }
+  function describeTracks(audio) {
+    // Collapse the same track repeated across GROUP-IDs (one per codec family).
+    const seen = new Map(); const tracks = [];
+    audio.forEach((t, index) => {
+      const key = [t.language, t.name, t.channels, t.characteristics].join('|');
+      if (t.language && seen.has(key)) return;
+      seen.set(key, true); tracks.push({ ...t, index });
+    });
+    const out = tracks.map((t, i) => {
+      const english = languageName(t.language);
+      const native = t.language && english ? languageName(t.language, t.language) : null;
+      const nameUseful = t.name && !GENERIC_NAME.test(t.name.trim()) && t.name.toLowerCase() !== String(t.language).toLowerCase();
+      const ad = t.ad || /describes-video/.test(t.characteristics || '') || /\b(?:audio description|described)\b/i.test(t.name || '');
+      const commentary = t.commentary || /commentary/i.test(t.name || '');
+      const extra = nameUseful && (!english || !(t.name.toLowerCase().includes(english.toLowerCase()) || (native && t.name.toLowerCase() === native.toLowerCase()))) && !ad ? t.name : null;
+      return {
+        id: `t${t.index}`, raw: t.name || t.language || `Track ${i + 1}`, rawCode: t.language || '', ordinal: i + 1,
+        language: english, native: native && native !== english ? native : null, code: english ? t.language : null,
+        primary: english || extra || `Track ${i + 1}`, extra: english ? extra : null,
+        channels: channelsLabel(t.channels), ad, commentary, isDefault: !!t.default, unknown: !english, voice: t.voice,
+      };
+    });
+    // Channels only help when they differ between tracks.
+    if (new Set(out.map(t => t.channels)).size === 1) out.forEach(t => { t.channels = null; });
+    out.forEach(t => { if (t.native) t.native = t.native.charAt(0).toLocaleUpperCase(t.code || undefined) + t.native.slice(1); });
+    const counts = {};
+    out.forEach(t => { const k = [t.primary, t.extra, t.channels, t.ad, t.commentary].join('|'); t.dupe = (counts[k] = (counts[k] || 0) + 1); });
+    out.forEach(t => { const k = [t.primary, t.extra, t.channels, t.ad, t.commentary].join('|'); if (counts[k] > 1) t.suffix = ` · ${t.dupe}`; });
+    return out;
+  }
+  $('#code').textContent = `const names = new Intl.DisplayNames(['en'],
+  { type: 'language', languageDisplay: 'standard' });
+// 'hin' → Hindi · 'es-419' → Spanish (Latin America)
+// 'und' → "root" (!) and 'qaa' → 'qaa': treat as unknown
+${languageName.toString().replace(/^ {4}/gm, '')}`;
+
+  // ── State ────────────────────────────────────────────────────────────
+  const state = { scenario: 'cinejoy', labels: 'plain', preview: 'button', menuOpen: true, sub: null, selected: {}, quality: {}, named: {}, fail: false };
+  const STUDIES = {
+    labels: [['today', 'Today', 'Raw NAME or code: “Track 2”, “hin”, “Audio”'], ['plain', 'Plain language', 'English name first, then 5.1 / AD / Default; unknown says so'], ['native', 'Native + English', '“Español (Latinoamérica)” with the English name beside it'], ['code', 'Terminal code', 'Mono [ES-419] chip then the name; unknown is [ ?? ]']],
+    preview: [['today', 'Today', 'Popup: no audio choice. Desktop: a select of raw names'], ['button', 'Sample button', 'Pixel ▶ on each track; a thin line fills as it plays'], ['hover', 'Hover to hear', 'Rest on a track ½ s to hear it; move away to stop'], ['meter', 'Level meter', 'Pixel bars bounce with the sound; ten cells count the seconds'], ['name', 'Listen, then name', 'Unknown tracks ask “Which language was it?” after a sample'], ['group', 'Group by language', 'Languages first; each opens its mixes (5.1, AD, commentary)']],
+  };
+  let hoveredStudy = null;
+  for (const [id, variants] of Object.entries(STUDIES)) {
+    const section = document.getElementById(id); const picker = $('.picker', section);
+    picker.innerHTML = variants.map(([k, n, d], i) => `<button type="button" data-key="${k}"><span>${i + 1} · ${n}</span><small>${d}</small></button>`).join('');
+    section.pick = key => { state[id] = key; section.dataset.variant = key; $$('button', picker).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.key === key))); stopSample('option'); state.sub = null; render(); };
+    picker.addEventListener('click', e => { const b = e.target.closest('button'); if (b) section.pick(b.dataset.key); });
+    section.addEventListener('pointerenter', () => { hoveredStudy = section; });
+  }
+  addEventListener('keydown', e => {
+    if (!hoveredStudy || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('.menu, .quality-picker, input')) return;
+    const v = STUDIES[hoveredStudy.id][Number(e.key) - 1]; if (v) hoveredStudy.pick(v[0]);
+  });
+  $('#scenario').innerHTML = Object.entries(SCENARIOS).map(([k, s]) => `<button type="button" data-key="${k}">${s.name}</button>`).join('');
+  $('#scenario').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; state.scenario = b.dataset.key; state.sub = null; stopSample('video'); state.menuOpen = true; render(); });
+  $('#fail').addEventListener('change', e => { state.fail = e.target.checked; stopSample('toggle'); });
+  $('#rm').addEventListener('change', e => document.body.classList.toggle('rm', e.target.checked));
+  $('#stopall').addEventListener('click', () => stopSample('user'));
+
+  // ── Label rendering per label style ──────────────────────────────────
+  function tags(t) {
+    return [t.channels && t.channels !== 'Stereo' ? `<span class="chip">${t.channels}</span>` : '', t.ad ? '<span class="chip ad" title="Audio description">AD</span>' : ''].join('');
+  }
+  function labelHtml(t, style, { compact = false } = {}) {
+    const named = state.named[t.id];
+    if (style === 'today') return { main: esc(t.raw), sub: '', aria: t.raw };
+    const fallbackSub = named ? `<span class="named">You said ${esc(named)}</span>` : 'Unknown language';
+    const meta = [t.extra && !t.commentary ? esc(t.extra) : '', t.commentary ? 'Commentary' : '', t.channels === 'Stereo' ? 'Stereo' : '', t.isDefault ? 'Default' : ''].filter(Boolean);
+    let main; let sub;
+    if (style === 'code') {
+      const code = t.code ? t.code.toUpperCase() : named ? named.slice(0, 2).toUpperCase() + '?' : '??';
+      main = `<span class="chip code${t.code ? '' : ' q'}">${esc(code)}</span>${esc(t.unknown && named ? named : t.language || `Track ${t.ordinal}`)}${t.suffix || ''}${tags(t)}`;
+      sub = t.unknown ? (named ? `<span class="named">named by you</span>` : `Unknown · Track ${t.ordinal}`) : meta.join(' · ');
+    } else if (style === 'native' && t.native) {
+      main = `${esc(t.native)}${t.suffix || ''}${tags(t)}`;
+      sub = [esc(t.language), ...meta].join(' · ');
+    } else {
+      main = `${esc(t.unknown && named ? named : t.primary)}${t.suffix || ''}${tags(t)}`;
+      sub = t.unknown ? (named ? `<span class="named">Track ${t.ordinal} · you said ${esc(named)}</span>` : [fallbackSub, t.isDefault ? 'Default' : ''].filter(Boolean).join(' · ')) : meta.join(' · ');
+    }
+    const aria = [t.unknown ? (named || `Track ${t.ordinal}, unknown language`) : (style === 'native' && t.native ? `${t.native}, ${t.language}` : t.primary), t.extra, t.channels, t.ad && 'audio description', t.commentary && 'commentary', t.isDefault && 'default'].filter(Boolean).join(', ');
+    return { main, sub, aria };
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────────
+  const fmtSize = b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`;
+  const fmtDur = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  const tiers = h => h >= 2160 ? '4K' : h >= 1080 ? 'FHD' : h >= 720 ? 'HD' : 'SD';
+  function current() {
+    const s = SCENARIOS[state.scenario]; const tracks = describeTracks(s.audio);
+    const sel = state.selected[state.scenario] || (tracks.find(t => t.isDefault) || tracks[0]).id;
+    const q = state.quality[state.scenario] ?? s.variants[Math.min(1, s.variants.length - 1)].height;
+    return { s, tracks, sel, q };
+  }
+  function trackRowPopup(t, sel, style, preview) {
+    const l = labelHtml(t, style);
+    const failed = playback.failed === t.id;
+    const sub = failed ? '<small class="fail">Sample unavailable · you can still choose it</small>' : l.sub ? `<small>${l.sub}</small>` : '';
+    const control = preview === 'hover' ? `<span class="hear" aria-hidden="true">${speaker}</span>`
+      : `<button type="button" class="sample" role="menuitem" tabindex="-1" data-sample="${t.id}" aria-label="Play a sample of ${esc(l.aria)}">${pxButton()}</button>`;
+    const meter = preview === 'meter' ? `<span class="meter" aria-hidden="true">${'<i></i>'.repeat(7)}</span>` : '';
+    const nameit = preview === 'name' && t.unknown && state.heard?.[t.id] && !state.named[t.id]
+      ? `<div class="nameit" role="group" aria-label="Which language was ${esc(l.aria)}?">Which language was it? ${CHOICES(t.id)}</div>` : '';
+    return `<div class="atrack" data-tid="${t.id}"><button type="button" class="menu-item" role="menuitemradio" data-track="${t.id}" aria-checked="${t.id === sel}" aria-label="${esc(l.aria)}" aria-describedby="hint-sample">${icon('check', 'menu-check')}<span class="alabel"><b>${l.main}</b>${sub}</span>${meter}</button>${control}<span class="aprog"><i></i></span><span class="cells">${'<i></i>'.repeat(10)}</span>${preview === 'hover' ? '<span class="hear-dwell"></span>' : ''}</div>${nameit}`;
+  }
+  function renderPopup() {
+    const { s, tracks, sel, q } = current();
+    const style = state.labels; const preview = state.preview;
+    const showAudio = preview !== 'today' && tracks.length > 1;
+    const selTrack = tracks.find(t => t.id === sel);
+    const variant = s.variants.find(v => v.height === q);
+    const size = variant.bandwidth * s.duration / 8;
+    const audioShort = showAudio && style !== 'today' ? (selTrack.unknown ? (state.named[sel] || `Track ${selTrack.ordinal}`) : selTrack.language) : '';
+    let menu = '';
+    if (state.menuOpen) {
+      let body = '';
+      if (state.sub) {
+        const group = tracks.filter(t => (t.language || 'Unknown language') === state.sub);
+        body = `<button type="button" class="menu-item menu-back" role="menuitem" data-back="1">${icon('left')}${esc(state.sub)}<span class="lang-count">${group.length}</span></button><hr>` + group.map(t => trackRowPopup(t, sel, style, 'button')).join('');
+      } else {
+        body = '<div class="menu-title">Quality</div>' + s.variants.map(v => `<button type="button" class="menu-item" role="menuitemradio" data-quality="${v.height}" aria-checked="${v.height === q}">${icon('check', 'menu-check')}${v.height}p<span class="menu-value">about ${fmtSize(v.bandwidth * s.duration / 8)}</span></button>`).join('')
+          + `<button type="button" class="menu-item" role="menuitemradio" data-audioonly="1" aria-checked="false">${icon('check', 'menu-check')}Audio only</button>`;
+        if (showAudio) {
+          body += `<hr><div class="menu-title" id="audio-title">Audio <small>${tracks.length} tracks</small></div>`;
+          if (preview === 'group') {
+            const groups = [...new Set(tracks.map(t => t.language || 'Unknown language'))];
+            body += groups.map(g => {
+              const list = tracks.filter(t => (t.language || 'Unknown language') === g);
+              if (list.length === 1) return trackRowPopup(list[0], sel, style, 'button');
+              const has = list.some(t => t.id === sel);
+              return `<button type="button" class="menu-item" role="menuitem" aria-haspopup="menu" data-group="${esc(g)}">${icon('check', 'menu-check" style="color:' + (has ? 'var(--color-primary-hover)' : 'transparent'))}<span class="alabel"><b>${esc(g)}</b><small>${esc(list.map(t => t.channels === '5.1' ? '5.1' : t.ad ? 'AD' : t.commentary ? 'Commentary' : t.channels || (t.unknown ? `Track ${t.ordinal}` : 'Stereo')).join(' · '))}</small></span><span class="lang-count">${list.length}</span>${icon('right', 'chev')}</button>`;
+            }).join('');
+          } else body += tracks.map(t => trackRowPopup(t, sel, style, preview)).join('');
+          if (tracks.some(t => t.unknown) && style !== 'today') body += `<p class="menu-note">${preview === 'name' ? 'This site doesn’t name its tracks. Play one, then say which language it was; SnagThis remembers it for cinejoy.pk.' : `This site doesn’t name its tracks. ${preview === 'hover' ? 'Rest on one' : 'Play a sample'} to check.`}</p>`;
+        }
+        if (s.subtitles.length) body += '<hr><div class="menu-title">Subtitles</div>' + [...s.subtitles, 'None'].map(n => `<button type="button" class="menu-item" role="menuitemradio" aria-checked="${n === 'None'}">${icon('check', 'menu-check')}${n}</button>`).join('');
+      }
+      menu = `<div class="menu${showAudio ? ' wide' : ''} v-${preview}" id="pmenu" role="menu" aria-label="Quality${showAudio ? ', audio' : ''} and subtitles for ${esc(s.title)}" style="top:${46 + 12 + 19 + 3 + 18 + 6}px;left:140px">${body}</div>`;
+    }
+    $('#popup').innerHTML = `<div class="popup-header"><img class="logo-wordmark" src="${LOGO}" alt="SnagThis"><span class="count">2 videos on ${esc(s.site)}</span></div>
+      <div class="video-list"><div class="video-row"><div class="thumb"><img src="${MEDIA}${s.thumb}.jpg" alt=""></div><div class="row-body"><div class="row-title">${esc(s.title)}</div><div class="row-status"><button type="button" class="quality-button" id="qbtn" aria-haspopup="menu" aria-expanded="${state.menuOpen}">${q}p${audioShort ? `<span class="aud">· ${esc(audioShort)}</span>` : ''}${icon('chev')}</button><span>about ${fmtSize(size)}</span><span class="dot"></span><span>${fmtDur(s.duration)}</span></div></div><button type="button" class="action" aria-label="Download">${icon('dl')}</button></div>
+      <div class="video-row dim"><div class="thumb"><img src="${MEDIA}sky-hop.jpg" alt=""></div><div class="row-body"><div class="row-title">Preview · 0:42</div><div class="row-status"><span>720p</span><span class="dot"></span><span>about 18 MB</span></div></div><button type="button" class="action" aria-label="Download">${icon('dl')}</button></div></div>
+      <div class="popup-footer"><span>${icon('gear')}</span><span>No video?</span></div>${menu}
+      <span class="sr-only" id="hint-sample">Press Space to hear a 10-second sample. Enter chooses.</span>`;
+  }
+  function renderDesk() {
+    const { s, tracks, sel, q } = current();
+    const style = state.labels; const preview = state.preview;
+    const wide = preview !== 'today' && tracks.length > 1;
+    let audio = '';
+    if (tracks.length > 1) {
+      if (preview === 'today') {
+        audio = `<div class="quality-setting"><label for="d-audio">Audio</label><select id="d-audio">${tracks.map(t => { const l = labelHtml(t, style); return `<option ${t.id === sel ? 'selected' : ''}>${esc(l.aria.split(',')[0])}</option>`; }).join('')}</select></div>`;
+      } else {
+        const row = t => {
+          const l = labelHtml(t, style); const failed = playback.failed === t.id;
+          const sub = failed ? '<small class="fail">Sample unavailable · you can still choose it</small>' : l.sub ? `<small>${l.sub}</small>` : '';
+          const control = preview === 'hover' ? `<span class="hear" aria-hidden="true">${speaker}</span>` : `<button type="button" class="sample" data-sample="${t.id}" aria-label="Play a sample of ${esc(l.aria)}">${pxButton()}</button>`;
+          const nameit = preview === 'name' && t.unknown && state.heard?.[t.id] && !state.named[t.id] ? `<div class="nameit" role="group" aria-label="Which language was it?">Which language was it? ${CHOICES(t.id)}</div>` : '';
+          return `<div class="atrack" data-tid="${t.id}"><label class="q-radio" data-track="${t.id}"><input type="radio" name="d-audio" value="${t.id}" ${t.id === sel ? 'checked' : ''} aria-label="${esc(l.aria)}">${icon('check', 'menu-check')}<span class="alabel"><b>${l.main}</b>${sub}</span>${preview === 'meter' ? `<span class="meter" aria-hidden="true">${'<i></i>'.repeat(7)}</span>` : ''}</label>${control}<span class="aprog"><i></i></span><span class="cells">${'<i></i>'.repeat(10)}</span>${preview === 'hover' ? '<span class="hear-dwell"></span>' : ''}</div>${nameit}`;
+        };
+        let rows;
+        if (preview === 'group') {
+          const groups = [...new Set(tracks.map(t => t.language || 'Unknown language'))];
+          rows = groups.map(g => `<div class="lang-head">${esc(g)}</div>` + tracks.filter(t => (t.language || 'Unknown language') === g).map(row).join('')).join('');
+        } else rows = tracks.map(row).join('');
+        const note = tracks.some(t => t.unknown) && style !== 'today' ? `<p class="menu-note">This site doesn’t name its tracks. ${preview === 'hover' ? 'Rest on one' : 'Play a sample'} to check${preview === 'name' ? ', then say which language it was' : ''}.</p>` : '';
+        audio = `<fieldset class="audio-set v-${preview}"><legend>Audio <small>${tracks.length} tracks · samples start 25% in</small></legend>${rows}${note}</fieldset>`;
+      }
+    }
+    $('#desk').innerHTML = `<div class="top"><div class="lights"><i></i><i></i><i></i></div><img class="logo-wordmark" src="${LOGO}" alt="SnagThis"><div class="paste">${icon('link')}<span>${esc(s.url)}</span></div></div>
+      <div class="list">${['neon-rain', 'sky-hop', 'ember-tide', 'star-courier', 'neon-rain', 'sky-hop'].map((m, i) => `<div class="vrow"><div class="thumb"><img src="${MEDIA}${m}.jpg" alt=""></div><div class="txt"><b>${['Sintel', 'Big Buck Bunny', 'Tears of Steel'][i % 3]}</b><span>1080p · 612 MB · ✓ Saved yesterday</span></div></div>`).join('')}</div>
+      <div class="foot">${icon('gear')}<span>Settings</span></div>
+      <section class="quality-picker${wide ? ' wide' : ''}" id="dpicker" aria-label="Choose video quality"><div class="quality-heading"><img src="${MEDIA}${s.thumb}.jpg" alt=""><div><strong>${esc(s.title)}</strong><small>Quality · ${fmtDur(s.duration)}</small></div><button type="button" class="x-btn" aria-label="Cancel">${icon('x')}</button></div>
+      <fieldset><legend class="sr-only">Quality</legend>${s.variants.map(v => `<label class="q-radio"><input type="radio" name="d-q" ${v.height === q ? 'checked' : ''}>${icon('check', 'menu-check')}<span>${v.height}p</span><small class="sz">${fmtSize(v.bandwidth * s.duration / 8)}</small></label>`).join('')}<label class="q-radio"><input type="radio" name="d-q">${icon('check', 'menu-check')}<span>Audio only</span></label></fieldset>
+      ${audio}${s.subtitles.length ? `<div class="quality-setting"><label>Subtitles</label><select><option>None</option>${s.subtitles.map(n => `<option>${n}</option>`).join('')}</select></div>` : ''}
+      <div class="quality-footer"><button type="button" class="primary-action">Download</button></div></section>`;
+  }
+  function render() {
+    const focusedId = document.activeElement?.dataset?.track || document.activeElement?.dataset?.sample;
+    $$('#scenario button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.key === state.scenario)));
+    renderPopup(); renderDesk(); paint();
+    if (focusedId) (document.querySelector(`[data-track="${focusedId}"]`) || document.querySelector(`[data-sample="${focusedId}"]`))?.focus({ preventScroll: true });
+    const menu = $('#pmenu'); const at = $('#audio-title');
+    if (menu) {
+      // Anchor under the trigger, inside the popup, never over the header or footer (spec §5.2).
+      const pop = $('#popup').getBoundingClientRect(); const trig = $('#qbtn').getBoundingClientRect();
+      const top = trig.bottom - pop.top + 4; menu.style.top = `${top}px`; menu.style.left = `${Math.min(trig.left - pop.left, 480 - menu.offsetWidth - 8)}px`;
+      menu.style.maxHeight = `${Math.min(320, 560 - 43 - top - 6)}px`;
+    }
+    if (menu && at && !state.userScrolled) menu.scrollTop = at.offsetTop - 60;
+  }
+
+  // ── Synthetic sample engine: speech voice when available, else babble ─
+  let ctx = null;
+  const playback = { id: null, state: 'idle', start: 0, failed: null, nodes: null, raf: 0, analyser: null, timer: 0, speaking: false };
+  const PHRASES = {
+    en: 'Wait. You did what? We have to leave before sunrise, all of us.', es: 'Espera. ¿Qué hiciste? Tenemos que irnos antes del amanecer, todos.',
+    fr: 'Attends. Tu as fait quoi ? Nous devons partir avant l’aube, tous ensemble.', de: 'Warte. Was hast du getan? Wir müssen vor Sonnenaufgang los, alle zusammen.',
+    hi: 'रुको। तुमने क्या किया? हमें सूरज उगने से पहले निकलना होगा।', it: 'Aspetta. Cosa hai fatto? Dobbiamo partire prima dell’alba.',
+    pt: 'Espera. O que você fez? Temos que sair antes do amanhecer.', ja: 'ちょっと待って。何をしたの？夜明け前に出発しないと。', ko: '잠깐만. 뭘 한 거야? 해 뜨기 전에 떠나야 해.', ta: 'காத்திரு. நீ என்ன செய்தாய்? விடியும் முன் கிளம்ப வேண்டும்.',
+  };
+  function announce(text) { $('#announce').textContent = text; $('#log').textContent = text; }
+  function trackById(id) { return current().tracks.find(t => t.id === id); }
+  function spokenName(t) { const l = labelHtml(t, state.labels); return l.aria.split(',')[0]; }
+  function startSample(id) {
+    if (playback.id === id && playback.state !== 'idle') { stopSample('user'); return; }
+    stopSample('switch');
+    const t = trackById(id); if (!t) return;
+    ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume();
+    Object.assign(playback, { id, state: 'loading', failed: null, start: performance.now() });
+    announce(`Loading a sample of ${spokenName(t)}…`);
+    paint();
+    playback.timer = setTimeout(() => {
+      if (playback.id !== id) return;
+      if (state.fail) { const failed = id; stopSample('fail'); playback.failed = failed; render(); announce(`Sample unavailable for ${spokenName(t)}. You can still choose it.`); return; }
+      playback.state = 'playing'; playback.start = performance.now();
+      beginSound(t);
+      announce(`Playing a sample of ${spokenName(t)} from 25% in. Press Escape to stop.`);
+      tick();
+    }, 350 + Math.random() * 350);
+  }
+  function beginSound(t) {
+    const seed = t.ordinal * 7919 + (t.voice || '').length * 31;
+    let r = seed; const rand = () => ((r = (r * 16807) % 2147483647) / 2147483647);
+    const master = ctx.createGain(); master.gain.value = 0;
+    const analyser = ctx.createAnalyser(); analyser.fftSize = 256;
+    const osc = ctx.createOscillator(); osc.type = 'sawtooth';
+    const f1 = ctx.createBiquadFilter(); f1.type = 'bandpass'; f1.Q.value = 6;
+    const f2 = ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.Q.value = 9;
+    const env = ctx.createGain(); env.gain.value = 0;
+    const bed = ctx.createOscillator(); bed.type = 'triangle'; bed.frequency.value = 55 + t.ordinal * 11;
+    const bedGain = ctx.createGain(); bedGain.gain.value = 0.05;
+    osc.connect(f1); osc.connect(f2); f1.connect(env); f2.connect(env); env.connect(analyser); bed.connect(bedGain).connect(analyser);
+    analyser.connect(master).connect(ctx.destination);
+    const now = ctx.currentTime; const f0 = 105 + (t.ordinal % 4) * 38 + rand() * 20;
+    const rate = 3.6 + rand() * 3; const vowels = [[730, 1090], [270, 2290], [530, 1840], [570, 840], [440, 1020], [300, 870], [660, 1720]];
+    let at = now + 0.05;
+    while (at < now + SAMPLE_S) {
+      const words = 3 + Math.floor(rand() * 5);
+      for (let w = 0; w < words && at < now + SAMPLE_S; w++) {
+        const syl = 1 / rate * (0.7 + rand() * 0.6); const v = vowels[Math.floor(rand() * vowels.length)];
+        env.gain.setTargetAtTime(0.55 + rand() * 0.45, at, 0.015); env.gain.setTargetAtTime(0.05, at + syl * 0.7, 0.03);
+        f1.frequency.setTargetAtTime(v[0], at, 0.02); f2.frequency.setTargetAtTime(v[1], at, 0.02);
+        osc.frequency.setTargetAtTime(f0 * (0.9 + rand() * 0.25), at, 0.05);
+        at += syl;
+      }
+      at += 0.25 + rand() * 0.45;
+    }
+    osc.start(now); bed.start(now); osc.stop(now + SAMPLE_S + 0.3); bed.stop(now + SAMPLE_S + 0.3);
+    // A matching speech voice demonstrates distinct languages when the browser has one.
+    const lang = t.voice || 'en-US'; const base = lang.slice(0, 2);
+    const voices = speechSynthesis?.getVoices?.() || [];
+    const voice = voices.find(v => v.lang.replace('_', '-') === lang) || voices.find(v => v.lang.startsWith(base));
+    playback.speaking = false;
+    if (voice && PHRASES[base]) {
+      const u = new SpeechSynthesisUtterance(t.ad ? 'A door opens. ' + PHRASES[base] : t.commentary ? 'When we shot this scene it was freezing. ' + PHRASES[base] : PHRASES[base]);
+      u.voice = voice; u.lang = voice.lang; u.rate = 0.95; u.volume = 1;
+      speechSynthesis.cancel(); speechSynthesis.speak(u); playback.speaking = true;
+      master.gain.setTargetAtTime(0.04, now, 0.08); // keep a quiet bed; the meter still reads the envelope
+    } else master.gain.setTargetAtTime(0.22, now, 0.08);
+    master.gain.setTargetAtTime(0, now + SAMPLE_S - 0.25, 0.08);
+    playback.nodes = { osc, bed, master }; playback.analyser = analyser;
+  }
+  function stopSample(reason) {
+    clearTimeout(playback.timer); cancelAnimationFrame(playback.raf);
+    const was = playback.id; const wasState = playback.state; const elapsed = (performance.now() - playback.start) / 1000;
+    if (playback.nodes) { const { osc, bed, master } = playback.nodes; try { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setTargetAtTime(0, ctx.currentTime, 0.04); osc.stop(ctx.currentTime + 0.2); bed.stop(ctx.currentTime + 0.2); } catch { /* already stopped */ } }
+    if (playback.speaking) speechSynthesis.cancel();
+    Object.assign(playback, { id: null, state: 'idle', nodes: null, analyser: null, speaking: false });
+    if (reason !== 'fail') playback.failed = null;
+    if (was && wasState === 'playing' && (reason === 'ended' || elapsed > 2) && state.preview === 'name') { (state.heard ||= {})[was] = true; }
+    if (was) { if (['user', 'escape', 'ended'].includes(reason)) announce(reason === 'ended' ? 'Sample finished.' : 'Sample stopped.'); render(); }
+  }
+  function tick() {
+    if (playback.state !== 'playing') return;
+    const elapsed = (performance.now() - playback.start) / 1000;
+    if (elapsed >= SAMPLE_S) { stopSample('ended'); return; }
+    paint(elapsed);
+    playback.raf = requestAnimationFrame(tick);
+  }
+  const reduced = () => document.body.classList.contains('rm') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function paint(elapsed = 0) {
+    const rm = reduced();
+    const p = Math.min(1, (rm ? Math.floor(elapsed) : elapsed) / SAMPLE_S);
+    let levels = null;
+    if (playback.analyser && !rm) { const data = new Uint8Array(playback.analyser.fftSize); playback.analyser.getByteTimeDomainData(data); let sum = 0; for (const v of data) sum += ((v - 128) / 128) ** 2; let rms = Math.min(1, Math.sqrt(sum / data.length) * 4);
+      // No audio output device (or a suspended context): follow the syllable rhythm instead.
+      if (rms < 0.02) { const t = elapsed * 5.3; rms = Math.max(0, Math.sin(t) * Math.sin(t * 0.37 + 1) * 0.9 + 0.15); } levels = [...Array(7)].map((_, i) => Math.max(0, Math.min(1, rms * (1.15 - Math.abs(i - 3) * 0.14) + (Math.random() - 0.5) * 0.25))); }
+    $$('.atrack').forEach(row => {
+      const id = row.dataset.tid; const on = playback.id === id;
+      row.classList.toggle('is-loading', on && playback.state === 'loading');
+      row.classList.toggle('is-playing', on && playback.state === 'playing');
+      row.classList.toggle('is-failed', playback.failed === id);
+      row.style.setProperty('--p', on ? p : 0);
+      const btn = row.querySelector('.sample');
+      if (btn) { const name = btn.getAttribute('aria-label').replace(/^(Play a sample of|Stop the sample of|Loading a sample of) /, ''); btn.setAttribute('aria-label', `${on && playback.state === 'playing' ? 'Stop the sample of' : on ? 'Loading a sample of' : 'Play a sample of'} ${name}`); btn.setAttribute('aria-pressed', String(on)); }
+      $$('.meter i', row).forEach((bar, i) => bar.style.setProperty('--l', on && playback.state === 'playing' ? (levels ? levels[i] : 0.6) : 0));
+      $$('.cells i', row).forEach((cell, i) => cell.classList.toggle('d', on && i < Math.floor(p * 10 + (playback.state === 'playing' ? 1 : 0))));
+    });
+  }
+
+  // ── Interaction ──────────────────────────────────────────────────────
+  function menuItems() { return $$('#pmenu [role=menuitemradio], #pmenu [data-group], #pmenu [data-back]'); }
+  document.addEventListener('click', e => {
+    const sample = e.target.closest('[data-sample]'); if (sample) { e.preventDefault(); startSample(sample.dataset.sample); return; }
+    const name = e.target.closest('[data-name]'); if (name) { if (name.dataset.lang) { state.named[name.dataset.name] = name.dataset.lang; announce(`Saved: ${name.dataset.lang} for this site.`); } else delete state.heard[name.dataset.name]; render(); return; }
+    if (e.target.closest('#qbtn')) { state.menuOpen = !state.menuOpen; state.sub = null; state.userScrolled = false; if (!state.menuOpen) stopSample('close'); render(); if (state.menuOpen) (menuItems().find(i => i.getAttribute('aria-checked') === 'true') || menuItems()[0])?.focus({ preventScroll: true }); return; }
+    const group = e.target.closest('[data-group]'); if (group) { state.sub = group.dataset.group; render(); menuItems()[1]?.focus({ preventScroll: true }); return; }
+    if (e.target.closest('[data-back]')) { const g = state.sub; state.sub = null; stopSample('back'); render(); $(`#pmenu [data-group="${CSS.escape(g)}"]`)?.focus({ preventScroll: true }); return; }
+    const q = e.target.closest('#pmenu [data-quality]'); if (q) { state.quality[state.scenario] = Number(q.dataset.quality); closeMenu(); return; }
+    const track = e.target.closest('#pmenu [data-track]'); if (track) { state.selected[state.scenario] = track.dataset.track; closeMenu(); return; }
+    const radio = e.target.closest('#dpicker input[name="d-audio"]'); if (radio) { state.selected[state.scenario] = radio.value; stopSample('choose'); render(); }
+    if (e.target.closest('#dpicker .x-btn, #dpicker .primary-action')) stopSample('close');
+  });
+  function closeMenu() { state.menuOpen = false; state.sub = null; stopSample('close'); render(); $('#qbtn')?.focus({ preventScroll: true }); }
+  document.addEventListener('keydown', e => {
+    const inMenu = e.target.closest?.('#pmenu'); const inPicker = e.target.closest?.('#dpicker');
+    if (e.key === 'Escape' && (inMenu || inPicker || playback.id)) {
+      e.preventDefault();
+      if (playback.id) { stopSample('escape'); return; }
+      if (state.sub) { $('#pmenu [data-back]')?.click(); return; }
+      if (inMenu) closeMenu();
+      return;
+    }
+    const trackId = e.target.dataset?.track || e.target.closest?.('.atrack')?.dataset.tid;
+    if (inPicker && (e.key === ' ' || e.key === 'p') && e.target.matches('input[name="d-audio"]') && state.preview !== 'today') { e.preventDefault(); startSample(e.target.value); return; }
+    if (!inMenu) return;
+    const items = menuItems(); const i = items.indexOf(e.target);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); state.userScrolled = true; const target = e.target.matches('[data-sample]') ? items.indexOf(e.target.closest('.atrack').querySelector('[data-track]')) : i; items[(target + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus(); return; }
+    if (e.key === 'ArrowRight' && e.target.matches('[data-track]')) { e.preventDefault(); const s = e.target.closest('.atrack').querySelector('[data-sample]'); if (s) s.focus(); else startSample(trackId); return; }
+    if (e.key === 'ArrowRight' && e.target.matches('[data-group]')) { e.preventDefault(); e.target.click(); return; }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); if (e.target.matches('[data-sample]')) e.target.closest('.atrack').querySelector('[data-track]').focus(); else if (state.sub) $('#pmenu [data-back]')?.click(); return; }
+    if ((e.key === ' ' || e.key === 'p') && trackId && state.preview !== 'today') { e.preventDefault(); startSample(trackId); return; }
+    if (e.key === 'Enter' && e.target.matches('[role=menuitemradio],[data-group],[data-back]')) { e.preventDefault(); e.target.click(); }
+  });
+  // Option 2: hover (or focus) rests ½ s before sound starts; leaving stops it.
+  let dwell = 0; let dwellRow = null;
+  function armHover(row) {
+    if (state.preview !== 'hover' || !row || dwellRow === row) return;
+    disarmHover(); dwellRow = row; row.classList.add('dwelling');
+    dwell = setTimeout(() => { row.classList.remove('dwelling'); if (playback.id !== row.dataset.tid) startSample(row.dataset.tid); }, 450);
+  }
+  function disarmHover(stop) { clearTimeout(dwell); dwellRow?.classList.remove('dwelling'); dwellRow = null; if (stop && state.preview === 'hover' && playback.id) stopSample('leave'); }
+  document.addEventListener('pointerover', e => { const row = e.target.closest('.atrack'); if (row) armHover(row); else if (dwellRow && !e.target.closest('.atrack')) disarmHover(true); });
+  document.addEventListener('focusin', e => { const row = e.target.closest('.atrack'); if (row && state.preview === 'hover') armHover(row); else if (state.preview === 'hover') disarmHover(true); });
+  document.addEventListener('wheel', e => { if (e.target.closest('#pmenu')) state.userScrolled = true; }, { passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopSample('hidden'); });
+  speechSynthesis?.addEventListener?.('voiceschanged', () => {});
+
+  document.getElementById('labels').pick('plain');
+  document.getElementById('preview').pick('button');
+})();
+</script>
+</body>
+</html>

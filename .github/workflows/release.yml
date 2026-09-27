@@ -1,0 +1,205 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  release-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Require a stable matching version from main
+        shell: bash
+        run: |
+          bash scripts/release-preflight.sh --version-only
+          git merge-base --is-ancestor HEAD origin/main
+
+  checks:
+    needs: release-contract
+    uses: ./.github/workflows/ci.yml
+
+  desktop:
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: mac
+            arch: arm64
+          - os: macos-15-intel
+            platform: mac
+            arch: x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    env:
+      SNAGTHIS_RELEASE: '1'
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
+      CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
+      # Windows signs through Azure Artifact Signing (account snagthisvid, profile snagthis).
+      AZURE_TENANT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_TENANT_ID || '' }}
+      AZURE_CLIENT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_ID || '' }}
+      AZURE_CLIENT_SECRET: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_SECRET || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Require release credentials and matching package version
+        shell: bash
+        run: bash scripts/release-preflight.sh --target ${{ matrix.platform }}
+      - run: npm ci
+      - name: Fetch portable tools with license and source metadata
+        run: |
+          npm run fetch:ffmpeg --workspace @m3u8/desktop
+          npm run fetch:yt-dlp --workspace @m3u8/desktop
+      - name: Include project notices in the installed app
+        shell: bash
+        run: |
+          cp LICENSE apps/desktop/bin/SNAGTHIS-LICENSE.txt
+          cp THIRD_PARTY_NOTICES.md apps/desktop/bin/THIRD_PARTY_NOTICES.md
+      - name: Build signed installers without publishing
+        shell: bash
+        run: |
+          if [[ "${{ matrix.platform }}" == "mac" ]]; then
+            npm run dist --workspace @m3u8/desktop -- --mac --${{ matrix.arch }} --publish=never -c.forceCodeSigning=true -c.mac.notarize=true
+          else
+            bash scripts/dist-windows-signed.sh --${{ matrix.arch }}
+          fi
+      - name: Notarize and staple the exact DMG to be shipped
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dmg in apps/desktop/dist-electron/*.dmg; do
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --output-format json > notarization.json
+            node -e "if(require('./notarization.json').status!=='Accepted')process.exit(1)"
+            xcrun stapler staple "$dmg"
+          done
+      - name: Install exact artifact, verify signature and run a real packaged download
+        run: node scripts/verify-release.cjs
+      - name: Stage validated artifacts privately within this workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            apps/desktop/dist-electron/*.dmg
+            apps/desktop/dist-electron/*.exe
+            apps/desktop/dist-electron/*.zip
+            apps/desktop/dist-electron/*.exe.blockmap
+            apps/desktop/dist-electron/*.zip.blockmap
+            apps/desktop/dist-electron/latest.yml
+            apps/desktop/dist-electron/latest-mac.yml
+            apps/desktop/dist-electron/release-verification-*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  extension:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Package the extension with its license and notices
+        run: npm run package:extension
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-extension
+          path: snagthis-extension.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  prepare-draft:
+    needs: [checks, desktop, extension]
+    runs-on: ubuntu-latest
+    # Publication remains a separate, explicit owner action in GitHub Releases.
+    permissions:
+      contents: write
+      actions: read
+    env:
+      CORRESPONDING_SOURCE_RUN_ID: ${{ vars.CORRESPONDING_SOURCE_RUN_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require a new stable release without overwriting existing assets
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const version = tag.slice(1).split('.').map(Number);
+            const releases = await github.paginate(github.rest.repos.listReleases, { ...context.repo, per_page: 100 });
+            for (const release of releases) {
+              if (release.tag_name === tag) throw new Error(`A release or draft already exists for ${tag}. Published assets are immutable. Inspect and delete an incomplete draft before retrying.`);
+              if (release.draft || release.prerelease || !/^v\d+\.\d+\.\d+$/.test(release.tag_name)) continue;
+              const previous = release.tag_name.slice(1).split('.').map(Number);
+              const difference = version.map((part, i) => part - previous[i]).find(value => value !== 0) || 0;
+              if (difference <= 0) throw new Error(`Release ${tag} must be newer than published ${release.tag_name}; published assets are never overwritten.`);
+            }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: false
+      - name: Require an explicitly prepared source packet
+        shell: bash
+        run: |
+          [[ "$CORRESPONDING_SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'Set CORRESPONDING_SOURCE_RUN_ID to the reviewed source-artifact workflow run; publication is blocked without it.'; exit 1; }
+      - name: Download the reviewed corresponding-source artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: snagthis-corresponding-source
+          path: release-assets/release-source
+          run-id: ${{ vars.CORRESPONDING_SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Validate corresponding source and assemble the release payload
+        run: node scripts/release-assets.cjs release-assets
+      - name: Prepare release notes for owner review
+        shell: bash
+        run: |
+          cat > release-notes.md <<'NOTES'
+          SnagThis desktop and Chrome extension.
+
+          Desktop installers are signed and verified. Chrome's ZIP is the manual-install package; Chrome Web Store publication is separate.
+
+          Maintainer review before publishing:
+          - Confirm the corresponding-source archive is complete for every bundled build.
+          - Review the signed installer and update verification reports, checksums, and user-facing release notes.
+          - Keep this release a draft during private testing. Make the repository public before public launch so downloads and automatic desktop updates are accessible without credentials.
+          - Select **Set as the latest release** when publishing this desktop release. Extension-only releases must not replace the desktop latest release.
+          NOTES
+      - name: Upload every verified artifact to a draft without publishing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/publish/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft --latest=false \
+            --title "SnagThis $GITHUB_REF_NAME" --notes-file release-notes.md
+          printf '## Release draft ready\n\nReview all artifacts and edit the release notes in [GitHub Releases](https://github.com/%s/releases). This workflow does not publish releases. Keep the draft private until the repository is public and you are ready to distribute it.\n' "$GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"

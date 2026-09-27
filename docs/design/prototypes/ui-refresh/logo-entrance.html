@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VidSnag · Logo entrances</title>
+  <link rel="stylesheet" href="logo-entrance.css">
+  <link rel="stylesheet" href="logo-entrance-motion.css">
+</head>
+<body>
+<main class="study">
+  <header class="intro">
+    <div><p class="eyebrow"><span>VidSnag</span> MOTION STUDY / APP OPENING</p><h1>Give the original an entrance.</h1><p>Your logo, in motion. Choose a reveal, then see it open the app.</p></div>
+    <a href="controls.html">All controls <span aria-hidden="true">↗</span></a>
+  </header>
+  <div class="studio">
+    <aside aria-labelledby="choices-title">
+      <div class="section-label"><h2 id="choices-title">01 · The reveal</h2><span>Hover to try · Click to choose</span></div>
+      <div id="choices" class="choices" role="group" aria-label="Logo entrance"></div>
+      <p class="hint">Use Tab + Enter, or 0–5 while a choice is focused.</p>
+      <div class="original-note"><img src="../../../../apps/desktop/src/assets/vidsnag-logo-title.png" alt="Original VidSnag artwork" width="112" height="22"><p>Same artwork in every option.<br>Every reveal settles on the original.</p></div>
+    </aside>
+    <section class="preview-column" aria-labelledby="selected-title">
+      <div class="selection-heading"><div><p class="eyebrow">OPENING PREVIEW</p><h2 id="selected-title">3 · Arrow leads</h2></div><button class="replay" id="replay" type="button"><span aria-hidden="true">↻</span> Replay opening</button></div>
+      <p id="description" class="description"></p>
+      <div class="controls">
+        <fieldset><legend>02 · Where it starts</legend><div class="segmented" id="placement"><button type="button" data-placement="header" aria-pressed="false">In the header</button><button type="button" data-placement="center" aria-pressed="true">Center → header</button></div></fieldset>
+        <label class="pace">Pace<select id="pace"><option value="0.8">Quick</option><option value="1" selected>Natural</option><option value="1.4">Unhurried</option></select></label>
+      </div>
+      <div class="app-window" id="app-window" aria-label="VidSnag desktop opening preview">
+        <div class="native-bar"><span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span><span>VidSnag Desktop</span></div>
+        <div class="app-body" id="app-body">
+          <header class="app-header"><div class="header-logo" id="header-logo"></div><div class="paste">⌁ <span>Paste a video link</span><kbd>⌘V</kbd></div><nav aria-label="Preview tabs"><span class="selected">All</span><span>Downloading</span><span>Saved</span></nav><span class="search" aria-hidden="true">⌕</span></header>
+          <div class="library" id="library">
+            <article class="video-row"><img class="thumb" src="../../../../apps/extension/popup/media/sintel.jpg" alt="Sintel movie scene"><div class="row-copy"><h3>Sintel — an open movie by Blender <span>14:48</span></h3><p>34% · 5 min left</p></div><span class="row-action" aria-hidden="true">Ⅱ</span><div class="row-progress" aria-hidden="true"></div></article>
+            <article class="video-row"><img class="thumb" src="../../../../apps/extension/popup/media/tears-of-steel.jpg" alt="Tears of Steel movie scene"><div class="row-copy"><h3>Tears of Steel <span>12:14</span></h3><p><b>FHD</b> 1080p · 182 MB · <span class="saved">✓</span> Saved today</p></div><span class="row-action" aria-hidden="true">▷</span></article>
+            <div class="library-space"></div>
+            <footer class="app-footer"><span>1 downloading · 4.1 MB/s</span><span aria-hidden="true">⌘ &nbsp; ⚙</span></footer>
+          </div>
+        </div>
+        <div class="floating-logo" id="floating-logo" aria-hidden="true" hidden></div>
+      </div>
+      <div class="playback-info"><output id="playback-status" aria-live="polite">Ready to replay</output><span id="duration"></span><label><input id="reduced" type="checkbox"> Reduced motion</label></div>
+      <div class="sequence" aria-hidden="true"><span><i>1</i> Reveal the artwork</span><span class="sequence-arrow">→</span><span id="sequence-middle"><i>2</i> Settle into the header</span><span class="sequence-arrow">→</span><span><i>3</i> Ready to use</span></div>
+      <div class="selection-summary"><span id="selection-summary"></span><button type="button" id="reset">Reset to current</button></div>
+      <p class="preview-note">Arrow leads with Center → header and Natural pace is the selected desktop startup animation. It plays once, with a short pause after the shimmer. Other combinations remain previews.</p>
+    </section>
+  </div>
+  <footer class="study-footer"><span>Original artwork · No sound · Reduced motion supported</span><span>Your combination stays in this page’s address.</span></footer>
+</main>
+<script type="module" src="logo-entrance.js"></script>
+</body>
+</html>

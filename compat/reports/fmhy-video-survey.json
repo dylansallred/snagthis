@@ -1,0 +1,2136 @@
+{
+ "generatedAt": "2026-09-26",
+ "source": "https://fmhy.net/video",
+ "method": "compat/fmhy-survey.js: isolated headless Chromium + unpacked extension, GET_TAB_MEDIA, engine requestMediaWithRedirects probes (playlist, init, first + middle segment), bounded 8 s engine download via JobProcessor, deleted afterwards; yt-dlp --simulate",
+ "extension": "apps/extension working tree",
+ "outcomeCounts": {
+  "partial": 2,
+  "fail": 3,
+  "blocked": 10,
+  "inconclusive": 12,
+  "not detected": 1,
+  "downloadable": 14,
+  "false positive": 2,
+  "drm/app-only": 1,
+  "live (declined)": 2,
+  "drm": 1,
+  "fail (transient)": 1
+ },
+ "sites": [
+  {
+   "id": "cinejoy",
+   "name": "Cinejoy",
+   "fmhySection": "Stream Aggregators (owner report)",
+   "testedUrl": "https://cinejoy.pk/watch/tv/287620/1/6",
+   "family": "Own player (hls.js) \u00b7 Cloudflare-worker CDN lit.cheaptruckrepairs.cc, fMP4 segments disguised as .html",
+   "mediaType": "HLS master, 4 variants (2160 HEVC HDR/1080/720/360) + 4 alt audio",
+   "detected": "yes",
+   "outcome": "partial",
+   "reason": "Default (highest) 2160p variant: CDN returns 502 \"origin unavailable\" for ~44% of segments (and its init); 360p and audio Tracks 2-4 also have dead segments. 1080p/720p/Track 1 complete. Headers irrelevant (same 502 with no headers and from the browser).",
+   "fixIdea": "Prefer the variant the page player loaded; auto-fallback to next variant on persistent 5xx; classify 5xx as \"quality unavailable\"",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      2160,
+      1080,
+      720,
+      360
+     ],
+     "audio": [
+      "Track 1",
+      "Track 2",
+      "Track 3",
+      "Track 4"
+     ],
+     "durationSeconds": 1280,
+     "refererHost": "cinejoy.pk"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 2160,
+    "status": "error",
+    "errorCode": "MEDIA_REQUEST_FAILED",
+    "error": "Media request failed with status 502.",
+    "ms": 641
+   },
+   "engineProbePlayerVariant": {
+    "variantHeight": 1080,
+    "status": "completed",
+    "errorCode": null,
+    "ms": 1072
+   },
+   "engineOutput": {
+    "durationSeconds": 8.125,
+    "bytes": 2375243,
+    "streams": [
+     "video:h264:1080p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://cinejoy.pk/watch/tv/287620/1/6"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "cinejoy.pk"
+   ],
+   "checkedAt": "2026-09-26T17:57:01.987Z"
+  },
+  {
+   "id": "cineby",
+   "name": "Cineby (gdn)",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "https://cineby.gdn/movie/27205?play=true",
+   "family": "Own player, same-origin proxy kratos.cineby.gdn",
+   "mediaType": "HLS delivered as blob: URL built from POST /api/stream/m3u8",
+   "detected": "yes (wrong URL)",
+   "outcome": "fail",
+   "reason": "Detected row is the POST endpoint /api/stream/m3u8; engine replays it as GET -> 400. Real playlist exists only as a blob: URL (media-detector ignores non-http URLs).",
+   "fixIdea": "Capture manifest text from blob:/POST responses and let the engine start from the snapshot",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 8886,
+     "refererHost": "cineby.gdn"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "error",
+    "errorCode": "NETWORK_ERROR",
+    "error": "Request failed with status 400",
+    "ms": 42
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://cineby.gdn/movie/27205?play=true"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "cineby.gdn"
+   ],
+   "checkedAt": "2026-09-26T17:58:43.036Z"
+  },
+  {
+   "id": "spacedom",
+   "name": "Spacedom",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "https://spacedom.live/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "blocked",
+   "reason": "Cloudflare Turnstile challenge",
+   "fixIdea": "Out of scope (anti-bot)",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: [generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with  --extractor-args \"generic:impersonate\""
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "spacedom.live",
+    "challenges.cloudflare.com"
+   ],
+   "checkedAt": "2026-09-26T17:58:43.037Z"
+  },
+  {
+   "id": "movish",
+   "name": "Movish",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "about:blank",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "blocked",
+   "reason": "Page navigates to about:blank under automation (devtools-detection script); headed retry same",
+   "fixIdea": "Harness limitation; re-test manually in a real profile",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unable to handle request: Unsupported url scheme: \"about\" (requests, urllib, websockets, curl_cffi)"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [],
+   "checkedAt": "2026-09-26T18:24:59.325Z"
+  },
+  {
+   "id": "chillflix",
+   "name": "Chillflix",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "https://www.chillflix.lol/tv/1930",
+   "family": "TMDB aggregator",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "Harness could not reach a playing player (SPA redirect to an unrelated title)",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://www.chillflix.lol/tv/1930"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "www.chillflix.lol"
+   ],
+   "checkedAt": "2026-09-26T18:24:59.327Z"
+  },
+  {
+   "id": "cinemaos",
+   "name": "CinemaOS",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "about:blank",
+   "family": "Own player, holly.cinemaos.in proxy",
+   "mediaType": "DASH (application/dash+xml)",
+   "detected": "seen in network, page then blanked",
+   "outcome": "blocked",
+   "reason": "DASH manifest loaded, then page self-navigated to about:blank (devtools detection); headed retry same",
+   "fixIdea": "DASH rows route to yt-dlp; re-test manually",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unable to handle request: Unsupported url scheme: \"about\" (requests, urllib, websockets, curl_cffi)"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [],
+   "checkedAt": "2026-09-26T18:24:59.327Z"
+  },
+  {
+   "id": "hivex",
+   "name": "HiveX",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "about:blank",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "blocked",
+   "reason": "about:blank devtools detection (headed too)",
+   "fixIdea": "Re-test manually",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unable to handle request: Unsupported url scheme: \"about\" (requests, urllib, websockets, curl_cffi)"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [],
+   "checkedAt": "2026-09-26T18:24:59.327Z"
+  },
+  {
+   "id": "bingebang",
+   "name": "BingeBang",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "https://bingebang.st/tv/calendar",
+   "family": "Own player (hls.js custom loader), os.bingebangstream.online",
+   "mediaType": "HLS; segments served as image/jpeg; playlist never on the network",
+   "detected": "no",
+   "outcome": "not detected",
+   "reason": "Sources API returns encrypted JSON {\"enc\":...}; playlist is decrypted in JS and handed to hls.js in memory, so no #EXTM3U response exists. Segments seen as video/mp2t and image/jpeg only.",
+   "fixIdea": "hls.js/player introspection (read hls.levels[].details fragments) to synthesize a manifest",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://bingebang.st/tv/calendar"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "bingebang.st"
+   ],
+   "checkedAt": "2026-09-26T18:00:49.813Z"
+  },
+  {
+   "id": "mapple",
+   "name": "Mapple",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "https://mapple.fun/watch/movie/27205",
+   "family": "TMDB aggregator",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "Watch page loaded but no player network activity (server picker / interaction)",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://mapple.fun/watch/movie/27205"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "mapple.fun",
+    "chromewebdata"
+   ],
+   "checkedAt": "2026-09-26T18:27:23.938Z"
+  },
+  {
+   "id": "popwatch",
+   "name": "PopcornTime (popwatch)",
+   "fmhySection": "Stream Aggregators",
+   "testedUrl": "https://popwatch.to/watch/movie/1492640",
+   "family": "Own player, same-origin /api/proxy",
+   "mediaType": "HLS 1080/720, TS",
+   "detected": "yes",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      1080,
+      720
+     ],
+     "audio": [],
+     "durationSeconds": 6006,
+     "refererHost": "popwatch.to"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 1080,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 11481
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.083333,
+    "bytes": 448208,
+    "streams": [
+     "video:h264:1080p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://popwatch.to/watch/movie/1492640"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "popwatch.to"
+   ],
+   "checkedAt": "2026-09-26T18:00:50.202Z"
+  },
+  {
+   "id": "pstream",
+   "name": "P-Stream fork",
+   "fmhySection": "P-Stream Forks",
+   "testedUrl": "https://pstream.cfd/media/tmdb-movie-27205-inception",
+   "family": "P-Stream (proxy eve/ava.pstream.cfd -> videasy/valhallastream upstream)",
+   "mediaType": "HLS fMP4 2160/1080/720/360 + 2 audio",
+   "detected": "yes (2 rows)",
+   "outcome": "partial",
+   "reason": "Default 2160p: playlist via site proxy lists direct CDN URLs; CDN answers 403 when Origin: https://pstream.cfd is sent (200 with no Origin). Engine synthesizes/forwards page Origin -> 403 -> ffmpeg exits 0 with no file -> misleading ENOENT. Mid-playlist 503s on some variants. 1080p via the other proxy completed.",
+   "fixIdea": "Do not synthesize Origin; retry 403 with minimal headers; fail with the upstream status, not ENOENT",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      2160,
+      1080,
+      720,
+      360
+     ],
+     "audio": [
+      "Track 1",
+      "Track 2"
+     ],
+     "durationSeconds": null,
+     "refererHost": "pstream.cfd"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      2160,
+      1080,
+      720,
+      360
+     ],
+     "audio": [
+      "Track 1",
+      "Track 2"
+     ],
+     "durationSeconds": 8888,
+     "refererHost": "pstream.cfd"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 2160,
+    "status": "error",
+    "errorCode": "ENOENT",
+    "error": "ENOENT: no such file or directory, rename '/var/folders/8h/j6lb73fx1l70y8nzvp0jq5t40000gn/T/snagthis-fmhy-dl-jScplh/2ac00bb1-f66a-424a-b5f8-e30af3f42a62/2ac00bb1-f66a-424a-b5f8-e30af3f42a62-p.mp4.part' -> '/var/folders/8h/j6lb73fx1l70y8nzvp0jq5t40000gn/T/snagthis-fmhy-dl-jScplh/2ac00bb1-f66a-424a-b5f8-e30af3f42a62/2ac00bb1-f66a-424a-b5f8-e30af3f42a62-p.mp4'",
+    "ms": 8177
+   },
+   "engineProbePlayerVariant": {
+    "variantHeight": 1080,
+    "status": "completed",
+    "errorCode": null,
+    "ms": 12563
+   },
+   "engineOutput": {
+    "durationSeconds": 8.133125,
+    "bytes": 2744710,
+    "streams": [
+     "video:h264:1080p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://pstream.cfd/media/tmdb-movie-27205-inception"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "pstream.cfd"
+   ],
+   "checkedAt": "2026-09-26T18:01:34.382Z"
+  },
+  {
+   "id": "kdesa",
+   "name": "kstream",
+   "fmhySection": "P-Stream Forks",
+   "testedUrl": "https://kdesa.stream/media/tmdb-movie-27205-inception",
+   "family": "P-Stream fork, same-origin /api/proxy + /api/m3u8-proxy",
+   "mediaType": "HLS 800/534/266 TS",
+   "detected": "yes (12 rows)",
+   "outcome": "downloadable",
+   "reason": "Works, but 12 rows (every source the player tried) and duplicated variant heights [800,800,800,800,...]",
+   "fixIdea": "Collapse same-duration rows; dedupe variants by (height, bandwidth, codecs)",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      266,
+      266
+     ],
+     "audio": [],
+     "durationSeconds": 8888,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 8888,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 8884,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 8888,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      800,
+      800,
+      800,
+      800,
+      534,
+      534,
+      534,
+      534,
+      266,
+      266,
+      266,
+      266
+     ],
+     "audio": [],
+     "durationSeconds": 8888,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 8884,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 218,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 229,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      null,
+      null
+     ],
+     "audio": [],
+     "durationSeconds": 237,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 171,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 168,
+     "refererHost": "kdesa.stream"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      800,
+      534,
+      266
+     ],
+     "audio": [],
+     "durationSeconds": null,
+     "refererHost": "kdesa.stream"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 800,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 3759
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.010884,
+    "bytes": 2166390,
+    "streams": [
+     "video:h264:800p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://kdesa.stream/media/tmdb-movie-27205-inception"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "kdesa.stream"
+   ],
+   "checkedAt": "2026-09-26T18:01:55.436Z"
+  },
+  {
+   "id": "streamingunity",
+   "name": "Streaming Unity",
+   "fmhySection": "Dedicated-Server",
+   "testedUrl": "https://streamingunity.win/en/watch/65860",
+   "family": "vixcloud.co iframe embed (StreamingCommunity family), rotating *.boats CDN, .html segments",
+   "mediaType": "HLS AES-128, 720/480 + Italian/English audio",
+   "detected": "yes (iframe)",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": true,
+     "variants": [
+      720,
+      480
+     ],
+     "audio": [
+      "Italian",
+      "English"
+     ],
+     "durationSeconds": 5157,
+     "refererHost": "vixcloud.co"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 720,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 4151
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.066667,
+    "bytes": 483754,
+    "streams": [
+     "video:h264:534p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://streamingunity.win/en/watch/65860"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "streamingunity.win",
+    "vixcloud.co"
+   ],
+   "checkedAt": "2026-09-26T18:01:57.962Z"
+  },
+  {
+   "id": "ridomovies",
+   "name": "RidoMovies",
+   "fmhySection": "Dedicated-Server",
+   "testedUrl": "https://ridomovies.is/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "blocked",
+   "reason": "Cloudflare Turnstile",
+   "fixIdea": "Out of scope",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://ridomovie.to/rd1"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "ridomovies.is",
+    "challenges.cloudflare.com"
+   ],
+   "checkedAt": "2026-09-26T18:03:16.629Z"
+  },
+  {
+   "id": "soapgo",
+   "name": "SoapGo",
+   "fmhySection": "Dedicated-Server",
+   "testedUrl": "https://soapgo.to/movie/bnP8Q7ZLB3-dieter-nuhr-nuhr-in-berlin-2016",
+   "family": "soapgo embed -> proxy.youwantsee.shop",
+   "mediaType": "Direct MP4 (720p)",
+   "detected": "yes (iframe)",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": true,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 4130,
+     "refererHost": "soapgo.to"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 641
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.083333,
+    "bytes": 825912,
+    "streams": [
+     "video:h264:720p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://soapgo.to/movie/bnP8Q7ZLB3-dieter-nuhr-nuhr-in-berlin-2016"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "soapgo.to",
+    "pxdrop.lijit.com",
+    "t.sharethis.com",
+    "api.intentiq.com"
+   ],
+   "checkedAt": "2026-09-26T18:27:28.031Z"
+  },
+  {
+   "id": "lookmovie",
+   "name": "LookMovie",
+   "fmhySection": "Dedicated-Server",
+   "testedUrl": "https://www.lookmovie2.to/movies/view/6933238-unabomber-2026",
+   "family": "Own player",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "Only a JSON manifest API call; player not started (likely needs click/captcha)",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://www.lookmovie2.to/movies/view/6933238-unabomber-2026"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "www.lookmovie2.to",
+    "www.google.com"
+   ],
+   "checkedAt": "2026-09-26T18:27:33.241Z"
+  },
+  {
+   "id": "primewire",
+   "name": "PrimeWire",
+   "fmhySection": "Dedicated-Server",
+   "testedUrl": "https://primewire.mov/movie/1408592-unabomber",
+   "family": "Link index to 3rd-party hosts",
+   "mediaType": "YouTube trailer only",
+   "detected": "trailer only",
+   "outcome": "blocked",
+   "reason": "Host links behind Cloudflare Turnstile; only the YouTube trailer was detected",
+   "fixIdea": "Out of scope",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "youtube-page",
+     "iframe": true,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": null,
+     "refererHost": null
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "error",
+    "errorCode": "DOWNLOAD_FAILED",
+    "error": "yt-dlp is not installed. Install yt-dlp, restart the desktop app, and retry.",
+    "ms": 8
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://primewire.mov/movie/1408592-unabomber"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "primewire.mov",
+    "www.youtube.com",
+    "challenges.cloudflare.com"
+   ],
+   "checkedAt": "2026-09-26T18:27:33.870Z"
+  },
+  {
+   "id": "fsharetv",
+   "name": "FshareTV",
+   "fmhySection": "Dedicated-Server",
+   "testedUrl": "https://fsharetv.co/movie/harlem-nights-episode-1-tt0097481",
+   "family": "Own player",
+   "mediaType": "YouTube-nocookie trailer",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "Only a trailer iframe loaded",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://fsharetv.co/movie/harlem-nights-episode-1-tt0097481"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "fsharetv.co",
+    "www.youtube-nocookie.com",
+    "join.wargaming.net"
+   ],
+   "checkedAt": "2026-09-26T18:05:29.032Z"
+  },
+  {
+   "id": "onionplay",
+   "name": "OnionPlay",
+   "fmhySection": "Dedicated-Server",
+   "testedUrl": "https://onionplay.st/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "blocked",
+   "reason": "Cloudflare Turnstile",
+   "fixIdea": "Out of scope",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://onionplay.st/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "onionplay.st",
+    "challenges.cloudflare.com"
+   ],
+   "checkedAt": "2026-09-26T18:05:32.749Z"
+  },
+  {
+   "id": "vidbox",
+   "name": "Vidbox",
+   "fmhySection": "Multi-Server",
+   "testedUrl": "https://vidbox.vc/watch/movie",
+   "family": "cloudorchestranova.com iframe embed, peregrinepalaver.space CDN, .html segments",
+   "mediaType": "HLS 800/534/266 TS",
+   "detected": "yes (iframe)",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": true,
+     "variants": [
+      800,
+      534,
+      266
+     ],
+     "audio": [],
+     "durationSeconds": 8888,
+     "refererHost": "cloudorchestranova.com"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 800,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 2744
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.010884,
+    "bytes": 2166390,
+    "streams": [
+     "video:h264:800p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: [generic] movie: Unable to download webpage: HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "vidbox.vc",
+    "ythd.org",
+    "cloudorchestranova.com",
+    "t.dtscout.com",
+    "pxdrop.lijit.com",
+    "t.sharethis.com",
+    "tags.crwdcntrl.net",
+    "bcp.crwdcntrl.net",
+    "api.intentiq.com"
+   ],
+   "checkedAt": "2026-09-26T18:28:10.567Z"
+  },
+  {
+   "id": "zencine",
+   "name": "Zencine",
+   "fmhySection": "Multi-Server",
+   "testedUrl": "https://zencine.org/movie/27205",
+   "family": "TMDB aggregator",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "Guessed title URL 404; homepage has no crawlable links",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: [generic] 27205: Unable to download webpage: HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "zencine.org"
+   ],
+   "checkedAt": "2026-09-26T18:28:59.527Z"
+  },
+  {
+   "id": "flyflix",
+   "name": "Flyflix",
+   "fmhySection": "Multi-Server",
+   "testedUrl": "https://flyflix.net/watch/1423191",
+   "family": "cinesrc.st iframe embed, nebula.bright67.online CDN, fMP4 disguised as .jpg/.png",
+   "mediaType": "HLS 1080/720 + 2 audio",
+   "detected": "yes (iframe)",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": true,
+     "variants": [
+      1080,
+      720
+     ],
+     "audio": [
+      "(DKS) LINE",
+      "(DKS) LINE (2)"
+     ],
+     "durationSeconds": 5189,
+     "refererHost": "cinesrc.st"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 1080,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 15805
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8,
+    "bytes": 4663186,
+    "streams": [
+     "video:h264:1080p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://flyflix.net/watch/1423191"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "flyflix.net",
+    "cinesrc.st"
+   ],
+   "checkedAt": "2026-09-26T18:07:51.755Z"
+  },
+  {
+   "id": "cinego",
+   "name": "CineGo",
+   "fmhySection": "Multi-Server",
+   "testedUrl": "https://cinego.co/movie/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "Discovery landed on a listing page",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://cinego.co/movie/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "cinego.co"
+   ],
+   "checkedAt": "2026-09-26T18:29:16.433Z"
+  },
+  {
+   "id": "watchseries",
+   "name": "WatchSeries",
+   "fmhySection": "Multi-Server",
+   "testedUrl": "https://watchseries.bar/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "No title link reachable (redirected to watchseries.bar)",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://watchseries.bar/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "watchseries.bar",
+    "t.dtscout.com",
+    "pxdrop.lijit.com",
+    "t.sharethis.com",
+    "tags.crwdcntrl.net",
+    "bcp.crwdcntrl.net",
+    "api.intentiq.com",
+    "i.liadm.com"
+   ],
+   "checkedAt": "2026-09-26T18:29:39.863Z"
+  },
+  {
+   "id": "tvids",
+   "name": "TVids",
+   "fmhySection": "Multi-Server",
+   "testedUrl": "https://www.tvids.to/movies/triumph-of-the-heart-97975",
+   "family": "play.xpass.top iframe (JW Player) -> vip.1x2.space, .html segments",
+   "mediaType": "HLS 718/360 TS",
+   "detected": "yes (iframe)",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": true,
+     "variants": [
+      718,
+      360
+     ],
+     "audio": [],
+     "durationSeconds": 6702,
+     "refererHost": "play.xpass.top"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 718,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 2228
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.010884,
+    "bytes": 996572,
+    "streams": [
+     "video:h264:718p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://www.tvids.to/movies/triumph-of-the-heart-97975"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "www.tvids.to",
+    "t.sharethis.com",
+    "pxdrop.lijit.com",
+    "play.xpass.top",
+    "api.intentiq.com"
+   ],
+   "checkedAt": "2026-09-26T18:07:58.618Z"
+  },
+  {
+   "id": "rivestream",
+   "name": "Rive",
+   "fmhySection": "Anime/Multi",
+   "testedUrl": "about:blank",
+   "family": "Own player -> proxy.valhallastream.com",
+   "mediaType": "HLS (seen in network)",
+   "detected": "seen, page then blanked",
+   "outcome": "blocked",
+   "reason": "about:blank devtools detection after playlist load (headed too)",
+   "fixIdea": "Re-test manually",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unable to handle request: Unsupported url scheme: \"about\" (requests, urllib, websockets, curl_cffi)"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [],
+   "checkedAt": "2026-09-26T18:29:45.376Z"
+  },
+  {
+   "id": "kuroanime",
+   "name": "KuroAnime",
+   "fmhySection": "Anime Streaming",
+   "testedUrl": "https://kuroanime.lol/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "blocked",
+   "reason": "Site-wide \"temporarily rate limited\" page (429)",
+   "fixIdea": "Out of scope",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: [generic] kuroanime: Unable to download webpage: HTTP Error 429: Too Many Requests (caused by <HTTPError 429: Too Many Requests>)"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "kuroanime.lol"
+   ],
+   "checkedAt": "2026-09-26T18:31:04.653Z"
+  },
+  {
+   "id": "justanime",
+   "name": "JustAnime",
+   "fmhySection": "Anime Streaming",
+   "testedUrl": "https://justanime.to/watch/182205/that-time-i-got-reincarnated-as-a-slime-season-4/episode/1",
+   "family": "Own player via workers.dev proxy",
+   "mediaType": "HLS 1080/720/360 TS",
+   "detected": "yes",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      1080,
+      720,
+      360
+     ],
+     "audio": [],
+     "durationSeconds": 1451,
+     "refererHost": "justanime.to"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 1080,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 1886
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.08,
+    "bytes": 1915640,
+    "streams": [
+     "video:h264:1080p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://justanime.to/watch/182205/that-time-i-got-reincarnated-as-a-slime-season-4/episode/1"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "justanime.to",
+    "chromewebdata"
+   ],
+   "checkedAt": "2026-09-26T18:10:03.545Z"
+  },
+  {
+   "id": "anizone",
+   "name": "AniZone",
+   "fmhySection": "Anime Streaming",
+   "testedUrl": "http://anizone.to/anime/lc1fyqsc",
+   "family": "\u2014",
+   "mediaType": "Ad creative (static.a-ads.com 728x90 webm, 2.5 s)",
+   "detected": "ad only",
+   "outcome": "false positive",
+   "reason": "Discovery reached a series page; only an ad banner video was detected and offered",
+   "fixIdea": "Filter short ad creatives / known ad-frame hosts",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": true,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 3,
+     "refererHost": "ad.a-ads.com"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 1633
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 2.516,
+    "bytes": 100312,
+    "streams": [
+     "video:vp9:90p"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://anizone.to/anime/lc1fyqsc"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "anizone.to",
+    "ad.a-ads.com"
+   ],
+   "checkedAt": "2026-09-26T18:10:06.574Z"
+  },
+  {
+   "id": "animeparadise",
+   "name": "AnimeParadise",
+   "fmhySection": "Anime Streaming",
+   "testedUrl": "https://www.animeparadise.moe/watch/f9754775-edd0-48e5-840c-afeae47d7dfa?origin=67f6edfed104e2798852a39e",
+   "family": "Own player, stream.animeparadise.moe proxy",
+   "mediaType": "HLS 1080/720/360 TS",
+   "detected": "yes",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      1080,
+      720,
+      360
+     ],
+     "audio": [],
+     "durationSeconds": 1435,
+     "refererHost": "www.animeparadise.moe"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 1080,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 1218
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.091411,
+    "bytes": 5318094,
+    "streams": [
+     "video:h264:1080p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://www.animeparadise.moe/watch/f9754775-edd0-48e5-840c-afeae47d7dfa?origin=67f6edfed104e2798852a39e"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "www.animeparadise.moe"
+   ],
+   "checkedAt": "2026-09-26T18:10:16.768Z"
+  },
+  {
+   "id": "9anime",
+   "name": "9anime (9animstv)",
+   "fmhySection": "Anime Streaming",
+   "testedUrl": "https://9animstv.to/watch/anime-clevatess-ii-majuu-no-ou-to-itsuwari-no-yuusha-denshou-episode-1",
+   "family": "abyssplayer.com iframe (Abyss/Hydrax, service-worker player)",
+   "mediaType": "Fake storage.googleapis.com/...mp4#mp4/chunk URL served by a Service Worker",
+   "detected": "yes (unusable URL)",
+   "outcome": "fail",
+   "reason": "The media URL is synthesized and answered by the player's Service Worker (real chunks come from *.sssrr.org). Replaying it hits real GCS -> 403 \"UserProjectAccountProblem\", classified as SOURCE_EXPIRED.",
+   "fixIdea": "Detect SW-served responses (ResourceTiming.workerStart>0 / CDP fromServiceWorker) and mark unsupported instead of \"expired\"",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": true,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 1420,
+     "refererHost": null
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "error",
+    "errorCode": "SOURCE_EXPIRED",
+    "error": "Request failed with status 403",
+    "ms": 63
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://9animstv.to/watch/anime-clevatess-ii-majuu-no-ou-to-itsuwari-no-yuusha-denshou-episode-1"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "9animstv.to",
+    "abyssplayer.com"
+   ],
+   "checkedAt": "2026-09-26T18:31:14.866Z"
+  },
+  {
+   "id": "aniwaves",
+   "name": "Aniwave",
+   "fmhySection": "Anime Streaming",
+   "testedUrl": "https://aniwaves.ru/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "No /watch/ link reachable from homepage",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://aniwaves.ru/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "aniwaves.ru"
+   ],
+   "checkedAt": "2026-09-26T18:31:47.225Z"
+  },
+  {
+   "id": "kisskh",
+   "name": "KissKH",
+   "fmhySection": "Drama Streaming",
+   "testedUrl": "https://kisskh.la/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "kisskh.ovh redirects to kisskh.la hash-routed SPA; no reachable episode",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://kisskh.la/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "kisskh.la"
+   ],
+   "checkedAt": "2026-09-26T18:32:07.713Z"
+  },
+  {
+   "id": "dramahood",
+   "name": "Dramahood",
+   "fmhySection": "Drama Streaming",
+   "testedUrl": "https://dramahood.mom/dive-into-you-2026-episode-1/",
+   "family": "player.dramavideo.se iframe, hls.dramavideo.se",
+   "mediaType": "HLS 720/360 TS",
+   "detected": "yes (iframe)",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": true,
+     "variants": [
+      720,
+      360
+     ],
+     "audio": [],
+     "durationSeconds": 4072,
+     "refererHost": "player.dramavideo.se"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 720,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 19768
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.010045,
+    "bytes": 873246,
+    "streams": [
+     "video:h264:720p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://dramahood.mom/dive-into-you-2026-episode-1/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "dramahood.mom",
+    "dramavideo.se",
+    "t.dtscout.com",
+    "pxdrop.lijit.com",
+    "t.sharethis.com",
+    "tags.crwdcntrl.net",
+    "bcp.crwdcntrl.net",
+    "api.intentiq.com",
+    "player.dramavideo.se"
+   ],
+   "checkedAt": "2026-09-26T18:32:23.112Z"
+  },
+  {
+   "id": "megacartoons",
+   "name": "MegaCartoons",
+   "fmhySection": "Cartoon Streaming",
+   "testedUrl": "https://www.megacartoons.net/one-of-a-kind/",
+   "family": "Own page, direct file",
+   "mediaType": "Direct MP4 480p",
+   "detected": "yes",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 666,
+     "refererHost": "www.megacartoons.net"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 2900
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.091422,
+    "bytes": 253426,
+    "streams": [
+     "video:h264:480p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": true,
+    "extractor": "Generic",
+    "formats": 1,
+    "protocols": [
+     "https"
+    ],
+    "maxHeight": 0
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "www.megacartoons.net"
+   ],
+   "checkedAt": "2026-09-26T18:33:02.778Z"
+  },
+  {
+   "id": "popcornflix",
+   "name": "PopcornFlix",
+   "fmhySection": "Free w/ Ads",
+   "testedUrl": "https://popcornflix.com/movies/10596056/the-code",
+   "family": "Official FAST (futuretodayinc CDN)",
+   "mediaType": "HLS (variants without RESOLUTION)",
+   "detected": "yes",
+   "outcome": "downloadable",
+   "reason": "Variants have no RESOLUTION -> shown as unnamed qualities",
+   "fixIdea": "Fall back to BANDWIDTH / probed height for labels",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      null,
+      null
+     ],
+     "audio": [],
+     "durationSeconds": 6222,
+     "refererHost": "popcornflix.com"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 371
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.089889,
+    "bytes": 69677,
+    "streams": [
+     "video:h264:1080p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://popcornflix.com/movies/10596056/the-code"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "popcornflix.com",
+    "imasdk.googleapis.com"
+   ],
+   "checkedAt": "2026-09-26T18:13:48.108Z"
+  },
+  {
+   "id": "filmzie",
+   "name": "Filmzie",
+   "fmhySection": "Free w/ Ads",
+   "testedUrl": "https://filmzie.com/content/dont-forget-to-leave-2024?sourceId=613744175971e8001d714cd8",
+   "family": "Official FAST (IMA ads)",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "Player did not start (ad pre-roll/IMA) within budget",
+   "fixIdea": "Needs manual check",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://filmzie.com/content/dont-forget-to-leave-2024?sourceId=613744175971e8001d714cd8"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "filmzie.com",
+    "cm.g.doubleclick.net",
+    "www.google.com",
+    "googleads.g.doubleclick.net"
+   ],
+   "checkedAt": "2026-09-26T18:13:51.681Z"
+  },
+  {
+   "id": "fawesome",
+   "name": "Fawesome",
+   "fmhySection": "Free w/ Ads",
+   "testedUrl": "https://fawesome.tv/movies/10834008/inglourious-basterds",
+   "family": "Official FAST",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "drm/app-only",
+   "reason": "Web page offers \"Watch on app\"; yt-dlp reports DRM protected",
+   "fixIdea": "Out of scope (DRM)",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: [generic] stream: This video is DRM protected"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "fawesome.tv",
+    "imasdk.googleapis.com"
+   ],
+   "checkedAt": "2026-09-26T18:13:58.751Z"
+  },
+  {
+   "id": "arte",
+   "name": "ARTE",
+   "fmhySection": "Free w/ Ads",
+   "testedUrl": "https://www.arte.tv/en/videos/132676-000-A/raye-guests/",
+   "family": "Official (Akamai CMAF)",
+   "mediaType": "HLS CMAF single-file EXT-X-BYTERANGE, 1080/720/432 x (HEVC, AVC) + audio",
+   "detected": "yes",
+   "outcome": "fail",
+   "reason": "Engine bounded probe stalls at the last required byte-range piece (74.9% for 8 s, 99% for 6 s) on every 1080p variant; plain ffmpeg on the same two playlists finishes in 5 s. Also defaults to HEVC because equal heights sort by bandwidth.",
+   "fixIdea": "Fix BYTERANGE path in the scoped proxy; codec-aware tie-break",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      1080,
+      1080,
+      720,
+      720,
+      432,
+      432
+     ],
+     "audio": [
+      "Original Version (Original)"
+     ],
+     "durationSeconds": 6890,
+     "refererHost": "www.arte.tv"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 1080,
+    "status": "cancelled",
+    "errorCode": null,
+    "error": null,
+    "ms": 60228
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": true,
+    "extractor": "ArteTV",
+    "formats": 7,
+    "protocols": [
+     "m3u8_native"
+    ],
+    "maxHeight": 1080
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "www.arte.tv",
+    "cdn-gl.nmrodam.com"
+   ],
+   "checkedAt": "2026-09-26T18:33:44.552Z"
+  },
+  {
+   "id": "rumble",
+   "name": "Rumble",
+   "fmhySection": "Video Streaming",
+   "testedUrl": "https://rumble.com/",
+   "family": "\u2014",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "blocked",
+   "reason": "Cloudflare Turnstile",
+   "fixIdea": "Out of scope",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://rumble.com/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "rumble.com",
+    "challenges.cloudflare.com"
+   ],
+   "checkedAt": "2026-09-26T18:15:59.069Z"
+  },
+  {
+   "id": "odysee",
+   "name": "Odysee",
+   "fmhySection": "Video Streaming",
+   "testedUrl": "https://odysee.com/@PrivacyGuides:c/the-phone-the-fbi-couldn%E2%80%99t-hack:9",
+   "family": "Official, player.odycdn.com",
+   "mediaType": "Direct MP4 1080p",
+   "detected": "yes",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 782,
+     "refererHost": "odysee.com"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 1009
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.049708,
+    "bytes": 877850,
+    "streams": [
+     "video:h264:1080p",
+     "audio:aac"
+    ]
+   },
+   "ytdlp": {
+    "ok": true,
+    "extractor": "LBRY",
+    "formats": 1,
+    "protocols": [
+     "https"
+    ],
+    "maxHeight": 1080
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "odysee.com"
+   ],
+   "checkedAt": "2026-09-26T18:33:59.265Z"
+  },
+  {
+   "id": "rutube",
+   "name": "Rutube",
+   "fmhySection": "Video Streaming",
+   "testedUrl": "https://rutube.ru/live/video/9ae8e8a6dc58bdad66190475f9872ecd/",
+   "family": "Official (hls.js)",
+   "mediaType": "Live HLS with redundant CDN variants",
+   "detected": "yes",
+   "outcome": "live (declined)",
+   "reason": "Live; engine failed earlier with SELECTION_UNAVAILABLE because the master re-signs child URLs on every read and every height appears twice (redundant CDNs).",
+   "fixIdea": "Dedupe redundant variants and use them as failover; match by attributes not URL",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      1080,
+      1080,
+      720,
+      720,
+      360,
+      360
+     ],
+     "audio": [],
+     "durationSeconds": null,
+     "refererHost": "rutube.ru"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 1080,
+    "status": "error",
+    "errorCode": "SELECTION_UNAVAILABLE",
+    "error": "The selected video quality is no longer available",
+    "ms": 987
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": true,
+    "extractor": "Rutube",
+    "formats": 6,
+    "protocols": [
+     "m3u8_native"
+    ],
+    "maxHeight": 1080
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "rutube.ru"
+   ],
+   "checkedAt": "2026-09-26T18:16:08.335Z"
+  },
+  {
+   "id": "videa",
+   "name": "Videa",
+   "fmhySection": "Video Streaming",
+   "testedUrl": "https://videa.hu/",
+   "family": "Official",
+   "mediaType": "Direct WebM 480p",
+   "detected": "yes",
+   "outcome": "downloadable",
+   "reason": "\u2014",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": true,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 190,
+     "refererHost": "videa.hu"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "completed",
+    "errorCode": null,
+    "error": null,
+    "ms": 2740
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": {
+    "durationSeconds": 8.014,
+    "bytes": 900221,
+    "streams": [
+     "video:vp9:480p",
+     "audio:opus"
+    ]
+   },
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://videa.hu/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "videa.hu",
+    "hu.adocean.pl",
+    "ls.hit.gemius.pl",
+    "www.google.com",
+    "imasdk.googleapis.com",
+    "js-sec.indexww.com",
+    "sync.inmobi.com",
+    "eus.rubiconproject.com",
+    "ads.pubmatic.com",
+    "acdn.adnxs.com",
+    "image2.pubmatic.com",
+    "s.amazon-adsystem.com",
+    "simage2.pubmatic.com",
+    "image4.pubmatic.com",
+    "c1.adform.net",
+    "chromewebdata",
+    "user-sync.fwmrm.net",
+    "sync-tm.everesttech.net",
+    "www.temu.com",
+    "beacon.lynx.cognitivlabs.com",
+    "ib.adnxs.com",
+    "pmp.mxptint.net"
+   ],
+   "checkedAt": "2026-09-26T18:16:57.298Z"
+  },
+  {
+   "id": "pluto",
+   "name": "Pluto TV",
+   "fmhySection": "Live TV",
+   "testedUrl": "https://pluto.tv/us/watch/live-tv/",
+   "family": "Official FAST, SSAI live",
+   "mediaType": "Live HLS AES-128 (ad-stitched)",
+   "detected": "yes (2 rows)",
+   "outcome": "live (declined)",
+   "reason": "Correctly declined as live",
+   "fixIdea": "\u2014",
+   "detectedRows": [
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ],
+     "audio": [
+      "English [Original]",
+      "English"
+     ],
+     "durationSeconds": null,
+     "refererHost": "pluto.tv"
+    },
+    {
+     "type": "hls",
+     "mediaKind": "hls-manifest",
+     "iframe": false,
+     "variants": [
+      684,
+      684,
+      684,
+      684,
+      null,
+      null
+     ],
+     "audio": [],
+     "durationSeconds": 25,
+     "refererHost": "pluto.tv"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": 684,
+    "status": "error",
+    "errorCode": "LIVE_STREAM_UNSUPPORTED",
+    "error": "Live-stream recording is not supported. Try a finished video.",
+    "ms": 351
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://pluto.tv/us/watch/live-tv/"
+   },
+   "emeKeySystem": "com.microsoft.playready.recommendation",
+   "frameHosts": [
+    "pluto.tv",
+    "tpc.googlesyndication.com"
+   ],
+   "checkedAt": "2026-09-26T18:17:36.413Z"
+  },
+  {
+   "id": "xumo",
+   "name": "Xumo Play",
+   "fmhySection": "Live TV",
+   "testedUrl": "https://play.xumo.com/free-movies/passengers/XM08AAH03VOO00",
+   "family": "Official FAST",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "drm",
+   "reason": "Player requested EME (com.apple.fps / DRM); no clear media",
+   "fixIdea": "Out of scope (DRM)",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://play.xumo.com/free-movies/passengers/XM08AAH03VOO00"
+   },
+   "emeKeySystem": "com.apple.fps",
+   "frameHosts": [
+    "play.xumo.com"
+   ],
+   "checkedAt": "2026-09-26T18:34:02.270Z"
+  },
+  {
+   "id": "daddylive",
+   "name": "DaddyLiveHD",
+   "fmhySection": "Live Sports",
+   "testedUrl": "https://daddylive.mov/live/stream=401817092%2Fdetroit-tigers-pittsburgh-pirates%2Fhd%2F1&source=tv3",
+   "family": "Live sports iframe chain",
+   "mediaType": "Chat notification sound (audio/mpeg)",
+   "detected": "junk only",
+   "outcome": "false positive",
+   "reason": "No live event reached; only a chatango notification MP3 was offered; engine then failed with ffmpeg map 0:v:0 error",
+   "fixIdea": "Ignore short audio effects; audio-only sources need an audio-only engine path",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": true,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": null,
+     "refererHost": "st.chatango.com"
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "error",
+    "errorCode": "DOWNLOAD_FAILED",
+    "error": "Stream map '' matches no streams. | To ignore this, add a trailing '?' to the map. | Failed to set value '0:v:0' for option 'map': Invalid argument | Error parsing options for output file /var/folders/8h/j6lb73fx1l70y8nzvp0jq5t40000gn/T/snagthis-fmhy-dl-dfAvDo/2e9afac5-7aea-45be-8266-f4ab33616633/2e9afac5-7aea-45be-8266-f4ab33616633-p.mp4.part. | Error opening output files: Invalid argument",
+    "ms": 731
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://daddylive.mov/live/stream=401817092%2Fdetroit-tigers-pittsburgh-pirates%2Fhd%2F1&source=tv3"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "daddylive.mov",
+    "st.chatango.com"
+   ],
+   "checkedAt": "2026-09-26T18:18:12.011Z"
+  },
+  {
+   "id": "streameast",
+   "name": "StreamEast",
+   "fmhySection": "Live Sports",
+   "testedUrl": "https://v2.streameast.ga/",
+   "family": "Live sports",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "No live event reached",
+   "fixIdea": "Needs manual check during an event",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://v2.streameast.ga/"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "v2.streameast.ga",
+    "auth.streamea.st"
+   ],
+   "checkedAt": "2026-09-26T18:18:29.038Z"
+  },
+  {
+   "id": "thetvapp",
+   "name": "TheTVApp",
+   "fmhySection": "Live Sports",
+   "testedUrl": "https://thetvapp.plus/watch/nba-streams",
+   "family": "Live sports",
+   "mediaType": "\u2014",
+   "detected": "no",
+   "outcome": "inconclusive",
+   "reason": "Category page, no event player",
+   "fixIdea": "Needs manual check during an event",
+   "detectedRows": [],
+   "engineProbe": null,
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": false,
+    "error": "ERROR: Unsupported URL: https://thetvapp.plus/watch/nba-streams"
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "thetvapp.plus"
+   ],
+   "checkedAt": "2026-09-26T18:18:46.764Z"
+  },
+  {
+   "id": "wikimedia",
+   "name": "Wikimedia Commons",
+   "fmhySection": "Classics / Public Domain",
+   "testedUrl": "https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm",
+   "family": "Official (upload.wikimedia.org)",
+   "mediaType": "Direct WebM transcodes",
+   "detected": "yes (5 rows)",
+   "outcome": "fail (transient)",
+   "reason": "Rapid requests get 429 with Retry-After: 1; engine sniff fails immediately (NETWORK_ERROR). Also 5 rows for one video (each transcode + original).",
+   "fixIdea": "Honor 429/503 Retry-After; group same-title transcodes",
+   "detectedRows": [
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": null,
+     "refererHost": "commons.wikimedia.org"
+    },
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": 635,
+     "refererHost": "commons.wikimedia.org"
+    },
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": null,
+     "refererHost": null
+    },
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": null,
+     "refererHost": null
+    },
+    {
+     "type": "file",
+     "mediaKind": "video",
+     "iframe": false,
+     "variants": [],
+     "audio": [],
+     "durationSeconds": null,
+     "refererHost": null
+    }
+   ],
+   "engineProbe": {
+    "variantHeight": null,
+    "status": "error",
+    "errorCode": "MEDIA_REQUEST_FAILED",
+    "error": "Media request failed with status 429.",
+    "ms": 433
+   },
+   "engineProbePlayerVariant": null,
+   "engineOutput": null,
+   "ytdlp": {
+    "ok": true,
+    "extractor": "Wikimedia",
+    "formats": 6,
+    "protocols": [
+     "https"
+    ],
+    "maxHeight": 2250
+   },
+   "emeKeySystem": null,
+   "frameHosts": [
+    "commons.wikimedia.org"
+   ],
+   "checkedAt": "2026-09-26T17:57:01.988Z"
+  }
+ ]
+}

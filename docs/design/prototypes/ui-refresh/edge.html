@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VidSnag · Open-row edge and hover animation</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="hover.css">
+  <link rel="stylesheet" href="edge.css">
+</head>
+<body>
+<main class="hub" id="hub" data-design="a" data-expanded="s1" data-count="3" data-hover="none" data-edge="now" data-anim="1">
+  <header class="intro">
+    <div class="eyebrow"><span>VidSnag</span>DESIGN STUDIES / 06</div>
+    <h1>Focus mono: the open-row edge, and how hover animates.</h1>
+    <p>Two independent choices. “Big Buck Bunny” starts open so the edge clash is visible: hover its row, then the rows around it. Click any row to open it instead. Mix any edge option with any animation.</p>
+  </header>
+
+  <h2 class="picker-title">Open-row edge <small>press A–D</small></h2>
+  <div class="hover-picker edge-picker" role="group" aria-label="Choose how the open row's edge behaves">
+    <button type="button" data-edge="now" aria-pressed="true"><span>Today</span><small>2px open edge + 3px hover edge (the clash)</small></button>
+    <button type="button" data-edge="a" aria-pressed="false"><span>A · One edge</span><small>Open row: faint edge over row + details; hover brightens the same edge</small></button>
+    <button type="button" data-edge="b" aria-pressed="false"><span>B · Hover only</span><small>No edge at rest; hover edge spans row + details</small></button>
+    <button type="button" data-edge="c" aria-pressed="false"><span>C · Grey when open</span><small>Open row: grey edge; hover turns it orange</small></button>
+    <button type="button" data-edge="d" aria-pressed="false"><span>D · Row only</span><small>No open edge; hover edge never covers details</small></button>
+  </div>
+  <h2 class="picker-title">Hover animation <small>press 1–5 while hovering</small></h2>
+  <div class="hover-picker anim-picker" role="group" aria-label="Choose a hover animation">
+    <button type="button" data-anim="1" aria-pressed="true"><span>1 · Today</span><small>Edge pops in, 0.2s dim</small></button>
+    <button type="button" data-anim="2" aria-pressed="false"><span>2 · Grow</span><small>Edge grows from the middle, eases out slower</small></button>
+    <button type="button" data-anim="3" aria-pressed="false"><span>3 · Slide</span><small>Edge slides in from the left</small></button>
+    <button type="button" data-anim="4" aria-pressed="false"><span>4 · Draw</span><small>Edge draws top to bottom, exits downward</small></button>
+    <button type="button" data-anim="5" aria-pressed="false"><span>5 · Soft</span><small>Slow 0.45s fade, lingers briefly on leave</small></button>
+  </div>
+
+  <div class="hub-controls">
+    <label for="state">Download state
+      <select id="state">
+        <option value="downloading">Downloading</option>
+        <option value="paused">Paused</option>
+        <option value="attention">Needs the user</option>
+        <option value="saved">Saved</option>
+      </select>
+    </label>
+    <label for="progress">Progress <output id="progress-value">34%</output>
+      <input id="progress" type="range" min="0" max="99" value="34">
+    </label>
+    <button type="button" id="simulate" aria-pressed="false">Animate progress</button>
+    <div class="segmented" role="group" aria-label="Videos on the page">
+      <span>Popup finds</span>
+      <button type="button" data-count="1" aria-pressed="false">1 video</button>
+      <button type="button" data-count="3" aria-pressed="true">3 videos</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <section class="surface" aria-label="Desktop design">
+      <h2>Desktop <small>820 px wide</small></h2>
+      <div class="desk-frame">
+        <div class="titlebar"><i></i><i></i><i></i><span>VidSnag Desktop</span></div>
+        <div class="app" id="desktop"></div>
+      </div>
+    </section>
+    <section class="surface" aria-label="Chrome popup design">
+      <h2>Chrome popup <small>400 px wide</small></h2>
+      <div class="popup-frame"><div class="popup" id="popup"></div></div>
+    </section>
+  </div>
+  <div id="notes" hidden></div>
+
+  <footer class="hub-footer">
+    <p>UI prototype only. Thumbnail clips still play on hover in every option; the effects never cover the video.</p>
+  </footer>
+</main>
+<script src="script.js"></script>
+<script>
+(() => {
+  const hub = document.getElementById('hub');
+  function wire(selector, key, keys) {
+    const buttons = [...document.querySelectorAll(`${selector} button`)];
+    const pick = button => { hub.dataset[key] = button.dataset[key]; buttons.forEach(other => other.setAttribute('aria-pressed', String(other === button))); };
+    buttons.forEach(button => button.addEventListener('click', () => pick(button)));
+    addEventListener('keydown', event => {
+      if (event.target.matches('input, select') || event.metaKey || event.ctrlKey || event.altKey) return;
+      const button = buttons.find(item => keys(item) === event.key.toLowerCase());
+      if (button) pick(button);
+    });
+  }
+  wire('.edge-picker', 'edge', button => button.dataset.edge);
+  wire('.anim-picker', 'anim', button => button.dataset.anim);
+})();
+</script>
+</body>
+</html>

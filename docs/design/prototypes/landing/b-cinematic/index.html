@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en" data-os="unknown">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnagThis — save the video on the page</title>
+  <meta name="description" content="SnagThis finds the video you are watching in Chrome and saves it to your computer. Free, open source, and private. Chrome extension plus a desktop app for Mac and Windows.">
+  <meta name="theme-color" content="#07090b">
+  <meta name="color-scheme" content="dark">
+  <link rel="canonical" href="https://snagthisvid.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SnagThis">
+  <meta property="og:title" content="SnagThis — save the video on the page">
+  <meta property="og:description" content="Find the video you are watching, pick the quality, and save it to your computer. Free and open source for Chrome, Mac and Windows.">
+  <meta property="og:url" content="https://snagthisvid.com/">
+  <meta property="og:image" content="https://snagthisvid.com/img/og.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="img/app-icon.png">
+  <link rel="apple-touch-icon" href="img/app-icon.png">
+  <link rel="preload" href="fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/jersey15-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <script>document.documentElement.classList.add('js');</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="logo" viewBox="0 0 120 22"><path class="lg-snag" d="M2 3.5h7v1h-7zM1 4.5h9v1h-9zM0 5.5h11v1h-11zM0 6.5h4v1h-4zM7 6.5h4v1h-4zM0 7.5h3v1h-3zM8 7.5h3v1h-3zM0 8.5h4v1h-4zM0 9.5h9v1h-9zM1 10.5h9v1h-9zM2 11.5h9v1h-9zM7 12.5h4v1h-4zM0 13.5h3v1h-3zM8 13.5h3v1h-3zM0 14.5h4v1h-4zM7 14.5h4v1h-4zM0 15.5h11v1h-11zM1 16.5h9v1h-9zM2 17.5h7v1h-7z"/><path class="lg-snag" d="M14 3.5h4v1h-4zM22 3.5h3v1h-3zM14 4.5h4v1h-4zM22 4.5h3v1h-3zM14 5.5h5v1h-5zM22 5.5h3v1h-3zM14 6.5h5v1h-5zM22 6.5h3v1h-3zM14 7.5h6v1h-6zM22 7.5h3v1h-3zM14 8.5h6v1h-6zM22 8.5h3v1h-3zM14 9.5h7v1h-7zM22 9.5h3v1h-3zM14 10.5h3v1h-3zM18 10.5h3v1h-3zM22 10.5h3v1h-3zM14 11.5h3v1h-3zM18 11.5h7v1h-7zM14 12.5h3v1h-3zM19 12.5h6v1h-6zM14 13.5h3v1h-3zM19 13.5h6v1h-6zM14 14.5h3v1h-3zM20 14.5h5v1h-5zM14 15.5h3v1h-3zM20 15.5h5v1h-5zM14 16.5h3v1h-3zM21 16.5h4v1h-4zM14 17.5h3v1h-3zM21 17.5h4v1h-4z"/><path class="lg-snag" d="M32 3.5h2v1h-2zM31 4.5h4v1h-4zM30 5.5h6v1h-6zM29 6.5h8v1h-8zM28 7.5h4v1h-4zM34 7.5h4v1h-4zM28 8.5h3v1h-3zM35 8.5h3v1h-3zM28 9.5h3v1h-3zM35 9.5h3v1h-3zM28 10.5h3v1h-3zM35 10.5h3v1h-3zM28 11.5h10v1h-10zM28 12.5h10v1h-10zM28 13.5h10v1h-10zM28 14.5h3v1h-3zM35 14.5h3v1h-3zM28 15.5h3v1h-3zM35 15.5h3v1h-3zM28 16.5h3v1h-3zM35 16.5h3v1h-3zM28 17.5h3v1h-3zM35 17.5h3v1h-3z"/><path class="lg-snag" d="M43 3.5h6v1h-6zM42 4.5h8v1h-8zM41 5.5h10v1h-10zM41 6.5h4v1h-4zM48 6.5h3v1h-3zM41 7.5h3v1h-3zM41 8.5h3v1h-3zM41 9.5h3v1h-3zM46 9.5h5v1h-5zM41 10.5h3v1h-3zM46 10.5h5v1h-5zM41 11.5h3v1h-3zM46 11.5h5v1h-5zM41 12.5h3v1h-3zM48 12.5h3v1h-3zM41 13.5h3v1h-3zM48 13.5h3v1h-3zM41 14.5h4v1h-4zM47 14.5h4v1h-4zM41 15.5h10v1h-10zM42 16.5h8v1h-8zM43 17.5h6v1h-6z"/><path class="lg-this" d="M54 3.5h9v1h-9zM54 4.5h9v1h-9zM54 5.5h9v1h-9zM57 6.5h3v1h-3zM57 7.5h3v1h-3zM57 8.5h3v1h-3zM57 9.5h3v1h-3zM57 10.5h3v1h-3zM57 11.5h3v1h-3zM57 12.5h3v1h-3zM57 13.5h3v1h-3zM57 14.5h3v1h-3zM57 15.5h3v1h-3zM57 16.5h3v1h-3zM57 17.5h3v1h-3z"/><path class="lg-this" d="M66 3.5h3v1h-3zM73 3.5h3v1h-3zM66 4.5h3v1h-3zM73 4.5h3v1h-3zM66 5.5h3v1h-3zM73 5.5h3v1h-3zM66 6.5h3v1h-3zM73 6.5h3v1h-3zM66 7.5h3v1h-3zM73 7.5h3v1h-3zM66 8.5h3v1h-3zM73 8.5h3v1h-3zM66 9.5h10v1h-10zM66 10.5h10v1h-10zM66 11.5h10v1h-10zM66 12.5h3v1h-3zM73 12.5h3v1h-3zM66 13.5h3v1h-3zM73 13.5h3v1h-3zM66 14.5h3v1h-3zM73 14.5h3v1h-3zM66 15.5h3v1h-3zM73 15.5h3v1h-3zM66 16.5h3v1h-3zM73 16.5h3v1h-3zM66 17.5h3v1h-3zM73 17.5h3v1h-3z"/><path class="lg-this" d="M79 3.5h3v1h-3zM79 4.5h3v1h-3zM79 5.5h3v1h-3zM79 6.5h3v1h-3zM79 7.5h3v1h-3zM79 8.5h3v1h-3zM79 9.5h3v1h-3zM79 10.5h3v1h-3zM79 11.5h3v1h-3zM79 12.5h3v1h-3zM79 13.5h3v1h-3zM79 14.5h3v1h-3zM79 15.5h3v1h-3zM79 16.5h3v1h-3zM79 17.5h3v1h-3z"/><path class="lg-this" d="M87 3.5h7v1h-7zM86 4.5h9v1h-9zM85 5.5h11v1h-11zM85 6.5h4v1h-4zM92 6.5h4v1h-4zM85 7.5h3v1h-3zM93 7.5h3v1h-3zM85 8.5h4v1h-4zM85 9.5h9v1h-9zM86 10.5h9v1h-9zM87 11.5h9v1h-9zM92 12.5h4v1h-4zM85 13.5h3v1h-3zM93 13.5h3v1h-3zM85 14.5h4v1h-4zM92 14.5h4v1h-4zM85 15.5h11v1h-11zM86 16.5h9v1h-9zM87 17.5h7v1h-7z"/><g class="lg-btn" transform="translate(104 3)"><g class="lg-press"><path class="bv-face" d="M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v1h-16zM0 4h16v1h-16zM0 5h16v1h-16zM0 6h16v1h-16zM0 7h16v1h-16zM0 8h16v1h-16zM0 9h16v1h-16zM0 10h16v1h-16zM0 11h16v1h-16zM0 12h16v1h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z"/><path class="bv-light" d="M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM0 6h1v1h-1zM0 7h1v1h-1zM0 8h1v1h-1zM0 9h1v1h-1zM0 10h1v1h-1zM0 11h1v1h-1zM0 12h1v1h-1zM1 13h1v1h-1z"/><path class="bv-dark" d="M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v1h-1zM15 4h1v1h-1zM15 5h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1zM15 8h1v1h-1zM15 9h1v1h-1zM15 10h1v1h-1zM15 11h1v1h-1zM15 12h1v1h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z"/><path class="bv-dark" d="M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z"/><path class="bv-glyph" d="M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z"/></g></g></symbol>
+    <symbol id="bevel" viewBox="0 0 16 16"><path class="bv-face" d="M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v1h-16zM0 4h16v1h-16zM0 5h16v1h-16zM0 6h16v1h-16zM0 7h16v1h-16zM0 8h16v1h-16zM0 9h16v1h-16zM0 10h16v1h-16zM0 11h16v1h-16zM0 12h16v1h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z"/><path class="bv-light" d="M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM0 6h1v1h-1zM0 7h1v1h-1zM0 8h1v1h-1zM0 9h1v1h-1zM0 10h1v1h-1zM0 11h1v1h-1zM0 12h1v1h-1zM1 13h1v1h-1z"/><path class="bv-dark" d="M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v1h-1zM15 4h1v1h-1zM15 5h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1zM15 8h1v1h-1zM15 9h1v1h-1zM15 10h1v1h-1zM15 11h1v1h-1zM15 12h1v1h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z"/><path class="bv-dark" d="M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z"/><path class="bv-glyph" d="M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z"/></symbol>
+  </defs>
+</svg>
+
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="#top" aria-label="SnagThis home">
+      <svg class="logo" width="120" height="22" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><use href="#logo"/></svg>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#compare">Compare</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="nav-icon" href="https://github.com/dylansallred/snagthis" aria-label="SnagThis on GitHub">
+        <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg>
+      </a>
+      <a class="btn btn-small btn-light" href="#download">Get SnagThis</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <!-- HERO -->
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <div class="hero-logo" aria-hidden="true">
+        <svg class="hero-mark" viewBox="0 0 120 22" shape-rendering="crispEdges" focusable="false"><path class="lg-l lg-snag" d="M2 3.5h7v1h-7zM1 4.5h9v1h-9zM0 5.5h11v1h-11zM0 6.5h4v1h-4zM7 6.5h4v1h-4zM0 7.5h3v1h-3zM8 7.5h3v1h-3zM0 8.5h4v1h-4zM0 9.5h9v1h-9zM1 10.5h9v1h-9zM2 11.5h9v1h-9zM7 12.5h4v1h-4zM0 13.5h3v1h-3zM8 13.5h3v1h-3zM0 14.5h4v1h-4zM7 14.5h4v1h-4zM0 15.5h11v1h-11zM1 16.5h9v1h-9zM2 17.5h7v1h-7z"/><path class="lg-l lg-snag" d="M14 3.5h4v1h-4zM22 3.5h3v1h-3zM14 4.5h4v1h-4zM22 4.5h3v1h-3zM14 5.5h5v1h-5zM22 5.5h3v1h-3zM14 6.5h5v1h-5zM22 6.5h3v1h-3zM14 7.5h6v1h-6zM22 7.5h3v1h-3zM14 8.5h6v1h-6zM22 8.5h3v1h-3zM14 9.5h7v1h-7zM22 9.5h3v1h-3zM14 10.5h3v1h-3zM18 10.5h3v1h-3zM22 10.5h3v1h-3zM14 11.5h3v1h-3zM18 11.5h7v1h-7zM14 12.5h3v1h-3zM19 12.5h6v1h-6zM14 13.5h3v1h-3zM19 13.5h6v1h-6zM14 14.5h3v1h-3zM20 14.5h5v1h-5zM14 15.5h3v1h-3zM20 15.5h5v1h-5zM14 16.5h3v1h-3zM21 16.5h4v1h-4zM14 17.5h3v1h-3zM21 17.5h4v1h-4z"/><path class="lg-l lg-snag" d="M32 3.5h2v1h-2zM31 4.5h4v1h-4zM30 5.5h6v1h-6zM29 6.5h8v1h-8zM28 7.5h4v1h-4zM34 7.5h4v1h-4zM28 8.5h3v1h-3zM35 8.5h3v1h-3zM28 9.5h3v1h-3zM35 9.5h3v1h-3zM28 10.5h3v1h-3zM35 10.5h3v1h-3zM28 11.5h10v1h-10zM28 12.5h10v1h-10zM28 13.5h10v1h-10zM28 14.5h3v1h-3zM35 14.5h3v1h-3zM28 15.5h3v1h-3zM35 15.5h3v1h-3zM28 16.5h3v1h-3zM35 16.5h3v1h-3zM28 17.5h3v1h-3zM35 17.5h3v1h-3z"/><path class="lg-l lg-snag" d="M43 3.5h6v1h-6zM42 4.5h8v1h-8zM41 5.5h10v1h-10zM41 6.5h4v1h-4zM48 6.5h3v1h-3zM41 7.5h3v1h-3zM41 8.5h3v1h-3zM41 9.5h3v1h-3zM46 9.5h5v1h-5zM41 10.5h3v1h-3zM46 10.5h5v1h-5zM41 11.5h3v1h-3zM46 11.5h5v1h-5zM41 12.5h3v1h-3zM48 12.5h3v1h-3zM41 13.5h3v1h-3zM48 13.5h3v1h-3zM41 14.5h4v1h-4zM47 14.5h4v1h-4zM41 15.5h10v1h-10zM42 16.5h8v1h-8zM43 17.5h6v1h-6z"/><path class="lg-l lg-this" d="M54 3.5h9v1h-9zM54 4.5h9v1h-9zM54 5.5h9v1h-9zM57 6.5h3v1h-3zM57 7.5h3v1h-3zM57 8.5h3v1h-3zM57 9.5h3v1h-3zM57 10.5h3v1h-3zM57 11.5h3v1h-3zM57 12.5h3v1h-3zM57 13.5h3v1h-3zM57 14.5h3v1h-3zM57 15.5h3v1h-3zM57 16.5h3v1h-3zM57 17.5h3v1h-3z"/><path class="lg-l lg-this" d="M66 3.5h3v1h-3zM73 3.5h3v1h-3zM66 4.5h3v1h-3zM73 4.5h3v1h-3zM66 5.5h3v1h-3zM73 5.5h3v1h-3zM66 6.5h3v1h-3zM73 6.5h3v1h-3zM66 7.5h3v1h-3zM73 7.5h3v1h-3zM66 8.5h3v1h-3zM73 8.5h3v1h-3zM66 9.5h10v1h-10zM66 10.5h10v1h-10zM66 11.5h10v1h-10zM66 12.5h3v1h-3zM73 12.5h3v1h-3zM66 13.5h3v1h-3zM73 13.5h3v1h-3zM66 14.5h3v1h-3zM73 14.5h3v1h-3zM66 15.5h3v1h-3zM73 15.5h3v1h-3zM66 16.5h3v1h-3zM73 16.5h3v1h-3zM66 17.5h3v1h-3zM73 17.5h3v1h-3z"/><path class="lg-l lg-this" d="M79 3.5h3v1h-3zM79 4.5h3v1h-3zM79 5.5h3v1h-3zM79 6.5h3v1h-3zM79 7.5h3v1h-3zM79 8.5h3v1h-3zM79 9.5h3v1h-3zM79 10.5h3v1h-3zM79 11.5h3v1h-3zM79 12.5h3v1h-3zM79 13.5h3v1h-3zM79 14.5h3v1h-3zM79 15.5h3v1h-3zM79 16.5h3v1h-3zM79 17.5h3v1h-3z"/><path class="lg-l lg-this" d="M87 3.5h7v1h-7zM86 4.5h9v1h-9zM85 5.5h11v1h-11zM85 6.5h4v1h-4zM92 6.5h4v1h-4zM85 7.5h3v1h-3zM93 7.5h3v1h-3zM85 8.5h4v1h-4zM85 9.5h9v1h-9zM86 10.5h9v1h-9zM87 11.5h9v1h-9zM92 12.5h4v1h-4zM85 13.5h3v1h-3zM93 13.5h3v1h-3zM85 14.5h4v1h-4zM92 14.5h4v1h-4zM85 15.5h11v1h-11zM86 16.5h9v1h-9zM87 17.5h7v1h-7z"/><rect class="lg-cursor" x="0" y="3.5" width="10" height="15"/><g class="lg-btn" transform="translate(104 3)"><g class="lg-press"><path class="bv-face" d="M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v1h-16zM0 4h16v1h-16zM0 5h16v1h-16zM0 6h16v1h-16zM0 7h16v1h-16zM0 8h16v1h-16zM0 9h16v1h-16zM0 10h16v1h-16zM0 11h16v1h-16zM0 12h16v1h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z"/><path class="bv-light" d="M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM0 6h1v1h-1zM0 7h1v1h-1zM0 8h1v1h-1zM0 9h1v1h-1zM0 10h1v1h-1zM0 11h1v1h-1zM0 12h1v1h-1zM1 13h1v1h-1z"/><path class="bv-dark" d="M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v1h-1zM15 4h1v1h-1zM15 5h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1zM15 8h1v1h-1zM15 9h1v1h-1zM15 10h1v1h-1zM15 11h1v1h-1zM15 12h1v1h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z"/><path class="bv-dark" d="M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z"/><path class="bv-glyph" d="M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z"/></g></g></svg>
+      </div>
+      <h1 id="hero-title">Save the video<br> on the page.</h1>
+      <p class="lede">SnagThis finds the video you’re watching in Chrome and saves it to your computer, in the quality you pick. Add the desktop app for streams, extra tracks and a library.</p>
+      <div class="cta" id="download">
+        <a class="btn btn-accent" href="#chrome-web-store" data-soon aria-label="Add to Chrome (coming soon to the Chrome Web Store)">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3.6" fill="currentColor"/><path d="M12 8.4h8.6M8.9 13.8 4.6 6.3M15.1 13.8l-4.3 7.5" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>
+          Add to Chrome <span class="soon">Soon</span>
+        </a>
+        <a class="btn btn-ghost os-btn" data-os-target="mac" href="https://github.com/dylansallred/snagthis/releases/latest">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.5 2-3.6 2.1-3.7a4.6 4.6 0 0 0-3.6-2c-1.5-.2-3 .9-3.7.9-.8 0-2-.9-3.2-.9A4.8 4.8 0 0 0 4 9.4c-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8s2.1-1.2 2.9-2.4a10 10 0 0 0 1.3-2.7 4.2 4.2 0 0 1-2.3-3.9ZM14 5.2A4.3 4.3 0 0 0 15 2a4.4 4.4 0 0 0-2.9 1.5 4.1 4.1 0 0 0-1 3.1A3.6 3.6 0 0 0 14 5.2Z"/></svg>
+          Download for Mac
+        </a>
+        <a class="btn btn-ghost os-btn" data-os-target="windows" href="https://github.com/dylansallred/snagthis/releases/latest">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5.5 10 4.5v7H3zM11 4.4 21 3v8.5H11zM3 12.5h7v7l-7-1zM11 12.5h10V21l-10-1.4z"/></svg>
+          Download for Windows
+        </a>
+      </div>
+      <p class="fine">Free and open source · GPL-3.0 · For videos you own or have permission to save.</p>
+    </div>
+
+    <div class="hero-stage" aria-hidden="false">
+      <div class="glow" aria-hidden="true"></div>
+      <figure class="shot shot-desktop">
+        <img src="img/desktop-list.webp" width="1120" height="700" alt="The SnagThis desktop app: a list of downloads with segmented progress bars filling in green, and a saved film ready to play." fetchpriority="high">
+      </figure>
+      <figure class="shot shot-popup">
+        <img src="img/popup-videos.webp" width="480" height="379" alt="The SnagThis Chrome extension popup listing three videos found on a page, two saving with speed traces and one ready to download." fetchpriority="high">
+      </figure>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS: scroll story -->
+  <section class="how" id="how" aria-labelledby="how-title">
+    <header class="section-head">
+      <p class="eyebrow">How it works</p>
+      <h2 id="how-title">Find it. Snag it. Keep it.</h2>
+    </header>
+
+    <div class="story" id="story">
+      <div class="story-sticky">
+        <ol class="steps" id="steps">
+          <li class="step is-active" data-step="0">
+            <span class="step-num" aria-hidden="true">01</span>
+            <div>
+              <h3>Find it</h3>
+              <p>Open the SnagThis popup on any page with a video. It lists what’s playing, with the quality, size and length.</p>
+            </div>
+          </li>
+          <li class="step" data-step="1">
+            <span class="step-num" aria-hidden="true">02</span>
+            <div>
+              <h3>Snag it</h3>
+              <p>One click. A plain MP4 or WebM goes straight to Chrome Downloads. Streams go to the desktop app, where every piece fills in as it lands.</p>
+            </div>
+          </li>
+          <li class="step" data-step="2">
+            <span class="step-num" aria-hidden="true">03</span>
+            <div>
+              <h3>Keep it</h3>
+              <p>It lands in Saved, a real file in a folder you choose. Play it, find it, or move it anywhere.</p>
+            </div>
+          </li>
+          <li class="rail" aria-hidden="true"><i id="rail-fill"></i></li>
+        </ol>
+
+        <div class="stage" id="stage" role="img" aria-label="Animation: a video is found in the SnagThis popup in Chrome, sent to the desktop app where its progress fills in, then shown in the Saved shelf.">
+          <div class="scene" id="scene" aria-hidden="true">
+            <!-- Browser -->
+            <div class="win browser" id="browser">
+              <div class="br-tabs"><i></i><i></i><i></i><span class="br-tab">Sintel — an open movie</span></div>
+              <div class="br-bar">
+                <span class="br-nav">‹ ›</span>
+                <span class="br-url"><svg viewBox="0 0 16 16" width="10" height="10"><path d="M4 7V5a4 4 0 0 1 8 0v2h1v8H3V7zm2 0h4V5a2 2 0 0 0-4 0z" fill="currentColor"/></svg>open-movies.example/sintel</span>
+                <span class="br-ext" id="ext"><img src="img/app-icon.png" width="16" height="16" alt=""></span>
+              </div>
+              <div class="br-page">
+                <div class="player">
+                  <img src="img/sintel.webp" width="854" height="480" alt="" loading="lazy">
+                  <svg class="player-btn" viewBox="0 0 16 16" shape-rendering="crispEdges"><use href="#bevel"/></svg>
+                  <div class="player-bar"><i></i></div>
+                </div>
+                <div class="page-lines"><b></b><i></i><i></i><i class="short"></i></div>
+              </div>
+            </div>
+
+            <!-- Popup -->
+            <div class="pop" id="pop">
+              <div class="pop-head"><svg class="logo" viewBox="0 0 120 22" shape-rendering="crispEdges"><use href="#logo"/></svg><span>2 videos on this page</span></div>
+              <div class="pop-row" id="pop-row">
+                <div class="thumb" id="pop-thumb"><img src="img/sintel.webp" alt="" loading="lazy"></div>
+                <div class="pop-body"><b>Sintel — an open movie</b><span class="meta" id="pop-meta"><em>FHD</em>1080p · 2.1 GB · 14:48</span></div>
+                <span class="dl" id="pop-dl"><svg viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              </div>
+              <div class="pop-row">
+                <div class="thumb"><img src="img/big-buck-bunny.webp" alt="" loading="lazy"></div>
+                <div class="pop-body"><b>Big Buck Bunny</b><span class="meta"><em>HD</em>720p · 182 MB · 9:56</span></div>
+                <span class="dl"><svg viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              </div>
+              <div class="pop-foot"><span>No video?</span><span>Open SnagThis</span></div>
+            </div>
+
+            <!-- Desktop app -->
+            <div class="win app" id="app">
+              <div class="app-top">
+                <span class="lights"><i></i><i></i><i></i></span>
+                <svg class="logo" viewBox="0 0 120 22" shape-rendering="crispEdges"><use href="#logo"/></svg>
+                <span class="paste"><svg viewBox="0 0 24 24" width="11" height="11"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1m2 4a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Paste a video link</span>
+                <span class="tabs" id="tabs"><span data-tab="all">All</span><span>Downloading</span><span data-tab="saved">Saved</span><i class="tab-line" id="tab-line"></i></span>
+              </div>
+              <div class="app-body">
+                <div class="list" id="list">
+                  <div class="row" id="row-new">
+                    <div class="thumb" id="row-thumb"><img src="img/sintel.webp" alt="" loading="lazy"></div>
+                    <div class="row-main">
+                      <div class="row-line"><b>Sintel — an open movie</b><span class="dur">14:48</span>
+                        <svg class="trace" id="trace" viewBox="0 0 150 30" preserveAspectRatio="none"><defs><linearGradient id="trace-fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="tr-top"/><stop offset="1" class="tr-bottom"/></linearGradient></defs><path class="tr-area" id="tr-area" fill="url(#trace-fade)"/><path class="tr-line" id="tr-line"/><circle class="tr-dot" id="tr-dot" r="2"/></svg>
+                      </div>
+                      <span class="status" id="row-status">Starting…</span>
+                      <div class="cells" id="cells"></div>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <div class="thumb"><img src="img/big-buck-bunny.webp" alt="" loading="lazy"></div>
+                    <div class="row-main"><div class="row-line"><b>Big Buck Bunny — full film</b><span class="dur">9:56</span></div><span class="status">Waiting · starts next</span></div>
+                  </div>
+                  <div class="row">
+                    <div class="thumb"><img src="img/sintel.webp" alt="" loading="lazy"></div>
+                    <div class="row-main"><div class="row-line"><b>Sintel — concept art</b><span class="dur">5:12</span></div><span class="status">Waiting</span></div>
+                  </div>
+                  <div class="row">
+                    <div class="thumb"><img src="img/tears-of-steel.webp" alt="" loading="lazy"></div>
+                    <div class="row-main"><div class="row-line"><b>Tears of Steel</b><span class="dur">12:14</span></div><span class="status"><em class="q">FHD</em>1080p · 182 MB · <span class="ok">✓ Saved today</span></span></div>
+                  </div>
+                </div>
+                <div class="shelf" id="shelf">
+                  <div class="card is-new"><div class="thumb"><img src="img/sintel.webp" alt="" loading="lazy"><span class="badge">New</span></div><b>Sintel — an open movie</b><span><em class="q">FHD</em>1080p · <span class="ok">✓ Today</span></span></div>
+                  <div class="card"><div class="thumb"><img src="img/tears-of-steel.webp" alt="" loading="lazy"></div><b>Tears of Steel</b><span><em class="q">FHD</em>1080p · 182 MB</span></div>
+                  <div class="card"><div class="thumb"><img src="img/big-buck-bunny.webp" alt="" loading="lazy"></div><b>Big Buck Bunny</b><span><em class="q">HD</em>720p · 650 MB</span></div>
+                </div>
+              </div>
+              <div class="app-foot"><span id="foot-status">Nothing downloading</span><span><kbd>⌘K</kbd> Commands</span></div>
+            </div>
+
+            <!-- Flying thumbnail and pointer -->
+            <div class="ghost" id="ghost"><img src="img/sintel.webp" alt=""></div>
+            <svg class="pointer" id="pointer" viewBox="0 0 20 24" width="20" height="24"><path d="M2 2v17l4.5-4.2 3 6.6 3-1.3-3-6.5H16z" fill="#fff" stroke="#0c0e11" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features" id="features" aria-labelledby="features-title">
+    <header class="section-head">
+      <p class="eyebrow">Features</p>
+      <h2 id="features-title">Small on the page.<br class="br-wide"> Serious underneath.</h2>
+    </header>
+
+    <div class="bento">
+      <article class="tile tile-wide reveal">
+        <div class="tile-copy">
+          <h3>Pick the quality. Keep the tracks.</h3>
+          <p>Choose a resolution, an audio language and subtitles before you save. The desktop app merges separate audio and subtitle tracks into one file.</p>
+        </div>
+        <div class="tile-art art-pair">
+          <img class="float-a" src="img/popup-quality.webp" width="480" height="346" loading="lazy" alt="Extension popup with the quality menu open: 1080p, 720p, 480p, audio only, and English subtitles.">
+          <img class="float-b" src="img/desktop-picker.webp" width="312" height="385" loading="lazy" alt="Desktop app quality picker with two audio tracks, English and Spanish, and a subtitles menu.">
+        </div>
+      </article>
+
+      <article class="tile tile-full reveal">
+        <div class="tile-copy">
+          <h3>Streams, handled.</h3>
+          <p>HLS and DASH streams arrive in pieces. SnagThis fetches them in parallel, shows each piece filling in, and draws a live speed trace so you always know how it’s going.</p>
+        </div>
+        <div class="tile-art art-bleed">
+          <img src="img/desktop-list.webp" width="1120" height="700" loading="lazy" alt="Desktop app with three downloads in progress, each showing a row of green segments for finished pieces and an amber segment for the one in flight.">
+        </div>
+      </article>
+
+      <article class="tile reveal">
+        <div class="tile-copy">
+          <h3><kbd class="kbd-big">⌘K</kbd> for everything</h3>
+          <p>Pause all, open the folder, search your videos or paste a link, all from the keyboard.</p>
+        </div>
+        <div class="tile-art art-palette">
+          <img src="img/desktop-palette.webp" width="600" height="450" loading="lazy" alt="The command palette: paste a video link, download link from clipboard, pause all, resume all, open save folder, search videos.">
+        </div>
+      </article>
+
+      <article class="tile reveal">
+        <div class="tile-copy">
+          <h3>Drop a link to snag it</h3>
+          <p>Drag a link onto the app, or paste one anywhere. SnagThis looks at the page and offers what it finds.</p>
+        </div>
+        <div class="tile-art art-drop" aria-hidden="true">
+          <div class="drop-field"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1m2 4a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="drop-ph">Paste a video link</span><span class="drop-url">open-movies.example/steel</span><kbd>⌘V</kbd></div>
+          <div class="drop-chip"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1m2 4a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>open-movies.example/steel</div>
+          <div class="drop-row"><img src="img/tears-of-steel.webp" alt="" loading="lazy"><div><b>Tears of Steel</b><span class="drop-cells"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div></div>
+        </div>
+      </article>
+
+      <article class="tile reveal">
+        <div class="tile-copy">
+          <h3>One-click pairing</h3>
+          <p>Connect the extension to the app once. Either side can disconnect, any time.</p>
+        </div>
+        <div class="tile-art art-crop art-pop">
+          <img src="img/popup-pairing.webp" width="480" height="300" loading="lazy" alt="Extension settings, Connection tab: Connected to SnagThis, sharing downloads, library and accent, with a Disconnect button.">
+        </div>
+      </article>
+
+      <article class="tile tile-accent reveal">
+        <div class="tile-copy">
+          <h3>Your colour, everywhere</h3>
+          <p>Pick an accent and both the extension and the app follow. Try it on this page.</p>
+        </div>
+        <div class="swatches" role="radiogroup" aria-label="Accent colour for this page">
+          <button type="button" role="radio" aria-checked="true" data-accent="orange" style="--sw:#fa5d0e"><span>Orange</span></button>
+          <button type="button" role="radio" aria-checked="false" data-accent="cobalt" style="--sw:#3b7bff"><span>Cobalt</span></button>
+          <button type="button" role="radio" aria-checked="false" data-accent="violet" style="--sw:#8b5cf6"><span>Violet</span></button>
+          <button type="button" role="radio" aria-checked="false" data-accent="mint" style="--sw:#1fbf8a"><span>Mint</span></button>
+          <button type="button" role="radio" aria-checked="false" data-accent="magenta" style="--sw:#e8388e"><span>Magenta</span></button>
+        </div>
+        <svg class="tile-bevel" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><use href="#bevel"/></svg>
+      </article>
+
+      <article class="tile tile-wide tile-drm reveal">
+        <div class="tile-copy">
+          <h3>Protected video stays protected.</h3>
+          <p>If a page uses DRM, SnagThis says so and stops. It never records, decrypts or screen-captures protected media.</p>
+        </div>
+        <div class="drm" aria-hidden="true">
+          <span class="drm-lock"><svg viewBox="0 0 24 24" width="22" height="22"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span>
+          <span><b>This video is protected</b><small>SnagThis can’t save DRM-protected media.</small></span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- COMPARE -->
+  <section class="compare" id="compare" aria-labelledby="compare-title">
+    <header class="section-head">
+      <p class="eyebrow">Extension or app</p>
+      <h2 id="compare-title">Start with Chrome.<br class="br-wide"> Add the app when you need it.</h2>
+    </header>
+    <div class="table-wrap reveal">
+      <table>
+        <caption class="sr-only">What the Chrome extension does on its own, and what the desktop app adds</caption>
+        <thead>
+          <tr>
+            <th scope="col"><span class="sr-only">Feature</span></th>
+            <th scope="col"><span class="th-name">Extension only</span><span class="th-sub">Chrome · no install</span></th>
+            <th scope="col" class="col-plus"><span class="th-name">With the desktop app</span><span class="th-sub">Mac and Windows</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Find videos on the page you’re watching</th><td><span class="yes">Yes</span></td><td class="col-plus"><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">Choose the quality</th><td><span class="yes">Yes</span></td><td class="col-plus"><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">Save direct MP4 and WebM to Chrome Downloads</th><td><span class="yes">Yes</span></td><td class="col-plus"><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">Streams (HLS and DASH)</th><td><span class="no">No</span></td><td class="col-plus"><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">Separate audio and subtitle tracks</th><td><span class="no">No</span></td><td class="col-plus"><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">Saved library with shelf view</th><td><span class="no">No</span></td><td class="col-plus"><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">Segmented progress and speed traces</th><td><span class="no">No</span></td><td class="col-plus"><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">⌘K command palette and drop a link</th><td><span class="no">No</span></td><td class="col-plus"><span class="yes">Yes</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- PRIVACY -->
+  <section class="privacy" id="privacy" aria-labelledby="privacy-title">
+    <div class="privacy-inner reveal">
+      <p class="eyebrow">Privacy</p>
+      <h2 id="privacy-title">Everything stays<br class="br-wide"> on your computer.</h2>
+      <ul class="promises">
+        <li><h3>No account</h3><p>Nothing to sign up for. Install it and go.</p></li>
+        <li><h3>No tracking</h3><p>No telemetry, no analytics, no paid tier. This site has no trackers either.</p></li>
+        <li><h3>Saved on your device</h3><p>Downloads and processing happen on your computer. The extension and app talk only to each other, over a private paired connection.</p></li>
+      </ul>
+      <a class="link-arrow" href="/privacy">Read the privacy policy <span aria-hidden="true">→</span></a>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq" id="faq" aria-labelledby="faq-title">
+    <header class="section-head">
+      <p class="eyebrow">FAQ</p>
+      <h2 id="faq-title">Questions</h2>
+    </header>
+    <div class="faq-list">
+      <details><summary>Is SnagThis really free?</summary><p>Yes. It’s open source under GPL-3.0, with no paid tier and no account. The code is on <a href="https://github.com/dylansallred/snagthis">GitHub</a>.</p></details>
+      <details><summary>Do I need the desktop app?</summary><p>No. The extension saves plain MP4 and WebM files straight to Chrome Downloads by itself. Add the app for streams, separate audio and subtitle tracks, and a Saved library.</p></details>
+      <details><summary>Which videos can it save?</summary><p>Most pages that play a regular video file or an HLS or DASH stream. It won’t save DRM-protected media. Only save videos you own or have permission to save, and follow each site’s terms.</p></details>
+      <details><summary>Where do my videos go?</summary><p>Extension downloads go to Chrome Downloads. The desktop app saves to a folder you choose and lists everything in Saved. Removing a video from the list keeps the file.</p></details>
+      <details><summary>How does pairing work?</summary><p>With the app open, click Connect in the extension, check the four digits SnagThis shows, and choose Allow. Each browser gets its own private token, and either side can disconnect at any time.</p></details>
+      <details><summary>When will the extension be in the Chrome Web Store?</summary><p>Soon. The Add to Chrome button on this page will link to it as soon as it’s live. The desktop app is available now.</p></details>
+    </div>
+  </section>
+
+  <!-- CLOSING CTA -->
+  <section class="closer" aria-labelledby="closer-title">
+    <button class="big-bevel" type="button" id="big-bevel" aria-label="Press the SnagThis play button">
+      <svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><path class="bv-face" d="M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v1h-16zM0 4h16v1h-16zM0 5h16v1h-16zM0 6h16v1h-16zM0 7h16v1h-16zM0 8h16v1h-16zM0 9h16v1h-16zM0 10h16v1h-16zM0 11h16v1h-16zM0 12h16v1h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z"/><path class="bv-light" d="M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM0 6h1v1h-1zM0 7h1v1h-1zM0 8h1v1h-1zM0 9h1v1h-1zM0 10h1v1h-1zM0 11h1v1h-1zM0 12h1v1h-1zM1 13h1v1h-1z"/><path class="bv-dark" d="M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v1h-1zM15 4h1v1h-1zM15 5h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1zM15 8h1v1h-1zM15 9h1v1h-1zM15 10h1v1h-1zM15 11h1v1h-1zM15 12h1v1h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z"/><path class="bv-dark" d="M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z"/><path class="bv-glyph" d="M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z"/></svg>
+    </button>
+    <h2 id="closer-title">Snag your first video.</h2>
+    <div class="cta cta-center">
+      <a class="btn btn-accent" href="#chrome-web-store" data-soon aria-label="Add to Chrome (coming soon to the Chrome Web Store)">Add to Chrome <span class="soon">Soon</span></a>
+      <a class="btn btn-ghost os-btn" data-os-target="mac" href="https://github.com/dylansallred/snagthis/releases/latest">Download for Mac</a>
+      <a class="btn btn-ghost os-btn" data-os-target="windows" href="https://github.com/dylansallred/snagthis/releases/latest">Download for Windows</a>
+    </div>
+    <p class="fine">For videos you own or have permission to save.</p>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <svg class="logo" width="120" height="22" shape-rendering="crispEdges" role="img" aria-label="SnagThis"><use href="#logo"/></svg>
+      <p>Free and open source. Made for saving videos you own or have permission to save.</p>
+    </div>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="https://github.com/dylansallred/snagthis">GitHub</a>
+      <a href="https://github.com/dylansallred/snagthis/releases/latest">Releases</a>
+      <a href="/privacy">Privacy</a>
+      <a href="https://github.com/dylansallred/snagthis/blob/main/LICENSE">License (GPL-3.0)</a>
+    </nav>
+  </div>
+  <p class="credits">Sample films: <em>Sintel</em>, <em>Big Buck Bunny</em> and <em>Tears of Steel</em> © Blender Foundation, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>. No endorsement implied. Chrome is a trademark of Google LLC; SnagThis is not affiliated with Google.</p>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="main.js" defer></script>
+</body>
+</html>

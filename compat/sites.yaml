@@ -1,0 +1,432 @@
+[
+  {
+    "id": "mux-bbb-adaptive",
+    "title": "Big Buck Bunny \u2014 adaptive",
+    "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "master",
+      "avc",
+      "aac",
+      "mpegts",
+      "quality-selection"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 184
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 752,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-bbb-184p",
+    "title": "Big Buck Bunny \u2014 184p",
+    "url": "https://test-streams.mux.dev/x36xhzz/url_2/193039199_mp4_h264_aac_ld_7.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "variant",
+      "avc",
+      "aac",
+      "mpegts",
+      "low-resolution"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 184,
+      "durationSeconds": 634.634,
+      "tolerance": 2
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 3609,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-bbb-288p",
+    "title": "Big Buck Bunny \u2014 288p",
+    "url": "https://test-streams.mux.dev/x36xhzz/url_4/193039199_mp4_h264_aac_7.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "variant",
+      "avc",
+      "aac",
+      "mpegts",
+      "low-resolution"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 288,
+      "durationSeconds": 634.634,
+      "tolerance": 2
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 3416,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-bbb-480p",
+    "title": "Big Buck Bunny \u2014 480p",
+    "url": "https://test-streams.mux.dev/x36xhzz/url_6/193039199_mp4_h264_aac_hq_7.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "variant",
+      "avc",
+      "aac",
+      "mpegts"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 480,
+      "durationSeconds": 634.6,
+      "tolerance": 2
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 3606,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-bbb-720p",
+    "title": "Big Buck Bunny \u2014 720p",
+    "url": "https://test-streams.mux.dev/x36xhzz/url_0/193039199_mp4_h264_aac_hd_7.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "variant",
+      "avc",
+      "aac",
+      "mpegts"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 720,
+      "durationSeconds": 634.584,
+      "tolerance": 2
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 3606,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-bbb-1080p",
+    "title": "Big Buck Bunny \u2014 1080p",
+    "url": "https://test-streams.mux.dev/x36xhzz/url_8/193039199_mp4_h264_aac_fhd_7.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "variant",
+      "avc",
+      "aac",
+      "mpegts"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 1080,
+      "durationSeconds": 634.567,
+      "tolerance": 2
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 3670,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-tears-of-steel-imsc",
+    "title": "Tears of Steel \u2014 separate audio and IMSC captions",
+    "url": "https://test-streams.mux.dev/tos_ismc/main.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "master",
+      "avc",
+      "aac",
+      "separate-audio",
+      "imsc-captions"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 800
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 918,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-arte-adaptive",
+    "title": "ARTE China \u2014 adaptive",
+    "url": "https://test-streams.mux.dev/test_001/stream.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "master",
+      "quality-selection",
+      "missing-codec-attributes"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 234
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 586,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-pts-shift",
+    "title": "DK Turntable \u2014 timestamps shifted by 2.3 seconds",
+    "url": "https://test-streams.mux.dev/pts_shift/master.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "master",
+      "avc",
+      "aac",
+      "pts-shift",
+      "duplicate-renditions"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 270
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 1239,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "mux-byte-range-issue-666",
+    "title": "hls.js issue 666 \u2014 MPEG-TS byte ranges",
+    "url": "https://test-streams.mux.dev/issue666/playlists/cisq0gim60007xzvi505emlxx.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://test-streams.mux.dev/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "media-playlist",
+      "byte-range",
+      "mpegts"
+    ],
+    "expect": {
+      "rows": 1,
+      "durationSeconds": 47.24,
+      "tolerance": 2
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "audio/mpegurl",
+      "bytesRead": 2003,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "apple-bipbop-adaptive",
+    "title": "Apple Bip Bop \u2014 AVC and HEVC",
+    "url": "https://developer.apple.com/streaming/examples/advanced-stream-hevc.html",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://developer.apple.com/streaming/examples/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "master",
+      "avc",
+      "hevc",
+      "separate-audio",
+      "webvtt",
+      "captions"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 234
+    },
+    "mediaUrl": "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_adv_example_hevc/master.m3u8",
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "application/x-mpegURL",
+      "bytesRead": 12818,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "apple-bipbop-avc-360p",
+    "title": "Apple Bip Bop \u2014 AVC 360p video rendition",
+    "url": "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_adv_example_hevc/v3/prog_index.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://developer.apple.com/streaming/examples/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "variant",
+      "avc",
+      "video-only",
+      "fmp4"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 360,
+      "durationSeconds": 600.0,
+      "tolerance": 2
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "application/x-mpegURL",
+      "bytesRead": 4726,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "apple-bipbop-hevc-360p",
+    "title": "Apple Bip Bop \u2014 HEVC 360p video rendition",
+    "url": "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_adv_example_hevc/v12/prog_index.m3u8",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://developer.apple.com/streaming/examples/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "variant",
+      "hevc",
+      "video-only",
+      "fmp4"
+    ],
+    "expect": {
+      "rows": 1,
+      "minHeight": 360,
+      "durationSeconds": 600.0,
+      "tolerance": 2
+    },
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "application/x-mpegURL",
+      "bytesRead": 4964,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "apple-trailer-advanced",
+    "title": "Apple TV trailer \u2014 AVC, HEVC and Dolby Vision",
+    "url": "https://developer.apple.com/streaming/examples/advanced-stream-dv-atmos.html",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://developer.apple.com/streaming/examples/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "master",
+      "avc",
+      "hevc",
+      "hdr",
+      "dolby-vision",
+      "separate-audio",
+      "webvtt"
+    ],
+    "expect": {
+      "rows": 1
+    },
+    "mediaUrl": "https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8",
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "application/x-mpegURL",
+      "bytesRead": 41377,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  },
+  {
+    "id": "apple-trailer-av1",
+    "title": "Apple TV trailer \u2014 AV1 SDR",
+    "url": "https://developer.apple.com/streaming/examples/tv-trailer-av1.html",
+    "permission": "Publisher-provided public developer test stream; use for compatibility testing only. No redistribution license is asserted.",
+    "permissionSource": "https://developer.apple.com/streaming/examples/",
+    "verifiedSourceAt": "2026-09-19",
+    "defaultEnabled": false,
+    "tags": [
+      "hls",
+      "master",
+      "av1",
+      "separate-audio",
+      "webvtt",
+      "codec-dependent"
+    ],
+    "expect": {
+      "rows": 1
+    },
+    "mediaUrl": "https://devstreaming-cdn.apple.com/videos/streaming/examples/av1-sample/av1-sample.m3u8",
+    "sourceCheck": {
+      "method": "GET manifest only",
+      "httpStatus": 200,
+      "contentType": "application/x-mpegURL",
+      "bytesRead": 29585,
+      "scope": "Source reachability and playlist syntax only; not a SnagThis compatibility pass."
+    }
+  }
+]

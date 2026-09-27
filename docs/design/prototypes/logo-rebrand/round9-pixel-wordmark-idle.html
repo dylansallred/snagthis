@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Round 9 · SnagThis · pixel wordmark and idle motion</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800&family=Silkscreen:wght@400;700&family=Press+Start+2P&family=Pixelify+Sans:wght@700&family=Jersey+15&family=VT323&display=swap">
+<style>
+  :root {
+    --row: #171a1f; --row-hover: #1c2026; --line: #2a2f37; --text: #e8ebef; --muted: #8d96a3;
+    --o: #fa5d0e; --o2: #bd3f00; --amber: #ffb238; --cream: #fff4e6; --night: #0c0e11; --surface: #121418;
+    --ui: "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #101216; color: var(--text); font: 14px/1.5 var(--ui); }
+  main { max-width: 1760px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 44px 0 4px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); display: flex; align-items: center; gap: 12px; }
+  h2 .sel { font: 700 12px var(--mono); color: var(--o); letter-spacing: 0; text-transform: none; }
+  section:first-child h2 { margin-top: 0; }
+  h2 + p { margin: 0 0 12px; color: var(--muted); font-size: 13px; max-width: 980px; }
+  p.lede { color: var(--muted); margin: 0 0 24px; max-width: 980px; }
+  p.lede b, h2 + p b { color: var(--text); }
+  kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--text); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 24px; align-items: start; }
+  @media (max-width: 1200px) { .layout { grid-template-columns: 1fr; } .live { order: -1; position: static !important; } }
+
+  button.rp, button.act { font: 600 12px var(--ui); color: var(--text); background: #22262d; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  button.rp:hover, button.act:hover { border-color: var(--o); color: #fff; }
+  button.rp::before { content: '↻'; color: var(--o); font-weight: 700; }
+  button.act::before { content: '✓'; color: var(--o); font-weight: 700; }
+
+  /* option cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+  .card { background: var(--row); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; text-align: left; color: inherit; outline: none; }
+  .card:hover { background: var(--row-hover); }
+  .card:focus-visible { box-shadow: 0 0 0 2px #fff4e680; }
+  .card[aria-pressed="true"] { border-color: var(--o); box-shadow: 0 0 0 1px var(--o); }
+  .card header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+  .card .num { color: var(--o); font-weight: 700; font-size: 12px; font-family: var(--mono); }
+  .card .name { font-weight: 700; font-size: 15px; }
+  .card .pill { margin-left: auto; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 0 8px; white-space: nowrap; }
+  .card .pill.base { color: var(--amber); border-color: #5a4320; }
+  .card .pill.warn { color: #ff8a5c; border-color: #6a2f18; }
+  .card > p { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; min-height: 38px; }
+  .panel { border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .dark { background: var(--night); --fg: #fff; }
+  .light { background: #fff; --fg: var(--night); }
+  .panel.dark { border: 1px solid var(--line); }
+  .panel.stage { min-height: 116px; padding: 16px 10px; overflow: visible; }
+  .pair { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .tiles { display: flex; align-items: flex-end; gap: 12px; margin-top: 10px; }
+  .tiles small { display: block; text-align: center; color: var(--muted); font-size: 10px; margin-top: 3px; font-family: var(--mono); }
+  .tiles .chip { display: flex; gap: 10px; align-items: flex-end; padding: 8px 10px 4px; border-radius: 8px; background: #fff; margin-left: auto; }
+  .tiles .chip small { color: #777; }
+  .meta { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 10px 0 0; font-size: 12px; }
+  .meta dt { color: var(--muted); }
+  .meta dd { margin: 0; }
+  .cardfoot { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .cardfoot .note { color: var(--muted); font-size: 11.5px; }
+  .ctl { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .strip-label { font: 10.5px var(--mono); color: var(--muted); margin-top: 8px; }
+
+  /* mini header strip used in cards */
+  .strip { background: var(--night); border: 1px solid var(--line); border-radius: 8px; height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 12px; margin-top: 6px; overflow: hidden; }
+  .strip .stub { flex: 1; max-width: 150px; height: 26px; border-radius: 6px; background: #14171b; border: 1px solid var(--line); }
+  .strip .tb { margin-left: auto; font: 11px var(--ui); color: var(--muted); white-space: nowrap; }
+
+  /* ── icon + lockup ─────────────────────────── */
+  svg.ic { display: block; flex: none; overflow: visible; }
+  .lk { position: relative; display: inline-flex; align-items: baseline; gap: var(--gap, .34em); white-space: nowrap; line-height: 1; color: var(--fg, #fff); }
+  .lk.stack { flex-direction: column; align-items: center; }
+  .wm { display: inline-flex; align-items: baseline; }
+  .wm .ch { display: inline-block; }
+  .wm .o { color: var(--o); }
+  svg.rz { display: inline-block; vertical-align: baseline; fill: currentColor; overflow: visible; }
+  .guide { position: absolute; left: -.4em; right: -.4em; height: 0; border-top: 1px solid rgba(55, 227, 255, .75); pointer-events: none; z-index: 3; }
+  .wm svg.ic { align-self: baseline; }
+  .tcur { position: absolute; left: 0; top: 0; width: .52em; height: .73em; background: var(--o); pointer-events: none; }
+  .icur { display: inline-block; flex: none; width: .4em; height: .73em; background: var(--o); margin-left: -.06em; }
+  .blm { display: inline-block; width: 0; height: 0; }
+
+  /* live preview */
+  .live { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; background: var(--row); border: 1px solid var(--o); border-radius: 12px; padding: 12px; display: grid; gap: 10px; }
+  .live-title { display: flex; align-items: center; gap: 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--o); font-weight: 700; }
+  .live-title .rp { margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .live .hero { min-height: 170px; padding: 18px; overflow: visible; }
+  .live .tiles { margin: 0; flex-wrap: wrap; }
+  .combo { font: 700 13px var(--mono); color: var(--text); }
+  .combo span { color: var(--o); }
+  .summary { font-size: 12.5px; color: var(--muted); display: grid; gap: 3px; }
+  .summary b { color: var(--text); }
+  label.rm { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .ctrlbox { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #14171b; }
+  .ctrlrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { font: 600 12px var(--ui); color: var(--muted); background: transparent; border: 0; padding: 3px 10px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--o); color: #160700; }
+
+  /* ── context mocks ─────────────────────────── */
+  .ctx { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  @media (max-width: 1500px) { .ctx { grid-template-columns: 1fr; } }
+  .ctxbox { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
+  .ctxbox.wide { grid-column: 1 / -1; }
+  .ctxhead { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .ctxhead b { color: var(--text); font-weight: 600; }
+  .ctxhead .push { margin-left: auto; }
+
+  .win { position: relative; width: 100%; background: var(--surface); border: 1px solid #262a31; border-radius: 12px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+  .topbar { display: flex; align-items: center; gap: 14px; height: 52px; padding: 0 14px; background: var(--night); border-bottom: 1px solid #1f232a; }
+  .lights { display: flex; gap: 7px; flex: none; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f47; display: block; }
+  .brand { display: flex; align-items: center; flex: none; --fg: #fff; cursor: pointer; }
+  .paste { flex: 1; min-width: 90px; max-width: 300px; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: #15181d; border: 1px solid #262a31; border-radius: 8px; font: 12px var(--ui); color: #6f7885; overflow: hidden; white-space: nowrap; }
+  .paste svg { flex: none; }
+  .paste kbd { margin-left: auto; color: #6f7885; border-color: #2a2f37; }
+  .tabs { margin-left: auto; display: flex; gap: 2px; font: 12px var(--ui); color: var(--muted); white-space: nowrap; }
+  .tabs span { padding: 5px 9px; border-radius: 6px; }
+  .tabs span.on { color: #fff; background: #1d2127; }
+  .tabs b { color: var(--o); font-weight: 700; margin-left: 4px; }
+  .vrow { display: flex; gap: 12px; align-items: center; padding: 11px 16px; border-bottom: 1px solid #1b1e24; }
+  .vthumb { width: 76px; height: 43px; border-radius: 5px; flex: none; position: relative; overflow: hidden; }
+  .vrow .t { font-size: 12.5px; color: #e3e6ea; }
+  .vrow .s { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  .bar { width: 120px; height: 3px; border-radius: 2px; background: #262a31; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--o); }
+  .vrow .act { margin-left: auto; font-size: 11px; color: var(--muted); }
+  .splash { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+  .splash .bg { position: absolute; inset: 0; background: var(--night); }
+  .splash .fg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; --fg: #fff; }
+
+  .pop-wrap { background: #35363a; border-radius: 12px; padding: 14px; display: flex; justify-content: center; }
+  .popup { width: 480px; max-width: 100%; background: var(--night); border: 1px solid #2a2f37; border-radius: 10px; overflow: hidden; box-shadow: 0 12px 34px rgba(0,0,0,.4); }
+  .popup .ph { display: flex; align-items: center; height: 50px; padding: 0 14px; border-bottom: 1px solid #1f232a; --fg: #fff; }
+  .popup .ph .count { margin-left: auto; font: 12px var(--ui); color: var(--muted); }
+  .popup .vrow { padding: 9px 14px; }
+  .popup .dl { margin-left: auto; font: 600 11.5px var(--ui); background: var(--o); color: #160700; border-radius: 6px; padding: 4px 10px; }
+  .popup .dl.on { background: transparent; color: var(--o); border: 1px solid var(--o); }
+
+  .chrome { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+  .chrome + .chrome { margin-top: 10px; }
+  .chrome .tabsbar { display: flex; align-items: flex-end; padding: 8px 10px 0; height: 40px; }
+  .chrome .tab { display: inline-flex; align-items: center; gap: 8px; border-radius: 8px 8px 0 0; padding: 0 14px 0 12px; height: 32px; font-size: 12px; width: 230px; }
+  .chrome .toolbar { display: flex; align-items: center; gap: 12px; padding: 0 12px; height: 40px; }
+  .chrome .nav { display: flex; gap: 14px; font-size: 15px; opacity: .6; }
+  .chrome .omni { flex: 1; height: 28px; border-radius: 99px; padding: 0 14px; display: flex; align-items: center; font-size: 12.5px; }
+  .chrome .ext { display: flex; align-items: center; gap: 12px; }
+  .chrome .ext i { width: 16px; height: 16px; border-radius: 4px; display: block; }
+  .chrome .ext .ours { padding: 6px; margin: -6px; border-radius: 99px; }
+  .chrome .avatar { width: 20px; height: 20px; border-radius: 50%; background: #8a6cf0; }
+  .chrome.l .tabsbar { background: #dee1e6; } .chrome.l .tab, .chrome.l .toolbar { background: #fff; color: #222; }
+  .chrome.l .omni { background: #f1f3f4; color: #555; } .chrome.l .ext i { background: #c4c7cc; }
+  .chrome.d .tabsbar { background: #202124; } .chrome.d .tab, .chrome.d .toolbar { background: #35363a; color: #e8eaed; }
+  .chrome.d .omni { background: #202124; color: #bdc1c6; } .chrome.d .ext i { background: #5f6368; }
+  .desk { background: linear-gradient(160deg, #3b4a66, #7a5b73 60%, #c77d5a); border-radius: 12px; padding: 58px 22px 14px; display: flex; justify-content: center; margin-top: 10px; }
+  .dock { display: flex; align-items: flex-end; gap: 9px; padding: 7px 10px; background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.25); border-radius: 20px; backdrop-filter: blur(10px); }
+  .dock .ghost { width: 56px; height: 56px; border-radius: 22.5%; }
+  .dock .ours { position: relative; }
+  .dock .ours::after { content: ''; position: absolute; left: 50%; bottom: -5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(255,255,255,.8); }
+  .dock .ours svg { filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+  .dock .label { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); background: rgba(40,40,40,.85); color: #fff; font: 12px var(--ui); padding: 3px 9px; border-radius: 6px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SnagThis — round 9 · Pixel wordmark and idle motion</h1>
+  <p class="lede">Fixed from round 8: the <b>Pixel bevel</b> button, <b>capital height on the baseline</b>, button after the words, and <b>Type, then press</b> as the launch animation. Two new questions, chosen independently: <b>W · Wordmark</b> (should the letters be pixelated too?) and <b>I · Idle motion</b> (should the logo keep moving after launch, and how?). Idle motion always starts after the launch animation, pauses while the tab is hidden, and stops under reduced motion. Use <b>Downloads active</b> and <b>Finish a download</b> in the Live preview to see I6 and I7. Rest the pointer in a section and press its number key; your choices are kept in the URL. Add <b>?slow=4</b> to watch slowly.</p>
+
+  <div class="layout">
+    <div>
+      <section>
+        <h2>Your combination in the product <span class="sel" id="ctx-combo"></span></h2>
+        <p>(a) Desktop app with the logo 22 px tall in the top bar; its first row follows the Downloads-active switch. (b) Startup: Type, then press plays large, moves into the top bar, then the idle motion begins. (c) Chrome extension popup, 480 px. (d) The icon alone in the Chrome toolbar (16 px) and the macOS dock (56 px). Click a logo to press it.</p>
+        <div class="ctx">
+          <div class="ctxbox wide">
+            <div class="ctxhead"><b>(a) Desktop app</b> click the logo to press it <label class="ctl push"><input type="checkbox" class="dl-toggle"> Downloads active</label><button class="act" data-finish>Finish a download</button><button class="rp" data-replay="app">Replay</button></div>
+            <div id="win-app"></div>
+          </div>
+          <div class="ctxbox wide">
+            <div class="ctxhead"><b>(b) Startup</b> launch animation, move into the top bar, then idle <button class="rp push" data-replay="splash">Replay</button></div>
+            <div id="win-splash"></div>
+          </div>
+          <div class="ctxbox">
+            <div class="ctxhead"><b>(c) Chrome extension popup</b> 480 px <button class="rp push" data-replay="popup">Replay</button></div>
+            <div class="pop-wrap" id="popup-wrap"></div>
+          </div>
+          <div class="ctxbox">
+            <div class="ctxhead"><b>(d) Chrome toolbar and macOS dock</b> <button class="rp push" data-replay="icons">Replay</button></div>
+            <div id="icons-ctx">
+              <div class="chrome l">
+                <div class="tabsbar"><span class="tab"><span data-play data-icon="16"></span>How to restore a cast iron pan</span></div>
+                <div class="toolbar"><span class="nav">← → ↻</span><span class="omni">example.com/watch?v=cast-iron</span><span class="ext"><i></i><span class="ours" data-play data-icon="16"></span><i></i><span class="avatar"></span></span></div>
+              </div>
+              <div class="chrome d">
+                <div class="tabsbar"><span class="tab"><span data-play data-icon="16"></span>How to restore a cast iron pan</span></div>
+                <div class="toolbar"><span class="nav">← → ↻</span><span class="omni">example.com/watch?v=cast-iron</span><span class="ext"><i></i><span class="ours" data-play data-icon="16" style="background:#4a4c50"></span><i></i><span class="avatar"></span></span></div>
+              </div>
+              <div class="desk"><div class="dock"><div class="ghost" style="background:linear-gradient(#5ac8fa,#007aff)"></div><div class="ghost" style="background:linear-gradient(#fff,#ddd)"></div><div class="ours"><span class="label">SnagThis</span><span data-play data-icon="56"></span></div><div class="ghost" style="background:linear-gradient(#34c759,#248a3d)"></div><div class="ghost" style="background:linear-gradient(#ff9f0a,#ff375f)"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-group="W">
+        <h2>W · Wordmark <span class="sel" data-sel="W"></span></h2>
+        <p>Should the letters be pixelated too? Every typeface is scaled so its <b>capitals are exactly the button’s height</b> (cyan guides: capital line and baseline). Each card shows the lockup large on dark and white, then at the real <b>22 px top bar</b> size, which is where readability is decided. The three pixel fonts in W4–W6 were picked from Pixelify Sans, Tiny5, Jersey 10/15, Micro 5, DotGothic16, VT323, Doto and others as the ones that stay readable at 22 px.</p>
+        <div class="grid" id="grid-W"></div>
+      </section>
+
+      <section data-group="I">
+        <h2>I · Idle motion <span class="sel" data-sel="I"></span></h2>
+        <p>What the logo does after the launch animation. Each card runs its option live, large and in the 22 px top bar, with your current wordmark. All of them pause while the tab is hidden and go still under reduced motion. I6 and I7 react to downloads: <label class="ctl"><input type="checkbox" class="dl-toggle"> Downloads active</label> <button class="act" data-finish>Finish a download</button></p>
+        <div class="grid" id="grid-I"></div>
+      </section>
+
+      <section data-group="B">
+        <h2>B · Button <span class="sel" data-sel="B"></span></h2>
+        <p>Kept for reference: the chosen Pixel bevel and the Arcade button. Each card shows the lockup, the top bar, and the app icon at 128, 48, 32 and 16 px (32 and 16 again on white).</p>
+        <div class="grid" id="grid-B"></div>
+      </section>
+
+      <section data-group="L">
+        <h2>S · Button size <span class="sel" data-sel="L"></span></h2>
+        <p>How big the button is next to the words and where it sits. Capital height is chosen; the one-pixel overshoot stays as the alternative.</p>
+        <div class="grid" id="grid-L"></div>
+      </section>
+    </div>
+
+    <aside class="live">
+      <div class="live-title">Live preview <button class="rp" data-replay="all">Replay all</button></div>
+      <div class="combo" id="combo"></div>
+      <div class="panel dark hero" data-play data-lockup="46" id="live-hero"></div>
+      <div class="strip" style="margin:0"><span data-play data-lockup="22" data-ctx="compact"></span><span class="stub"></span><span class="tb" id="live-tb">All · Downloading · Saved</span></div>
+      <div class="tiles" id="live-icons"></div>
+      <div class="ctrlbox">
+        <div class="ctrlrow">Launch animation <span class="seg" id="launch-seg"><button data-launch="a10">A10 Type, then press</button><button data-launch="none">None</button></span></div>
+        <div class="ctrlrow"><label class="ctl"><input type="checkbox" class="dl-toggle"> Downloads active</label><button class="act" data-finish>Finish a download</button></div>
+      </div>
+      <div class="summary" id="summary"></div>
+      <label class="rm"><input type="checkbox" id="guides" checked> Show alignment guides (cyan lines on the capital line and baseline)</label>
+      <label class="rm"><input type="checkbox" id="rm"> Simulate reduced motion (static end state; no launch, no idle motion)</label>
+    </aside>
+  </div>
+</main>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   Geometry.  Every button lives in a 100 × 100 viewBox divided into an
+   n × n grid.  Glyph pixels are individual rects so each one can be animated.
+   ════════════════════════════════════════════════════════════════════ */
+const COL = { o: '#fa5d0e', o2: '#bd3f00', amber: '#ffb238', cream: '#fff4e6', night: '#0c0e11' };
+const NS = 'http://www.w3.org/2000/svg';
+
+const T1 = [
+  '................',
+  '................',
+  '................',
+  '.....##.........',
+  '.....###........',
+  '.....#####......',
+  '.....######.....',
+  '.....########...',
+  '.....########...',
+  '.....######.....',
+  '.....#####......',
+  '.....###........',
+  '.....##.........',
+  '................',
+  '................',
+  '................'];
+
+const fromRows = (rows, dy = 0) => rows.flatMap((r, y) => [...r].map((k, x) => ({ x, y: y + dy, k })).filter(p => p.k !== '.'));
+const key = p => p.x + ',' + p.y;
+function stepMask(n, insets) { // tile with stepped (pixel) corners
+  const c = [];
+  for (let y = 0; y < n; y++) { const i = insets[y] ?? insets[n - 1 - y] ?? 0; for (let x = i; x < n - i; x++) c.push({ x, y }); }
+  return c;
+}
+function circleMask(n, cx, cy, r) {
+  const c = [];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const dx = x + .5 - cx, dy = y + .5 - cy; if (dx * dx + dy * dy <= r * r) c.push({ x, y }); }
+  return c;
+}
+function edgeShade(mask) { // top-left edge = light, bottom-right edge = dark
+  const s = new Set(mask.map(key)), hi = [], lo = [];
+  mask.forEach(p => {
+    const up = !s.has(p.x + ',' + (p.y - 1)), lf = !s.has((p.x - 1) + ',' + p.y), dn = !s.has(p.x + ',' + (p.y + 1)), rt = !s.has((p.x + 1) + ',' + p.y);
+    if ((up || lf) && !(dn || rt)) hi.push(p); else if ((dn || rt) && !(up || lf)) lo.push(p);
+    else if (up || lf || dn || rt) (p.x + p.y < 15 ? hi : lo).push(p);
+  });
+  return { hi, lo };
+}
+function runsPath(cells, C) { // merge rows of cells into one path
+  const rows = {}; cells.forEach(p => (rows[p.y] ||= []).push(p.x));
+  let d = '';
+  Object.entries(rows).forEach(([y, xs]) => {
+    xs.sort((a, b) => a - b);
+    for (let i = 0; i < xs.length;) { let j = i; while (j + 1 < xs.length && xs[j + 1] === xs[j] + 1) j++; d += `M${f(xs[i] * C)} ${f(y * C)}h${f((j - i + 1) * C)}v${f(C)}h${f(-(j - i + 1) * C)}z`; i = j + 1; }
+  });
+  return d;
+}
+const f = n => +n.toFixed(3);
+
+const BUTTONS = [
+  { id: 'b4', name: 'Pixel bevel', pill: 'chosen', base: true, desc: 'Stepped-corner tile lit from the top left (amber edge, deep-orange edge), and a one-pixel deep shadow under the triangle.',
+    build: () => {
+      const mask = stepMask(16, [3, 1, 1]), { hi, lo } = edgeShade(mask), C = 6.25, g = fromRows(T1), s = new Set(g.map(key));
+      const shadow = g.map(p => ({ x: p.x + 1, y: p.y + 1 })).filter(p => !s.has(key(p)));
+      return { n: 16, clip: `<path d="${runsPath(mask, C)}"/>`, swap: true,
+        tile: fill(`<path d="${runsPath(mask, C)}"/>`, COL.o) + cells(hi, C, COL.amber, 'd', 'hi') + cells(lo, C, COL.o2, 'd', 'lo'),
+        glyph: [...shadow.map(p => ({ ...p, k: 's', fill: COL.o2 })), ...g.map(p => ({ ...p, fill: COL.night }))] };
+    } },
+  { id: 'b5', name: 'Arcade button', pill: 'reference', desc: 'A round pixel push-button: orange cap with an amber rim, sitting on a deep-orange base two pixels high. It can really press down.',
+    build: () => {
+      const cap = circleMask(16, 8, 7, 7.3), base = circleMask(16, 8, 9, 7.3), C = 6.25, { hi } = edgeShade(cap);
+      const rim = hi.filter(p => p.x + .5 < 8 && p.y + .5 < 7.5 || p.y <= 1);
+      return { n: 16, lip: 2 * C, clip: `<path d="${runsPath(cap, C)}"/>`,
+        base: fill(`<path d="${runsPath(base, C)}"/>`, COL.o2),
+        tile: fill(`<path d="${runsPath(cap, C)}"/>`, COL.o) + cells(rim, C, COL.amber, 'd', 'hi'),
+        glyph: fromRows(T1, -1).map(p => ({ ...p, fill: COL.night })) };
+    } },
+];
+function fill(shape, color) { return shape.replace('/>', ` style="fill:${color}"/>`); }
+function cells(list, C, color, cls, sh) { return list.map(p => `<rect class="${cls}" data-sh="${sh}" data-f="${color}" x="${f(p.x * C)}" y="${f(p.y * C)}" width="${f(C)}" height="${f(C)}" style="fill:${color}"/>`).join(''); }
+
+const bById = id => BUTTONS.find(b => b.id === id);
+const CACHE = {};
+let uid = 0;
+function iconSvg(bid, size, extraStyle = '') {
+  const d = CACHE[bid] ||= bById(bid).build(), C = 100 / d.n, clip = 'clip' + (++uid);
+  const sz = size ? `width="${size}" height="${size}"` : '';
+  const glyph = d.glyph.map(p => `<rect class="p" data-x="${p.x}" data-y="${p.y}" data-k="${p.k}" data-f="${p.fill}" x="${f(p.x * C)}" y="${f(p.y * C)}" width="${f(C)}" height="${f(C)}" style="fill:${p.fill}"/>`).join('');
+  return `<svg class="ic" ${sz} viewBox="0 0 100 100" data-n="${d.n}" data-lip="${d.lip || 0}" data-swap="${d.swap ? 1 : 0}" data-clip="${clip}" style="${extraStyle}" aria-hidden="true">` +
+    `<defs><clipPath id="${clip}">${d.clip}</clipPath></defs>` +
+    (d.base ? `<g class="base" shape-rendering="crispEdges">${d.base}</g>` : '') +
+    `<g class="cap"><g class="tile" shape-rendering="crispEdges">${d.tile}</g>` +
+    `<g class="glyph" shape-rendering="crispEdges">${glyph}</g><g class="fx" shape-rendering="crispEdges"></g></g></svg>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Wordmarks.  FONTS use single-quoted family names (they go into style="…").
+   FS[font] scales each face so its capitals are CAP em tall (measured on load).
+   ════════════════════════════════════════════════════════════════════ */
+const CAP = .73, PX = CAP / 16; // one button pixel, in em
+const FONTS = {
+  jb: { css: "800 1em 'JetBrains Mono'", ls: '.01em' },
+  silk: { css: "400 1em 'Silkscreen'", ls: '0em' },
+  ps2p: { css: "400 1em 'Press Start 2P'", ls: '-.02em' },
+  pxf: { css: "700 1em 'Pixelify Sans'", ls: '.03em' },
+  j15: { css: "400 1em 'Jersey 15'", ls: '.05em' },
+  vt: { css: "400 1em 'VT323'", ls: '.02em' },
+};
+const FS = Object.fromEntries(Object.keys(FONTS).map(k => [k, 1]));
+let FONTS_OK = false;
+
+const WMS = [
+  { id: 'w1', name: 'JetBrains Mono 800', pill: 'current', base: true, font: 'jb', desc: 'SNAG in white, THIS in orange, as chosen in round 6. Smooth letters next to a pixel button.' },
+  { id: 'w2', name: 'Silkscreen', pill: 'pixel · wide', font: 'silk', desc: 'A true 5-pixel bitmap face. Very clearly pixel, but wide and thin, so it gets long and light at 22 px.' },
+  { id: 'w3', name: 'Press Start 2P', pill: 'pixel · 8-bit', font: 'ps2p', desc: 'The classic 8 × 8 arcade face. Heavy and loud; the widest option, and it reads as “game” first.' },
+  { id: 'w4', name: 'Pixelify Sans Bold', pill: 'pixel · readable', font: 'pxf', desc: 'Bold pixel strokes with near-monospace widths, so it keeps the rhythm and weight of the current mono. The most readable pixel face at 22 px.' },
+  { id: 'w5', name: 'Jersey 15', pill: 'pixel · compact', font: 'j15', desc: 'Condensed, heavy pixel letters like a stadium scoreboard. Shortest lockup; bold enough to survive 22 px.' },
+  { id: 'w6', name: 'VT323', pill: 'pixel · terminal', font: 'vt', desc: 'A monospace terminal face (DEC VT320). Keeps the “command line” feel of the mono, but its strokes are thin.' },
+  { id: 'w7', name: 'Hybrid: mono SNAG, pixel THIS', pill: 'mix', font: 'jb', alt: 'pxf', desc: 'SNAG stays JetBrains Mono; THIS switches to Pixelify Sans Bold, so the pixel part and the button sit together.' },
+  { id: 'w8', name: 'Mono + stepped shadow', pill: 'subtle pixel', font: 'jb', shadow: true, desc: 'JetBrains Mono with a hard one-pixel deep-orange shadow down and right, the same shadow the triangle has in the button.' },
+  { id: 'w9', name: 'Mono on the pixel grid', pill: 'rasterised', font: 'jb', raster: 10, desc: 'JetBrains Mono redrawn on a 10-row pixel grid (each letter pixel is about 1.6 button pixels), so the letters step exactly like the button.' },
+];
+
+const LAYOUTS = [
+  { id: 'zcap', name: 'Capital height, on the baseline', pill: 'chosen', base: true, kind: 'after', s: CAP, gap: .26, desc: 'The button’s top lines up with the tops of the capitals and its bottom sits on the baseline, like one more letter.' },
+  { id: 'zover', name: 'Capital height + 1-pixel overshoot', pill: 'alternative', kind: 'after', s: CAP * 18 / 16, gap: .26, desc: 'One grid pixel taller than the capitals, centred on them: it overshoots equally above the capital line and below the baseline, the way round letters do.' },
+];
+
+/* Rasterise one character on a pixel grid: K rows for the capitals + 1 row of overshoot above and below. */
+const RZ = {};
+function rasterChar(ch, fk, K) {
+  const id = ch + fk + K; if (RZ[id]) return RZ[id];
+  const S = 8, capRatio = CAP / FS[fk], F = K / capRatio * S, font = FONTS[fk].css.replace('1em', F + 'px');
+  const m = document.createElement('canvas').getContext('2d'); m.font = font;
+  const adv = m.measureText(ch).width / S, cols = Math.max(1, Math.round(adv)), rows = K + 2;
+  const cv = document.createElement('canvas'); cv.width = cols * S; cv.height = rows * S;
+  const g = cv.getContext('2d'); g.font = font; g.fillStyle = '#000'; g.fillText(ch, (cols - adv) / 2 * S, (K + 1) * S);
+  const data = g.getImageData(0, 0, cv.width, cv.height).data, on = [];
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    let a = 0; for (let yy = 0; yy < S; yy++) for (let xx = 0; xx < S; xx++) a += data[((y * S + yy) * cv.width + x * S + xx) * 4 + 3];
+    if (a / (S * S * 255) >= .47) on.push({ x, y });
+  }
+  const u = CAP / K;
+  const svg = `<svg class="rz" viewBox="0 0 ${cols} ${rows}" shape-rendering="crispEdges" style="width:${f(cols * u)}em;height:${f(rows * u)}em;margin-bottom:${f(-u)}em"><path d="${runsPath(on, 1)}"/></svg>`;
+  if (FONTS_OK) RZ[id] = svg;
+  return svg;
+}
+
+function wordHTML(w, from, to) {
+  let out = '';
+  for (let i = from; i < to; i++) {
+    const ch = 'SNAGTHIS'[i], orange = i >= 4;
+    let style = '';
+    if (w.alt && orange) { const A = FONTS[w.alt]; style = ` style="font:${A.css};font-size:${f(FS[w.alt] / FS[w.font])}em;letter-spacing:${A.ls}"`; }
+    out += `<span class="ch${orange ? ' o' : ''}"${style}>${w.raster ? rasterChar(ch, w.font, w.raster) : ch}</span>`;
+  }
+  return out;
+}
+function lockup(st) {
+  const L = LAYOUTS.find(l => l.id === st.L) || LAYOUTS[0], w = WMS.find(x => x.id === st.W) || WMS[0], F = FONTS[w.font], fs = w.raster ? 1 : FS[w.font];
+  const shadow = w.shadow ? `;text-shadow:max(1px,${f(PX / fs)}em) max(1px,${f(PX / fs)}em) 0 ${COL.o2}` : '';
+  const wmStyle = `font:${F.css};font-size:${fs}em;letter-spacing:${w.raster ? f(PX) + 'em' : F.ls}${shadow}`;
+  const icon = iconSvg(st.B, 0, `width:${L.s}em;height:${L.s}em;position:relative;top:${f((L.s - CAP) / 2)}em`);
+  return `<span class="lk" style="--gap:${L.gap}em"><span class="wm" style="${wmStyle}">${wordHTML(w, 0, 8)}</span>${icon}</span>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Animation engine
+   ════════════════════════════════════════════════════════════════════ */
+let ALL_TIMERS = [];
+const SLOW = +(new URLSearchParams(location.search).get('slow')) || 1; // ?slow=4 plays everything 4× slower
+const reduced = () => state.rm || matchMedia('(prefers-reduced-motion: reduce)').matches;
+function later(root, ms, fn) { const t = setTimeout(fn, ms * SLOW); (root._t ||= []).push(t); ALL_TIMERS.push(t); return t; }
+function stop(root) {
+  (root._t || []).forEach(clearTimeout); root._t = [];
+  root.getAnimations({ subtree: true }).forEach(a => a.cancel());
+  root.querySelectorAll('.tmp').forEach(n => n.remove());
+}
+const ani = (el, kf, o) => { o = Object.assign({ fill: 'none' }, o); if (o.duration) o.duration *= SLOW; if (o.delay) o.delay *= SLOW; return el.animate(kf, o); };
+const show = (el, t) => ani(el, [{ opacity: 0 }, { opacity: 0 }], { duration: Math.max(1, t) }); // hidden until t
+const pix = svg => [...svg.querySelectorAll('.glyph .p')].map(el => ({ el, x: +el.dataset.x, y: +el.dataset.y, k: el.dataset.k, f: el.dataset.f }));
+const cell = svg => 100 / +svg.dataset.n;
+function bounds(ps) { const xs = ps.map(p => p.x), ys = ps.map(p => p.y); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; }
+
+function ctxOf(root) {
+  const lk = root.querySelector('.lk');
+  return { root, lk, icons: [...root.querySelectorAll('svg.ic')], chars: [...root.querySelectorAll('.ch')], tokens: [...root.querySelectorAll('.ch, svg.ic')] };
+}
+function geo(c) {
+  const L = c.lk.getBoundingClientRect(), k = (L.width / c.lk.offsetWidth) || 1, em = parseFloat(getComputedStyle(c.lk).fontSize);
+  const loc = r => ({ x: (r.left - L.left) / k, y: (r.top - L.top) / k, r: (r.right - L.left) / k, b: (r.bottom - L.top) / k, w: r.width / k });
+  const w = c.lk.querySelector('.wm'), m = document.createElement('span'); m.className = 'blm'; w.appendChild(m);
+  const base = loc(m.getBoundingClientRect()).y; m.remove();
+  return { loc, base, em, k, L };
+}
+function cursorFor(c) {
+  if (!c.lk || !c.chars.length) return null;
+  const g = geo(c), cur = document.createElement('span'); cur.className = 'tmp tcur'; cur.style.opacity = 0; c.lk.appendChild(cur);
+  const capPx = CAP * g.em;
+  const spots = c.tokens.map(t => { const r = g.loc(t.getBoundingClientRect()); return { before: { x: r.x, y: Math.min(g.base, r.b) - capPx }, after: { x: t.tagName === 'svg' ? r.r + .12 * g.em : r.r, y: Math.min(g.base, r.b) - capPx } }; });
+  return { el: cur, at(i, where) { const p = spots[i][where]; cur.style.left = p.x + 'px'; cur.style.top = p.y + 'px'; cur.style.opacity = 1; }, hide() { cur.style.opacity = 0; } };
+}
+function press(svg, t = 0) { // A4 arcade press
+  const lip = +svg.dataset.lip, dur = 520;
+  if (lip) {
+    ani(svg.querySelector('.cap'), [
+      { transform: 'translateY(0)', easing: 'cubic-bezier(.5,0,.9,.4)' },
+      { transform: `translateY(${lip}px)`, offset: .26, easing: 'cubic-bezier(.2,.9,.3,1)' },
+      { transform: `translateY(${lip}px)`, offset: .38, easing: 'cubic-bezier(.3,1.6,.5,1)' },
+      { transform: 'translateY(0)' }], { duration: dur, delay: t });
+  } else {
+    const h = svg.getBoundingClientRect().height || 20, s = Math.max(1, h * .13);
+    ani(svg, [
+      { transform: 'translateY(0) scale(1)', filter: `drop-shadow(0 ${s}px 0 rgba(0,0,0,0))`, easing: 'cubic-bezier(.5,0,.9,.4)' },
+      { transform: 'translateY(0) scale(1)', filter: `drop-shadow(0 ${s}px 0 rgba(0,0,0,.55))`, offset: .08, easing: 'cubic-bezier(.5,0,.9,.4)' },
+      { transform: `translateY(${s}px) scale(.93)`, filter: `drop-shadow(0 ${s * .15}px 0 rgba(0,0,0,.55))`, offset: .3, easing: 'cubic-bezier(.2,.9,.3,1.4)' },
+      { transform: `translateY(${-s * .25}px) scale(1.01)`, filter: `drop-shadow(0 ${s * 1.1}px 0 rgba(0,0,0,.4))`, offset: .66, easing: 'ease-in-out' },
+      { transform: 'translateY(0) scale(1)', filter: `drop-shadow(0 ${s}px 0 rgba(0,0,0,0))` }], { duration: dur, delay: t });
+  }
+  if (+svg.dataset.swap) svg.querySelectorAll('.d[data-sh]').forEach(d => {
+    const other = d.dataset.sh === 'hi' ? COL.o2 : COL.amber;
+    ani(d, [{ fill: other }, { fill: other }], { duration: dur * .34, delay: t + dur * .1 });
+  });
+}
+function pop(svg, t) {
+  ani(svg, [{ transform: 'scale(.25)', opacity: 0, easing: 'cubic-bezier(.2,.8,.3,1)' }, { transform: 'scale(1.14)', opacity: 1, offset: .55, easing: 'ease-in-out' }, { transform: 'scale(1)' }], { duration: 260, delay: t, fill: 'backwards' });
+}
+function blinkOut(cur, t) { if (!cur) return; ani(cur.el, [{ opacity: 1 }, { opacity: 0, offset: .25 }, { opacity: 1, offset: .5 }, { opacity: 0, offset: .75 }, { opacity: 0 }], { duration: 560, delay: t, easing: 'steps(1,end)', fill: 'forwards' }); }
+function xTimer(c, span, lead = 60) { // maps a screen x to a delay across the whole lockup
+  const R = (c.lk || c.icons[0]).getBoundingClientRect();
+  return x => lead + Math.max(0, Math.min(1, (x - R.left) / (R.width || 1))) * span;
+}
+function sweep(c) { // A5 shine sweep
+  const at = xTimer(c, 620);
+  c.chars.forEach(ch => { const r = ch.getBoundingClientRect(), col = getComputedStyle(ch).color;
+    ani(ch, [{ color: col }, { color: '#ffe0b0', offset: .4 }, { color: col }], { duration: 300, delay: at(r.left + r.width / 2) }); });
+  c.icons.forEach(svg => {
+    const R = svg.getBoundingClientRect(), n = +svg.dataset.n, C = cell(svg), fx = svg.querySelector('.fx');
+    pix(svg).forEach(p => ani(p.el, [{ fill: p.f }, { fill: COL.cream, offset: .35 }, { fill: p.f }], { duration: 260, delay: at(R.left + (p.x + .5 + (n - p.y) * .35) / n * R.width) }));
+    for (let x = 0; x < n; x++) {
+      const r = document.createElementNS(NS, 'rect');
+      r.setAttribute('class', 'tmp'); r.setAttribute('x', x * C); r.setAttribute('y', 0); r.setAttribute('width', C); r.setAttribute('height', 100);
+      r.setAttribute('clip-path', `url(#${svg.dataset.clip})`); r.style.fill = '#fff'; r.style.opacity = 0; fx.prepend(r);
+      ani(r, [{ opacity: 0 }, { opacity: .28, offset: .4 }, { opacity: 0 }], { duration: 240, delay: at(R.left + (x + .5) / n * R.width) });
+    }
+  });
+}
+
+/* A10 Type, then press: the fixed launch animation. */
+const LAUNCH = {
+  a10: { name: 'A10 Type, then press', dur: 1400, run(c) {
+    const cur = cursorFor(c); let t = 150; const icons = [];
+    if (cur) cur.at(0, 'before');
+    c.tokens.forEach((tok, i) => {
+      if (tok.tagName === 'svg') { if (cur) later(c.root, t, () => cur.at(i, 'before')); t += 70; if (cur) later(c.root, t, () => cur.hide()); pop(tok, t); icons.push(tok); t += 260; if (cur && i < c.tokens.length - 1) later(c.root, t, () => cur.at(i, 'after')); }
+      else { show(tok, t); if (cur) later(c.root, t, () => cur.at(i, 'after')); t += 50; }
+    });
+    if (cur && c.tokens[c.tokens.length - 1].tagName !== 'svg') blinkOut(cur, t); else if (cur) later(c.root, t, () => cur.hide());
+    icons.forEach(svg => press(svg, t + 80));
+  } },
+  none: { name: 'None', dur: 0, run() {} },
+};
+
+/* ════════════════════════════════════════════════════════════════════
+   Idle motion.  run(c, rm) starts the ongoing behaviour on one root after
+   the launch has finished; rm = reduced motion → a static state or nothing.
+   Everything is tracked with later()/ani() so stop(root) ends it.
+   ════════════════════════════════════════════════════════════════════ */
+function mkRect(parent, x, w, op, fillc) {
+  const r = document.createElementNS(NS, 'rect');
+  r.setAttribute('x', x); r.setAttribute('y', 0); r.setAttribute('width', w); r.setAttribute('height', 100);
+  r.style.fill = fillc; r.style.opacity = op; parent.appendChild(r); return r;
+}
+function activity(c, rm) { // loading fill across the triangle while downloads are active
+  if (!state.active) return;
+  c.icons.forEach(svg => {
+    const ps = pix(svg).filter(p => p.k === '#'), b = bounds(ps), w = b.x1 - b.x0 + 1;
+    if (rm) { ps.filter(p => p.x - b.x0 >= Math.ceil(w / 2)).forEach(p => ani(p.el, [{ opacity: .28 }, { opacity: .28 }], { duration: 1, fill: 'forwards' })); return; }
+    ps.forEach(p => {
+      const a = f(.06 + (p.x - b.x0 + 1) / w * .62);
+      ani(p.el, [{ opacity: .28, offset: 0, easing: 'step-end' }, { opacity: 1, offset: a, easing: 'step-end' }, { opacity: .28, offset: .9 }, { opacity: .28, offset: 1 }], { duration: 1600, iterations: Infinity });
+    });
+  });
+}
+const IDLES = [
+  { id: 'i1', name: 'None — still after launch', pill: 'baseline', base: true, cadence: 'Never', duration: '—', rm: 'Same (still)',
+    desc: 'The logo plays Type, then press once and then stays perfectly still. Clicking it still presses the button.', run() {} },
+  { id: 'i2', name: 'Shine every 25 s', pill: 'periodic', cadence: 'Every 25 s while the app is open (on this page the first one comes 3 s after launch so you can see it)', duration: '0.9 s sweep', rm: 'No sweep',
+    desc: 'The A5 shine sweep crosses the letters and then the button, pixel by pixel. Rare enough to feel like a glint, not a loop.',
+    run(c, rm) { if (rm) return; const loop = () => { if (!document.hidden) sweep(c); later(c.root, 25000, loop); }; later(c.root, 3000, loop); } },
+  { id: 'i3', name: 'Shine on hover only', pill: 'on demand', cadence: 'When the pointer enters the logo (at most once a second)', duration: '0.9 s sweep', rm: 'No sweep',
+    desc: 'Still until you point at it, then one shine sweep. Nothing moves on its own. Hover the previews to try it.', run() {} },
+  { id: 'i4', name: 'Pixel sparkle', pill: 'very subtle', cadence: 'Random, every 2.5–5 s', duration: '1–3 pixels, 260 ms each', rm: 'No sparkle',
+    desc: 'Now and then one to three pixels of the bevel or the triangle’s shadow glint cream or amber for a moment. Easy to miss, alive if you notice.',
+    run(c, rm) {
+      if (rm) return;
+      const tick = () => {
+        if (!document.hidden) c.icons.forEach(svg => {
+          const pool = [...svg.querySelectorAll('.tile .d'), ...svg.querySelectorAll('.glyph .p[data-k="s"]')];
+          const k = 1 + (Math.random() * 3 | 0);
+          for (let j = 0; j < k && pool.length; j++) {
+            const el = pool.splice(Math.random() * pool.length | 0, 1)[0], to = el.dataset.sh === 'hi' ? COL.cream : COL.amber;
+            ani(el, [{ fill: to }, { fill: to, offset: .5 }, { fill: el.dataset.sh === 'hi' ? COL.amber : COL.o, offset: .5 }, { fill: el.dataset.sh === 'hi' ? COL.amber : COL.o }], { duration: 260, delay: j * 110 });
+          }
+        });
+        later(c.root, 2500 + Math.random() * 2500, tick);
+      };
+      later(c.root, 700, tick);
+    } },
+  { id: 'i5', name: 'Constant shimmer', pill: 'always moving', warn: true, cadence: 'Continuous, 3 s loop, never rests', duration: 'Forever', rm: 'Still',
+    desc: 'A soft band of light scans across the button one pixel column at a time, forever. You asked for it; it is the one most likely to feel busy next to your downloads.',
+    run(c, rm) {
+      if (rm) return;
+      c.icons.forEach(svg => {
+        const n = +svg.dataset.n, C = cell(svg), g = document.createElementNS(NS, 'g'), inner = document.createElementNS(NS, 'g');
+        g.setAttribute('class', 'tmp'); g.setAttribute('clip-path', `url(#${svg.dataset.clip})`); g.appendChild(inner);
+        mkRect(inner, 0, C, .3, COL.cream); mkRect(inner, -C, C, .14, COL.cream); mkRect(inner, -2 * C, C, .06, COL.cream);
+        svg.querySelector('.fx').appendChild(g);
+        ani(inner, [{ transform: `translateX(${-C}px)` }, { transform: `translateX(${(n + 3) * C}px)` }], { duration: 3000, iterations: Infinity, easing: `steps(${n + 4}, end)` });
+      });
+    } },
+  { id: 'i6', name: 'Activity light', pill: 'only while downloading', cadence: 'Only while a download is active; still otherwise', duration: '1.6 s loop', rm: 'Static half-filled triangle while active',
+    desc: 'While something downloads, the triangle fills with a stepped loading front, like A6, and repeats. The logo becomes a status light.',
+    run: activity },
+  { id: 'i7', name: 'Activity light + finish press', pill: 'status + reward', cadence: 'Loop while downloading; one press when a download finishes', duration: '1.6 s loop · 0.52 s press', rm: 'Static half fill; no press',
+    desc: 'I6, plus a single A4 arcade press when a download finishes, so the logo acknowledges each finished video.', finish: true,
+    run: activity },
+  { id: 'i8', name: 'Cursor blink', pill: 'terminal', cadence: 'Blinks every 1.1 s, forever', duration: 'Forever (550 ms on, 550 ms off)', rm: 'No cursor',
+    desc: 'The typing cursor from the launch stays after the button and blinks slowly, like a prompt waiting. The button stays still.',
+    run(c, rm) {
+      if (rm || !c.lk) return;
+      const cur = document.createElement('span'); cur.className = 'tmp icur'; c.lk.appendChild(cur);
+      ani(cur, [{ opacity: 1 }, { opacity: 1, offset: .5 }, { opacity: 0, offset: .5 }, { opacity: 0 }], { duration: 1100, iterations: Infinity });
+    } },
+];
+const iById = id => IDLES.find(o => o.id === id);
+const idleOf = root => root.dataset.idle || state.I;
+function startIdle(root) {
+  if (document.hidden || !root.isConnected) return;
+  try { iById(idleOf(root)).run(ctxOf(root), reduced()); } catch (e) { console.error(e); }
+}
+function restartIdle(root) { stop(root); startIdle(root); }
+function play(root) {
+  stop(root);
+  if (reduced()) { startIdle(root); return; }
+  const L = LAUNCH[state.launch];
+  try { L.run(ctxOf(root)); } catch (e) { console.error(e); }
+  root._launchUntil = performance.now() + L.dur * SLOW;
+  later(root, L.dur ? L.dur + 200 : 0, () => startIdle(root));
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Page
+   ════════════════════════════════════════════════════════════════════ */
+const state = { W: 'w1', I: 'i1', B: 'b4', L: 'zcap', launch: 'a10', active: true, rm: false, guides: true };
+new URLSearchParams(location.hash.slice(1)).forEach((v, k) => { if (k in state && typeof state[k] === 'string') state[k] = v; });
+const GROUPS = { W: WMS, I: IDLES, B: BUTTONS, L: LAYOUTS };
+const ORDER = ['W', 'I', 'B', 'L'], LETTER = { W: 'W', I: 'I', B: 'B', L: 'S' };
+ORDER.forEach(g => { if (!GROUPS[g].some(o => o.id === state[g])) state[g] = GROUPS[g][0].id; });
+if (!LAUNCH[state.launch]) state.launch = 'a10';
+const num = (g, i) => LETTER[g] + (i + 1);
+const pillHTML = o => `<span class="pill${o.base ? ' base' : o.warn ? ' warn' : ''}">${o.pill}</span>`;
+const cardHead = (g, o, i) => `<header><span class="num">${num(g, i)}</span><span class="name">${o.name}</span>${pillHTML(o)}</header><p>${o.desc}</p>`;
+const attrs = (st, idle) => `data-play data-st='${JSON.stringify(st)}'${idle ? ` data-idle="${idle}"` : ''}`;
+const strip = (st, idle) => `<div class="strip-label">22 px top bar</div><div class="strip"><span ${attrs(st, idle)} data-lockup="22"></span><span class="stub"></span><span class="tb">All · Downloading · Saved</span></div>`;
+
+const ROWS = () => [
+  ['linear-gradient(135deg,#40506a,#1c222c)', 'Conference keynote (full)', state.active ? '<span>Downloading · 42%</span><span class="bar"><i style="width:42%"></i></span>' : '<span>Saved · 1.2 GB · 1080p</span>', state.active ? '2.1 MB/s' : '⋯'],
+  ['linear-gradient(135deg,#6a4a3a,#231a16)', 'Drone footage — coastline at dusk', '<span>Saved · 212 MB · 4K</span>', '⋯'],
+  ['linear-gradient(135deg,#3a5a4c,#16211c)', 'How to restore a cast iron pan', '<span>Saved · 88 MB · 1080p</span>', '⋯'],
+  ['linear-gradient(135deg,#4d3a5e,#1b1622)', 'Lo-fi mix — 2 hours', '<span>Saved · 164 MB · audio</span>', '⋯'],
+];
+const rowsHTML = () => ROWS().map(r => `<div class="vrow"><div class="vthumb" style="background:${r[0]}"></div><div><div class="t">${r[1]}</div><div class="s">${r[2]}</div></div><span class="act">${r[3]}</span></div>`).join('');
+const tabsHTML = () => `<span class="on">All</span><span>Downloading${state.active ? '<b>1</b>' : ''}</span><span>Saved</span>`;
+function appWindow(withSplash) {
+  const link = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"/></svg>';
+  return `<div class="win">
+    <div class="topbar"><div class="lights"><i></i><i></i><i></i></div><div class="brand" data-play data-lockup="22"></div><div class="paste">${link}Paste a video link<kbd>⌘V</kbd></div><nav class="tabs">${tabsHTML()}</nav></div>
+    <div class="rows">${rowsHTML()}</div>
+    ${withSplash ? '<div class="splash"><div class="bg"></div><div class="fg"></div></div>' : ''}
+  </div>`;
+}
+function popupHTML() {
+  const rows = [['linear-gradient(135deg,#40506a,#1c222c)', 'Official trailer', '1080p · MP4 · 48 MB', state.active],
+    ['linear-gradient(135deg,#6a4a3a,#231a16)', 'Behind the scenes, part 2', '720p · MP4 · 31 MB'],
+    ['linear-gradient(135deg,#3a5a4c,#16211c)', 'Teaser (15 s)', '720p · WebM · 6 MB']];
+  return `<div class="popup"><div class="ph"><span data-play data-lockup="20" id="popup-lk"></span><span class="count">${state.active ? '1 downloading · ' : ''}3 videos on this page</span></div>` +
+    rows.map((r, i) => `<div class="vrow"${i === 2 ? ' style="border:0"' : ''}><div class="vthumb" style="background:${r[0]}"></div><div><div class="t">${r[1]}</div><div class="s">${r[2]}</div></div><span class="dl${r[3] ? ' on' : ''}">${r[3] ? '42%' : 'Snag'}</span></div>`).join('') + '</div>';
+}
+function updateActivityUI() {
+  document.querySelectorAll('.win .rows').forEach(el => { el.innerHTML = rowsHTML(); });
+  document.querySelectorAll('.win .tabs').forEach(el => { el.innerHTML = tabsHTML(); });
+  const pw = document.getElementById('popup-wrap');
+  const cnt = pw.querySelector('.count'); if (cnt) cnt.textContent = (state.active ? '1 downloading · ' : '') + '3 videos on this page';
+  pw.querySelectorAll('.dl').forEach((d, i) => { const on = i === 0 && state.active; d.classList.toggle('on', on); d.textContent = on ? '42%' : 'Snag'; });
+  document.getElementById('live-tb').textContent = state.active ? 'All · Downloading 1 · Saved' : 'All · Downloading · Saved';
+  document.querySelectorAll('.dl-toggle').forEach(el => { el.checked = state.active; });
+}
+
+function fillLockups(scope = document) {
+  scope.querySelectorAll('[data-lockup]').forEach(el => {
+    const st = el.dataset.st ? JSON.parse(el.dataset.st) : state;
+    el.innerHTML = `<span style="font-size:${+el.dataset.lockup / 1.2}px;display:inline-flex">${lockup(st)}</span>`;
+  });
+  scope.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = iconSvg(el.dataset.st ? JSON.parse(el.dataset.st).B : state.B, +el.dataset.icon); });
+}
+
+function render() {
+  ALL_TIMERS.forEach(clearTimeout); ALL_TIMERS = [];
+  document.querySelectorAll('[data-play]').forEach(stop);
+  document.getElementById('win-app').innerHTML = appWindow(false);
+  document.getElementById('win-splash').innerHTML = appWindow(true);
+  document.getElementById('popup-wrap').innerHTML = popupHTML();
+
+  const card = (g, o, i, body) => `<div class="card" role="button" tabindex="0" data-g="${g}" data-v="${o.id}" aria-pressed="${state[g] === o.id}">${cardHead(g, o, i)}${body}</div>`;
+  const st = over => Object.assign({ B: state.B, L: state.L, W: state.W }, over);
+
+  document.getElementById('grid-W').innerHTML = WMS.map((o, i) => card('W', o, i, `
+    <div class="pair"><div class="panel dark stage" ${attrs(st({ W: o.id }))} data-lockup="40"></div><div class="panel light stage" ${attrs(st({ W: o.id }))} data-lockup="40"></div></div>
+    ${strip(st({ W: o.id }))}`)).join('');
+
+  document.getElementById('grid-I').innerHTML = IDLES.map((o, i) => card('I', o, i, `
+    <div class="panel dark stage" ${attrs(st({}), o.id)} data-lockup="40"></div>
+    ${strip(st({}), o.id)}
+    <dl class="meta"><dt>Cadence</dt><dd>${o.cadence}</dd><dt>Duration</dt><dd>${o.duration}</dd><dt>Reduced motion</dt><dd>${o.rm}</dd><dt>Tab hidden</dt><dd>${o.id === 'i1' || o.id === 'i3' ? 'Nothing to pause' : 'Paused; resumes when visible'}</dd></dl>
+    <div class="cardfoot"><button class="rp" data-replay-card>Replay</button>${o.run === activity ? `<label class="ctl"><input type="checkbox" class="dl-toggle"> Downloads active</label>` : ''}${o.finish ? '<button class="act" data-finish>Finish a download</button>' : ''}${o.id === 'i3' ? '<span class="note">hover the previews</span>' : ''}</div>`)).join('');
+
+  document.getElementById('grid-B').innerHTML = BUTTONS.map((o, i) => card('B', o, i, `
+    <div class="panel dark stage" ${attrs(st({ B: o.id }))} data-lockup="40"></div>
+    ${strip(st({ B: o.id }))}
+    <div class="tiles">${[128, 48, 32, 16].map(px => `<div>${iconSvg(o.id, px)}<small>${px}</small></div>`).join('')}
+      <div class="chip">${[32, 16].map(px => `<div>${iconSvg(o.id, px)}<small>${px}</small></div>`).join('')}</div></div>`)).join('');
+
+  document.getElementById('grid-L').innerHTML = LAYOUTS.map((o, i) => card('L', o, i, `
+    <div class="panel dark stage" ${attrs(st({ L: o.id }))} data-lockup="40"></div>
+    ${strip(st({ L: o.id }))}`)).join('');
+
+  document.getElementById('live-icons').innerHTML = [128, 56, 32, 16].map(px => `<div><span data-play data-icon="${px}" style="display:block"></span><small>${px}</small></div>`).join('');
+  fillLockups();
+  updateActivityUI();
+
+  const label = g => { const i = GROUPS[g].findIndex(o => o.id === state[g]); return `${num(g, i)} ${GROUPS[g][i].name}`; };
+  const code = ORDER.map(g => num(g, GROUPS[g].findIndex(o => o.id === state[g]))).join(' · ') + ' · launch ' + (state.launch === 'a10' ? 'A10' : 'none');
+  document.getElementById('combo').innerHTML = code.replace(/\b([WIBSA])(?=\d)/g, '<span>$1</span>');
+  document.getElementById('ctx-combo').textContent = code;
+  document.querySelectorAll('[data-sel]').forEach(el => { el.textContent = label(el.dataset.sel); });
+  document.querySelectorAll('#launch-seg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.launch === state.launch));
+  const idle = iById(state.I);
+  document.getElementById('summary').innerHTML = ORDER.map(g => `<div><b>${label(g)}</b> · ${GROUPS[g].find(o => o.id === state[g]).desc}</div>`).join('') +
+    `<div><b>Motion</b> · launch: ${LAUNCH[state.launch].name} · idle: ${idle.cadence} · reduced motion: ${idle.rm}</div>`;
+  history.replaceState(null, '', '#' + new URLSearchParams({ W: state.W, I: state.I, B: state.B, L: state.L, launch: state.launch }));
+  requestAnimationFrame(drawGuides);
+}
+
+const roots = () => [...document.querySelectorAll('[data-play]')];
+function playAll() {
+  roots().forEach(el => { if (!el.closest('#win-splash')) play(el); });
+  runSplash();
+}
+
+/* Startup: play big in the middle, then FLIP each part into the top bar, then start the idle motion there. */
+function endSplash() {
+  const win = document.querySelector('#win-splash .win'); if (!win) return;
+  stop(win);
+  win.querySelector('.splash').style.display = 'none';
+  win.querySelector('.brand').style.visibility = '';
+}
+function runSplash() {
+  const win = document.querySelector('#win-splash .win');
+  stop(win);
+  const sp = win.querySelector('.splash'), bg = sp.querySelector('.bg'), fg = sp.querySelector('.fg'), hdr = win.querySelector('.brand');
+  fg.innerHTML = `<span data-splash style="font-size:40px;display:inline-flex">${lockup(state)}</span>`;
+  hdr.style.visibility = '';
+  const L = LAUNCH[state.launch];
+  if (reduced() || !L.dur || document.hidden) { sp.style.display = 'none'; restartIdle(hdr); return; }
+  sp.style.display = ''; hdr.style.visibility = 'hidden';
+  const big = fg.firstElementChild;
+  L.run(ctxOf(big)); (win._t ||= []).push(...(big._t || []));
+  later(win, L.dur + 350, () => {
+    const pairs = [], bw = [...big.querySelectorAll('.wm')], hw = [...hdr.querySelectorAll('.wm')];
+    bw.forEach((w, i) => hw[i] && pairs.push([w, hw[i]]));
+    pairs.push([big.querySelector('svg.ic'), hdr.querySelector('svg.ic')]);
+    big.getAnimations({ subtree: true }).forEach(x => x.finish());
+    pairs.forEach(([from, to]) => {
+      const r1 = from.getBoundingClientRect(), r2 = to.getBoundingClientRect(), s = r2.height / r1.height;
+      from.style.transformOrigin = '0 0';
+      ani(from, [{ transform: 'translate(0,0) scale(1)' }, { transform: `translate(${r2.left - r1.left}px, ${r2.top - r1.top}px) scale(${s})` }], { duration: 620, easing: 'cubic-bezier(.65,0,.2,1)', fill: 'forwards' });
+    });
+    ani(bg, [{ opacity: 1 }, { opacity: 0 }], { duration: 420, delay: 140, easing: 'ease-out', fill: 'forwards' });
+    later(win, 640, () => { hdr.style.visibility = ''; sp.style.display = 'none'; restartIdle(hdr); });
+  });
+}
+
+function replay(which) {
+  if (which === 'all') return playAll();
+  if (which === 'splash') return runSplash();
+  const scope = { app: '#win-app', popup: '#popup-wrap', icons: '#icons-ctx' }[which];
+  document.querySelectorAll(`${scope} [data-play]`).forEach(play);
+}
+function setActive(v) {
+  state.active = v;
+  updateActivityUI();
+  roots().forEach(r => { if (!(r.closest('#win-splash') && r.style.visibility === 'hidden')) restartIdle(r); });
+}
+function finishDownload() {
+  const was = state.active;
+  setActive(false);
+  if (!was || reduced()) return;
+  roots().forEach(r => { if (iById(idleOf(r)).finish) ctxOf(r).icons.forEach(svg => press(svg, 40)); });
+}
+
+document.addEventListener('click', e => {
+  if (e.target.closest('.ctl')) return; // checkboxes inside cards: don't select the card
+  const r = e.target.closest('[data-replay]');
+  if (r) { replay(r.dataset.replay); return; }
+  if (e.target.closest('[data-finish]')) { e.stopPropagation(); finishDownload(); return; }
+  const ls = e.target.closest('[data-launch]');
+  if (ls) { state.launch = ls.dataset.launch; render(); playAll(); return; }
+  const rc = e.target.closest('[data-replay-card]');
+  if (rc) { e.stopPropagation(); rc.closest('.card').querySelectorAll('[data-play]').forEach(play); return; }
+  const brand = e.target.closest('.win .brand, #popup-lk');
+  if (brand) { if (!reduced()) ctxOf(brand).icons.forEach(svg => press(svg, 0)); return; }
+  const c = e.target.closest('.card');
+  if (c) choose(c.dataset.g, c.dataset.v);
+});
+document.addEventListener('change', e => {
+  if (e.target.matches('.dl-toggle')) setActive(e.target.checked);
+});
+document.addEventListener('mouseover', e => { // I3: shine on hover
+  const t = e.target.closest('[data-play]');
+  if (!t || t.contains(e.relatedTarget) || idleOf(t) !== 'i3' || reduced()) return;
+  const now = performance.now();
+  if (t._busyUntil > now || t._launchUntil > now) return;
+  t._busyUntil = now + 1000 * SLOW;
+  sweep(ctxOf(t));
+});
+document.addEventListener('keydown', e => {
+  const c = e.target.closest?.('.card');
+  if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); choose(c.dataset.g, c.dataset.v); return; }
+  const sec = document.querySelector('section[data-group]:hover');
+  if (!sec || !/^[0-9]$/.test(e.key)) return;
+  const list = GROUPS[sec.dataset.group], i = e.key === '0' ? 9 : +e.key - 1;
+  if (list[i]) choose(sec.dataset.group, list[i].id);
+});
+// Pause everything while the tab is hidden; resume the idle motion (not the launch) when it comes back.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { roots().forEach(stop); endSplash(); }
+  else roots().forEach(startIdle);
+});
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change', () => { render(); playAll(); });
+
+// Alignment guides: a line on the baseline and one at capital height across each logo.
+function drawGuides() {
+  document.querySelectorAll('.guide').forEach(g => g.remove());
+  if (!state.guides) return;
+  document.querySelectorAll('.lk').forEach(lk => {
+    const wm = lk.querySelector('.wm'); if (!wm || lk.getBoundingClientRect().width < 60 || lk.closest('.splash')) return;
+    const k = (lk.getBoundingClientRect().width / lk.offsetWidth) || 1, m = document.createElement('span'); m.className = 'blm'; wm.appendChild(m);
+    const base = (m.getBoundingClientRect().top - lk.getBoundingClientRect().top) / k; m.remove();
+    const cap = CAP * parseFloat(getComputedStyle(lk).fontSize);
+    for (const y of [base, base - cap]) { const g = document.createElement('i'); g.className = 'guide'; g.style.top = `${y}px`; lk.appendChild(g); }
+  });
+}
+document.getElementById('guides').addEventListener('change', e => { state.guides = e.target.checked; drawGuides(); });
+document.getElementById('rm').addEventListener('change', e => { state.rm = e.target.checked; render(); playAll(); });
+function choose(g, v) { state[g] = v; render(); playAll(); }
+
+/* Measure capital heights so every face has CAP-em capitals. */
+function measure() {
+  const cv = document.createElement('canvas').getContext('2d');
+  Object.entries(FONTS).forEach(([k, F]) => {
+    cv.font = F.css.replace('1em', '200px');
+    const m = cv.measureText('H').actualBoundingBoxAscent / 200;
+    if (m > .3) FS[k] = +(CAP / m).toFixed(3);
+  });
+}
+render();
+const fontsReady = Promise.all(Object.values(FONTS).map(F => document.fonts.load(F.css.replace('1em', '40px'), 'SNAGTHIS'))).catch(() => {});
+Promise.race([fontsReady, new Promise(r => setTimeout(r, 3000))]).then(() => { FONTS_OK = document.fonts.check(FONTS.jb.css.replace('1em', '40px')); measure(); render(); requestAnimationFrame(playAll); });
+</script>
+</body>
+</html>
