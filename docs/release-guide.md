@@ -54,46 +54,94 @@ Only stable `vX.Y.Z` desktop tags are supported by this workflow. Use a version 
 
 The automated gate checks identity and coverage; a human reviewer must still check completeness. It cannot infer which third-party sources and build scripts are missing from an archive. Follow the [FFmpeg redistribution checklist](https://ffmpeg.org/legal.html) and the notices for the exact bundled builds.
 
-The desktop jobs stage `release-verification-darwin-arm64.json`, `release-verification-darwin-x64.json`, and `release-verification-win32-x64.json`. Download those artifacts from the release run. They contain the exact executable versions, FFmpeg configuration, upstream build/source references, and hashes. Preserve all dependency sources and build instructions needed to reproduce those actual builds, including linked GPL dependencies; an FFmpeg source URL alone is not the complete packet.
+### What is bundled and where its source comes from
 
-Build `snagthis-corresponding-source.tar.xz` containing the exact tagged SnagThis source plus those dependency sources, licenses, and reproducible build instructions. Do not include signing certificates, tokens, private media, or user data. Next to it create `corresponding-source.json` with this structure (replace every example value and include every actual source component):
+| Binary | Platforms | Build | Licence | Complete source |
+| --- | --- | --- | --- | --- |
+| FFmpeg/ffprobe 9.0.1 | macOS arm64, x64 | [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de), static, made by the provider's published [build script](https://git.martin-riedl.de/ffmpeg/build-script) at `f63b8aab` | GPLv3 (`--enable-gpl --enable-version3`, OpenSSL, x264, x265, zvbi, libvpx, aom, dav1d, SVT-AV1, rav1e, vvenc, libass, libbluray and others; no nonfree) | Build script, FFmpeg tarball and every library tarball at the versions the script pins. x264 is the exception: the script downloads x264 `master` and records no revision; the packet uses `0480cb05`, which was master from 2025-09-10 until after the builds. |
+| FFmpeg/ffprobe n9.0.2 | Windows x64 | [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) `autobuild-2026-09-19-13-11`, `win64-gpl-9.0` | GPLv3 (about 80 statically linked libraries; `--disable-libfdk-aac`, no nonfree) | BtbN's scripts, pinned to one commit per dependency; the script runs BtbN's own download commands for every stage in that variant. |
+| yt-dlp 2026.08.19 | macOS (universal2 `yt-dlp_macos`), Windows x64 (`yt-dlp.exe`) | Official PyInstaller release builds | Unlicense, plus Python and bundled packages (mutagen GPL-2.0+, certifi MPL-2.0, PyInstaller bootloader GPL-2.0 with exception, others permissive; see its `THIRD_PARTY_LICENSES.txt`) | yt-dlp at the tag commit, including its build workflow, and the source distributions of every hash-pinned package in its build requirements. |
+
+**Compliance note.** The macOS builds have the weakest provenance. The provider builds them on its own machines and publishes only the build script. Its x264 revision is inferred rather than recorded, and its library tarballs are fetched without upstream checksums. Consider replacing them before public launch with an FFmpeg built by this repository's CI from pinned sources. SnagThis needs only `libx264` plus native codecs and TLS (SecureTransport on macOS, Schannel on Windows). That build would reduce the packet to FFmpeg, x264 and one build script, at the cost of maintaining that build and 10 to 20 CI minutes per architecture.
+
+`fetch-yt-dlp.cjs` must pin the same yt-dlp version as `PINS.ytdlp` in `scripts/build-source-packet.cjs`. If the fetch script still downloads `latest`, the packet builder warns, and the release is covered only if `latest` still resolves to that version when the release builds. When any pin in `apps/desktop/scripts/fetch-*.cjs` changes, update `PINS` (and `MAC_LIBRARIES` if the macOS build script's set of libraries changes). The script refuses to run while `fetch-ffmpeg.cjs` no longer contains the pinned URLs and checksums.
+
+### 1. Build the packet
+
+Requirements: Node from `.nvmrc`, `git`, `curl`, `xz`, and Docker. Docker runs BtbN's amd64 base image; on Apple Silicon it runs under emulation, and the script sends tar extractions to the image's `bsdtar` to work around an emulation bug. Expect about 7 GB of disk use (cache plus staging) and 20 to 30 minutes on the first run. For v2.0.44 the archive was 1.3 GB: about 0.94 GB of Windows stage sources, 0.30 GB of macOS sources, 36 MB of SnagThis and 28 MB of yt-dlp. To stay under 2 GiB, the Windows stage archives are repacked without their `.git` metadata, except for the few stages whose build uses Git. Everything goes under `work/source-packet/` (gitignored), and downloads are cached in `work/source-packet/cache/` for reruns.
+
+1. Wait for the desktop release run for `vX.Y.Z` to finish its platform jobs. Download its `release-*` artifacts, which contain `release-verification-darwin-arm64.json`, `release-verification-darwin-x64.json` and `release-verification-win32-x64.json`, for example with `gh run download <release-run-id> --pattern 'release-*' --dir work/release-reports`.
+2. From a checkout that has the tag:
+
+   ```sh
+   node scripts/build-source-packet.cjs --tag vX.Y.Z --reports work/release-reports
+   ```
+
+   The script does the following:
+   - archives the tagged SnagThis commit (`git archive`)
+   - fetches each bundled binary's sources as described above, verifying the checksums that upstream publishes (PyPI and yt-dlp's pinned hashes, OpenSSL's `.sha256`, and the tag and commit identities)
+   - checks the macOS provider's `versions.txt` against the build script's pins
+   - extracts licence files and writes `BUILD-INSTRUCTIONS.md`, per-component `BUILD.md` files and `SOURCES.sha256`
+   - writes `work/source-packet/release-source/snagthis-corresponding-source.tar.xz` and `corresponding-source.json`
+   - runs `scripts/verify-corresponding-source.cjs`. With `--reports`, this includes the exact per-platform tool-version check that draft preparation repeats.
+
+   Without `--reports`, the version lines come from `PINS`; use that only for rehearsals. `--ref <commit>` builds from a commit other than the tag, also for rehearsals only. `--platforms darwin-arm64,darwin-x64` limits a rehearsal to some platforms, but a release packet must cover all three.
+3. Review the result:
+   - Read `BUILD-INSTRUCTIONS.md` and each `BUILD.md`.
+   - Check that every tool's `components` in `corresponding-source.json` lists the build scripts and libraries.
+   - Optionally verify the FFmpeg tarball signatures (`gpg --verify ffmpeg-*.asc` with FFmpeg's release key `FCF986EA15E6E293A5644F10B4322F04D67658D8`).
+   - Keep the archive under 2 GiB, which is the GitHub release asset limit and the most the verifier can read.
+
+The script prints both SHA-256 values. You can recompute them with `shasum -a 256 FILE` on macOS or `sha256sum FILE` on Linux.
+
+`corresponding-source.json` has this shape. Paths are inside the archive, and every tool lists all components it was built from:
 
 ```json
 {
   "releaseTag": "vX.Y.Z",
-  "sourceCommit": "40-character Git commit from the verification reports",
-  "archiveSha256": "SHA256 of snagthis-corresponding-source.tar.xz",
+  "sourceCommit": "40-character commit from the verification reports",
+  "archiveSha256": "SHA-256 of snagthis-corresponding-source.tar.xz",
   "components": [
-    { "id": "snagthis", "version": "X.Y.Z", "path": "snagthis", "licenseFile": "snagthis/LICENSE", "buildInstructions": "snagthis/BUILD.md" },
-    { "id": "ffmpeg-mac", "version": "exact revision", "path": "ffmpeg-mac", "licenseFile": "ffmpeg-mac/COPYING.GPLv3", "buildInstructions": "ffmpeg-mac/BUILD.md" },
-    { "id": "ffmpeg-win", "version": "exact revision", "path": "ffmpeg-win", "licenseFile": "ffmpeg-win/COPYING.GPLv3", "buildInstructions": "ffmpeg-win/BUILD.md" },
-    { "id": "yt-dlp", "version": "exact revision", "path": "yt-dlp", "licenseFile": "yt-dlp/LICENSE", "buildInstructions": "yt-dlp/BUILD.md" }
+    { "id": "snagthis", "version": "X.Y.Z", "path": "snagthis", "licenseFile": "snagthis/LICENSE", "buildInstructions": "BUILD-INSTRUCTIONS.md" },
+    { "id": "ffmpeg-mac", "version": "...", "path": "ffmpeg-macos", "licenseFile": "ffmpeg-macos/COPYING.GPLv3", "buildInstructions": "ffmpeg-macos/BUILD.md" }
   ],
   "builds": [
     { "platform": "darwin", "arch": "arm64", "tools": {
-      "ffmpeg": { "version": "first line of report.ffmpeg.tools.ffmpeg.version", "components": ["ffmpeg-mac"] },
-      "ffprobe": { "version": "first line of report.ffmpeg.tools.ffprobe.version", "components": ["ffmpeg-mac"] },
-      "yt-dlp": { "version": "report.ytdlp.version", "components": ["yt-dlp"] }
-    } },
-    { "platform": "darwin", "arch": "x64", "tools": {
-      "ffmpeg": { "version": "first line from this architecture's report", "components": ["ffmpeg-mac"] },
-      "ffprobe": { "version": "first line from this architecture's report", "components": ["ffmpeg-mac"] },
-      "yt-dlp": { "version": "this architecture's report.ytdlp.version", "components": ["yt-dlp"] }
-    } },
-    { "platform": "win32", "arch": "x64", "tools": {
-      "ffmpeg": { "version": "first line from the Windows report", "components": ["ffmpeg-win"] },
-      "ffprobe": { "version": "first line from the Windows report", "components": ["ffmpeg-win"] },
-      "yt-dlp": { "version": "Windows report.ytdlp.version", "components": ["yt-dlp"] }
+      "ffmpeg": { "version": "first line of report.ffmpeg.tools.ffmpeg.version", "components": ["ffmpeg-mac", "ffmpeg-mac-build-script", "ffmpeg-mac-x264"] },
+      "ffprobe": { "version": "first line of report.ffmpeg.tools.ffprobe.version", "components": ["..."] },
+      "yt-dlp": { "version": "report.ytdlp.version", "components": ["yt-dlp", "yt-dlp-python-deps"] }
     } }
   ]
 }
 ```
 
-Paths refer to files inside the archive. Each tool's `components` list must also include its relevant linked dependencies/build scripts. Add component records as needed; the example is a schema example, not a complete source bundle.
+### 2. Publish the archive and manifest for the workflow
 
-Calculate both SHA256 values (`shasum -a 256 FILE` on macOS; `sha256sum FILE` on Linux). Make the reviewed archive and manifest available at HTTPS URLs without embedding credentials in workflow inputs. In Actions, run **Prepare corresponding source** on `main`, providing the exact tag, both URLs, and both expected hashes. It downloads only those inputs, verifies the hashes and packet structure, and uploads the named `snagthis-corresponding-source` artifact. This workflow does not publish a release and does not substitute for final binary/source matching.
+**Prepare corresponding source** downloads both files anonymously over HTTPS, so draft assets and assets in this private repository do not work. Do not put tokens or pre-signed credentials in the URLs. Use a public location that you control, for example a public Cloudflare R2 bucket served from `https://source.snagthisvid.com/`:
 
-Set `CORRESPONDING_SOURCE_RUN_ID` to that completed run's numeric ID. If draft preparation already failed for a missing source packet, rerun only that failed job after setting the variable. Desktop artifacts expire after 7 days; the source packet expires after 30 days. If required artifacts have expired, rebuild the unchanged tagged release before publication and recheck its source evidence.
+```sh
+aws s3 cp work/source-packet/release-source/snagthis-corresponding-source.tar.xz s3://BUCKET/vX.Y.Z/ --endpoint-url https://ACCOUNT.r2.cloudflarestorage.com
+aws s3 cp work/source-packet/release-source/corresponding-source.json s3://BUCKET/vX.Y.Z/ --endpoint-url https://ACCOUNT.r2.cloudflarestorage.com
+```
+
+The `aws` CLI uses multipart upload for large files; `wrangler r2 object put` limits uploads to about 300 MB. Static assets on the website's Worker cannot hold a file this large. After the repository is public, a published pre-release in this repository (for example `source-vX.Y.Z`) also works. The release draft attaches the packet anyway, so the hosted copy only needs to stay up until the workflow has run. Keep it available for as long as you distribute the binaries, since that is how you meet the source-offer obligation.
+
+### 3. Run the workflow and record its run ID
+
+```sh
+gh workflow run prepare-source-packet.yml --ref main \
+  -f release_tag=vX.Y.Z \
+  -f archive_url=https://source.snagthisvid.com/vX.Y.Z/snagthis-corresponding-source.tar.xz \
+  -f archive_sha256=ARCHIVE_SHA256 \
+  -f manifest_url=https://source.snagthisvid.com/vX.Y.Z/corresponding-source.json \
+  -f manifest_sha256=MANIFEST_SHA256
+gh run list --workflow prepare-source-packet.yml --limit 1 --json databaseId,status,conclusion
+gh variable set CORRESPONDING_SOURCE_RUN_ID --body RUN_ID
+```
+
+The workflow runs only on `main`. It downloads exactly those inputs, verifies both hashes and the packet structure, and uploads the `snagthis-corresponding-source` artifact. It does not publish a release, and it does not replace the final binary/source match during draft preparation.
+
+Set `CORRESPONDING_SOURCE_RUN_ID` to the ID of that successful run. If draft preparation already failed because the source packet was missing, rerun only that failed job after setting the variable. Desktop artifacts expire after 7 days and the source packet after 30 days. If required artifacts have expired, rebuild the unchanged tagged release before publication and recheck its source evidence.
 
 ## What the release workflow checks and publishes
 

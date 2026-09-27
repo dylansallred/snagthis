@@ -40,3 +40,6 @@ apps/extension/popup.css
 
 # Cloudflare Wrangler local state (site/ deploys).
 .wrangler/
+
+# Local Claude Code state, including agent worktrees (full copies of the repository).
+.claude/
