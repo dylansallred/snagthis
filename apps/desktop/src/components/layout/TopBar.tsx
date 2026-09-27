@@ -4,8 +4,10 @@ import { SnagThisLogo } from './BrandLockup';
 import { ui } from '@/lib/strings';
 
 export type ListFilter = 'all' | 'downloading' | 'saved';
-export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit, filter, onFilter, showNavigation, searchOpen, onSearchOpen, search, onSearch, checking, error, firstLaunch, gallery, viewToggle, savedDot = false }: {
+export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit, filter, onFilter, showNavigation, searchOpen, onSearchOpen, search, onSearch, checking, error, firstLaunch, gallery, viewToggle, savedDot = false, updateChip }: {
   brandRef: RefObject<SVGSVGElement | null>; viewToggle?: ReactNode; savedDot?: boolean;
+  /** The update chip (NEW 1.1.0), shown beside the tabs only while an update needs the person. */
+  updateChip?: ReactNode;
   pasteRef: RefObject<HTMLTextAreaElement | null>; searchRef: RefObject<HTMLInputElement | null>; value: string; onValue: (value: string) => void;
   onSubmit: () => void; filter: ListFilter; onFilter: (filter: ListFilter) => void; showNavigation: boolean;
   searchOpen: boolean; onSearchOpen: (open: boolean) => void; search: string; onSearch: (search: string) => void;
@@ -67,6 +69,7 @@ export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit
       </div>
       {error && <div className="paste-error" role="alert">{error}</div>}
     </form>
+    {updateChip && <div className="top-update no-drag">{updateChip}</div>}
     {/* An empty library has nothing to filter or search; the tabs arrive with the first video. */}
     {showNavigation && <div className="top-navigation no-drag">
       {searchOpen ? <div className="search-field"><Search /><input ref={searchRef} value={search} onChange={(event) => onSearch(event.target.value)} placeholder={ui.searchPlaceholder} aria-label={ui.searchPlaceholder} onKeyDown={(event) => { if (event.key === 'Escape') { onSearch(''); onSearchOpen(false); } }} /><button className="row-action" aria-label={ui.closeSearch} onClick={() => { onSearch(''); onSearchOpen(false); }}><X /></button></div> : <>

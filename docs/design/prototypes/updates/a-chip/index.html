@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Updates A · Quiet chip</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+/* A · Quiet chip: a small cartridge chip in the footer opens a compact popover. */
+.uchip { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 7px; margin-right: 2px; font-size: 12px; font-weight: 500; color: var(--color-foreground-muted); background: var(--color-background-active); box-shadow: inset 1px 1px 0 hsl(215 14% 24%), inset -1px -1px 0 hsl(215 22% 6%); white-space: nowrap; }
+.uchip:hover { color: var(--color-foreground); background: hsl(215 18% 17%); }
+.uchip.hot { color: #fff; background: var(--color-primary); box-shadow: inset 1px 1px 0 color-mix(in srgb, var(--accent-bevel-light) 70%, var(--color-primary)), inset -1px -1px 0 var(--accent-bevel-dark); font-weight: 600; }
+.uchip.hot:hover { background: var(--color-primary-strong); }
+.uchip.hot .pbtn .pb-glyph { fill: var(--color-primary); }
+.uchip.warn { color: var(--color-status-paused); background: color-mix(in srgb, var(--color-status-paused) 12%, var(--color-background-active)); }
+.uchip.open { outline: 1px solid color-mix(in srgb, var(--color-primary-hover) 70%, transparent); outline-offset: 2px; }
+.uchip .upbar { width: 40px; }
+.uchip svg.i { width: 13px; height: 13px; }
+/* One sparkle pixel pair, stepped: the only motion at rest, twice a minute in the real app. */
+.uchip.hot::after { content: ""; position: absolute; right: -3px; top: -3px; width: 4px; height: 4px; background: var(--accent-bevel-light); box-shadow: 0 0 0 1px #07080a; animation: pip 1.6s steps(1) infinite; }
+@keyframes pip { 50% { opacity: 0; } }
+.pop { position: absolute; z-index: 15; right: 150px; bottom: 50px; width: 344px; padding: 14px; border-radius: 10px; background: var(--color-popover); border: 1px solid var(--color-border); box-shadow: 0 18px 48px rgb(0 0 0 / .5), 0 2px 6px rgb(0 0 0 / .3); display: grid; gap: 12px; }
+.pop::after { content: ""; position: absolute; right: 116px; bottom: -6px; width: 10px; height: 10px; background: var(--color-popover); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); transform: rotate(45deg); }
+.pop.static { position: relative; right: auto; bottom: auto; margin-bottom: 14px; }
+.pop-head { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: start; }
+.pop-head .glyph { width: 22px; height: 22px; display: grid; place-items: center; margin-top: 1px; }
+.pop-head .glyph svg.i { width: 18px; height: 18px; }
+.pop-head b { display: block; font-size: 13.5px; font-weight: 620; line-height: 1.35; }
+.pop-head b .pixel { font-size: 17px; color: var(--color-primary-hover); margin-right: 1px; }
+.pop-head small { display: block; font-size: 12px; color: var(--color-foreground-muted); margin-top: 2px; }
+.pop-head .x { margin: -4px -4px 0 0; width: 24px; height: 24px; }
+.pop-head .x svg.i { width: 13px; height: 13px; }
+.pop .meta { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--color-foreground-subtle); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.pop .acts { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.pop .acts .left { margin-right: auto; }
+.pop .teaser { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 7px; background: var(--color-background-raised); font-size: 12px; color: var(--color-foreground-muted); text-align: left; width: 100%; }
+.pop .teaser:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.pop .teaser b { color: var(--color-foreground); font-weight: 600; }
+.pop .teaser svg.i { margin-left: auto; width: 13px; height: 13px; transform: rotate(-90deg); }
+.pop .notes-box { max-height: 214px; overflow: auto; padding: 12px; border-radius: 8px; background: var(--color-background-raised); scrollbar-color: var(--color-border) transparent; }
+.pop .notes-box h4 { margin: 0 0 10px; font: 400 16px/1 var(--font-pixel); letter-spacing: .06em; text-transform: uppercase; color: var(--color-foreground-muted); }
+.pop .wait { padding: 10px; border-radius: 8px; background: var(--color-background-raised); display: grid; gap: 6px; }
+.pop .wait small { font-size: 11.5px; color: var(--color-foreground-subtle); padding-left: 23px; }
+.foot-mini { display: flex; align-items: center; justify-content: flex-end; gap: 2px; width: calc(100% + 36px); height: 43px; margin: 0 -18px; padding: 0 8px 0 14px; border-top: 1px solid var(--color-border-subtle); color: var(--color-foreground-subtle); font-size: 12px; }
+.foot-mini .cmd { display: inline-flex; gap: 6px; align-items: center; margin: 0 4px 0 10px; color: var(--color-foreground-muted); }
+.foot-mini kbd { padding: 0 5px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 500 10.5px/16px var(--font-sans); }
+.a-well { flex-direction: column; align-items: flex-end !important; padding: 18px 18px 0 !important; min-height: 0 !important; justify-content: flex-end; }
+.a-well .pop.static::after { right: 214px; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Updates</a> · <span>A</span>Quiet chip</div>
+    <h1>A · Quiet chip</h1>
+    <p>A small pixel <b>cartridge chip</b> joins the footer only while there is something to say. It turns accent-coloured when an update is ready, and a click opens a <b>compact popover</b> with the version, progress, What’s new and the install controls. The queue never moves. Settings keeps today’s row.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+  <h2 class="section-title">Every state</h2>
+  <p class="section-sub">The chip as it sits in the footer, with its popover open above it. Number keys 1–9 switch the live window.</p>
+  <div class="grid" id="grid"></div>
+  <p class="hub-footer">Prototype only; nothing here changes the app. The chip uses the logo button’s bevel shades, so it follows the accent colour.</p>
+</main>
+<script src="../brand.js"></script>
+<script src="../shared.js"></script>
+<script>
+const P = SnagProto, V = P.NEXT;
+const head = (glyph, title, sub, close = true) => `<div class="pop-head"><span class="glyph">${glyph}</span><div><b>${title}</b><small>${sub}</small></div>${close ? `<button class="iconbtn x" aria-label="Close" data-flip="popOpen">${P.icon('x')}</button>` : '<span></span>'}</div>`;
+const ver = `SnagThis <span class="pixel">${V}</span>`;
+const chip = (state, open) => {
+  const o = open ? ' open' : '';
+  const c = {
+    checking: `<button class="uchip cart${o}" data-flip="popOpen">${P.spin()}Checking…</button>`,
+    uptodate: `<button class="uchip cart${o}" data-flip="popOpen">${P.icon('check', 'ok')}Up to date</button>`,
+    downloading: `<button class="uchip cart${o}" data-flip="popOpen">${P.upbar(P.PCT, 6, 6)}Update ${P.PCT}%</button>`,
+    ready: `<button class="uchip hot cart${o}" data-flip="popOpen">${P.button(12)}${V} ready</button>`,
+    deferred: `<button class="uchip cart${o}" data-flip="popOpen">${P.icon('clock')}Update at ${P.REMIND}</button>`,
+    installing: `<button class="uchip cart${o}">${P.spin()}Installing…</button>`,
+    error: `<button class="uchip warn cart${o}" data-flip="popOpen">${P.icon('alert')}Update failed</button>`,
+  };
+  return c[state] || c.ready;
+};
+const later = '<button class="btn" data-go="deferred">Later</button>';
+const install = (disabled) => `<button class="btn primary" ${disabled ? 'disabled title="Available when downloads finish"' : 'data-go="installing"'}>Restart &amp; install</button>`;
+const body = (state, ctx) => ({
+  checking: head(P.spin(), 'Checking for updates…', `You’re on SnagThis ${P.CUR}.`) + P.upbar(null, 24, 6),
+  uptodate: head(P.icon('check', 'ok'), 'You’re up to date', `SnagThis ${P.CUR} is the newest version.`) + `<div class="acts"><span class="left subtle" style="font-size:11.5px">Checked just now</span><button class="btn quiet" data-flip="popOpen">Done</button></div>`,
+  downloading: head(P.button(20), `Downloading ${ver}`, 'It installs when you restart. Keep snagging meanwhile.') + `<div>${P.upbar(P.PCT, 24, 8)}<div class="meta"><span>${P.GOT} of ${P.SIZE} MB</span><span>about 20 s left</span></div></div>` + `<button class="teaser" data-go="notes"><span>What’s new: <b>Accent colours</b>, <b>Saved shelf previews</b> and 3 more</span>${P.icon('chevron')}</button>`,
+  ready: head(P.button(20), `${ver} is ready`, 'Restarting takes a few seconds. Your queue picks up where it left off.') + `<button class="teaser" data-go="notes"><span>What’s new: <b>Accent colours</b>, <b>Saved shelf previews</b> and 3 more</span>${P.icon('chevron')}</button><div class="acts">${later}${install()}</div>`,
+  notes: head(P.button(20), `${ver} is ready`, `You’re on ${P.CUR}.`) + `<div class="notes-box"><h4>What’s new</h4>${P.notesList()}</div><div class="acts"><a class="link left" href="#" style="font-size:12px">Full release notes ↗</a>${later}${install()}</div>`,
+  blocked: head(P.button(20), `${ver} is ready`, `${P.ACTIVE} downloads are still running. Restarting now would interrupt them.`) + `<div class="wait"><label class="check"><input type="checkbox" data-ctx="waitInstall" ${ctx.waitInstall ? 'checked' : ''}>Install when downloads finish</label>${ctx.waitInstall ? '<small>Installs after Neon Rain and Behind the pixels. About 5 min.</small>' : '<small>Or come back when they’re done.</small>'}</div><div class="acts">${later}${install(true)}</div>`,
+  deferred: head(P.icon('clock'), `Reminding you at ${P.REMIND}`, `SnagThis ${V} is downloaded. It also installs the next time you quit.`) + `<div class="acts"><button class="btn quiet left" data-go="notes">What’s new</button>${install()}</div>`,
+  installing: head(P.spin(), `Installing ${ver}…`, 'SnagThis will close and reopen by itself. Your queue is saved.', false) + P.upbar(null, 24, 6),
+  error: head(P.icon('alert', 'warn'), 'Couldn’t download the update', `The connection dropped at ${P.GOT} of ${P.SIZE} MB. You’re still on ${P.CUR}; nothing changed.`) + `<div class="acts"><a class="btn" href="#" style="margin-right:auto">Download installer ${P.icon('ext')}</a><button class="btn primary" data-go="downloading">${P.icon('retry')}Try again</button></div>${P.errorDetails()}`,
+}[state]);
+const chipState = (s) => (s === 'notes' || s === 'blocked') ? 'ready' : s;
+P.mount({
+  initial: 'ready',
+  ctx: { popOpen: true, waitInstall: true },
+  cardCtx: { popOpen: true },
+  toggles: [{ key: 'popOpen', label: 'Popover open' }],
+  cardMin: '440px',
+  view: (s, ctx) => ({
+    footExtra: chip(chipState(s), ctx.popOpen),
+    overlay: ctx.popOpen ? `<div class="pop" role="dialog" aria-label="Update">${body(s, ctx)}</div>` : '',
+  }),
+  cardHint: (s) => ({ checking: 'only after Check now', uptodate: 'fades after 4 s', installing: 'window closes next' }[s] || ''),
+  card: (s, ctx) => `<div class="well a-well"><div class="pop static">${body(s, ctx)}</div><div class="foot-mini chrome-tex">${chip(chipState(s), true)}<span class="cmd"><kbd>⌘K</kbd>Commands</span><span class="iconbtn">${P.icon('more')}</span><span class="iconbtn">${P.icon('folder')}</span><span class="iconbtn">${P.icon('gear')}</span></div></div>`,
+  notes: {
+    checking: '<h2>Checking</h2><p>Automatic checks at launch are <b>silent</b>: no chip appears unless something is found. The chip shows <b>Checking…</b> only after <b>Check now</b> in Settings or <b>Check for updates</b> in ⌘K.</p>',
+    uptodate: '<h2>Up to date</h2><p>Confirms a manual check, then the chip fades out after 4 seconds. Automatic checks never show this.</p>',
+    downloading: '<h2>Downloading</h2><p>The chip carries a six-cell mini meter and the percentage. The popover leads with the version, then <b>38 of 92 MB</b> on accent pixel cells, so it never reads as a video download (those stay green).</p><h3>Why a teaser</h3><p>What’s new is one tap away while waiting, without crowding the popover.</p>',
+    ready: '<h2>Ready to install</h2><p>The only loud moment: the chip fills with the accent and one sparkle pixel blinks. The popover leads with <b>SnagThis 1.1.0 is ready</b>, then Later and Restart &amp; install.</p><div class="why">Noticeable in the corner the eye already visits for status, but it never covers the queue or steals focus.</div>',
+    notes: '<h2>What’s new</h2><p>The teaser expands into a scrolling list with pixel tags (<b>New</b>, <b>Better</b>, <b>Fixed</b>). The install controls stay pinned under it.</p>',
+    blocked: `<h2>Blocked by active downloads</h2><p>With ${P.ACTIVE} downloads running, Restart &amp; install is disabled (tooltip: “Available when downloads finish”). <b>Install when downloads finish</b> is on by default and names what it is waiting for.</p><p>Toggle the checkbox in the window to see both captions.</p>`,
+    deferred: `<h2>Later</h2><p><b>Later</b> closes the popover and the chip turns neutral with the time: <b>Update at ${P.REMIND}</b>. At that time the chip turns accent again. It never pops up by itself.</p>`,
+    installing: '<h2>Installing</h2><p>A marching accent bar while the app hands over to the installer. There is no Cancel: this lasts a second or two before the window closes.</p>',
+    error: '<h2>Error</h2><p>The chip turns amber (<b>Update failed</b>). The popover gives a plain headline, what happened in one line, <b>Try again</b> as the primary action and <b>Download installer ↗</b> as the escape hatch. The raw error sits behind <b>Details</b>.</p>',
+  },
+});
+</script>
+</body>
+</html>

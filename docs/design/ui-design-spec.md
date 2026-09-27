@@ -298,7 +298,7 @@ Every section uses the same inset-grouped structure: a sentence-case group capti
 | App | **Notifications**: Tell me when a download finishes (`Shows a system notification with the video’s name.`). **Start-up**: Start SnagThis when I log in (`Chrome can only send videos while SnagThis is open.`). Clicking a switch row anywhere flips its switch. |
 | Appearance | **Accent colour**: the chosen colour's name, `Used for buttons, focus rings and highlights. The Chrome extension follows it too.`, then five named swatches (radio group); see §2 Accent. |
 | Advanced | **Speed**: Downloads at once (`Others wait their turn. More at once share your bandwidth.`), Connections per download (`More can speed up videos that arrive in segments.`), each a stepper with `1–16` under it; Start new downloads right away. **File names** with **Restore defaults** (**Using defaults**, disabled, when unchanged) beside the caption and, when it applies, `Restore defaults resets speed and file names. Your API keys stay.`: Name new files by, and Name for new downloads when **My own name** is chosen. **Online lookups**: TMDB key, SubDL key (masked, with show/hide). |
-| Updates & support | **Updates**: `SnagThis {version}` with the updater status as its hint and **Check now** (**Restart & install** and **Later** once an update is downloaded; progress and What’s new below); Check automatically. **Support**: Support bundle (**Export…**, **Copy**), A site didn’t work? (**Report ↗**, a redacted GitHub issue), Temporary download data (**Clear**). |
+| Updates & support | **Updates**: `SnagThis {version}` as a one-row summary of the update (§8.1) with **See update** (opens the update sheet) while an update is downloading, ready or failed, otherwise **Check now** (checks and opens the sheet); Check automatically. **Support**: Support bundle (**Export…**, **Copy**), A site didn’t work? (**Report ↗**, a redacted GitHub issue), Temporary download data (**Clear**). |
 
 Settings save as they change and confirm each save with a brief inline green **Saved** beside the setting (also announced to screen readers). Opening a disclosure scrolls it near the top of the pane (instantly under reduced motion); number fields use −/+ steppers with their 1–16 bounds under them, and an amber message replaces the hint for invalid input; **Restore defaults** never clears credentials. Typed values save on Enter, blur or closing the sheet; Esc first reverts an unsaved typed value, then closes.
 
@@ -318,6 +318,27 @@ Changes confirm with the same inline green **Saved**. Desktop folder, speed and 
 - **Keys and Disconnect:** each browser gets its own key (stored hashed with its extension origin, created and last-seen times), so desktop Settings lists connected browsers with **Disconnect** (inline confirmation: `Chrome stops sending downloads here until you connect it again. Finished files and your library stay.`) and disconnecting one leaves the others. After disconnecting, desktop Settings shows `Chrome isn’t connected` with `Chrome is disconnected. Its key no longer works.` Keys from before this change keep working and are swapped for a per-browser key on first use. The request route accepts only `chrome-extension://` origins behind the Host allowlist; tokens, request secrets and match codes never appear in logs or diagnostics.
 
 First launch keeps **Chrome extension** as the first rail section of desktop Settings, a separate **Already installed? Connect Chrome** path alongside installation, and the unconnected footer opens this setup. Confirm successful connection on both surfaces.
+
+### 8.1 Updates: header chip and update sheet
+
+The owner chose **C · Dedicated sheet** from the [update studies](prototypes/updates/index.html) (2026-09-27). Three surfaces show one updater state:
+
+- **Header chip**, beside the tabs, only while an update needs the person: a mini accent meter and `41%` while downloading; the accent pixel cartridge `NEW 1.1.0` (with the logo button) when ready; neutral clock icon with `1.1.0 · 3:45 PM` after **Later** until the reminder time, when it turns accent again; amber `Update failed` when a found update failed to download or install. Hidden when idle, checking or up to date; launch and periodic checks stay silent. Clicking it opens the sheet.
+- **Update sheet**, a 500px modal (focus-trapped, Esc closes, sheet motion from §10): a 152px pixel-art hero drawn on a 4px grid from the accent's bevel shades (green horizon when up to date; greyed button and amber horizon on errors) with a Jersey 15 kicker and version, then the state's words, and a footer with the controls. Update progress uses accent pixel cells; video progress keeps its own greens. An update notification's click opens this sheet.
+- **Settings ▸ Updates & support** keeps a one-row summary (§8) whose hint says where the update is.
+
+| State | Sheet | Settings hint |
+|---|---|---|
+| Checking (only after **Check now**) | `Checking for updates…`, `You’re on SnagThis 1.0.0.`, marching cells; **Close** | `Checking for updates…` |
+| Up to date | `You’re up to date`, `SnagThis 1.0.0 is the newest version. Checked just now.`; **Done** | `Up to date · checked just now` |
+| Downloading | `Downloading SnagThis 1.1.0`, 32 cells, `38 of 92 MB` and `about 20 s left`, What's new; footer `Installs when you restart` and **Keep snagging** (closes) | `Downloading 1.1.0 · 38 of 92 MB` with a small meter |
+| Ready | `SnagThis 1.1.0 is ready`, `Restarting takes a few seconds. Your queue picks up where it left off.`, What's new; footer `You’re on 1.0.0`, **Later**, **Restart & install** | `1.1.0 is ready to install` (accent) |
+| Blocked by active downloads | `{n} downloads are still running. Restarting now would interrupt them.`, each running download with 12 mini progress cells and its percentage, and **Install when downloads finish** (on by default, per the prototype, unless the person unticked it or chose Later for that version); **Restart & install** disabled; footer `Installs in about 5 min` / `Installs when downloads finish` / `Available when downloads finish` | `1.1.0 installs after 2 downloads finish` |
+| Later | the sheet closes; toast `Reminding you at 3:45 PM` with **Undo** (drops the reminder and reopens the sheet); reopening shows `Reminding you at 3:45 PM.` and **Restart & install** | `1.1.0 is ready · reminding you at 3:45 PM` |
+| Installing | `Installing SnagThis 1.1.0…`, `SnagThis will close and reopen by itself. Your queue is saved.`, marching cells, the hero button pressing; no close button | `Installing 1.1.0…` |
+| Error | headline by kind: `Couldn’t download the update` (`The connection dropped at 38 of 92 MB.`), `Couldn’t check for updates`, `Couldn’t install the update`, `SnagThis can’t update from this folder`; then `You’re still on 1.0.0; nothing changed.`; the raw error only inside a collapsed **Details**; **Download installer ↗** (opens snagthisvid.com/#download) and primary **Try again** (checks again, which downloads again) | `Couldn’t download 1.1.0` (amber) |
+
+Times use the locale's short time. **What's new** lists the release notes' "What's new" section (lines after that heading, until the installer guide): the first three, then **See all {n} changes**, which shows them all in a scrolling list with **Full release notes on GitHub ↗** (the release tag page). A line starting `New:`, `Better:` or `Fixed:` gets the pixel NEW / BETTER / FIXED badge, and a short leading `Title.` sentence after the tag is bold; the release workflow's notes template uses that form. **Install when downloads finish** is kept in the main process: it waits until no download is active (the same rule **Restart & install** uses), then installs through the same path; Later, errors and a new check clear it.
 
 New download folders use the resolved video/file name with readable spaces and safe filesystem characters. Reserve a separate folder for each download; existing names get ` (2)`, ` (3)` and subsequent suffixes. If extraction supplies a better title later, the new download's completed folder follows its final filename. Do not automatically rename older saved folders as part of this change.
 
@@ -356,7 +377,8 @@ The unified list makes "remove" ambiguous, so it is explicit:
 | `VideoList` | `QueueView`, `HistoryView` | uses `useLibrary` and shared row models for the unified list |
 | `RowDetails` | segment section of `ActiveDownloadCard` | wraps existing `SegmentHeatmap` |
 | `TopBar` | `Navbar`, `QueueToolbar`, `HistoryToolbar` | paste field, tabs, search |
-| `SettingsSheet` | `SettingsView`, `QueueSettingsBar`, `DesktopSettingsCard` | Grouped cards; desktop update controls live under Advanced |
+| `SettingsSheet` | `SettingsView`, `QueueSettingsBar`, `DesktopSettingsCard` | Sidebar sections; Updates & support keeps a one-row update summary |
+| `UpdateSheet`, `UpdateChip` (`components/updates/`) | the Settings Updates row's install controls | §8.1; states derived in `updateModel.ts` |
 | popup `renderRow()` | the ~400-line body of `renderMedia()` in `popup.js` | title inference helpers stay untouched |
 
 ```ts

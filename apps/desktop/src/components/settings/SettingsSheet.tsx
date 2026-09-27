@@ -13,13 +13,14 @@ import { NumberSetting, SavedMark, SettingRow, SettingsFormContext, SettingsGrou
 import { AccentPicker } from './AccentPicker';
 import { PairingDigits, countdown, reviewPairing, shortExtensionId } from './PairingApproval';
 import { settingsSections, type SettingsSectionId } from './settingsSections';
+import { UpdateMeter } from '@/components/updates/UpdateSheet';
+import { updateSummary, type UpdateView } from '@/components/updates/updateModel';
 import './settings.css';
 
 const languages = [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']];
 const namingHints: Record<DesktopSettings['fileNaming'], string> = { title: ui.titleNamingHint, resource: ui.resourceNamingHint, custom: ui.customNamingHint };
 /** Advanced values that "Restore defaults" resets. Credentials and update choices are left alone. */
 const speedAndNaming = ['queueMaxConcurrent', 'downloadThreads', 'queueAutoStart', 'fileNaming', 'customFilename'] as const;
-const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 const shortDate = (time: number) => new Date(time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 function lastSeen(time: number | null) {
   if (!time) return 'not used yet';
@@ -37,10 +38,13 @@ const galleryExtensions: ConnectedExtension[] = [{ id: 'gallery', extensionId: '
  * Desktop Settings as a 640px sheet with a section rail (settings-refresh option 2). The owner of
  * `section` keeps it for the app session and points deep links, such as Connect Chrome, at a section.
  */
-export function SettingsSheet({ open, onOpenChange, section, onSectionChange, settings, onSave, updater, appInfo, api, gallery }: {
+export function SettingsSheet({ open, onOpenChange, section, onSectionChange, settings, onSave, updater, updateView, updateBlocking, onOpenUpdate, appInfo, api, gallery }: {
   open: boolean; onOpenChange: (open: boolean) => void; section: SettingsSectionId; onSectionChange: (section: SettingsSectionId) => void;
   settings: DesktopSettings; onSave: (next: Partial<DesktopSettings>) => Promise<void>;
-  updater: UpdaterState; appInfo: AppInfo | null; api: ApiClient | null; gallery: boolean;
+  updater: UpdaterState; updateView: UpdateView; updateBlocking: number;
+  /** Opens the update sheet; `check` starts a check first (Check now). */
+  onOpenUpdate: (check: boolean) => void;
+  appInfo: AppInfo | null; api: ApiClient | null; gallery: boolean;
 }) {
   const [busy, setBusy] = useState('');
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
@@ -55,7 +59,6 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const customNameRef = useRef<HTMLInputElement>(null);
-  const revealNext = useRef<HTMLElement | null>(null);
   const focusCustomName = useRef(false);
   const drafts = useRef(new Map<string, Draft>());
   const pairingSeconds = pairing ? Math.max(0, Math.ceil((pairing.expiresAt - pairingNow) / 1000)) : 0;
@@ -122,20 +125,6 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     const draft = active instanceof HTMLInputElement ? drafts.current.get(active.id) : undefined;
     if (draft?.dirty()) { event.preventDefault(); draft.revert(); }
   };
-  /** Brings a just-opened disclosure's header near the top of the pane so its content is visible. */
-  const reveal = useCallback((element: HTMLElement) => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const top = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12;
-    scroller.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? 'auto' : 'smooth' });
-  }, []);
-  const onDisclosureToggle = (event: React.SyntheticEvent<HTMLDetailsElement>) => {
-    const details = event.currentTarget;
-    if (details.open && revealNext.current === details) requestAnimationFrame(() => reveal(details));
-    revealNext.current = null;
-  };
-  // Only a person's click or key press on a summary scrolls; restoring a remembered open state does not.
-  const markReveal = (event: React.MouseEvent<HTMLElement>) => { revealNext.current = event.currentTarget.parentElement; };
   const showPairing = () => run('pairing', async () => {
     const next = gallery ? { code: '483921', expiresAt: Date.now() + 300000 } : await window.desktop.getPairingInfo();
     setPairingNow(Date.now()); setCodeCopied(false); setPairing(next);
@@ -160,7 +149,6 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     if (!result.ok) throw new Error(result.error || 'Could not export the support bundle');
     toast.success('Support bundle saved');
   };
-  const notes = Array.isArray(updater.releaseNotes) ? updater.releaseNotes : updater.releaseNotes ? [updater.releaseNotes] : [];
   const reportSite = async () => {
     if (gallery) { toast(ui.reportPreview); return; }
     const data = await api?.getDiagnostics().catch(() => null);
@@ -185,8 +173,8 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     onSectionChange(id);
     tabs.current.get(id)?.focus();
   };
-  const busyUpdater = ['checking', 'downloading', 'installing'].includes(updater.phase);
-  const updateStatus = !updatesAvailable ? ui.updatesInstalledOnly : updater.message || ui.updatesNotChecked;
+  // Settings keeps a one-row summary; the update sheet has the details and the install controls.
+  const summary = updateSummary(updater, updateView, updateBlocking, !updatesAvailable ? ui.updatesInstalledOnly : updater.message || ui.updatesNotChecked);
   const button = (label: React.ReactNode, onClick: () => void, extra: { className?: string; disabled?: boolean; label?: string; describedBy?: string } = {}) =>
     <button type="button" className={`settings-button ${extra.className || ''}`.trim()} disabled={extra.disabled} aria-label={extra.label} aria-describedby={extra.describedBy} onClick={onClick}>{label}</button>;
   const panes: Record<SettingsSectionId, () => React.ReactNode> = {
@@ -273,16 +261,12 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     </>,
     about: () => <>
       <SettingsGroup id="about-updates" title={ui.updates}>
-        <SettingRow id="update-status" label={ui.appVersion.replace('{version}', appInfo?.version || 'development')} hintRole="status"
-          hint={updater.error ? <span className="tone-attention">{updater.error}</span> : updateStatus}
-          control={<>
-            {updater.phase === 'downloaded' && <>{button(ui.later, () => run('later', async () => { if (!gallery) await window.desktop.remindLater(30); }))}{button(ui.install, () => run('install', async () => { if (!gallery) { const result = await window.desktop.installUpdateNow(); if (!result.ok) throw new Error(result.error); } }), { className: 'primary' })}</>}
-            {updater.phase !== 'downloaded' && button(ui.checkUpdates, () => run('update', async () => { if (gallery) { toast.success('You’re up to date.'); return; } const result = await window.desktop.checkForUpdates(); if (!result.ok) throw new Error('Could not check for updates'); }), { disabled: !!busy || !updatesAvailable || busyUpdater })}
-          </>}
-          below={(updater.phase === 'downloading' || notes.length > 0) && <>
-            {updater.phase === 'downloading' && <progress value={updater.progress} max={100} aria-label="Update download" />}
-            {notes.length > 0 && <details className="release-notes" onToggle={onDisclosureToggle}><summary onClick={markReveal}>What’s new</summary>{notes.map((note, index) => <p key={index}>{note}</p>)}</details>}
-          </>} />
+        <SettingRow id="update-status" label={ui.appVersion.replace('{version}', appInfo?.version || updater.currentVersion || 'development')} hintRole="status"
+          hint={<span className={`update-summary-hint tone-${summary.tone}`}>{summary.hint}</span>}
+          control={summary.action === 'see'
+            ? button(ui.updateSeeUpdate, () => onOpenUpdate(false))
+            : button(ui.checkUpdates, () => onOpenUpdate(true), { disabled: !updatesAvailable || ['checking', 'installing'].includes(updater.phase) })}
+          below={summary.meter != null && <UpdateMeter percent={summary.meter} cells={20} height={5} className="update-summary-meter" />} />
         <SwitchRow id="update-startup" label={ui.checkStartup} hint={ui.checkStartupHint} checked={settings.checkUpdatesOnStartup} onChange={(value) => save({ checkUpdatesOnStartup: value }, 'update-startup', ui.checkStartup)} />
       </SettingsGroup>
       <SettingsGroup id="about-support" title={ui.diagnostics}>

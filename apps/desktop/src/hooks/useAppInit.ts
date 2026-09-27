@@ -10,10 +10,11 @@ export const defaultSettings: DesktopSettings = {
   fileNaming: 'title', customFilename: '',
 };
 
-export function useAppInit(gallery = false) {
+/** `galleryUpdater` seeds the design gallery's update preview (`?gallery&update=ready`). */
+export function useAppInit(gallery = false, galleryUpdater: UpdaterState | null = null) {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [settings, setSettings] = useState<DesktopSettings>(gallery ? { ...defaultSettings, outputDirectory: '~/Downloads/SnagThis' } : defaultSettings);
-  const [updater, setUpdater] = useState<UpdaterState>({ phase: 'idle', message: gallery ? 'You’re up to date.' : '', progress: 0 });
+  const [updater, setUpdater] = useState<UpdaterState>(() => (gallery && galleryUpdater) || { phase: 'idle', message: gallery ? 'You’re up to date.' : '', progress: 0 });
   const [error, setError] = useState('');
   const generation = useRef(0);
   const infoRevision = useRef(0);
@@ -59,5 +60,7 @@ export function useAppInit(gallery = false) {
     const saved = await window.desktop.saveSettings(next);
     setSettings({ ...defaultSettings, ...saved });
   }, [gallery]);
-  return { appInfo, settings, saveSettings, updater, error, initialize };
+  // The gallery simulates update actions locally; the app only ever follows the main process.
+  const previewUpdater = gallery ? setUpdater : null;
+  return { appInfo, settings, saveSettings, updater, previewUpdater, error, initialize };
 }

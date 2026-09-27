@@ -189,7 +189,9 @@ jobs:
           cat > release-notes.md <<NOTES
           ## What's new
 
-          - REPLACE BEFORE PUBLISHING: the changes people will notice in this version.
+          - New: REPLACE BEFORE PUBLISHING. One sentence about something people can now do.
+          - Better: REPLACE BEFORE PUBLISHING. Something that works better than before.
+          - Fixed: REPLACE BEFORE PUBLISHING. Something that no longer goes wrong.
 
           ## Which file do I need?
 
@@ -204,7 +206,7 @@ jobs:
           cat >> "$GITHUB_STEP_SUMMARY" <<'CHECKLIST'
           ## Before publishing this draft
 
-          - Replace the "What's new" placeholder. Users see these notes in the app's update panel.
+          - Replace the "What's new" placeholders. Users see these notes in the app's update sheet. Start each line with New:, Better: or Fixed: and a short title ending in a full stop (for example "Fixed: Big files. Downloads over 4 GB no longer stall at 99%."); the app shows the tag as a badge and the title in bold, and lists the first three with a "See all" link.
           - Confirm the corresponding-source archive is complete for every bundled build.
           - Review the signed installer and update verification reports and the checksums.
           - Keep the release a draft during private testing. Make the repository public before launch so downloads and automatic updates work without credentials.
