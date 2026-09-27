@@ -8,6 +8,10 @@
   },
   "main": "electron/main.js",
   "description": "SnagThis Desktop",
+  "author": {
+    "name": "SnagThis",
+    "url": "https://snagthisvid.com"
+  },
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite",
@@ -49,6 +53,10 @@
   "build": {
     "appId": "com.snagthisvid.desktop",
     "productName": "SnagThis",
+    "extraMetadata": {
+      "name": "SnagThis",
+      "productName": "SnagThis"
+    },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "buildResources": "build",
