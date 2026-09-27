@@ -8,6 +8,7 @@ const { isCurrentPreviewClipPath } = require('./PreviewClip');
 const { normalizeMediaExtension } = require('../utils/mediaFiles');
 
 const { readJsonState, writeFileDurable } = require('../utils/durableJson');
+const { moveFileSync } = require('../utils/moveFile');
 
 const FINAL_FILE_NAME_MAX_BYTES = 200;
 const QUEUE_VERSION = 1;
@@ -302,7 +303,7 @@ class QueueManager {
     }
 
     if (targetPath !== resolvedCandidate) {
-      fs.renameSync(resolvedCandidate, targetPath);
+      moveFileSync(resolvedCandidate, targetPath);
     }
 
     return targetPath;
@@ -350,7 +351,7 @@ class QueueManager {
       }
 
       if (targetPath !== resolvedCurrent) {
-        fs.renameSync(resolvedCurrent, targetPath);
+        moveFileSync(resolvedCurrent, targetPath);
       }
 
       if (job.mp4Path && path.resolve(job.mp4Path) === resolvedCurrent) {
@@ -368,10 +369,25 @@ class QueueManager {
         }
       }
 
+      // The video has moved; record where it is before touching sidecars so a
+      // sidecar failure cannot leave the job pointing at the old folder.
+      job.outputPath = targetPath;
+      job.outputDirectory = path.dirname(targetPath);
+      job.storageDir = resolvedTargetDir;
+
       const relocatedSidecars = new Map();
       const relocateSidecar = candidate => {
         if (relocatedSidecars.has(candidate)) return relocatedSidecars.get(candidate);
-        const moved = this.relocateSidecarArtifact(candidate, resolvedTargetDir);
+        let moved = candidate;
+        try {
+          moved = this.relocateSidecarArtifact(candidate, resolvedTargetDir);
+        } catch (err) {
+          logger.warn('Failed to relocate completed sidecar', {
+            jobId: job.id,
+            file: typeof candidate === 'string' ? path.basename(candidate) : null,
+            code: err && err.code,
+          });
+        }
         relocatedSidecars.set(candidate, moved);
         return moved;
       };
@@ -384,16 +400,15 @@ class QueueManager {
       job.subtitlePath = relocateSidecar(job.subtitlePath);
       job.subtitleZipPath = relocateSidecar(job.subtitleZipPath);
       if (currentDir !== resolvedTargetDir && hasJobStorageMarker(currentDir, job.id)) {
-        const remaining = fs.readdirSync(currentDir);
-        if (remaining.every(name => name === JOB_STORAGE_MARKER)) {
-          fs.unlinkSync(path.join(currentDir, JOB_STORAGE_MARKER));
-          fs.rmdirSync(currentDir);
-        }
+        try {
+          const remaining = fs.readdirSync(currentDir);
+          if (remaining.every(name => name === JOB_STORAGE_MARKER)) {
+            fs.unlinkSync(path.join(currentDir, JOB_STORAGE_MARKER));
+            fs.rmdirSync(currentDir);
+          }
+        } catch { /* An empty scratch folder is harmless; the file has moved. */ }
       }
 
-      job.outputPath = targetPath;
-      job.outputDirectory = path.dirname(targetPath);
-      job.storageDir = resolvedTargetDir;
       job.updatedAt = Date.now();
     } catch (err) {
       // Do not leave an empty, marker-only folder behind in the user's folder.
