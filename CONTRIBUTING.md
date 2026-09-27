@@ -6,7 +6,9 @@ Keep changes focused. Preserve engine behavior unless a real-media fixture demon
 
 Run `npm run verify` once for a completed change, plus the relevant browser/Electron checks when changing that surface. Investigate failures and rerun only the affected checks after a fix. Do not replace ffprobe assertions with argument-string tests for media correctness.
 
-Use a branch and a pull request. Explain the user-visible change, relevant limitations and validation. Do not commit generated videos, downloaded content, secrets, credentials, build artifacts or `node_modules`.
+Use a branch and a pull request. Explain the user-visible change, relevant limitations and validation.
+
+GitHub CI runs only when asked, to save Actions minutes. Add the `run-ci` label to a PR to run the Linux, macOS and Windows suite; it reruns on every push while the label is on, so remove it once CI has passed. You can also start it by hand with `gh workflow run ci.yml --ref <branch>`. Without the label, the required **CI gate** check passes without running the suite, so run `npm run verify` locally first. Release tags always run the full suite. Do not commit generated videos, downloaded content, secrets, credentials, build artifacts or `node_modules`.
 
 Keep approved design references, release guides and reusable technical decisions in `docs/`. Put superseded design experiments in `work/design/`, scratch research in `work/research/`, and one-off review reports in `work/reviews/`; `work/` is ignored by Git. Keep assets and fixtures required by the application, README or tests tracked.
 

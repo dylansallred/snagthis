@@ -10,6 +10,6 @@ Raw, redacted results go to ignored `results/`. `COMPATIBILITY.md` includes stag
 
 Stages: page/player → detection → correct rows → variants → fetch context → bounded engine output → ffprobe verification → opt-in full download. Once a stage fails, subsequent stages remain unknown. An absent variant expectation is marked not applicable rather than passed.
 
-For the weekly workflow: run `npm run compat -- --external`, upload `compat/results/` even on failure, and create a PR for `compat/COMPATIBILITY.md`. A protected GitHub environment can require manual approval before that job. Do not schedule full downloads. Credentials and private user source URLs must never be added to seeds or artifacts.
+For the compatibility workflow (started by hand): run `npm run compat -- --external`, upload `compat/results/` even on failure, and create a PR for `compat/COMPATIBILITY.md`. A protected GitHub environment can require manual approval before that job. Do not schedule full downloads. Credentials and private user source URLs must never be added to seeds or artifacts.
 
 The local fixture server also serves live/DRM clean-decline cases, explicit header/cookie gating, expiring URLs, missing/retried segments, range/no-range direct files and throttled downloads. Those are asserted in `npm run test:media`; a supported-site table should not count correct unsupported-media rejection as a successful download.
