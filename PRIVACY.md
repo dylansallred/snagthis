@@ -21,3 +21,7 @@ For a YouTube download that requires sign-in, the desktop offers **Use Chrome si
 Requests to a source website, optional metadata providers, multimedia-tool download hosts and the configured update provider go directly to those services. Their own privacy terms apply. Optional metadata keys remain local and are omitted from exported diagnostics.
 
 In the desktop library, removing a saved item from the list keeps the file. Moving it to Trash is a separate explicit action.
+
+## Contact
+
+Privacy questions, data requests and private security reports: [privacy@snagthisvid.com](mailto:privacy@snagthisvid.com). The website version of this policy is at [snagthisvid.com/privacy](https://snagthisvid.com/privacy).
