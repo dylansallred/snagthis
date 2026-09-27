@@ -7,6 +7,11 @@ let renderer;
 test.beforeAll(async () => { renderer = await startRenderer(); });
 test.afterAll(async () => { await renderer?.close(); });
 
+// Escape goes to whatever has focus; wait until the dialog or menu has taken it (slower on CI).
+async function focusInside(page, selector) {
+  await expect.poll(() => page.evaluate((value) => !!document.activeElement?.closest(value), selector)).toBe(true);
+}
+
 test('Escape closes only the dialog or menu it was pressed in, and shortcuts never stack dialogs', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`${renderer.baseUrl}/?gallery&details=1`);
@@ -16,6 +21,7 @@ test('Escape closes only the dialog or menu it was pressed in, and shortcuts nev
   // Closing Settings with Escape keeps the expanded details.
   await page.keyboard.press('ControlOrMeta+Comma');
   await expect(page.locator('.settings-sheet')).toBeVisible();
+  await focusInside(page, '.settings-sheet');
   await page.keyboard.press('Escape');
   await expect(page.locator('.settings-sheet')).toHaveCount(0);
   await expect(details).toHaveCount(1);
@@ -23,6 +29,7 @@ test('Escape closes only the dialog or menu it was pressed in, and shortcuts nev
   // Closing a row's More menu with Escape keeps them too.
   await page.locator('.video-row .more-action').nth(2).click({ force: true });
   await expect(page.locator('[role="menu"]')).toBeVisible();
+  await focusInside(page, '[role="menu"]');
   await page.keyboard.press('Escape');
   await expect(page.locator('[role="menu"]')).toHaveCount(0);
   await expect(details).toHaveCount(1);
@@ -51,8 +58,7 @@ test('closing Settings with Escape keeps a pending quality choice', async ({ pag
   await expect(page.locator('.quality-picker')).toBeVisible();
   await page.keyboard.press('ControlOrMeta+Comma');
   await expect(page.locator('.settings-sheet')).toBeVisible();
-  // Escape goes to whatever has focus; wait until the sheet has taken it (slower on CI).
-  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('.settings-sheet'))).toBe(true);
+  await focusInside(page, '.settings-sheet');
   await page.keyboard.press('Escape');
   await expect(page.locator('.settings-sheet')).toHaveCount(0);
   await expect(page.locator('.quality-picker')).toBeVisible();

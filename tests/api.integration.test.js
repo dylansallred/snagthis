@@ -1103,9 +1103,13 @@ test('completed downloads are stored under a per-job folder', async () => {
       return job && job.queueStatus === 'completed' ? true : false;
     }, { timeoutMs: 12_000, intervalMs: 200 });
 
+    // The queue is written to disk asynchronously after the job completes in memory.
     const queueFilePath = path.join(tmpRoot, 'queue.json');
-    const queuePayload = JSON.parse(fs.readFileSync(queueFilePath, 'utf8'));
-    const persisted = (queuePayload.queue || []).find((entry) => entry.id === jobId);
+    const readPersisted = () => {
+      try { return (JSON.parse(fs.readFileSync(queueFilePath, 'utf8')).queue || []).find((entry) => entry.id === jobId); } catch { return null; }
+    };
+    await waitFor(() => readPersisted()?.queueStatus === 'completed', { timeoutMs: 5_000, intervalMs: 100 });
+    const persisted = readPersisted();
     assert.ok(persisted);
     assert.equal(path.dirname(persisted.filePath), path.join(downloadDir, 'Folder Layout Job'));
     assert.equal(fs.existsSync(persisted.filePath), true);
