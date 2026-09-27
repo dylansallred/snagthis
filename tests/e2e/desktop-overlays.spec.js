@@ -51,6 +51,8 @@ test('closing Settings with Escape keeps a pending quality choice', async ({ pag
   await expect(page.locator('.quality-picker')).toBeVisible();
   await page.keyboard.press('ControlOrMeta+Comma');
   await expect(page.locator('.settings-sheet')).toBeVisible();
+  // Escape goes to whatever has focus; wait until the sheet has taken it (slower on CI).
+  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('.settings-sheet'))).toBe(true);
   await page.keyboard.press('Escape');
   await expect(page.locator('.settings-sheet')).toHaveCount(0);
   await expect(page.locator('.quality-picker')).toBeVisible();
