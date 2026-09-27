@@ -270,7 +270,7 @@
         Object.assign(choice, { q: item.dataset.q, tier: item.dataset.tier, size: item.dataset.size });
         $('#quality-label').textContent = item.dataset.q === 'audio' ? 'Audio only' : `${item.dataset.q}p`;
         $('#tier').textContent = item.dataset.tier;
-        $('#size-label').textContent = `${item.dataset.size} · 14:48`;
+        $('#size-label').textContent = `${item.dataset.size} · 12:37`;
       } else {
         choice.sub = item.dataset.sub;
       }
@@ -426,7 +426,7 @@
 
     function fillSlot() {
       slot.classList.add('filled');
-      slot.innerHTML = `<img src="media/sintel-thumb.webp" alt="" width="320" height="180"><span>Sintel <b class="new-tag">NEW</b></span><small>${qualityText()} · ${choice.size}</small>`;
+      slot.innerHTML = `<img src="media/neon-rain-thumb.webp" alt="" width="320" height="180"><span>Neon Rain <b class="new-tag">NEW</b></span><small>${qualityText()} · ${choice.size}</small>`;
       const btn = $('.px-btn', mascot);
       press(btn);
       if (!reduced.matches) { mascot.classList.remove('cheer'); void mascot.offsetWidth; mascot.classList.add('cheer'); }
@@ -438,7 +438,7 @@
       const visible = to.top < innerHeight && to.bottom > 0;
       if (reduced.matches || !visible || !document.body.animate) { fillSlot(); return; }
       const flyer = document.createElement('img');
-      flyer.src = 'media/sintel-thumb.webp'; flyer.alt = ''; flyer.className = 'flyer';
+      flyer.src = 'media/neon-rain-thumb.webp'; flyer.alt = ''; flyer.className = 'flyer';
       Object.assign(flyer.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px` });
       document.body.append(flyer);
       const dx = to.left - from.left; const dy = to.top - from.top; const sx = to.width / from.width; const sy = to.height / from.height;
@@ -487,10 +487,127 @@
     watchVideo();
   }
 
+  /* ── Product recordings: load near the viewport, play only on screen ── */
+  // Sources start as data-src so nothing downloads until a clip is close. JavaScript then owns playback:
+  // play while at least a quarter is visible, pause off screen or in a hidden tab, never autoplay with
+  // reduced motion (the poster shows instead), and the round button pauses or plays each one.
+  function initClips() {
+    const clips = $$('video.clip');
+    if (!clips.length) return;
+    const states = new Map();
+    const load = video => {
+      if (video.dataset.loaded) return;
+      video.dataset.loaded = '1';
+      $$('source[data-src]', video).forEach(source => { source.src = source.dataset.src; source.removeAttribute('data-src'); });
+      video.load();
+    };
+    const sync = video => {
+      const state = states.get(video);
+      const play = state.visible && state.want && !document.hidden;
+      if (play) { load(video); const started = video.play(); if (started) started.catch(() => {}); }
+      else if (!video.paused) video.pause();
+      if (state.toggle) {
+        state.toggle.toggleAttribute('data-paused', !state.want);
+        state.toggle.setAttribute('aria-label', state.want ? 'Pause the recording' : 'Play the recording');
+      }
+    };
+    clips.forEach(video => {
+      video.autoplay = false; // Playback follows visibility below, not page load.
+      const toggle = $('.clip-toggle', video.closest('.shot') || video.parentElement);
+      const state = { visible: false, want: !reduced.matches, toggle };
+      states.set(video, state);
+      if (toggle) {
+        toggle.hidden = false;
+        toggle.addEventListener('click', () => { state.want = !state.want; if (state.want) state.visible = true; sync(video); });
+      }
+    });
+    if (!('IntersectionObserver' in window)) { clips.forEach(video => { states.get(video).visible = true; sync(video); }); return; }
+    const near = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (entry.isIntersecting && states.get(entry.target).want) { load(entry.target); near.unobserve(entry.target); }
+    }), { rootMargin: '600px 0px' });
+    const seen = new IntersectionObserver(entries => entries.forEach(entry => {
+      states.get(entry.target).visible = entry.isIntersecting;
+      sync(entry.target);
+    }), { threshold: .25 });
+    clips.forEach(video => { near.observe(video); seen.observe(video); });
+    document.addEventListener('visibilitychange', () => clips.forEach(sync));
+    reduced.addEventListener('change', () => clips.forEach(video => { states.get(video).want = !reduced.matches; sync(video); }));
+  }
+
+  /* ── Layout motion: scroll-in reveals, a drifting glow and tilt on the product frames ── */
+  function initMotion() {
+    const reveals = $$('.reveal');
+    const shots = $$('.shot[data-tilt]');
+    const canMove = () => !reduced.matches && 'IntersectionObserver' in window;
+    if (!canMove()) { reveals.forEach(node => node.classList.add('in')); }
+    else {
+      root.classList.add('motion');
+      const io = new IntersectionObserver(entries => entries.forEach(entry => {
+        if (entry.isIntersecting) { entry.target.classList.add('in'); io.unobserve(entry.target); }
+      }), { rootMargin: '0px 0px -8% 0px', threshold: .1 });
+      reveals.forEach(node => io.observe(node));
+    }
+    reduced.addEventListener('change', () => {
+      root.classList.toggle('motion', canMove());
+      if (reduced.matches) { reveals.forEach(node => node.classList.add('in')); shots.forEach(reset); }
+    });
+    if (!shots.length) return;
+
+    // Tilt and a pointer-following glow, for mouse and trackpad only.
+    const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+    function reset(shot) { shot.classList.remove('tilting'); shot.style.setProperty('--rx', '0deg'); shot.style.setProperty('--ry', '0deg'); }
+    shots.forEach(shot => {
+      let frame = 0; let last = null;
+      shot.addEventListener('pointermove', event => {
+        if (reduced.matches || !finePointer.matches || event.pointerType === 'touch') return;
+        last = event;
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          const box = shot.getBoundingClientRect();
+          const x = Math.min(1, Math.max(0, (last.clientX - box.left) / box.width));
+          const y = Math.min(1, Math.max(0, (last.clientY - box.top) / box.height));
+          shot.classList.add('tilting');
+          shot.style.setProperty('--gx', `${(x * 100).toFixed(1)}%`);
+          shot.style.setProperty('--gy', `${(y * 100).toFixed(1)}%`);
+          shot.style.setProperty('--rx', `${((.5 - y) * 4).toFixed(2)}deg`);
+          shot.style.setProperty('--ry', `${((x - .5) * 6).toFixed(2)}deg`);
+        });
+      });
+      shot.addEventListener('pointerleave', () => reset(shot));
+    });
+
+    // Gentle parallax: frames drift a few pixels against the scroll while they are on screen.
+    const onScreen = new Set();
+    let ticking = false;
+    const drift = () => {
+      ticking = false;
+      if (reduced.matches) return;
+      const middle = innerHeight / 2;
+      onScreen.forEach(shot => {
+        const box = shot.getBoundingClientRect();
+        const offset = Math.max(-1, Math.min(1, (box.top + box.height / 2 - middle) / innerHeight));
+        shot.style.setProperty('--lift', `${(offset * 14).toFixed(1)}px`);
+      });
+    };
+    const request = () => { if (!ticking && onScreen.size) { ticking = true; requestAnimationFrame(drift); } };
+    if ('IntersectionObserver' in window) {
+      const watch = new IntersectionObserver(entries => {
+        entries.forEach(entry => { if (entry.isIntersecting) onScreen.add(entry.target); else onScreen.delete(entry.target); });
+        request();
+      });
+      shots.forEach(shot => watch.observe(shot));
+      addEventListener('scroll', request, { passive: true });
+      addEventListener('resize', request, { passive: true });
+    }
+  }
+
   buildPickers();
   applyAccent('orange', false);
   markOs();
   markStore();
   if ($('#demo')) initDemo();
+  initClips();
+  initMotion();
   typeLogo();
 })();

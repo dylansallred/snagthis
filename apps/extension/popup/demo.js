@@ -3,14 +3,14 @@ window.SnagThisDemo = (() => {
   const state = {};
   function init(mode = 'default') {
     const makeItem = (id, title, poster, height, duration, size) => ({ id, title, sourcePageTitle: title, url: `https://videos.example/${id}.mp4`, sourcePageUrl: 'https://videos.example/watch', type: 'file', height, durationSeconds: duration, contentLength: size, thumbnailUrl: `popup/media/${poster}.jpg`, pageTitleCandidates: [{ source: 'document.title', value: title }] });
-    const items = [makeItem('sintel', 'Sintel — an open movie', 'sintel', 1080, 888, 2100000000), makeItem('bunny', 'Big Buck Bunny', 'big-buck-bunny', 720, 596, 182000000), makeItem('steel', 'Tears of Steel', 'tears-of-steel', 1080, 734, 950000000)];
-    items[0].variants = [1080, 720, 480].map((height, index) => ({ url: `https://videos.example/sintel-${height}.m3u8`, height, sizeBytes: [2100000000, 1200000000, 640000000][index] }));
-    items[0].audio = [{ url: 'https://videos.example/sintel-en.m3u8', language: 'en', name: 'English' }];
-    items[0].subtitles = [{ url: 'https://videos.example/sintel-en.vtt', language: 'en', name: 'English' }];
-    const jobs = [{ id: 'job-sintel', queueStatus: 'downloading', progress: 34, etaSeconds: 300, speedBps: 6_200_000 }, { id: 'job-steel', queueStatus: 'downloading', progress: 62, etaSeconds: 120, speedBps: 3_100_000 }];
-    const mappings = { sintel: 'job-sintel', steel: 'job-steel' };
+    const items = [makeItem('neon', 'Neon Rain — night drive', 'neon-rain', 1080, 757, 2100000000), makeItem('hop', 'Sky Hop — a play button’s day out', 'sky-hop', 720, 342, 182000000), makeItem('tide', 'Ember Tide — sunset crossing', 'ember-tide', 1080, 1334, 950000000)];
+    items[0].variants = [1080, 720, 480].map((height, index) => ({ url: `https://videos.example/neon-${height}.m3u8`, height, sizeBytes: [2100000000, 1200000000, 640000000][index] }));
+    items[0].audio = [{ url: 'https://videos.example/neon-en.m3u8', language: 'en', name: 'English' }];
+    items[0].subtitles = [{ url: 'https://videos.example/neon-en.vtt', language: 'en', name: 'English' }];
+    const jobs = [{ id: 'job-neon', queueStatus: 'downloading', progress: 34, etaSeconds: 300, speedBps: 6_200_000 }, { id: 'job-tide', queueStatus: 'downloading', progress: 62, etaSeconds: 120, speedBps: 3_100_000 }];
+    const mappings = { neon: 'job-neon', tide: 'job-tide' };
     // cinejoy.pk shape: four nameless renditions, only the first DEFAULT=YES.
-    if (mode === 'audio') items[0].audio = [1, 2, 3, 4].map(n => ({ url: `https://videos.example/sintel-audio-${n}.m3u8`, groupId: 'audio', name: `Track ${n}`, language: null, default: n === 1 }));
+    if (mode === 'audio') items[0].audio = [1, 2, 3, 4].map(n => ({ url: `https://videos.example/neon-audio-${n}.m3u8`, groupId: 'audio', name: `Track ${n}`, language: null, default: n === 1 }));
     if (['quality', 'audio', 'offline', 'version', 'settings'].includes(mode)) { jobs.length = 0; for (const key of Object.keys(mappings)) delete mappings[key]; }
     if (['quality', 'audio'].includes(mode)) items.splice(1);
     if (['empty', 'loading', 'error'].includes(mode)) items.length = 0;

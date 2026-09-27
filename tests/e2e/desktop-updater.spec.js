@@ -55,7 +55,7 @@ test('approved Workbench component gallery: clean thumbnails, motion previews, a
     await expect(progress).toHaveAttribute('aria-valuenow', '34');
     await expect(progress).toHaveAttribute('aria-valuetext', '34% · 5 min left');
     await expect(active.locator('.thumb').getByRole('progressbar')).toHaveCount(0);
-    await expect(active.locator('.row-heading .row-duration')).toHaveText('14:48');
+    await expect(active.locator('.row-heading .row-duration')).toHaveText('12:37');
     await expect(active.locator('.thumb .row-duration')).toHaveCount(0);
     await expect(active.locator('.thumb .row-fill, .thumb .progress-edge')).toHaveCount(0);
     await expect(active.locator('.thumb .progress-pieces')).toHaveCount(0);

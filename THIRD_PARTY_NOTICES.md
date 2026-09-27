@@ -13,6 +13,5 @@ SnagThis is licensed GPL-3.0-only. Dependencies retain their own licenses; the p
 | Inter | [SIL Open Font License 1.1](https://github.com/rsms/inter/blob/master/LICENSE.txt) | License is copied alongside the extension font. |
 | Jersey 15 | [SIL Open Font License 1.1](https://github.com/google/fonts/tree/main/ofl/jersey15) | The logo lettering is artwork drawn from this face by `scripts/render-brand-assets.cjs`; the font itself is not distributed. |
 | Lucide | [ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE) | Desktop library and extension settings icon; the extension includes `vendor/lucide.LICENSE.txt`. |
-| Blender demo excerpts | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) | Development gallery only. Clip-specific attributions accompany gallery assets. |
 
 Installed package license files are authoritative for their exact installed versions. The release pipeline must retain dependency notices and identify bundled multimedia tool sources before public binary distribution.

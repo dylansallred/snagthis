@@ -2,7 +2,7 @@
 /*
  * Regenerates the README screenshots and animations in docs/images from the development demos.
  * Every image shows the real desktop renderer or extension popup with their built-in sample data
- * (Blender open films, fictional download states). No live sites, accounts or pairing secrets.
+ * (original pixel-art sample clips, fictional download states). No live sites, accounts or pairing secrets.
  *
  * 1. Use the Node version in .nvmrc and run `npm ci` (Playwright's Chromium: `npx playwright install chromium`).
  * 2. Start both demos in separate terminals from the repository root:
@@ -263,13 +263,13 @@ const JOBS = {
     const page = await openDesktop(browser, 'gallery&snag=1', { width, height, scale: 2, settle: 300 });
     const row = (key) => page.locator(`[data-row-key="${key}"]`);
     const frames = await record(page, async () => {
-      await sleep(3000); // Speed traces move; Tears of Steel finishes.
-      const sintel = await row('downloading').boundingBox();
-      await page.mouse.move(sintel.x + 64, sintel.y + sintel.height / 2, { steps: 12 });
+      await sleep(3000); // Speed traces move; Ember Tide finishes.
+      const neon = await row('downloading').boundingBox();
+      await page.mouse.move(neon.x + 64, neon.y + neon.height / 2, { steps: 12 });
       await sleep(2000); // Hover preview loop.
-      await page.mouse.move(sintel.x + 360, sintel.y + sintel.height / 2 - 10, { steps: 8 });
+      await page.mouse.move(neon.x + 360, neon.y + neon.height / 2 - 10, { steps: 8 });
       await sleep(300);
-      await row('downloading').getByText('Sintel — an open movie by Blender').click();
+      await row('downloading').getByText('Neon Rain — night drive').click();
       await sleep(2200); // Details: speed, segments.
       await page.keyboard.press('Escape');
       await sleep(500);
@@ -291,9 +291,9 @@ const JOBS = {
     const page = await openPopup(browser, 'demo=snag', { settle: 200 });
     const rows = page.locator('.video-row');
     const frames = await record(page, async () => {
-      await sleep(3600); // Tears of Steel finishes.
-      const bunny = await rows.nth(2).boundingBox();
-      await page.mouse.move(bunny.x + 64, bunny.y + bunny.height / 2, { steps: 10 });
+      await sleep(3600); // Ember Tide finishes.
+      const third = await rows.nth(2).boundingBox();
+      await page.mouse.move(third.x + 64, third.y + third.height / 2, { steps: 10 });
       await sleep(2200); // Hover preview loop.
       await rows.nth(2).locator('button.action').last().hover();
       await sleep(300);

@@ -61,8 +61,8 @@ function App() {
   const [confirm, setConfirm] = useState<{ row: RowModel; mode: 'cancel' | 'remove' } | null>(null);
   const [confirmPlace, setConfirmPlace] = useState<{ left: number; top: number; above: boolean; caret: number } | null>(null);
   const [pending, setPending] = useState<{ url: string; inspection: MediaInspection; selection: MediaSelection } | null>(() => gallery && params.has('picker') ? {
-    url: 'https://studio.blender.org/films/sintel/',
-    inspection: { title: 'Sintel — an open movie by Blender', durationSeconds: 888, thumbnailUrl: galleryRows.find((row) => row.id === 'downloading')?.thumbnailUrl || undefined, mediaType: 'hls', variants: [{ url: '1080', height: 1080, estimatedSizeBytes: 1_400_000_000 }, { url: '720', height: 720, estimatedSizeBytes: 720_000_000 }, { url: '480', height: 480, estimatedSizeBytes: 380_000_000 }], audio: params.get('picker') === 'tracks'
+    url: 'https://videos.example/neon-rain/',
+    inspection: { title: 'Neon Rain — night drive', durationSeconds: 757, thumbnailUrl: galleryRows.find((row) => row.id === 'downloading')?.thumbnailUrl || undefined, mediaType: 'hls', variants: [{ url: '1080', height: 1080, estimatedSizeBytes: 1_400_000_000 }, { url: '720', height: 720, estimatedSizeBytes: 720_000_000 }, { url: '480', height: 480, estimatedSizeBytes: 380_000_000 }], audio: params.get('picker') === 'tracks'
       // cinejoy.pk shape: four nameless renditions, only the first DEFAULT=YES.
       ? [1, 2, 3, 4].map((n) => ({ groupId: 'audio', name: `Track ${n}`, url: `track-${n}`, default: n === 1 }))
       : [{ language: 'en', name: 'English', url: 'en', default: true }, { language: 'es', name: 'Spanish', url: 'es' }], subtitles: [{ language: 'en', name: 'English' }] },
@@ -238,7 +238,7 @@ function App() {
         else if (action === 'locate') mutateDemo(row, { missing: false });
         else if (action === 'choose-folder') openSettings('downloads');
         else if (action === 'play') { const url = await loadGalleryVideo(row); if (url) setGalleryVideo({ title: row.title, url }); }
-        else if (action === 'copy-link' || action === 'copy-link-inline') { await navigator.clipboard.writeText(row.source.url || 'https://studio.blender.org/films/'); if (action === 'copy-link') toast.success(ui.linkCopied); }
+        else if (action === 'copy-link' || action === 'copy-link-inline') { await navigator.clipboard.writeText(row.source.url || 'https://videos.example/'); if (action === 'copy-link') toast.success(ui.linkCopied); }
         return;
       }
       if (!api) throw new Error(ui.unavailable);

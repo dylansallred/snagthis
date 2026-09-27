@@ -341,10 +341,10 @@ body.rm *, body.rm *::before, body.rm *::after { animation: none !important; tra
   // ── Scenario data: what the parser hands the UI (packages/contracts/src/hls.js shape + characteristics) ──
   const V = (h, bw) => ({ height: h, bandwidth: bw });
   const SCENARIOS = {
-    cinejoy: { name: 'cinejoy (real)', title: 'Spoiler: Corn Is Delicious · S1 E6', site: 'cinejoy.pk', url: 'https://cinejoy.pk/watch/tv/287620/1/6', thumb: 'tears-of-steel', duration: 1279,
+    cinejoy: { name: 'cinejoy (real)', title: 'Spoiler: Corn Is Delicious · S1 E6', site: 'cinejoy.pk', url: 'https://cinejoy.pk/watch/tv/287620/1/6', thumb: 'ember-tide', duration: 1279,
       variants: [V(2160, 20e6), V(1080, 6e6), V(720, 3e6), V(360, 0.9e6)], subtitles: [],
       audio: [1, 2, 3, 4].map(n => ({ groupId: 'audio', name: `Track ${n}`, language: null, default: n === 1, channels: null, voice: ['en-US', 'es-ES', 'fr-FR', 'de-DE'][n - 1] })) },
-    labelled: { name: 'Well labelled', title: 'Sintel', site: 'example.org', url: 'https://example.org/sintel/master.m3u8', thumb: 'sintel', duration: 888,
+    labelled: { name: 'Well labelled', title: 'Sintel', site: 'example.org', url: 'https://example.org/sintel/master.m3u8', thumb: 'neon-rain', duration: 888,
       variants: [V(1080, 5e6), V(720, 2.8e6), V(480, 1.2e6)], subtitles: ['English', 'Spanish'],
       audio: [
         { groupId: 'aac', language: 'en', name: 'English', default: true, channels: '2', voice: 'en-US' },
@@ -355,14 +355,14 @@ body.rm *, body.rm *::before, body.rm *::after { animation: none !important; tra
         { groupId: 'aac', language: 'en', name: 'Director commentary', channels: '2', voice: 'en-AU', commentary: true },
         { groupId: 'ec3', language: 'es-419', name: 'Español (Latinoamérica)', channels: '2', voice: 'es-MX' },
       ] },
-    many: { name: 'Many languages', title: 'Tears of Steel', site: 'example.net', url: 'https://example.net/tos/master.m3u8', thumb: 'tears-of-steel', duration: 734,
+    many: { name: 'Many languages', title: 'Tears of Steel', site: 'example.net', url: 'https://example.net/tos/master.m3u8', thumb: 'ember-tide', duration: 734,
       variants: [V(1080, 5e6), V(720, 2.6e6)], subtitles: ['English'],
       audio: [['en', '6', 1], ['en', '2'], ['es-ES', '2'], ['es-419', '2'], ['fr-FR', '2'], ['fr-CA', '2'], ['de', '6'], ['de', '2'], ['it', '2'], ['pt-BR', '2'], ['ja', '2'], ['ko', '2'], ['hi', '2'], ['ta', '2']]
         .map(([language, channels, def]) => ({ groupId: 'aac', language, name: '', channels, default: !!def, voice: language.length === 2 ? { en: 'en-US', de: 'de-DE', it: 'it-IT', ja: 'ja-JP', ko: 'ko-KR', hi: 'hi-IN', ta: 'ta-IN' }[language] : language })) },
-    und: { name: '“und” + duplicates', title: 'Big Buck Bunny', site: 'example.com', url: 'https://example.com/bbb/index.m3u8', thumb: 'big-buck-bunny', duration: 596,
+    und: { name: '“und” + duplicates', title: 'Big Buck Bunny', site: 'example.com', url: 'https://example.com/bbb/index.m3u8', thumb: 'sky-hop', duration: 596,
       variants: [V(720, 2.5e6), V(480, 1.1e6)], subtitles: [],
       audio: [{ groupId: 'a', name: 'Audio', language: 'und', default: true, voice: 'it-IT' }, { groupId: 'a', name: 'Audio', language: 'und', voice: 'pt-BR' }, { groupId: 'a', name: 'und', language: 'und', voice: 'ja-JP' }] },
-    one: { name: 'One track', title: 'Big Buck Bunny', site: 'example.com', url: 'https://example.com/bbb/index.m3u8', thumb: 'big-buck-bunny', duration: 596,
+    one: { name: 'One track', title: 'Big Buck Bunny', site: 'example.com', url: 'https://example.com/bbb/index.m3u8', thumb: 'sky-hop', duration: 596,
       variants: [V(1080, 4.5e6), V(720, 2.5e6)], subtitles: [], audio: [{ groupId: 'a', name: 'English', language: 'en', default: true, channels: '2', voice: 'en-US' }] },
   };
 
@@ -524,7 +524,7 @@ ${languageName.toString().replace(/^ {4}/gm, '')}`;
     }
     $('#popup').innerHTML = `<div class="popup-header"><img class="logo-wordmark" src="${LOGO}" alt="SnagThis"><span class="count">2 videos on ${esc(s.site)}</span></div>
       <div class="video-list"><div class="video-row"><div class="thumb"><img src="${MEDIA}${s.thumb}.jpg" alt=""></div><div class="row-body"><div class="row-title">${esc(s.title)}</div><div class="row-status"><button type="button" class="quality-button" id="qbtn" aria-haspopup="menu" aria-expanded="${state.menuOpen}">${q}p${audioShort ? `<span class="aud">· ${esc(audioShort)}</span>` : ''}${icon('chev')}</button><span>about ${fmtSize(size)}</span><span class="dot"></span><span>${fmtDur(s.duration)}</span></div></div><button type="button" class="action" aria-label="Download">${icon('dl')}</button></div>
-      <div class="video-row dim"><div class="thumb"><img src="${MEDIA}big-buck-bunny.jpg" alt=""></div><div class="row-body"><div class="row-title">Preview · 0:42</div><div class="row-status"><span>720p</span><span class="dot"></span><span>about 18 MB</span></div></div><button type="button" class="action" aria-label="Download">${icon('dl')}</button></div></div>
+      <div class="video-row dim"><div class="thumb"><img src="${MEDIA}sky-hop.jpg" alt=""></div><div class="row-body"><div class="row-title">Preview · 0:42</div><div class="row-status"><span>720p</span><span class="dot"></span><span>about 18 MB</span></div></div><button type="button" class="action" aria-label="Download">${icon('dl')}</button></div></div>
       <div class="popup-footer"><span>${icon('gear')}</span><span>No video?</span></div>${menu}
       <span class="sr-only" id="hint-sample">Press Space to hear a 10-second sample. Enter chooses.</span>`;
   }
@@ -554,7 +554,7 @@ ${languageName.toString().replace(/^ {4}/gm, '')}`;
       }
     }
     $('#desk').innerHTML = `<div class="top"><div class="lights"><i></i><i></i><i></i></div><img class="logo-wordmark" src="${LOGO}" alt="SnagThis"><div class="paste">${icon('link')}<span>${esc(s.url)}</span></div></div>
-      <div class="list">${['sintel', 'big-buck-bunny', 'tears-of-steel', 'sintel', 'big-buck-bunny', 'tears-of-steel'].map((m, i) => `<div class="vrow"><div class="thumb"><img src="${MEDIA}${m}.jpg" alt=""></div><div class="txt"><b>${['Sintel', 'Big Buck Bunny', 'Tears of Steel'][i % 3]}</b><span>1080p · 612 MB · ✓ Saved yesterday</span></div></div>`).join('')}</div>
+      <div class="list">${['neon-rain', 'sky-hop', 'ember-tide', 'star-courier', 'neon-rain', 'sky-hop'].map((m, i) => `<div class="vrow"><div class="thumb"><img src="${MEDIA}${m}.jpg" alt=""></div><div class="txt"><b>${['Sintel', 'Big Buck Bunny', 'Tears of Steel'][i % 3]}</b><span>1080p · 612 MB · ✓ Saved yesterday</span></div></div>`).join('')}</div>
       <div class="foot">${icon('gear')}<span>Settings</span></div>
       <section class="quality-picker${wide ? ' wide' : ''}" id="dpicker" aria-label="Choose video quality"><div class="quality-heading"><img src="${MEDIA}${s.thumb}.jpg" alt=""><div><strong>${esc(s.title)}</strong><small>Quality · ${fmtDur(s.duration)}</small></div><button type="button" class="x-btn" aria-label="Cancel">${icon('x')}</button></div>
       <fieldset><legend class="sr-only">Quality</legend>${s.variants.map(v => `<label class="q-radio"><input type="radio" name="d-q" ${v.height === q ? 'checked' : ''}>${icon('check', 'menu-check')}<span>${v.height}p</span><small class="sz">${fmtSize(v.bandwidth * s.duration / 8)}</small></label>`).join('')}<label class="q-radio"><input type="radio" name="d-q">${icon('check', 'menu-check')}<span>Audio only</span></label></fieldset>

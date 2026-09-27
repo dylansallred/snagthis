@@ -210,7 +210,7 @@
     if (!active || !node.current) { stopThumbPreview(node); return; }
     stopPosterPreparation(true);
     const { row, jobId, item } = node.current;
-    const demoName = isDemo && { sintel: 'sintel', bunny: 'big-buck-bunny', steel: 'tears-of-steel' }[item.id];
+    const demoName = isDemo && { neon: 'neon-rain', hop: 'sky-hop', tide: 'ember-tide' }[item.id];
     let clipUrl = demoName ? `popup/media/${demoName}.mp4` : reachable && compatible && appToken ? model.previewClipUrl(row.source.previewClipUrl || (node.previewJobId === jobId ? node.previewClipUrl : ''), apiBase) : '';
     if (clipUrl && node.previewFailedUrl === new URL(clipUrl, location.href).pathname) clipUrl = '';
     if (!clipUrl) {
@@ -710,9 +710,9 @@
       : SnagThisSourcePreview.createAudioSample?.({ item, rendition: track.renditions.find(rendition => rendition.url), tabId: activeTab?.id, mediaId: item.id, ...callbacks }) || null;
     if (!current.controller) failed();
   }
-  // Development gallery only: each fixture track plays a different bundled film's sound.
+  // Development gallery only: each fixture track plays a different sample clip's soundtrack.
   function demoSample(item, track, { onPlaying, onProgress, onEnded, onError }) {
-    const audio = new Audio(`popup/media/${['sintel', 'big-buck-bunny', 'tears-of-steel'][(track.ordinal - 1) % 3]}.mp4`);
+    const audio = new Audio(`popup/media/${['neon-rain', 'sky-hop', 'ember-tide', 'star-courier'][(track.ordinal - 1) % 4]}.mp4`);
     let start = 0; let stopped = false;
     const stop = () => { stopped = true; audio.pause(); audio.removeAttribute('src'); audio.load(); };
     audio.volume = .5;
@@ -777,7 +777,7 @@
   }
   function showDemoVideo(item) {
     if (!isDemo) return;
-    const filename = { sintel: 'sintel', bunny: 'big-buck-bunny', steel: 'tears-of-steel' }[item.id];
+    const filename = { neon: 'neon-rain', hop: 'sky-hop', tide: 'ember-tide' }[item.id];
     if (!filename) return;
     $('sheet-content').querySelector('video')?.pause();
     const content = openSheet(customTitles[item.id] || titles.getDisplayTitle(item));

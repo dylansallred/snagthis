@@ -78,7 +78,7 @@ To add a link in the desktop app, paste it into the header, press <kbd>⌘</kbd>
   </tr>
 </table>
 
-<sub>Recorded from the real interfaces using their built-in sample data. No live sites or accounts appear. Stills: <a href="docs/images/desktop.png">desktop</a> · <a href="docs/images/chrome-extension.png">extension</a>. Sample films by the Blender Foundation; see <a href="apps/desktop/src/dev/media/CREDITS.md">credits and licenses</a>.</sub>
+<sub>Recorded from the real interfaces using their built-in sample data. No live sites or accounts appear. Stills: <a href="docs/images/desktop.png">desktop</a> · <a href="docs/images/chrome-extension.png">extension</a>. Sample videos are original pixel-art animations made for SnagThis.</sub>
 
 ## How it works
 
@@ -250,4 +250,4 @@ Say what you clicked and what error you saw. Check diagnostics before sharing th
   <a href="LICENSE">GPL-3.0-only</a>
 </p>
 
-<p align="center"><sub>Sample films in the screenshots: <em>Sintel</em>, <em>Big Buck Bunny</em> and <em>Tears of Steel</em>, © Blender Foundation, CC BY 3.0 (<a href="apps/desktop/src/dev/media/CREDITS.md">credits</a>). No endorsement is implied. Third-party dependencies keep their own licenses; see <a href="THIRD_PARTY_NOTICES.md">third-party notices</a>.</sub></p>
+<p align="center"><sub>The sample videos in the screenshots are original pixel-art animations made for SnagThis (<a href="apps/desktop/src/dev/media/CREDITS.md">credits</a>). Third-party dependencies keep their own licenses; see <a href="THIRD_PARTY_NOTICES.md">third-party notices</a>.</sub></p>

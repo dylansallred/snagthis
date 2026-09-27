@@ -33,3 +33,4 @@ In the Pages project, open **Custom domains → Set up a custom domain**, enter 
 - Files in `fonts/`, `img/` and `media/` are cached for a year. When you change one, give it a new file name.
 - Don’t name specific video sites or platforms anywhere on the site (Chrome Web Store policy).
 - Update the effective date in `privacy.html` and `lastmod` in `sitemap.xml` when the policy changes.
+- The product recordings in `media/ui/` come from `scripts/capture-site-media.cjs` (see its header). Re-run it after the app or popup changes; it writes new hashed file names and updates `index.html` for you.

@@ -8,12 +8,12 @@
     cancel:'<path d="m6 6 12 12M18 6 6 18"/>',pause:'<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>',play:'<path d="m7 3 14 9-14 9Z"/>',check:'<path d="m5 12 4 4L19 6"/>',trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
   };
   const icon = (name, className='') => `<svg class="${className}" viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
-  const folder = '/Users/dylanallred/Library/Application Support/VidSnag-development/data/downloads/Sintel (2)';
-  const media = '/apps/extension/popup/media/sintel';
+  const folder = '/Users/dylanallred/Library/Application Support/VidSnag-development/data/downloads/Neon Rain (2)';
+  const media = '/apps/extension/popup/media/neon-rain';
   document.getElementById('study').innerHTML = `<main class="study-shell">
     <div class="study-controls"><label>Progress <input id="progress" aria-label="Progress" type="range" min="0" max="100" value="29"><output>29%</output></label><label>State <select id="state"><option value="downloading">Downloading</option><option value="paused">Paused</option><option value="saved">Saved</option></select></label></div>
     <article class="download-card" data-state="downloading">
-      <header class="download-heading"><div class="thumb" tabindex="0" role="group" aria-label="Preview Sintel"><img src="${media}.jpg" alt="Sintel video frame"><video src="${media}.mp4" muted loop playsinline preload="none" aria-hidden="true"></video></div><div class="heading-copy"><div class="title-line"><h1>Sintel</h1><span class="duration">14:48</span></div><div class="status">29% · 4 min left</div></div><button class="heading-action" aria-label="Pause" title="Pause">${icon('pause')}</button></header>
+      <header class="download-heading"><div class="thumb" tabindex="0" role="group" aria-label="Preview Neon Rain"><img src="${media}.jpg" alt="Neon Rain video frame"><video src="${media}.mp4" muted loop playsinline preload="none" aria-hidden="true"></video></div><div class="heading-copy"><div class="title-line"><h1>Sintel</h1><span class="duration">14:48</span></div><div class="status">29% · 4 min left</div></div><button class="heading-action" aria-label="Pause" title="Pause">${icon('pause')}</button></header>
       <div class="progress-strip" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="29">${'<i></i>'.repeat(40)}</div>
       <div class="details-layout">
         <dl class="facts"><div class="fact quality"><dt>Quality</dt><dd>1080p</dd></div><div class="fact size"><dt>Size · speed</dt><dd>1.5 GB / ~5.1 GB · 11.03 MB/s</dd></div><div class="fact connections"><dt>Connections</dt><dd>15 of 16 active</dd></div><div class="fact source"><dt>From</dt><dd>studio.blender.org</dd></div></dl>
@@ -22,7 +22,7 @@
         <section class="pieces"><div class="pieces-heading"><h2>Pieces</h2><span class="piece-count">542 of 1781</span></div><div class="piece-grid" aria-label="Piece download status">${'<i></i>'.repeat(640)}</div><div class="piece-legend"><span><i class="done"></i>Completed</span><span><i class="current"></i>Downloading</span><span><i class="retry"></i>Retrying</span><span><i></i>Pending</span></div></section>
         <div class="saved-message" hidden>${icon('check')}Saved and ready to play</div>
       </div>
-    </article><p class="prototype-note">Interactive design study. Folder and action buttons demonstrate feedback; they do not change your files. Video: Blender’s Sintel.</p><div class="notice" role="status" hidden></div>
+    </article><p class="prototype-note">Interactive design study. Folder and action buttons demonstrate feedback; they do not change your files. Video: the original Neon Rain sample clip.</p><div class="notice" role="status" hidden></div>
   </main>`;
   let state = 'downloading', progress = 29, timer;
   const $ = selector => document.querySelector(selector);

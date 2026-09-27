@@ -10,4 +10,4 @@ These assets show the current SnagThis interfaces with the fictional download st
   - `desktop-demo.gif` (880 px, 10 fps): a download finishing, a hover preview, row details, and ⌘K → Show Saved as a shelf.
   - `extension-demo.gif` (560 px, 10 fps): a download finishing, a hover preview, a new download, and switching the accent to Cobalt.
 
-Film frames and preview excerpts are adapted from Blender Foundation open films, resized and re-encoded without audio. See the [sample media credits and Creative Commons Attribution 3.0 licenses](../../apps/desktop/src/dev/media/CREDITS.md). No endorsement is implied.
+The sample videos are original pixel-art animations made for SnagThis; see the [sample media credits](../../apps/desktop/src/dev/media/CREDITS.md).

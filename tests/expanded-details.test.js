@@ -42,10 +42,10 @@ test('expanded location opens its trusted folder and three design studies remain
   await page.evaluate(() => window.desktop.saveSettings({ queueAutoStart: false }));
   const headers = { Authorization: `Bearer ${info.apiAuthToken}`, 'Content-Type': 'application/json' };
   const created = await fetch(`${info.apiBaseUrl}/api/jobs`, { method: 'POST', headers,
-    body: JSON.stringify({ queue: { url: `${studyBase}/apps/extension/popup/media/sintel.mp4`, mediaType: 'file', title: 'Sintel folder layout check' } }) });
+    body: JSON.stringify({ queue: { url: `${studyBase}/apps/extension/popup/media/neon-rain.mp4`, mediaType: 'file', title: 'Neon Rain folder layout check' } }) });
   assert.equal(created.status, 200);
   const queue = await fetch(`${info.apiBaseUrl}/api/queue`, { headers }).then(r => r.json());
-  const job = queue.queue.find(item => item.title === 'Sintel folder layout check');
+  const job = queue.queue.find(item => item.title === 'Neon Rain folder layout check');
   assert.equal(job.queueStatus, 'queued');
   await desktop.app.evaluate(({ shell }) => { global.__openedFolders = []; shell.openPath = async value => { global.__openedFolders.push(value); return ''; }; });
   const row = page.locator(`[data-row-key="${job.id}"]`);

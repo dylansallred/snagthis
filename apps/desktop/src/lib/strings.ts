@@ -38,7 +38,7 @@ export const ui = {
   reportSummary: 'Redacted download summary', reportStages: 'Stages to check', reportNotChecked: 'Not checked',
   reportStagePage: 'Page opens', reportStageDetection: 'Video detected', reportStageRow: 'Correct video shown',
   reportStageQuality: 'Quality choices found', reportStageFetch: 'Source fetched', reportStageDownload: 'Download completed', reportStagePlayback: 'Saved file plays',
-  galleryVideoDescription: 'Play a short sample from this Blender open movie.',
+  galleryVideoDescription: 'Play a short sample of this animation.',
   subtitlesUnavailable: 'no {lang} subtitles found', actionBusy: 'Wait for the current action on this video to finish.',
   resumeDownload: 'Resume download', dragToReorder: 'Drag to reorder', technicalDetail: 'Technical detail',
   expiredPageOpened: 'Play the video in Chrome, then click SnagThis to continue from {percent}%.',

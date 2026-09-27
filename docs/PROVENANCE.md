@@ -11,7 +11,7 @@ This clean repository began from the user's local M3u8-Downloader-chrome-plugin 
 | hls.js 1.5.20 | Third-party Apache-2.0 player library; bundled license at `apps/extension/vendor/hls.LICENSE.txt`. |
 | Inter and Lucide | Dependency-provided assets under their own licenses, recorded in `THIRD_PARTY_NOTICES.md`. |
 | SnagThis marks | Owner-supplied project branding from the predecessor repository. |
-| Gallery footage | Licensed Blender Foundation film excerpts. Keep the clip-specific credits with the development gallery. |
+| Gallery footage | Original pixel-art animations and chiptune soundtracks generated for SnagThis (`docs/design/prototypes/sample-media/1-pixel/`). |
 
 ## Publication boundary
 
