@@ -848,7 +848,11 @@ test('pause then delete during active HLS download does not leave top-level .ts 
     });
     assert.equal(deleteRes.status, 200);
 
-    await delay(500);
+    // A processor still unwinding from the pause cleans up once its in-flight segments settle,
+    // which can take longer than a fixed delay on a loaded runner.
+    const isTempJobDir = (entry) => entry.isDirectory() && entry.name.startsWith('temp-') && entry.name.endsWith(`-${jobId}`);
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline && fs.readdirSync(downloadDir, { withFileTypes: true }).some(isTempJobDir)) await delay(100);
 
     const files = fs.readdirSync(downloadDir, { withFileTypes: true });
     const topLevelJobArtifacts = files

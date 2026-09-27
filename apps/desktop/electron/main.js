@@ -1003,8 +1003,12 @@ function createWindow() {
   });
 
   const window = mainWindow;
-  window.once('ready-to-show', () => window.show());
-  window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
+  const reveal = () => { if (!window.isDestroyed() && !window.isVisible()) window.show(); };
+  window.once('ready-to-show', reveal);
+  // Without GPU compositing (some Linux desktops, virtual displays) a hidden window can
+  // skip its first paint, so ready-to-show never fires. Never leave the app invisible.
+  const revealFallback = setTimeout(reveal, 3000);
+  window.on('closed', () => { clearTimeout(revealFallback); if (mainWindow === window) mainWindow = null; });
   // A crashed or killed renderer otherwise leaves a dead window while downloads
   // continue. Reload it, backing off, and stop if it keeps crashing on load.
   const rendererCrashes = [];

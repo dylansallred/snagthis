@@ -89,11 +89,12 @@ test('expanded location opens its trusted folder and three design studies remain
   assert.equal(await details.getByText('Full path', { exact: true }).count(), 0);
   await location.hover();
   assert.deepEqual(await desktop.app.evaluate(() => global.__openedFolders), [], 'hover highlights without opening Finder');
+  const openedFolders = () => desktop.app.evaluate(() => global.__openedFolders);
   await location.click();
-  await page.waitForFunction(() => !document.querySelector('.detail-location')?.disabled);
+  // Each open is an IPC round trip, which a loaded CI runner can take well over 100ms to finish.
+  await expect.poll(openedFolders, { timeout: 5000 }).toEqual([job.outputDirectory]);
   await location.focus(); await location.press('Enter');
-  await page.waitForTimeout(100);
-  assert.deepEqual(await desktop.app.evaluate(() => global.__openedFolders), [job.outputDirectory, job.outputDirectory]);
+  await expect.poll(openedFolders, { timeout: 5000 }).toEqual([job.outputDirectory, job.outputDirectory]);
   const rejected = await page.evaluate(() => window.desktop.openHistoryFolder('/tmp'));
   assert.equal(rejected.ok, false, 'arbitrary renderer paths cannot be opened');
   assert.equal(await location.evaluate(element => element.scrollWidth <= element.clientWidth), true);
