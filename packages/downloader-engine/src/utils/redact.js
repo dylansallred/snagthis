@@ -14,6 +14,28 @@ function redactUrl(value) {
   } catch { return value; }
 }
 
+// System errors (ENOSPC, EACCES, ffmpeg output) name absolute local paths,
+// which reveal the user name and folder layout. Public payloads keep only the
+// file name. Quoted paths may contain spaces; a bare path continues across a
+// space only while the next word still contains a folder separator.
+const QUOTED_PATH = /(['"])((?:\/|[A-Za-z]:[\\/]|\\\\)[^'"\r\n]*)\1/g;
+const BARE_PATH = /(^|[\s(=,:])((?:\/(?!\/)|[A-Za-z]:[\\/]|\\\\)(?:[^\s'"()<>,]|[ \t](?=[^\s'"()<>,\\/]*[\\/]))*)/g;
+
+function lastSegment(filePath) {
+  const parts = String(filePath).split(/[\\/]+/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
+function redactPaths(value) {
+  if (typeof value !== 'string' || !value) return value;
+  return value
+    .replace(QUOTED_PATH, (match, quote, filePath) => `${quote}${lastSegment(filePath)}${quote}`)
+    .replace(BARE_PATH, (match, lead, filePath) => {
+      const name = lastSegment(filePath);
+      return `${lead}${name || '[path]'}`;
+    });
+}
+
 function redact(value, key = '', depth = 0) {
   if (SECRET_KEY.test(key)) return '[redacted]';
   if (typeof value === 'string') {
@@ -32,4 +54,4 @@ function redact(value, key = '', depth = 0) {
   return value;
 }
 
-module.exports = { redact, redactUrl, SECRET_KEY };
+module.exports = { redact, redactUrl, redactPaths, SECRET_KEY };

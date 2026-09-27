@@ -1697,11 +1697,6 @@ function createJobProcessor({
       const { headers, playlistInfo, playlistUrl } = resolved;
       const segmentDiagnostics = ensureSegmentDiagnostics(job);
       const segments = playlistInfo.segments;
-      const previousTopology = job.playlistTopology;
-      if (job.resumePartialSegments && previousTopology && previousTopology !== playlistInfo.topologyFingerprint) {
-        throw mediaError('The video changed. Start a new download to keep the existing pieces safe.', 'SOURCE_CHANGED');
-      }
-      job.playlistTopology = playlistInfo.topologyFingerprint;
       job.durationSeconds = playlistInfo.totalDurationSeconds;
       job.selectedHeight = resolved.selectedHeight || job.selection && job.selection.height || null;
       job.totalSegments = playlistInfo.totalSegments || segments.length;
@@ -1720,6 +1715,11 @@ function createJobProcessor({
       const needsNative = shouldPreferNativeHlsDownload(playlistInfo) || resolved.audioUrl || resolved.subtitleUrl || job.selection && job.selection.audioOnly || job.probe;
       if (needsNative && !FFMPEG_PATH) throw mediaError('This video needs the media tools included with SnagThis', 'MEDIA_TOOLS_MISSING');
       if (FFMPEG_PATH && needsNative) {
+        // FFmpeg starts native downloads from the beginning, so no saved pieces
+        // depend on the playlist staying the same. A fingerprint kept here would
+        // refuse a resume after a quality fallback or a rotated piece path.
+        job.playlistTopology = null;
+        job.resumePartialSegments = false;
         logger.info('Using native FFmpeg HLS ingest for advanced playlist', {
           jobId: job.id,
           playlistUrl: playlistUrl || job.url,
@@ -1757,7 +1757,6 @@ function createJobProcessor({
             }
             resolved = next;
             job.selectedHeight = next.selectedHeight || job.selectedHeight;
-            job.playlistTopology = next.playlistInfo.topologyFingerprint;
             job.durationSeconds = next.playlistInfo.totalDurationSeconds;
             job.totalSegments = next.playlistInfo.totalSegments || next.playlistInfo.segments.length;
             job.error = null;
@@ -1769,6 +1768,13 @@ function createJobProcessor({
         }
       }
 
+      // Saved pieces are reused by index, so they are only safe to keep when
+      // the playlist still describes exactly the same pieces.
+      const previousTopology = job.playlistTopology;
+      if (job.resumePartialSegments && previousTopology && previousTopology !== playlistInfo.topologyFingerprint) {
+        throw mediaError('The video changed. Start a new download to keep the existing pieces safe.', 'SOURCE_CHANGED');
+      }
+      job.playlistTopology = playlistInfo.topologyFingerprint;
       job.downloadMode = 'segmented';
       job.segmentProgressAvailable = true;
       // Initialize all segments as pending

@@ -1,7 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const http = require('http');
-const https = require('https');
 const { URL } = require('url');
 const logger = require('../utils/logger');
 const { jobValidation, jobIdValidation } = require('../utils/validators');
@@ -11,78 +9,9 @@ const { inferMediaMetadata } = require('../utils/mediaMetadata');
 const { buildDownloadAssetUrl, buildJobStorageDir } = require('../utils/downloadPaths');
 const config = require('../config');
 const { normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
-
-function isHttpUrl(value) {
-  if (typeof value !== 'string' || !value.trim()) return false;
-  try {
-    const parsed = new URL(value.trim());
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function downloadRemoteImage(url, destinationPath, redirectBudget = 3) {
-  return new Promise((resolve) => {
-    if (!isHttpUrl(url)) {
-      resolve(false);
-      return;
-    }
-
-    const parsed = new URL(url);
-    const client = parsed.protocol === 'https:' ? https : http;
-    const tempPath = `${destinationPath}.tmp`;
-    let settled = false;
-
-    const settle = (value) => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-
-    const req = client.get(url, {
-      timeout: 12_000,
-      headers: { 'User-Agent': 'M3U8-Downloader/1.0' },
-    }, (res) => {
-      const status = Number(res.statusCode || 0);
-      if (status >= 300 && status < 400 && res.headers.location && redirectBudget > 0) {
-        res.resume();
-        const redirected = new URL(String(res.headers.location), url).toString();
-        downloadRemoteImage(redirected, destinationPath, redirectBudget - 1).then(settle);
-        return;
-      }
-
-      if (status < 200 || status >= 300) {
-        res.resume();
-        settle(false);
-        return;
-      }
-
-      const out = fs.createWriteStream(tempPath);
-      out.on('error', () => {
-        try { fs.unlinkSync(tempPath); } catch {}
-        settle(false);
-      });
-      res.on('error', () => {
-        try { fs.unlinkSync(tempPath); } catch {}
-        settle(false);
-      });
-      out.on('finish', () => {
-        try {
-          fs.renameSync(tempPath, destinationPath);
-          settle(true);
-        } catch {
-          try { fs.unlinkSync(tempPath); } catch {}
-          settle(false);
-        }
-      });
-      res.pipe(out);
-    });
-
-    req.on('timeout', () => req.destroy(new Error('timeout')));
-    req.on('error', () => settle(false));
-  });
-}
+const { redactPaths } = require('@m3u8/downloader-engine/src/utils/redact');
+const { isHttpUrl } = require('../utils/urls');
+const { downloadRemoteImage } = require('../utils/remoteImage');
 
 async function persistRemoteThumbnailLocally(job, downloadDir) {
   if (!job) return false;
@@ -337,129 +266,75 @@ function registerJobRoutes(
       matchedField: mediaHints.matchedField,
     });
 
+    // Poster, TMDB details and subtitles are looked up after the job is
+    // queued; each lookup is optional and skipped without its API key.
+    const enrichJobMetadata = async () => {
+      if (!config.tmdbApiKey) {
+        logger.info('TMDB lookup skipped (no TMDB_API_KEY set)', { jobId: job.id, title: job.title });
+      } else {
+        const title = lookupTitle || job.title || job.downloadName;
+        const type = isTv ? 'tv' : 'movie';
+        logger.info('TMDB lookup start', {
+          jobId: job.id,
+          title,
+          type,
+          seasonNumber: seasonNumber || null,
+          episodeNumber: episodeNumber || null,
+          matchedPattern: mediaHints.matchedPattern,
+          matchedField: mediaHints.matchedField,
+        });
+        try {
+          const tmdbResult = await lookupPoster({ apiKey: config.tmdbApiKey, title, type });
+          if (tmdbResult) {
+            job.thumbnailUrls = Array.isArray(tmdbResult.imageUrls)
+              ? tmdbResult.imageUrls.filter(Boolean)
+              : [tmdbResult.posterUrl, tmdbResult.backdropUrl].filter(Boolean);
+            job.tmdbId = tmdbResult.id;
+            job.tmdbTitle = tmdbResult.title;
+            job.tmdbReleaseDate = tmdbResult.releaseDate;
+            job.tmdbMetadata = {
+              overview: tmdbResult.overview,
+              runtime: tmdbResult.runtime,
+              tagline: tmdbResult.tagline,
+              genres: tmdbResult.genres,
+              mediaType: tmdbResult.mediaType || type,
+            };
+            job.skipThumbnailGeneration = true;
+            await persistRemoteThumbnailLocally(job, downloadDir);
+            queueManager.saveQueue();
+            logger.info('TMDB lookup success', { jobId: job.id, tmdbId: tmdbResult.id, thumbnails: job.thumbnailUrls.length });
+          } else {
+            logger.info('TMDB lookup returned no results', { jobId: job.id, title });
+          }
+        } catch (err) {
+          logger.warn('TMDB lookup failed', { jobId: job.id, error: err.message });
+        }
+      }
+      try {
+        await fetchSubtitlesForJob(job, downloadDir, queueManager, {
+          seasonNumber,
+          episodeNumber,
+          type: isTv ? 'tv' : 'movie',
+          lookupTitle,
+        });
+      } catch (err) {
+        logger.warn('SubDL fetch errored', { jobId: job.id, error: err && err.message });
+      }
+    };
+
     if (immediate) {
       // Legacy callers still get { id }, but the job is queue-managed: an
       // unmanaged runner would bypass the concurrency limit, stay invisible to
       // pause/cancel, and keep writing after quit.
       queueManager.addJob(job);
       logger.info('Job created (immediate)', { jobId: id, url: queue.url, isHls });
-      (async () => {
-        if (!config.tmdbApiKey) {
-          logger.info('TMDB lookup skipped (no TMDB_API_KEY set)', { jobId: job.id, title: job.title });
-        } else {
-          const title = lookupTitle || job.title || job.downloadName;
-          const type = isTv ? 'tv' : 'movie';
-          logger.info('TMDB lookup start', {
-            jobId: job.id,
-            title,
-            type,
-            seasonNumber: seasonNumber || null,
-            episodeNumber: episodeNumber || null,
-            matchedPattern: mediaHints.matchedPattern,
-            matchedField: mediaHints.matchedField,
-          });
-
-          try {
-            const tmdbResult = await lookupPoster({ apiKey: config.tmdbApiKey, title, type });
-            if (tmdbResult) {
-              job.thumbnailUrls = Array.isArray(tmdbResult.imageUrls)
-                ? tmdbResult.imageUrls.filter(Boolean)
-                : [tmdbResult.posterUrl, tmdbResult.backdropUrl].filter(Boolean);
-              job.tmdbId = tmdbResult.id;
-              job.tmdbTitle = tmdbResult.title;
-              job.tmdbReleaseDate = tmdbResult.releaseDate;
-              job.tmdbMetadata = {
-                overview: tmdbResult.overview,
-                runtime: tmdbResult.runtime,
-                tagline: tmdbResult.tagline,
-                genres: tmdbResult.genres,
-                mediaType: tmdbResult.mediaType || type,
-              };
-              job.skipThumbnailGeneration = true;
-              await persistRemoteThumbnailLocally(job, downloadDir);
-              queueManager.saveQueue();
-              logger.info('TMDB lookup success', { jobId: job.id, tmdbId: tmdbResult.id, thumbnails: job.thumbnailUrls.length });
-            } else {
-              logger.info('TMDB lookup returned no results', { jobId: job.id, title });
-            }
-          } catch (err) {
-            logger.warn('TMDB lookup failed', { jobId: job.id, error: err.message });
-          }
-        }
-
-        logger.info('SubDL: fetch start (immediate)', { jobId: job.id, title: job.title, tmdbId: job.tmdbId, imdbId: job.imdbId });
-        try {
-          await fetchSubtitlesForJob(job, downloadDir, queueManager, {
-            seasonNumber,
-            episodeNumber,
-            type: isTv ? 'tv' : 'movie',
-            lookupTitle,
-          });
-        } catch (err) {
-          logger.warn('SubDL fetch errored (immediate)', { jobId: job.id, error: err && err.message });
-        }
-      })();
+      void enrichJobMetadata();
       res.json({ id });
     } else {
       // New behavior: add to queue
       const result = queueManager.addJob(job);
       logger.info('Job enqueued', { jobId: id, url: queue.url, queuePosition: result.queuePosition, isHls });
-      (async () => {
-        if (!config.tmdbApiKey) {
-          logger.info('TMDB lookup skipped (no TMDB_API_KEY set)', { jobId: job.id, title: job.title });
-        } else {
-          const title = lookupTitle || job.title || job.downloadName;
-          const type = isTv ? 'tv' : 'movie';
-          logger.info('TMDB lookup start', {
-            jobId: job.id,
-            title,
-            type,
-            seasonNumber: seasonNumber || null,
-            episodeNumber: episodeNumber || null,
-            matchedPattern: mediaHints.matchedPattern,
-            matchedField: mediaHints.matchedField,
-          });
-
-          try {
-            const tmdbResult = await lookupPoster({ apiKey: config.tmdbApiKey, title, type });
-            if (tmdbResult) {
-              job.thumbnailUrls = Array.isArray(tmdbResult.imageUrls)
-                ? tmdbResult.imageUrls.filter(Boolean)
-                : [tmdbResult.posterUrl, tmdbResult.backdropUrl].filter(Boolean);
-              job.tmdbId = tmdbResult.id;
-              job.tmdbTitle = tmdbResult.title;
-              job.tmdbReleaseDate = tmdbResult.releaseDate;
-              job.tmdbMetadata = {
-                overview: tmdbResult.overview,
-                runtime: tmdbResult.runtime,
-                tagline: tmdbResult.tagline,
-                genres: tmdbResult.genres,
-                mediaType: tmdbResult.mediaType || type,
-              };
-              job.skipThumbnailGeneration = true;
-              await persistRemoteThumbnailLocally(job, downloadDir);
-              queueManager.saveQueue();
-              logger.info('TMDB lookup success', { jobId: job.id, tmdbId: tmdbResult.id, thumbnails: job.thumbnailUrls.length });
-            } else {
-              logger.info('TMDB lookup returned no results', { jobId: job.id, title });
-            }
-          } catch (err) {
-            logger.warn('TMDB lookup failed', { jobId: job.id, error: err.message });
-          }
-
-          // Fetch English subtitles via SubDL
-          try {
-            await fetchSubtitlesForJob(job, downloadDir, queueManager, {
-              seasonNumber,
-              episodeNumber,
-              type: isTv ? 'tv' : 'movie',
-              lookupTitle,
-            });
-          } catch (err) {
-            logger.warn('SubDL fetch errored', { jobId: job.id, error: err && err.message });
-          }
-        }
-      })();
+      void enrichJobMetadata();
       res.json(result);
     }
   });
@@ -553,7 +428,7 @@ function registerJobRoutes(
       threadStates: Array.isArray(job.threadStates) ? job.threadStates : [],
       segmentStates: changedSegments, // Only send changed segments
       segmentStatesCount: changeCount, // For debugging
-      error: job.error,
+      error: redactPaths(job.error),
       fallbackUrl: job.fallbackUrl || null,
       originalHlsUrl: job.originalHlsUrl || null,
       fallbackAttempted: !!job.fallbackAttempted,
@@ -561,7 +436,6 @@ function registerJobRoutes(
       thumbnailUrls: [...localThumbs, ...remoteThumbs],
       previewClipUrl: queueManager.buildPreviewClipUrl(job),
       previewClipDurationSeconds: job.previewClipDurationSeconds || null,
-      subtitlePath: job.subtitlePath || null,
       subtitleDownloadUrl,
       segmentDiagnosticsSummary: segmentDiagnostics ? {
         validatedSegments: Number(segmentDiagnostics.validatedSegments || 0) || 0,
@@ -600,7 +474,6 @@ function registerJobRoutes(
         issueCount: 0,
         expectedProfile: null,
         segmentsWithIssues: [],
-        reportPath: null,
         reportDownloadUrl: null,
       });
     }
@@ -619,7 +492,6 @@ function registerJobRoutes(
       segmentsWithIssues: Array.isArray(diagnostics.segmentsWithIssues)
         ? diagnostics.segmentsWithIssues
         : [],
-      reportPath: diagnostics.reportPath || null,
       reportDownloadUrl,
       updatedAt: diagnostics.updatedAt || null,
     });

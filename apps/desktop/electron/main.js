@@ -4,6 +4,7 @@ const fs = require('fs');
 const { pathToFileURL, fileURLToPath } = require('url');
 const preferences = require('./preferences');
 const diagnostics = require('./diagnostics');
+const { findBundledExecutable } = require('./bundledBinaries');
 const { resolveMediaPage } = require('./mediaPageResolver');
 const { adoptLegacyUserData } = require('./legacyData');
 // electron-updater takes ~50ms to load; loadAutoUpdater() defers it until an update check.
@@ -278,21 +279,9 @@ function getBundledYtDlpPath() {
     path.join(process.resourcesPath || '', 'bin', binaryName),
     path.join(app.getAppPath(), 'bin', binaryName),
     path.join(__dirname, '..', 'bin', binaryName),
-  ].filter(Boolean);
+  ];
 
-  for (const candidate of candidates) {
-    try {
-      if (!candidate || !fs.existsSync(candidate)) continue;
-      if (process.platform !== 'win32') {
-        fs.chmodSync(candidate, 0o755);
-      }
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-
-  return '';
+  return findBundledExecutable(candidates);
 }
 
 function getBundledBinaryPath(binaryNames = []) {
@@ -306,19 +295,7 @@ function getBundledBinaryPath(binaryNames = []) {
     candidates.push(path.join(__dirname, '..', 'bin', name));
   }
 
-  for (const candidate of candidates) {
-    try {
-      if (!candidate || !fs.existsSync(candidate)) continue;
-      if (process.platform !== 'win32') {
-        fs.chmodSync(candidate, 0o755);
-      }
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-
-  return '';
+  return findBundledExecutable(candidates);
 }
 
 function getWindowIconPath() {
@@ -1017,7 +994,13 @@ function createWindow() {
   // Without GPU compositing (some Linux desktops, virtual displays) a hidden window can
   // skip its first paint, so ready-to-show never fires. Never leave the app invisible.
   const revealFallback = setTimeout(reveal, 3000);
-  window.on('closed', () => { clearTimeout(revealFallback); if (mainWindow === window) mainWindow = null; });
+  window.on('closed', () => {
+    clearTimeout(revealFallback);
+    if (mainWindow !== window) return;
+    mainWindow = null;
+    // A hidden page-resolver window would otherwise hold off window-all-closed.
+    if (process.platform !== 'darwin') app.quit();
+  });
   // A crashed or killed renderer otherwise leaves a dead window while downloads
   // continue. Reload it, backing off, and stop if it keeps crashing on load.
   const rendererCrashes = [];
@@ -1047,7 +1030,9 @@ function createWindow() {
   window.on('close', (event) => {
     if (process.platform === 'darwin' || quitConfirmed || apiShutdownPromise || updaterInstallRequested) return;
     const activeDownloads = activeDownloadCount();
-    if (activeDownloads === 0 || BrowserWindow.getAllWindows().length > 1) return;
+    // Hidden page-resolver windows are not app windows; only the main
+    // window's close ends the app here.
+    if (activeDownloads === 0 || window !== mainWindow) return;
     event.preventDefault();
     confirmQuitWithActiveDownloads(activeDownloads);
   });
@@ -1389,10 +1374,36 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('activate', () => {
-  if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
+  // Hidden page-resolver windows do not count: the Dock icon must reopen the app.
+  if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) createWindow();
+});
+
+// yt-dlp runs in its own process group and FFmpeg is not tied to this
+// process, so neither stops when the app exits abruptly (update install,
+// app.exit, a signal, an uncaught error). Kill what is still running.
+process.on('exit', () => {
+  if (!apiServer) return;
+  try { require('@m3u8/downloader-api/src/utils/childProcesses').killTrackedChildProcesses(); } catch { /* Exiting anyway. */ }
+});
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.once(signal, () => { quitConfirmed = true; app.quit(); setTimeout(() => app.exit(0), SHUTDOWN_TIMEOUT_MS + 2000).unref(); });
+}
+// After an uncaught error the main process state is unknown. Save the queue
+// through the normal shutdown instead of leaving downloads running headless.
+let uncaughtErrorSeen = false;
+process.on('uncaughtException', (error) => {
+  console.error('[desktop] Uncaught exception:', safeDiagnostics(String(error?.stack || error?.message || error)));
+  if (uncaughtErrorSeen) return;
+  uncaughtErrorSeen = true;
+  quitConfirmed = true;
+  try { app.quit(); } catch { /* Forced below. */ }
+  setTimeout(() => app.exit(1), SHUTDOWN_TIMEOUT_MS + 2000).unref();
 });
 
 let apiShutdownPromise = null;
+// Pausing and saving downloads normally takes a few seconds; never let a stuck
+// child or socket keep the app from quitting.
+const SHUTDOWN_TIMEOUT_MS = 15_000;
 let apiShutdownComplete = false;
 let quitConfirmed = false;
 let quitPrompt = null;
@@ -1453,10 +1464,16 @@ app.on('before-quit', (event) => {
   if (!installingUpdate) event.preventDefault();
   if (apiShutdownPromise) return;
   apiShutdownPromise = (async () => {
+    let shutdownTimer;
     try {
-      await apiServer.stop();
+      await Promise.race([
+        apiServer.stop(),
+        new Promise((resolve) => { shutdownTimer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS); }),
+      ]);
     } catch {
       // ignore shutdown error
+    } finally {
+      clearTimeout(shutdownTimer);
     }
     apiShutdownComplete = true;
     if (!installingUpdate) app.quit();

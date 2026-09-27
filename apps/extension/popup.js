@@ -506,7 +506,15 @@
     if (isDemo) return;
     discoveryPending = true; discoveryError = false; renderRows();
     if (activeTab?.id) {
-      const scan = () => chrome.tabs.sendMessage(activeTab.id, { cmd: 'SCAN_PAGE' }).then(() => true, () => false);
+      const scanFrame = frameId => chrome.tabs.sendMessage(activeTab.id, { cmd: 'SCAN_PAGE' }, { frameId }).then(() => true, () => false);
+      // An untargeted message resolves with whichever frame answers first, so an
+      // ad iframe could hide a top frame without SnagThis. Scan every frame, and
+      // judge the page by its top frame.
+      const scan = async () => {
+        const frames = await chrome.webNavigation?.getAllFrames({ tabId: activeTab.id }).catch(() => null) || [];
+        const [top] = await Promise.all([scanFrame(0), ...frames.filter(frame => frame.frameId > 0).map(frame => scanFrame(frame.frameId))]);
+        return top;
+      };
       // No receiver means this tab predates the installed content script.
       let reached = await scan();
       if (!reached && /^https?:/.test(activeTab.url || '') && (await message({ cmd: 'PREPARE_PAGE', tabId: activeTab.id }).catch(() => null))?.ok) reached = await scan();

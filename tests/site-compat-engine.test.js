@@ -199,6 +199,35 @@ test('site-compatibility reproductions download real media', { timeout: 300_000 
     assert.ok(job.elapsedMs < 30_000, `fallback took ${job.elapsedMs} ms`);
   });
 
+  await t.test('a paused native download resumes and refreshes after a quality fallback', async () => {
+    // A pause after a fallback (or a restart) resumes with the original quality
+    // chosen first, so its playlist never matches the one from the last attempt.
+    const job = await runJob(directory, { url: `${base}/dead-top/master.m3u8`, selection: { variantUrl: `${base}/dead/v360/index.m3u8`, height: 360 },
+      resumePartialSegments: true, playlistTopology: 'fingerprint-from-the-fallback-attempt' });
+    assert.equal(job.status, 'completed', job.error);
+    assert.notEqual(job.errorCode, 'SOURCE_CHANGED');
+    assert.deepEqual(job.qualityFallback, { from: 360, to: 240 });
+    const media = await probeFile(job.mp4Path, FFPROBE);
+    assert.equal(media.height, 240);
+    assert.ok(Math.abs(media.durationSeconds - 6) <= 1, `duration ${media.durationSeconds}`);
+
+    // Reopening the page to refresh the link must not be refused either.
+    const QueueManager = require('../packages/downloader-engine/src/core/QueueManager');
+    const jobs = new Map();
+    const manager = new QueueManager({ queueFilePath: path.join(directory, `queue-${job.id}.json`), fsPromises: fs.promises, jobs,
+      runJob: async () => {}, runDirectJob: async () => {}, initialSettings: { autoStart: false } });
+    await manager.ready;
+    const paused = { id: 'paused-native', title: 'Paused', mediaType: 'hls', url: `${base}/dead-top/master.m3u8`, headers: {},
+      selection: { variantUrl: `${base}/dead/v360/index.m3u8`, height: 360 }, queueStatus: 'paused', status: 'paused',
+      completedSegments: 3, resumePartialSegments: true, playlistTopology: job.playlistTopology,
+      filePath: path.join(directory, 'outputs', 'paused', 'paused.ts') };
+    manager.queue = [paused];
+    jobs.set(paused.id, paused);
+    const refreshed = await manager.refreshJobSource(paused.id, { url: `${base}/dead-top/master.m3u8`, selection: paused.selection });
+    assert.equal(refreshed.ok, true, refreshed.reason);
+    assert.equal(paused.queueStatus, 'queued');
+  });
+
   await t.test('when every lower rendition is also dead the original failure is reported as an unavailable quality', async () => {
     const job = await runJob(directory, { url: `${base}/dead/v360/index.m3u8` });
     assert.equal(job.status, 'error');
