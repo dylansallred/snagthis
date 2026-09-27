@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { isCurrentPreviewClipPath } = require('@m3u8/downloader-engine/src/core/PreviewClip');
+const { readJsonState, writeFileDurable } = require('@m3u8/downloader-engine/src/utils/durableJson');
+const logger = require('../utils/logger');
 const { youtubeVideoIdOf, youtubeArtwork } = require('../utils/youtubeArtwork');
 const {
   buildDownloadAssetUrl,
@@ -22,6 +24,13 @@ const HISTORY_MEDIA_EXTENSIONS = new Set([
   '.m4v',
   '.avi',
 ]);
+
+function validatePersistedIndex(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'not an index object';
+  if (parsed.version !== INDEX_VERSION && parsed.version !== 1) return `unsupported version ${String(parsed.version).slice(0, 20)}`;
+  if (!Array.isArray(parsed.items)) return 'missing items';
+  return null;
+}
 
 const TERMINAL_STATUSES = new Set(['completed', 'completed-with-errors', 'failed', 'cancelled']);
 
@@ -196,6 +205,9 @@ class HistoryIndexService {
     this.refreshInFlight = null;
     this.persistence = Promise.resolve();
     this.queuedPersist = null;
+    // Set when the saved index exists but could not be read; it is never
+    // overwritten in that session.
+    this.persistBlocked = false;
     // Directory listings and existence answers gathered during one rescan.
     this.scanListing = null;
     this.scanExists = null;
@@ -213,29 +225,29 @@ class HistoryIndexService {
   }
 
   async loadPersistedIndex() {
-    try {
-      const raw = await this.fsPromises.readFile(this.indexFilePath, 'utf8');
-      const parsed = JSON.parse(raw);
-      const removedAt = parsed.removedAt && typeof parsed.removedAt === 'object' ? parsed.removedAt : {};
-      const loadedAt = Date.now();
-      this.removedPaths = new Map((Array.isArray(parsed.removedPaths) ? parsed.removedPaths : [])
-        .filter((value) => typeof value === 'string')
-        .map((value) => [value, Number(removedAt[value]) || loadedAt]));
-      if (
-        parsed
-        && (parsed.version === INDEX_VERSION || parsed.version === 1)
-        && Array.isArray(parsed.items)
-      ) {
-        this.items = parsed.items
-          .map(normalizeStoredItem)
-          .filter(Boolean)
-          .sort((a, b) => Number(b.modifiedAt || 0) - Number(a.modifiedAt || 0));
-      } else {
-        this.items = [];
-      }
-    } catch {
-      this.items = [];
+    this.items = [];
+    const result = await readJsonState(this.fsPromises, this.indexFilePath, {
+      validate: validatePersistedIndex,
+      logger,
+      label: 'history index',
+    });
+    if (result.status === 'unreadable') {
+      // The saved index may be intact but locked. Rebuild the list from disk
+      // for this session without replacing the file it could not read.
+      this.persistBlocked = true;
+      return;
     }
+    if (result.status !== 'loaded') return;
+    const parsed = result.data;
+    const removedAt = parsed.removedAt && typeof parsed.removedAt === 'object' ? parsed.removedAt : {};
+    const loadedAt = Date.now();
+    this.removedPaths = new Map((Array.isArray(parsed.removedPaths) ? parsed.removedPaths : [])
+      .filter((value) => typeof value === 'string')
+      .map((value) => [value, Number(removedAt[value]) || loadedAt]));
+    this.items = parsed.items
+      .map(normalizeStoredItem)
+      .filter(Boolean)
+      .sort((a, b) => Number(b.modifiedAt || 0) - Number(a.modifiedAt || 0));
   }
 
   serializeIndex() {
@@ -255,9 +267,8 @@ class HistoryIndexService {
     if (!this.queuedPersist) {
       const persist = async () => {
         this.queuedPersist = null;
-        const tempPath = `${this.indexFilePath}.tmp`;
-        await this.fsPromises.writeFile(tempPath, this.serializeIndex(), { encoding: 'utf8', mode: 0o600 });
-        await this.fsPromises.rename(tempPath, this.indexFilePath);
+        if (this.persistBlocked) return;
+        await writeFileDurable(this.fsPromises, this.indexFilePath, this.serializeIndex());
         this.lastSavedAt = Date.now();
       };
       this.queuedPersist = this.persistence.then(persist, persist);

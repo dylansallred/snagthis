@@ -5,6 +5,7 @@ const { pathToFileURL } = require('url');
 const preferences = require('./preferences');
 const diagnostics = require('./diagnostics');
 const { resolveMediaPage } = require('./mediaPageResolver');
+const { adoptLegacyUserData } = require('./legacyData');
 // electron-updater takes ~50ms to load; loadAutoUpdater() defers it until an update check.
 let autoUpdater = null;
 const { API } = require('@m3u8/contracts');
@@ -31,27 +32,12 @@ let pairingDialogRequested = false;
 let pairingListenerReady = false;
 let pairingDialogShownFor = '';
 const explicitUserData = process.env.SNAGTHIS_USER_DATA || process.env.E2E_USER_DATA_DIR || app.commandLine.getSwitchValue('user-data-dir');
-const userDataDirectory = explicitUserData ? path.resolve(explicitUserData) : path.join(app.getPath('appData'), app.isPackaged ? 'SnagThis' : 'SnagThis-development');
-// Builds before the SnagThis rename kept data under the VidSnag name. Adopt that
-// folder once, rewriting the absolute paths the queue and history store inside it.
-function adoptLegacyUserData(target, legacy) {
-  if (fs.existsSync(target) || !fs.existsSync(legacy)) return;
-  try {
-    fs.renameSync(legacy, target);
-  } catch (error) {
-    console.warn(`Could not move ${legacy} to ${target}: ${error.message}`);
-    return;
-  }
-  const escaped = directory => JSON.stringify(directory + path.sep).slice(1, -1);
-  for (const name of ['queue.json', 'history-index.json']) {
-    const file = path.join(target, 'data', name);
-    if (!fs.existsSync(file)) continue;
-    const text = fs.readFileSync(file, 'utf8');
-    fs.writeFileSync(`${file}.tmp`, text.split(escaped(legacy)).join(escaped(target)));
-    fs.renameSync(`${file}.tmp`, file);
-  }
-}
-if (!explicitUserData) adoptLegacyUserData(userDataDirectory, path.join(app.getPath('appData'), app.isPackaged ? 'VidSnag' : 'VidSnag-development'));
+const defaultUserDataDirectory = path.join(app.getPath('appData'), app.isPackaged ? 'SnagThis' : 'SnagThis-development');
+// Builds before the SnagThis rename kept data under the VidSnag name. Adopting
+// it is retried on later launches if it cannot finish now.
+const userDataDirectory = explicitUserData
+  ? path.resolve(explicitUserData)
+  : adoptLegacyUserData(defaultUserDataDirectory, path.join(app.getPath('appData'), app.isPackaged ? 'VidSnag' : 'VidSnag-development')).userData;
 fs.mkdirSync(userDataDirectory, { recursive: true });
 app.setPath('userData', userDataDirectory);
 app.setAppUserModelId('com.snagthisvid.desktop');
@@ -165,6 +151,23 @@ function sameRendererUrl(value) {
     const trusted = new URL(rendererUrl());
     return target.protocol === trusted.protocol && target.host === trusted.host && target.pathname === trusted.pathname;
   } catch { return false; }
+}
+
+// Deny by default. The renderer copies (links, the pairing code, diagnostics),
+// reads a pasted link and lets the Saved video player go full screen; nothing
+// else is granted, and only to the app's own page in the main window.
+// Notifications come from the main process.
+const RENDERER_PERMISSIONS = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen']);
+function rendererPermissionAllowed(contents, permission, requestingUrl) {
+  return Boolean(contents && mainWindow && !mainWindow.isDestroyed() && contents === mainWindow.webContents
+    && RENDERER_PERMISSIONS.has(permission) && sameRendererUrl(requestingUrl || contents.getURL()));
+}
+function applyRendererPermissionPolicy(targetSession) {
+  targetSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(rendererPermissionAllowed(contents, permission, details && details.requestingUrl));
+  });
+  targetSession.setPermissionCheckHandler((contents, permission, _origin, details) => (
+    rendererPermissionAllowed(contents, permission, details && details.requestingUrl)));
 }
 
 function handleIpc(channel, callback) {
@@ -858,6 +861,9 @@ async function startLocalApi() {
   apiServer = createApiServer({
     host: apiHost,
     port: apiPort,
+    // Inspection is reachable only from this app's own window (/api), for links the user pasted
+    // themselves, so home servers and NAS addresses stay allowed. Extensions have no inspect route.
+    inspectPrivateAddresses: true,
     allowedOrigins: apiAllowedOrigins(),
     appVersion: app.getVersion(),
     dataDir,
@@ -1048,6 +1054,7 @@ function createWindow() {
     openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
+  applyRendererPermissionPolicy(mainWindow.webContents.session);
 
   const isDev = !!process.env.VITE_DEV_SERVER_URL;
   const cspParts = [

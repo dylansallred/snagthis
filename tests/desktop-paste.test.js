@@ -26,6 +26,8 @@ test('desktop paste keeps resolved titles, quality and source metadata, and expl
     : originalFetch(input, init);
   const api = createApiServer({ dataDir: directory, port: 0, allowedOrigins: [renderer.baseUrl],
     ffmpegPath: process.execPath, ffprobePath: process.execPath, ytDlpPath: process.execPath, trustBinaryPaths: true,
+    // The fixture source server is on 127.0.0.1, which the desktop refuses to inspect.
+    inspectPrivateAddresses: true,
     initialQueueSettings: { autoStart: false },
     onResolvePage: async ({ url }) => {
       if (url.endsWith('/empty')) throw new Error('No player');

@@ -27,10 +27,11 @@ function element(tag, parentElement = null) {
   };
 }
 
-function loadContent({ pageUrl = 'https://example.test/watch', poster = '', pageImage = '', pageMeta = {}, title = 'A real video', frame = null, hasVideo = true, atTime = 12, reply, resources = null } = {}) {
+function loadContent({ pageUrl = 'https://example.test/watch', poster = '', pageImage = '', pageMeta = {}, title = 'A real video', frame = null, hasVideo = true, atTime = 12, reply, resources = null, extraContext = {} } = {}) {
   const location = { href: pageUrl };
   const window = target();
   let frameReads = 0;
+  let frameDraws = 0;
   let playbackTime = atTime;
   const video = Object.assign(target(), element('video'), {
     currentSrc: 'https://media.example.test/movie.mp4', readyState: frame ? 2 : 0, videoWidth: 1280, videoHeight: 720, duration: 20, poster,
@@ -49,7 +50,7 @@ function loadContent({ pageUrl = 'https://example.test/watch', poster = '', page
     querySelectorAll: selector => selector === 'video' ? videos : [],
     createElement: () => ({
       getContext: () => ({
-        drawImage: () => {},
+        drawImage: () => { frameDraws += 1; },
         getImageData: () => {
           frameReads += 1;
           if (frame === 'tainted') throw new Error('The canvas is tainted');
@@ -57,6 +58,7 @@ function loadContent({ pageUrl = 'https://example.test/watch', poster = '', page
         },
       }),
       toDataURL: () => 'data:image/jpeg;base64,dmlkZW8tZnJhbWU=',
+      captureStream: () => ({ getTracks: () => [] }),
     }),
   });
   const sent = [];
@@ -93,9 +95,10 @@ function loadContent({ pageUrl = 'https://example.test/watch', poster = '', page
         disconnect() { this.disconnected = true; }
       },
     } : {}),
+    ...extraContext,
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../apps/extension/js/content.js'), 'utf8'), context);
-  return { sent, timers, runtimeListeners, window, document, video, videos, location, observer, get frameReads() { return frameReads; },
+  return { sent, timers, runtimeListeners, window, document, video, videos, location, observer, get frameReads() { return frameReads; }, get frameDraws() { return frameDraws; },
     setPlaybackTime(value) { playbackTime = value; },
     resourceTimings(entries) { resourceObserver.callback({ getEntries: () => entries }); },
     get resourceObserver() { return resourceObserver; },
@@ -358,4 +361,74 @@ test('an EME player is reported as protected without reading its frames or touch
   page.advance(200);
   assert.equal(page.frameReads, readsBefore);
   assert.equal(context().sourcePreviewPoster, undefined);
+});
+
+function previewPage(options = {}) {
+  const frame = Uint8ClampedArray.from({ length: 208 * 116 * 4 }, (_, index) => index % 4 === 3 ? 255 : Math.floor(index / 4) % 2 ? 190 : 60);
+  const intervals = new Map();
+  let intervalId = 0;
+  class MediaRecorder {
+    static isTypeSupported() { return true; }
+    constructor() { this.state = 'inactive'; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; this.onstop?.(); }
+  }
+  const page = loadContent({ pageUrl: 'https://www.youtube.com/watch?v=abcdefghijk', frame, atTime: 10, ...options, extraContext: {
+    setInterval: (callback) => { intervals.set(++intervalId, callback); return intervalId; },
+    clearInterval: (id) => intervals.delete(id),
+    MediaRecorder, performance: { now: () => 0 },
+  } });
+  const replies = [];
+  const request = (requestId) => {
+    const listener = [...page.runtimeListeners][0];
+    listener({ cmd: 'GET_PAGE_VIDEO_PREVIEW', phase: 'quick', requestId, videoId: 'abcdefghijk' }, {}, (reply) => replies.push(reply));
+  };
+  const tick = () => { page.setPlaybackTime(page.video.currentTime + 0.1); for (const callback of [...intervals.values()]) callback(); };
+  return { page, intervals, replies, request, tick };
+}
+
+test('a page preview capture stops at the first frame after DRM appears on the player or page', async () => {
+  for (const addDrm of [
+    (page) => { page.video.mediaKeys = {}; },
+    (page) => page.document.dispatch('encrypted', { target: page.video, initDataType: 'cenc', initData: new ArrayBuffer(0) }),
+    (page) => page.window.dispatch('message', { source: page.window, data: { source: 'snagthis:media', protection: { signal: 'init', keySystem: 'widevine' } } }),
+  ]) {
+    const preview = previewPage();
+    preview.request('preview-request-1');
+    assert.equal(preview.intervals.size, 1, 'a clear playing video starts a capture');
+    preview.tick();
+    const draws = preview.page.frameDraws;
+    assert.ok(draws > 0, 'clear frames are drawn');
+    addDrm(preview.page);
+    preview.tick();
+    preview.tick();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(preview.page.frameDraws, draws, 'no frame is drawn once DRM is seen');
+    assert.equal(preview.intervals.size, 0, 'the frame loop is cancelled');
+    assert.deepEqual({ ...preview.replies[0] }, { ok: false, status: 'unavailable' });
+    // A new request on the same page is refused before reading any frame.
+    const reads = preview.page.frameReads;
+    preview.request('preview-request-2');
+    assert.equal(preview.intervals.size, 0);
+    assert.equal(preview.page.frameReads, reads);
+  }
+});
+
+test('in-page navigation clears DRM marks, so a clear video on the next page is not reported as protected', () => {
+  const frame = Uint8ClampedArray.from({ length: 208 * 116 * 4 }, (_, index) => index % 4 === 3 ? 255 : Math.floor(index / 4) % 2 ? 190 : 60);
+  const page = loadContent({ frame, atTime: 10 });
+  const context = () => page.sent.filter(message => message.cmd === 'PAGE_CONTEXT').at(-1).context;
+  page.window.dispatch('message', { source: page.window, data: { source: 'snagthis:media', protection: { signal: 'access', keySystem: 'com.widevine.alpha' } } });
+  page.document.dispatch('encrypted', { target: page.video, initDataType: 'cenc', initData: new ArrayBuffer(0) });
+  page.window.dispatch('message', { source: page.window, data: { source: 'snagthis:media', protection: { signal: 'init', keySystem: 'widevine' } } });
+  page.advance(200);
+  assert.ok(context().protection, 'the first video is protected');
+
+  // The site reuses the same <video> element for a clear video on the next page.
+  page.location.href = 'https://example.test/watch/next';
+  page.video.currentSrc = 'https://media.example.test/clear.mp4';
+  page.window.dispatch('popstate');
+  page.advance(200);
+  assert.equal(context().sourcePageUrl, 'https://example.test/watch/next');
+  assert.equal(context().protection, null, 'the clear video is not marked protected');
 });

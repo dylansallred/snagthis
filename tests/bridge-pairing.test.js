@@ -154,9 +154,15 @@ test('two requests at once cancel both, and requests are limited to 3 per 5 minu
   const third = await bridge.ask(ORIGIN_A);
   assert.equal(third.status, 201);
   assert.equal((await bridge.call('/v1/pair/cancel', { method: 'POST', origin: ORIGIN_A, body: { requestId: third.body.requestId, secret: third.secret } })).status, 200);
+  const fourth = await bridge.ask(ORIGIN_A);
+  assert.equal(fourth.status, 201);
+  assert.equal((await bridge.call('/v1/pair/cancel', { method: 'POST', origin: ORIGIN_A, body: { requestId: fourth.body.requestId, secret: fourth.secret } })).status, 200);
   const limited = await bridge.ask(ORIGIN_A);
   assert.equal(limited.status, 429);
   assert.equal(limited.body.code, 'RATE_LIMITED');
+  // The limit belongs to the requesting extension: one noisy extension cannot lock out another.
+  const other = await bridge.ask(ORIGIN_B);
+  assert.equal(other.status, 201, 'another extension can still ask');
   assert.equal(bridge.api.listExtensions().length, 0);
 });
 
@@ -271,4 +277,98 @@ test('connecting with a code after Deny lifts that extension\'s block', async (t
   const again = await bridge.ask(ORIGIN_A);
   assert.equal(again.status, 201);
   assert.equal(bridge.api.getPendingPairing().identity, 'connected-before');
+});
+
+test('code attempts are limited per extension, so one extension cannot lock out another', async (t) => {
+  const bridge = await startBridge(t);
+  const code = bridge.api.getPairingInfo().code;
+  const wrong = String((Number(code) + 1) % 1_000_000).padStart(6, '0');
+  for (let attempt = 0; attempt < 10; attempt++) {
+    assert.equal((await bridge.call('/v1/pair/complete', { method: 'POST', origin: ORIGIN_B, body: { code: wrong } })).status, 403);
+  }
+  assert.equal((await bridge.call('/v1/pair/complete', { method: 'POST', origin: ORIGIN_B, body: { code } })).status, 429, 'the guessing extension is limited');
+  const viaCode = await bridge.call('/v1/pair/complete', { method: 'POST', origin: ORIGIN_A, body: { code } });
+  assert.equal(viaCode.status, 200, 'the user\'s extension still connects');
+  assert.match(viaCode.body.token, /^[0-9a-f]{64}$/);
+});
+
+const WebSocket = require('ws');
+async function openSocket(bridge, { origin, token }) {
+  const socket = new WebSocket(`ws://127.0.0.1:${bridge.port}/ws`, ['snagthis', `snagthis-auth.${token}`], origin ? { origin } : {});
+  await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+  const messages = [];
+  socket.on('message', (raw) => messages.push(JSON.parse(raw)));
+  const closed = new Promise((resolve) => socket.once('close', resolve));
+  socket.send(JSON.stringify({ type: 'subscribe', channel: 'queue' }));
+  const deadline = Date.now() + 2000;
+  while (!messages.some((message) => message.type === 'queue:update') && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(messages.some((message) => message.type === 'queue:update'), 'the socket receives queue updates while connected');
+  return { socket, messages, closed };
+}
+const closedWithin = (socket, closed, ms = 2000) => Promise.race([closed.then(() => true), new Promise((resolve) => setTimeout(() => resolve(socket.readyState === WebSocket.CLOSED), ms))]);
+
+test('disconnect, revoke and re-pair close that extension\'s live WebSocket', async (t) => {
+  const bridge = await startBridge(t);
+  const pair = async (origin) => {
+    const asked = await bridge.ask(origin);
+    bridge.api.decidePairing(asked.body.requestId, true);
+    return (await bridge.status(origin, asked.body.requestId, asked.secret)).body.token;
+  };
+  const tokenA = await pair(ORIGIN_A);
+  const tokenB = (await bridge.call('/v1/pair/complete', { method: 'POST', origin: ORIGIN_B, body: { code: bridge.api.getPairingInfo().code } })).body.token;
+  const a = await openSocket(bridge, { origin: ORIGIN_A, token: tokenA });
+  const b = await openSocket(bridge, { origin: ORIGIN_B, token: tokenB });
+  const desktop = await openSocket(bridge, { token: bridge.api.getAuthToken() });
+
+  // Popup "Disconnect": the extension's socket stops receiving queue updates.
+  assert.equal((await bridge.call('/v1/pair/disconnect', { method: 'POST', origin: ORIGIN_A, token: tokenA, body: {} })).status, 200);
+  assert.equal(await closedWithin(a.socket, a.closed), true, 'the disconnected extension\'s socket is closed');
+  const received = a.messages.length;
+  await bridge.call('/v1/jobs', { method: 'POST', origin: ORIGIN_B, token: tokenB, body: { mediaUrl: 'https://example.org/after-disconnect.mp4', mediaType: 'file' } });
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  assert.equal(a.messages.length, received, 'no queue:update reaches a disconnected extension');
+  assert.equal(b.socket.readyState, WebSocket.OPEN, 'other browsers stay connected');
+  assert.equal(desktop.socket.readyState, WebSocket.OPEN, 'the desktop stays connected');
+
+  // Re-pairing B replaces its token; the socket opened with the old one closes.
+  const reissued = await pair(ORIGIN_B);
+  assert.notEqual(reissued, tokenB);
+  assert.equal(await closedWithin(b.socket, b.closed), true, 'a replaced token\'s socket is closed');
+  // Settings "Disconnect" (desktop IPC) closes the new one too.
+  const c = await openSocket(bridge, { origin: ORIGIN_B, token: reissued });
+  assert.equal(bridge.api.revokeExtension(bridge.api.listExtensions().find((entry) => entry.extensionId === 'b'.repeat(32)).id), true);
+  assert.equal(await closedWithin(c.socket, c.closed), true, 'a revoked extension\'s socket is closed');
+  assert.equal(desktop.socket.readyState, WebSocket.OPEN);
+  desktop.socket.close();
+});
+
+test('retiring the shared pre-upgrade token closes sockets opened with it', async (t) => {
+  const legacy = crypto.randomBytes(32).toString('hex');
+  const bridge = await startBridge(t, { before: (directory) => fs.writeFile(path.join(directory, 'bridge-auth.json'),
+    JSON.stringify({ token: legacy, approvedOrigins: [ORIGIN_A], extensionConnected: true }), { mode: 0o600 }) });
+  const withOrigin = await openSocket(bridge, { origin: ORIGIN_A, token: legacy });
+  const withoutOrigin = await openSocket(bridge, { token: legacy });
+  const upgraded = await bridge.call('/v1/pair/upgrade', { method: 'POST', origin: ORIGIN_A, token: legacy, body: {} });
+  assert.equal(upgraded.status, 200);
+  assert.equal(await closedWithin(withOrigin.socket, withOrigin.closed), true);
+  assert.equal(await closedWithin(withoutOrigin.socket, withoutOrigin.closed), true);
+  const current = await openSocket(bridge, { origin: ORIGIN_A, token: upgraded.body.token });
+  assert.equal(current.socket.readyState, WebSocket.OPEN, 'the upgraded token connects normally');
+  current.socket.close();
+});
+
+test('media inspection is desktop-only and never fetches this computer or the local network', async (t) => {
+  const bridge = await startBridge(t);
+  const code = bridge.api.getPairingInfo().code;
+  const token = (await bridge.call('/v1/pair/complete', { method: 'POST', origin: ORIGIN_A, body: { code } })).body.token;
+  const target = `http://127.0.0.1:${bridge.port}/v1/health`;
+  const fromExtension = await bridge.call('/v1/media/inspect', { method: 'POST', origin: ORIGIN_A, token, body: { mediaUrl: target } });
+  assert.equal(fromExtension.status, 404, 'the extension bridge has no server-side fetcher');
+  assert.equal((await bridge.call('/api/media/inspect', { method: 'POST', origin: ORIGIN_A, token, body: { mediaUrl: target } })).status, 403);
+  const desktop = { token: bridge.api.getAuthToken(), headers: { 'X-Client': 'snagthis-desktop' } };
+  for (const mediaUrl of [target, 'http://169.254.169.254/latest/meta-data/', 'http://100.64.0.1/a.mp4', 'http://[fd00::1]/a.mp4']) {
+    const refused = await bridge.call('/api/media/inspect', { method: 'POST', ...desktop, body: { mediaUrl } });
+    assert.equal(refused.status, 400, mediaUrl);
+    assert.match(refused.body.error, /public websites/);
+  }
 });

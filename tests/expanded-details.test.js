@@ -58,12 +58,27 @@ test('expanded location opens its trusted folder and three design studies remain
           hasAuthToken: Boolean(info.apiAuthToken),
           bodyText: document.body.innerText.slice(0, 2500),
           rowIds: Array.from(document.querySelectorAll('[data-row-key]')).slice(0, 20).map(node => node.dataset.rowKey),
+          // Playwright's stability check needs animation frames; none means a hidden window or a stalled compositor.
+          visibility: document.visibilityState,
+          framesInOneSecond: await new Promise(resolve => {
+            let frames = 0;
+            const tick = () => { frames += 1; requestAnimationFrame(tick); };
+            requestAnimationFrame(tick);
+            setTimeout(() => resolve(frames), 1000);
+          }),
         };
       });
+      const main = await desktop.app.evaluate(({ app, BrowserWindow }) => ({
+        windows: BrowserWindow.getAllWindows().map(window => ({ visible: window.isVisible(), minimized: window.isMinimized(), focused: window.isFocused() })),
+        processes: app.getAppMetrics().map(metric => metric.type),
+        gpuCompositing: app.getGPUFeatureStatus().gpu_compositing,
+      }));
       const output = path.join(__dirname, '../work/verification/performance-audit');
       fs.mkdirSync(output, { recursive: true });
-      const diagnostic = JSON.stringify({ renderer, rendererErrors, apiRequests }, null, 2).replaceAll(info.apiAuthToken, '[REDACTED]');
+      const diagnostic = JSON.stringify({ renderer, main, rendererErrors, apiRequests }, null, 2).replaceAll(info.apiAuthToken, '[REDACTED]');
       fs.writeFileSync(path.join(output, 'expanded-details-failure.json'), `${diagnostic}\n`);
+      // CI keeps only the log for unit tests, so the evidence must be printed as well.
+      t.diagnostic(JSON.stringify(JSON.parse(diagnostic)));
     } catch { /* Preserve the row assertion failure even if the renderer has closed. */ }
     throw error;
   }

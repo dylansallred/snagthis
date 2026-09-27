@@ -157,6 +157,9 @@ function createApiServer(options = {}) {
     ffmpegPath,
     ffprobePath,
     trustBinaryPaths = false,
+    // Embedding-code option for local test fixtures only; never set from request
+    // input or the environment. The desktop app leaves it off.
+    inspectPrivateAddresses = false,
     onFocus,
     ytDlpPath,
     authToken,
@@ -178,7 +181,13 @@ function createApiServer(options = {}) {
   }
 
   if (!['127.0.0.1', '::1', 'localhost'].includes(host)) throw new Error('The desktop bridge must bind to loopback');
-  const security = createBridgeSecurity({ dataDir, authToken, allowedOrigins, onExtensionConnected, onPairingChange });
+  // Disconnect, revoke, re-pair and legacy-token retirement close live sockets
+  // whose credential is no longer current (closeRevokedSockets, below).
+  let closeRevokedSockets = () => {};
+  const security = createBridgeSecurity({
+    dataDir, authToken, allowedOrigins, onExtensionConnected, onPairingChange,
+    onCredentialsRevoked: () => closeRevokedSockets(),
+  });
   const resolvedDownloadDir = downloadDir || path.join(dataDir, 'downloads');
   fs.mkdirSync(resolvedDownloadDir, { recursive: true });
 
@@ -1543,8 +1552,17 @@ function createApiServer(options = {}) {
     });
   });
 
-  const pairingLimiter = rateLimit({ windowMs: 5 * 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
-  app.post('/v1/pair/complete', pairingLimiter, (req, res) => {
+  // Every client is 127.0.0.1, so code attempts are counted per extension
+  // origin (one extension cannot lock out another), under a global ceiling
+  // that still bounds guessing across many origins.
+  const pairingLimiter = rateLimit({
+    windowMs: 5 * 60_000, max: 10, standardHeaders: true, legacyHeaders: false,
+    keyGenerator: (req) => `origin:${String(req.headers.origin || '')}`,
+  });
+  const pairingGlobalLimiter = rateLimit({
+    windowMs: 5 * 60_000, max: 100, standardHeaders: true, legacyHeaders: false, keyGenerator: () => 'all',
+  });
+  app.post('/v1/pair/complete', pairingLimiter, pairingGlobalLimiter, (req, res) => {
     const result = security.completePairing(req);
     if (!result) return res.status(403).json({ error: 'That connection code is invalid or has expired' });
     return res.json(result);
@@ -1703,20 +1721,23 @@ function createApiServer(options = {}) {
     res.json({ ok: true, appearance: appearance() });
   });
 
-  app.post(['/v1/media/inspect', '/api/media/inspect'], async (req, res) => {
+  // Desktop paste only. Inspection fetches the URL server-side and can load it in
+  // a hidden page, so it is not part of the extension bridge (/v1), and it refuses
+  // non-public destinations (services/mediaInspection.js).
+  app.post('/api/media/inspect', async (req, res) => {
     const mediaUrl = String(req.body && req.body.mediaUrl || '');
     if (!isValidHttpUrl(mediaUrl)) return res.status(400).json({ error: 'Provide a valid video URL' });
     try {
-      const result = await inspectMedia({ mediaUrl, headers: sanitizeHeaders(req.body.headers), resolvePage: onResolvePage });
-      if (req.path === '/api/media/inspect') {
-        // The authenticated desktop needs the observed request context for its
-        // subsequent job submission. This private route is blocked to extension
-        // clients above; public queue/bridge responses still strip all headers.
-        return res.type('application/json').send(JSON.stringify({
-          ...security.publicPayload(result), headers: sanitizeHeaders(result.headers),
-        }));
-      }
-      return res.json(result);
+      const result = await inspectMedia({
+        mediaUrl, headers: sanitizeHeaders(req.body.headers), resolvePage: onResolvePage,
+        allowPrivateAddresses: inspectPrivateAddresses === true,
+      });
+      // The authenticated desktop needs the observed request context for its
+      // subsequent job submission. This private route is blocked to extension
+      // clients above; public queue/bridge responses still strip all headers.
+      return res.type('application/json').send(JSON.stringify({
+        ...security.publicPayload(result), headers: sanitizeHeaders(result.headers),
+      }));
     } catch (error) { return res.status(400).json({ error: redact(error.message) }); }
   });
 
@@ -2040,7 +2061,7 @@ function createApiServer(options = {}) {
     });
   });
 
-  const wss = new WebSocket.Server({
+  const webSocketServerOptions = {
     server, path: '/ws',
     handleProtocols: (protocols) => protocols.has('snagthis') ? 'snagthis' : false,
     verifyClient: ({ req }, done) => {
@@ -2048,14 +2069,25 @@ function createApiServer(options = {}) {
       const client = allowedHosts.has(String(req.headers.host || '')) && security.originAllowed(String(req.headers.origin || '')) ? security.authenticate(req) : null;
       const allowed = Boolean(client);
       if (client) security.markConnected(req, client);
+      // Bound to the socket on 'connection' and re-checked before every send.
+      req.bridgeClient = client;
       done(allowed, allowed ? 200 : 401, allowed ? 'OK' : 'Unauthorized');
     },
-  });
-  // ws forwards HTTP server errors before start()'s listener receives them.
-  // Handle that forwarded event so a bind failure can reject start() normally.
-  wss.on('error', (error) => {
-    logger.warn('Downloader WebSocket server error', { code: error.code, error: error.message });
-  });
+  };
+  // stop() closes the WebSocket server and detaches it from the HTTP server,
+  // so start() attaches a fresh one after a stop to keep updates flowing.
+  function createWebSocketServer() {
+    const next = new WebSocket.Server(webSocketServerOptions);
+    // ws forwards HTTP server errors before start()'s listener receives them.
+    // Handle that forwarded event so a bind failure can reject start() normally.
+    next.on('error', (error) => {
+      logger.warn('Downloader WebSocket server error', { code: error.code, error: error.message });
+    });
+    next.on('connection', handleWebSocketConnection);
+    return next;
+  }
+  let wss = createWebSocketServer();
+  let webSocketServerClosed = false;
   const jobSubscriptions = new Map();
   const channelSubscriptions = new Map();
   const clientSubscriptions = new Map();
@@ -2130,8 +2162,20 @@ function createApiServer(options = {}) {
     clientSubscriptions.delete(ws);
   }
 
+  const socketClients = new WeakMap();
+  // A socket whose credential was revoked or replaced never receives another message.
+  function socketCurrent(ws) {
+    if (security.isCurrent(socketClients.get(ws))) return true;
+    unsubscribeClient(ws);
+    ws.terminate();
+    return false;
+  }
+  closeRevokedSockets = () => {
+    for (const ws of wss.clients) socketCurrent(ws);
+  };
+
   function sendWsMessage(ws, type, payload) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !socketCurrent(ws)) return;
     ws.send(JSON.stringify({ type, data: security.publicPayload(payload) }));
   }
 
@@ -2222,8 +2266,10 @@ function createApiServer(options = {}) {
     subscribers.forEach((ws) => sendWsMessage(ws, 'job:update', payload));
   }
 
-  wss.on('connection', (ws) => {
+  function handleWebSocketConnection(ws, req) {
+    socketClients.set(ws, req && req.bridgeClient);
     ws.on('message', (raw) => {
+      if (!socketCurrent(ws)) return;
       try {
         const message = JSON.parse(raw.toString());
         if (!message || message.type !== 'subscribe') {
@@ -2283,9 +2329,11 @@ function createApiServer(options = {}) {
     ws.on('error', () => {
       unsubscribeClient(ws);
     });
-  });
+  }
 
-  const broadcastInterval = setInterval(() => {
+  // Runs only while the server is started, and only after start() has marked
+  // earlier sessions' completed jobs as already announced.
+  function broadcastTick() {
     const payload = getQueuePayload();
     broadcastQueueUpdate(payload);
     const historySignature = getHistoryQueueSignature(payload);
@@ -2317,9 +2365,10 @@ function createApiServer(options = {}) {
         broadcastJobUpdate(job);
       }
     });
-  }, 500);
+  }
 
   let started = false;
+  let broadcastInterval = null;
   let cleanupTimer = null;
   let historyRefreshTimer = null;
 
@@ -2337,6 +2386,11 @@ function createApiServer(options = {}) {
     lastHistoryQueueSignature = getHistoryQueueSignature(initialQueue);
     broadcastQueueUpdate(initialQueue);
     broadcastCompatibilityUpdate();
+    if (webSocketServerClosed) {
+      wss = createWebSocketServer();
+      webSocketServerClosed = false;
+    }
+    broadcastInterval = setInterval(broadcastTick, 500);
 
     cleanupTimer = startCleanupScheduler({
       fsPromises,
@@ -2356,6 +2410,7 @@ function createApiServer(options = {}) {
       const fail = (error) => {
         started = false;
         clearInterval(broadcastInterval);
+        broadcastInterval = null;
         clearInterval(cleanupTimer);
         clearInterval(historyRefreshTimer);
         cleanupTimer = null;
@@ -2376,6 +2431,7 @@ function createApiServer(options = {}) {
     started = false;
 
     clearInterval(broadcastInterval);
+    broadcastInterval = null;
     if (cleanupTimer) {
       clearInterval(cleanupTimer);
       cleanupTimer = null;
@@ -2398,6 +2454,7 @@ function createApiServer(options = {}) {
 
     return new Promise((resolve, reject) => {
       for (const client of wss.clients) client.terminate();
+      webSocketServerClosed = true;
       wss.close(() => {
         server.close((err) => {
           if (err) {

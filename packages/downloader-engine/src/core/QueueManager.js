@@ -7,7 +7,18 @@ const { allocateJobStorageDir, sanitizeJobFolderName, isOwnedJobStorageDir, hasJ
 const { isCurrentPreviewClipPath } = require('./PreviewClip');
 const { normalizeMediaExtension } = require('../utils/mediaFiles');
 
+const { readJsonState, writeFileDurable } = require('../utils/durableJson');
+
 const FINAL_FILE_NAME_MAX_BYTES = 200;
+const QUEUE_VERSION = 1;
+
+// Files written before versioning have no version and are version 1.
+function validatePersistedQueue(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'not a queue object';
+  if (parsed.version !== undefined && parsed.version !== QUEUE_VERSION) return `unsupported version ${String(parsed.version).slice(0, 20)}`;
+  if (parsed.queue !== undefined && !Array.isArray(parsed.queue)) return 'queue is not a list';
+  return null;
+}
 
 class QueueManager {
   constructor(options) {
@@ -49,6 +60,9 @@ class QueueManager {
     this.queueFilePath = queueFilePath;
     this.downloadDir = downloadDir || path.dirname(queueFilePath);
     this.persistence = Promise.resolve();
+    // Set when queue.json exists but could not be read; it is never
+    // overwritten in that session.
+    this.persistBlocked = false;
     this.maxPersistedJobs = maxPersistedJobs;
     this.completedRetentionMs = completedRetentionMs;
     this.fsPromises = fsPromises;
@@ -65,14 +79,20 @@ class QueueManager {
   // Load queue from disk
   async loadQueue() {
     try {
-      try {
-        await this.fsPromises.access(this.queueFilePath);
-      } catch {
+      const result = await readJsonState(this.fsPromises, this.queueFilePath, {
+        validate: validatePersistedQueue,
+        logger,
+        label: 'queue',
+      });
+      if (result.status === 'unreadable') {
+        // The saved queue may be intact but locked. Never replace it with the
+        // empty queue of this session.
+        this.persistBlocked = true;
         return;
       }
+      if (result.status !== 'loaded') return;
 
-      const data = await this.fsPromises.readFile(this.queueFilePath, 'utf8');
-      const parsed = JSON.parse(data);
+      const parsed = result.data;
       this.queue = Array.isArray(parsed.queue) ? parsed.queue : [];
       const persistedSettings = parsed.settings && typeof parsed.settings === 'object'
         ? parsed.settings
@@ -139,6 +159,15 @@ class QueueManager {
     } catch (err) {
       logger.warn('Failed to load queue from disk', { error: err.message });
       this.queue = [];
+      // The file parsed but could not be restored. Keep it beside the new
+      // queue rather than letting the next save replace it.
+      const preservedPath = `${this.queueFilePath}.corrupt-${Date.now()}`;
+      try {
+        await this.fsPromises.rename(this.queueFilePath, preservedPath);
+        logger.warn('Set aside unrestorable queue', { preservedFile: path.basename(preservedPath) });
+      } catch (renameError) {
+        if (!renameError || renameError.code !== 'ENOENT') this.persistBlocked = true;
+      }
     }
   }
 
@@ -516,16 +545,16 @@ class QueueManager {
       });
 
       const data = {
+        version: QUEUE_VERSION,
         queue: serializedQueue,
         settings: this.settings,
         savedAt: Date.now(),
       };
       const snapshot = JSON.stringify(data, null, 2);
       const persist = async () => {
-        const temporaryPath = `${this.queueFilePath}.tmp`;
+        if (this.persistBlocked) return;
         await this.fsPromises.mkdir(path.dirname(this.queueFilePath), { recursive: true });
-        await this.fsPromises.writeFile(temporaryPath, snapshot, { encoding: 'utf8', mode: 0o600 });
-        await this.fsPromises.rename(temporaryPath, this.queueFilePath);
+        await writeFileDurable(this.fsPromises, this.queueFilePath, snapshot);
       };
       // Serialize writes so a slower old snapshot cannot replace newer queue state.
       this.persistence = this.persistence.then(persist, persist);

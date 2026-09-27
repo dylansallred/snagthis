@@ -129,6 +129,30 @@ async function startServer(directory) {
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }) };
 }
 
+// Windows cannot execute a `#!` script (spawn fails with EFTYPE), and the
+// engine rightly spawns FFMPEG_PATH as a real executable without a shell. Build
+// a real .exe with the C# compiler every Windows .NET Framework install ships;
+// it forwards FFmpeg's `-i` input to the Node script and returns its exit code.
+async function windowsLauncher(directory, script) {
+  const csc = path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
+  const verbatim = (value) => `@"${value.replace(/"/g, '""')}"`;
+  const source = path.join(directory, 'ffmpeg-exits-cleanly.cs');
+  const executable = path.join(directory, 'ffmpeg-exits-cleanly.exe');
+  fs.writeFileSync(source, `using System;
+using System.Diagnostics;
+static class Launcher {
+  static int Main(string[] args) {
+    int input = Array.IndexOf(args, "-i");
+    var info = new ProcessStartInfo(${verbatim(process.execPath)}, "\\"" + ${verbatim(script)} + "\\" -i \\"" + args[input + 1] + "\\"");
+    info.UseShellExecute = false;
+    using (var child = Process.Start(info)) { child.WaitForExit(); return child.ExitCode; }
+  }
+}
+`);
+  await runTool(csc, ['/nologo', '/target:exe', `/out:${executable}`, source]);
+  return executable;
+}
+
 async function runJob(directory, fields) {
   const { createJobProcessor } = require('../packages/downloader-engine/src/core/JobProcessor');
   const id = randomUUID();
@@ -267,10 +291,11 @@ const input = process.argv[process.argv.indexOf('-i') + 1];
   process.exit(0);
 })();
 `, { mode: 0o755 });
+    const executable = process.platform === 'win32' ? await windowsLauncher(directory, fake) : fake;
     const { createJobProcessor } = require('../packages/downloader-engine/src/core/JobProcessor');
     const output = path.join(directory, 'outputs', 'no-output');
     fs.mkdirSync(output, { recursive: true });
-    const processor = createJobProcessor({ downloadDir: path.join(directory, 'outputs'), FFMPEG_PATH: fake, FFPROBE_PATH: FFPROBE, fsPromises: fs.promises,
+    const processor = createJobProcessor({ downloadDir: path.join(directory, 'outputs'), FFMPEG_PATH: executable, FFPROBE_PATH: FFPROBE, fsPromises: fs.promises,
       DEFAULT_MAX_CONCURRENT: 1, DEFAULT_MAX_SEGMENT_ATTEMPTS: 3, getJobTempDirForUrl: (_url, jobId) => path.join(directory, `temp-${jobId}`) });
     const clean = { id: 'no-output', url: `${base}/forbidden-init/muxed/index.m3u8`, mediaType: 'hls', headers: {}, status: 'pending', queueStatus: 'downloading',
       progress: 0, filePath: path.join(output, 'fixture.ts'), storageDir: output, downloadName: 'fixture.ts', downloadNameMp4: 'fixture.mp4',

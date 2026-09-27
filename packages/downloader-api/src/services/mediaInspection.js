@@ -1,5 +1,6 @@
 const { parseHlsManifest, parseDashAudio } = require('@m3u8/contracts');
 const { scopeMediaHeaders } = require('@m3u8/downloader-engine/src/core/MediaRequest');
+const { assertPublicUrl } = require('../utils/publicAddress');
 
 function httpUrl(value) {
   const url = new URL(value);
@@ -39,7 +40,16 @@ function markObservedVariants(inspection, observedUrls) {
   return { ...inspection, variants };
 }
 
-async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = fetch }) {
+/**
+ * Desktop paste inspection. Every fetch, including each redirect hop, goes only to
+ * hosts whose DNS answers are all public addresses: never this computer, the local
+ * network, link-local, CGNAT (100.64/10) or unique-local IPv6.
+ * `allowPrivateAddresses` (createApiServer's `inspectPrivateAddresses`) is set only by
+ * embedding code, never by a request: the desktop app sets it because its /api route
+ * serves only links the user pasted, so home servers and NAS links keep working. The
+ * hidden page resolver stays public-only because it runs arbitrary pages' scripts.
+ */
+async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = fetch, lookup, allowPrivateAddresses = false }) {
   const original = httpUrl(mediaUrl);
   const youtube = /^(?:www\.|m\.|music\.)?youtube\.com$/.test(original.hostname) || original.hostname === 'youtu.be';
   if (youtube) {
@@ -59,6 +69,7 @@ async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = f
   async function fetchSource(url, requestHeaders) {
     let target = httpUrl(url).href;
     for (let redirects = 0; redirects <= 4; redirects++) {
+      if (allowPrivateAddresses !== true) await assertPublicUrl(target, { lookup });
       const response = await fetchImpl(target, { headers: scopeMediaHeaders(requestHeaders, target, { credentialOrigin: url }), redirect: 'manual', signal: AbortSignal.timeout(8000) });
       if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
         const next = httpUrl(new URL(response.headers.get('location'), target));

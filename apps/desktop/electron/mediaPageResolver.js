@@ -1,5 +1,6 @@
 const { BrowserWindow, session } = require('electron');
 const { parseHlsManifest } = require('@m3u8/contracts');
+const { isPublicAddress, assertPublicUrl } = require('@m3u8/downloader-api/src/utils/publicAddress');
 
 const MAX_MANIFEST_BYTES = 1_000_000;
 const NETWORK_BUFFERS = { maxTotalBufferSize: 8_000_000, maxResourceBufferSize: MAX_MANIFEST_BYTES };
@@ -63,7 +64,7 @@ function publicHttpUrl(value) {
       || host === '::1' || host === '::' || /^(?:(?:fc|fd)[0-9a-f]{2}|fe[89ab][0-9a-f]):/i.test(host)
       || /^(?:0|10|127)\./.test(host) || /^169\.254\./.test(host)
       || /^192\.168\./.test(host) || /^172\.(?:1[6-9]|2\d|3[01])\./.test(host)
-      || /^::ffff:/i.test(host)) return null;
+      || /^::ffff:/i.test(host) || (/^[\d.]+$|:/.test(host) && !isPublicAddress(host))) return null;
     return url.href;
   } catch { return null; }
 }
@@ -107,7 +108,7 @@ async function resolveMediaPage(options) {
   }
 }
 
-async function resolveWithSession(pageSession, { url, timeoutMs = 25_000, onStage }) {
+async function resolveWithSession(pageSession, { url, timeoutMs = 25_000, onStage, lookup }) {
   const startedAt = Date.now();
   let stage = 'browser-setup';
   const reportStage = (value) => {
@@ -250,8 +251,20 @@ async function resolveWithSession(pageSession, { url, timeoutMs = 25_000, onStag
     scheduleAfter(Math.max(0, deadline - Date.now()));
   };
 
+  // Every page, frame, redirect and subresource request goes only to hosts whose
+  // DNS answers are public: never this computer or the local network (including
+  // CGNAT and unique-local IPv6). Answers are cached for this resolve.
+  const hostChecks = new Map();
+  const publicDestination = (value) => {
+    const host = new URL(value).host;
+    if (!hostChecks.has(host)) hostChecks.set(host, assertPublicUrl(value, { lookup }).then(() => true, () => false));
+    return hostChecks.get(host);
+  };
   pageSession.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: (details.url !== 'about:blank' && !publicHttpUrl(details.url) && !/^(?:data|blob):/i.test(details.url)) || components.has(details.url) });
+    if (components.has(details.url)) { callback({ cancel: true }); return; }
+    if (details.url === 'about:blank' || /^(?:data|blob):/i.test(details.url)) { callback({ cancel: false }); return; }
+    if (!publicHttpUrl(details.url)) { callback({ cancel: true }); return; }
+    publicDestination(details.url).then((allowed) => callback({ cancel: settled || !allowed }), () => callback({ cancel: true }));
   });
   pageSession.webRequest.onBeforeSendHeaders((details, callback) => {
     if (requestHeaders.size < 500 && publicHttpUrl(details.url)) requestHeaders.set(details.url, details.requestHeaders);

@@ -15,7 +15,7 @@
   const reportedWorkerMedia = new Set();
   // DRM (EME) observation: which players decrypt, and the key system the page
   // asked for. Observed only; SnagThis never records or decrypts protected video.
-  const encryptedVideos = new WeakMap();
+  let encryptedVideos = new WeakMap();
   let requestedKeySystem = '';
   let encryptedInit = '';
   let resourceObserver = null;
@@ -64,6 +64,10 @@
   function isProtectedVideo(video) {
     try { return Boolean(video && (video.mediaKeys || encryptedVideos.has(video))); } catch { return false; }
   }
+  // DRM on this player or page stops frame reads, even when it appears after a
+  // capture started. A granted key-system request alone is not protection: many
+  // players (YouTube included) probe EME for capability, as protectionState() does.
+  function drmObserved(video) { return isProtectedVideo(video) || Boolean(encryptedInit); }
   // Key-system IDs inside the 'encrypted' event's init data (pssh boxes).
   function keySystemFromInitData(data) {
     try {
@@ -121,7 +125,7 @@
   }
   function frameGrab(video) {
     // Protected (DRM) frames are never read, drawn or recorded.
-    if (!video || isProtectedVideo(video) || video.readyState < 2 || !video.videoWidth) return '';
+    if (!video || drmObserved(video) || video.readyState < 2 || !video.videoWidth) return '';
     try {
       const canvas = document.createElement('canvas'); canvas.width = 208; canvas.height = 116;
       const context = canvas.getContext('2d'); if (!context) return '';
@@ -186,7 +190,7 @@
       let lastTime = video.currentTime;
       const startedAt = performance.now();
       frameTimer = setInterval(() => {
-        if (retired || location.href !== pageUrl || video.currentSrc !== sourceUrl || video.paused || video.ended) {
+        if (retired || location.href !== pageUrl || video.currentSrc !== sourceUrl || video.paused || video.ended || drmObserved(video)) {
           cancelPagePreview(capture.requestId); return;
         }
         if (video.readyState < 2 || video.currentTime === lastTime) return;
@@ -312,6 +316,10 @@
     if (lastPage === location.href) return;
     cancelPagePreview();
     reportedWorkerMedia.clear();
+    // DRM signals describe the previous page; a reused player element must not
+    // carry them to a clear video. A still-attached MediaKeys is re-read live.
+    encryptedVideos = new WeakMap();
+    requestedKeySystem = '';
     encryptedInit = '';
     lastPage = location.href;
     send({ cmd: 'PAGE_NAVIGATED', pageUrl: lastPage });

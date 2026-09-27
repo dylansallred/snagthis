@@ -11,7 +11,10 @@ const PAIRING_REQUEST_ID = /^[0-9a-f]{32}$/;
 // One-click pairing limits (docs/design/prototypes/pairing option 2).
 const REQUEST_LIFETIME_MS = 2 * 60_000;
 const REQUEST_WINDOW_MS = 5 * 60_000;
+// Counted per requesting extension, so one noisy extension cannot lock out another;
+// the global ceiling only bounds the total prompts the desktop can be shown.
 const REQUESTS_PER_WINDOW = 3;
+const GLOBAL_REQUESTS_PER_WINDOW = 30;
 const DENY_BLOCK_MS = 60 * 60_000;
 // Finished requests stay long enough for the requester's next poll to read the outcome.
 const FINISHED_RETENTION_MS = 5 * 60_000;
@@ -35,7 +38,7 @@ const extensionIdOf = (origin) => String(origin || '').slice('chrome-extension:/
  * extension holds its own token, bound to its chrome-extension:// origin and stored only
  * as a hash, so one browser can be disconnected without affecting the others.
  */
-function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExtensionConnected, onPairingChange, storeExtensionIds = STORE_EXTENSION_IDS }) {
+function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExtensionConnected, onPairingChange, onCredentialsRevoked, storeExtensionIds = STORE_EXTENSION_IDS }) {
   fs.mkdirSync(dataDir, { recursive: true });
   const statePath = path.join(dataDir, 'bridge-auth.json');
   let stored = {};
@@ -74,6 +77,8 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
   const extensionConnected = () => extensions.some((entry) => entry.lastSeenAt);
   const approvedOrigin = (origin) => extensions.some((entry) => entry.origin === origin);
   const notify = () => { if (typeof onExtensionConnected === 'function') onExtensionConnected(); };
+  // Live connections (WebSockets) authenticated earlier re-check isCurrent() here.
+  const revoked = () => { if (typeof onCredentialsRevoked === 'function') onCredentialsRevoked(); };
 
   function originAllowed(origin, { pairingRequest = false } = {}) {
     if (!origin) return true; // Native clients still must possess a token.
@@ -113,6 +118,16 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     return { kind: 'extension', entry };
   }
 
+  /** Whether a client authenticated earlier still holds a live credential. */
+  function isCurrent(client) {
+    if (!client) return false;
+    if (client.kind === 'desktop') return true;
+    if (client.kind !== 'extension') return false;
+    // Revoke and re-pair replace entry objects; retiring the shared token clears it.
+    if (client.legacy && !legacyToken) return false;
+    return client.entry ? extensions.includes(client.entry) : client.legacy === true;
+  }
+
   function markConnected(req, client = authenticate(req)) {
     if (!client || client.kind !== 'extension') return;
     const entry = client.entry || (extensions.filter((candidate) => candidate.legacy).length === 1 ? extensions.find((candidate) => candidate.legacy) : null);
@@ -135,6 +150,7 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     blockedUntil.delete(origin);
     save();
     notify();
+    if (existing) revoked();
     return issued;
   }
 
@@ -159,7 +175,7 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
   // ── One-click approve: the extension asks, the desktop shows four digits, the user allows. ──
   const matchKey = crypto.randomBytes(32);
   const finished = new Map();
-  let requestTimes = [];
+  const requestTimes = new Map();
   const blockedUntil = new Map();
   let expiryTimer = null;
   const classify = (origin) => {
@@ -178,7 +194,10 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     if (pairing && pairing.status === 'pending' && pairing.expiresAt <= time) finish(pairing, 'expired');
     for (const [id, request] of finished) if (request.finishedAt + FINISHED_RETENTION_MS <= time) finished.delete(id);
     for (const [origin, until] of blockedUntil) if (until <= time) blockedUntil.delete(origin);
-    requestTimes = requestTimes.filter((at) => at + REQUEST_WINDOW_MS > time);
+    for (const [origin, times] of requestTimes) {
+      const recent = times.filter((at) => at + REQUEST_WINDOW_MS > time);
+      if (recent.length) requestTimes.set(origin, recent); else requestTimes.delete(origin);
+    }
   }
   function finish(request, status) {
     request.status = status;
@@ -200,8 +219,12 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     if (typeof secret !== 'string' || !PAIRING_SECRET.test(secret)) return { status: 400, body: { error: 'Invalid pairing request' } };
     const blocked = blockedUntil.get(origin);
     if (blocked) return { status: 403, body: { error: 'SnagThis denied this extension recently', code: 'PAIRING_BLOCKED', retryAfterMs: blocked - now() } };
-    if (requestTimes.length >= REQUESTS_PER_WINDOW) return { status: 429, body: { error: 'Too many connection requests', code: 'RATE_LIMITED' } };
-    requestTimes.push(now());
+    const originTimes = requestTimes.get(origin) || [];
+    const total = [...requestTimes.values()].reduce((sum, times) => sum + times.length, 0);
+    if (originTimes.length >= REQUESTS_PER_WINDOW || total >= GLOBAL_REQUESTS_PER_WINDOW) {
+      return { status: 429, body: { error: 'Too many connection requests', code: 'RATE_LIMITED' } };
+    }
+    requestTimes.set(origin, [...originTimes, now()]);
     const requestId = randomHex(16);
     const secretHash = sha256(secret);
     // The server alone chooses the digits: an HMAC of its own random key and the request.
@@ -298,6 +321,7 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     if (!extensions.some((candidate) => candidate.legacy)) legacyToken = null;
     save();
     notify();
+    revoked();
     return true;
   }
 
@@ -340,7 +364,7 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
 
   return {
     get token() { return token; },
-    originAllowed, authenticate, getPairingInfo, completePairing, markConnected, signAsset, verifyAsset, publicPayload,
+    originAllowed, authenticate, isCurrent, getPairingInfo, completePairing, markConnected, signAsset, verifyAsset, publicPayload,
     requestPairing, pairingStatus, cancelPairing, getPendingPairing, decidePairing, listExtensions, revokeExtension, upgradeLegacy,
     getConnectionState: () => ({ extensionConnected: extensionConnected(), pairedExtensions: extensions.length }),
   };

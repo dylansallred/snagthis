@@ -124,9 +124,10 @@ function resolverHarness({ onLoad, executeJavaScript, onCommand }) {
   const commands = [];
   const timers = new Set();
   let destroyed = false;
+  let beforeRequest = null;
   const pageSession = Object.assign(new EventEmitter(), {
     setPermissionRequestHandler() {}, setPermissionCheckHandler() {},
-    webRequest: { onBeforeRequest() {}, onBeforeSendHeaders() {} },
+    webRequest: { onBeforeRequest(listener) { beforeRequest = listener; }, onBeforeSendHeaders() {} },
     async closeAllConnections() {}, async clearStorageData() {}, async clearCache() {}, async clearAuthCache() {},
   });
   const debug = Object.assign(new EventEmitter(), {
@@ -148,6 +149,8 @@ function resolverHarness({ onLoad, executeJavaScript, onCommand }) {
   let sequence = 0;
   const env = {
     debug, commands, contents,
+    // Ask the resolver's request gate whether Chromium may load `url`.
+    gate: (url) => new Promise((resolve) => beforeRequest({ url }, ({ cancel }) => resolve(!cancel))),
     later(fn, ms) { const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms); timers.add(timer); },
     // Emit a successful response; `body` (when given) is readable only from `sessionId`.
     respond(url, { sessionId, body, mimeType = 'application/vnd.apple.mpegurl' } = {}) {
@@ -252,11 +255,13 @@ test('observedUrls lists the child playlists the page player loaded', async () =
   assert.deepEqual([...result.observedUrls], ['https://cdn.example/show/720.m3u8?sig=a']);
 });
 
+const publicLookup = async () => [{ address: '93.184.215.14', family: 4 }];
+
 test('inspection marks variants the resolved page player loaded as observed', async () => {
   const { inspectMedia } = require('../packages/downloader-api/src/services/mediaInspection');
   const fetchImpl = async () => ({ ok: true, status: 200, headers: new Headers({ 'content-type': 'text/html' }), body: { async cancel() {} } });
   const inspection = await inspectMedia({
-    mediaUrl: 'https://example.com/watch/4', fetchImpl,
+    mediaUrl: 'https://example.com/watch/4', fetchImpl, lookup: publicLookup,
     resolvePage: async ({ url }) => ({
       mediaUrl: 'https://cdn.example/show/master.m3u8', mediaType: 'hls', sourcePageUrl: url, headers: {},
       manifestText: MASTER, observedUrls: ['https://cdn.example/show/720.m3u8?sig=rotated'],
@@ -266,8 +271,46 @@ test('inspection marks variants the resolved page player loaded as observed', as
   assert.equal(byHeight[720], true, 'origin+path match survives a changed signed query');
   assert.equal(byHeight[1080], undefined);
   const unobserved = await inspectMedia({
-    mediaUrl: 'https://example.com/watch/5', fetchImpl,
+    mediaUrl: 'https://example.com/watch/5', fetchImpl, lookup: publicLookup,
     resolvePage: async ({ url }) => ({ mediaUrl: 'https://cdn.example/show/master.m3u8', sourcePageUrl: url, headers: {}, manifestText: MASTER }),
   });
   assert.ok(unobserved.variants.every(variant => !('observed' in variant)));
+});
+
+test('inspection refuses loopback, private, link-local, CGNAT and unique-local destinations, including after DNS and redirects', async () => {
+  const { inspectMedia } = require('../packages/downloader-api/src/services/mediaInspection');
+  const fetched = [];
+  const answers = { 'cdn.example': '93.184.215.14', 'rebind.example': '192.168.1.20', 'carrier.example': '100.64.3.4', 'v6.example': 'fd12:3456::1', 'mapped.example': '::ffff:127.0.0.1' };
+  const lookup = async (host) => [{ address: answers[host] || '93.184.215.14', family: answers[host]?.includes(':') ? 6 : 4 }];
+  const fetchImpl = async (url) => {
+    fetched.push(url);
+    if (url === 'https://cdn.example/redirect') return { ok: false, status: 302, headers: new Headers({ location: 'https://rebind.example/admin' }), body: { async cancel() {} } };
+    return { ok: true, status: 200, headers: new Headers({ 'content-type': 'video/mp4' }), body: { async cancel() {} } };
+  };
+  for (const mediaUrl of ['http://127.0.0.1:49732/v1/queue', 'http://localhost:8080/a.mp4', 'http://10.0.0.8/a.mp4', 'http://169.254.169.254/latest/meta-data',
+    'http://100.100.1.1/a.mp4', 'http://[::1]/a.mp4', 'http://[fe80::1]/a.mp4', 'http://[fd00::5]/a.mp4', 'http://[::ffff:192.168.0.1]/a.mp4',
+    'https://rebind.example/a.mp4', 'https://carrier.example/a.mp4', 'https://v6.example/a.mp4', 'https://mapped.example/a.mp4', 'https://cdn.example/redirect']) {
+    await assert.rejects(inspectMedia({ mediaUrl, fetchImpl, lookup }), /public websites/, mediaUrl);
+  }
+  assert.deepEqual(fetched, ['https://cdn.example/redirect'], 'only the public hop was fetched; its private redirect target never was');
+  const ok = await inspectMedia({ mediaUrl: 'https://cdn.example/movie.mp4', fetchImpl, lookup });
+  assert.equal(ok.mediaUrl, 'https://cdn.example/movie.mp4');
+});
+
+test('the page resolver\'s request gate refuses hosts that resolve to non-public addresses', async () => {
+  let env;
+  const verdicts = {};
+  const answers = { 'rebind.example': '10.1.2.3', 'carrier.example': '100.72.0.9', 'cdn.example': '93.184.215.14' };
+  const lookup = async (host) => [{ address: answers[host] || '93.184.215.14', family: 4 }];
+  env = resolverHarness({ onLoad: async (harness) => {
+    for (const url of ['https://cdn.example/show/master.m3u8', 'https://rebind.example/admin', 'https://carrier.example/x', 'http://100.64.0.1/x', 'http://[fd00::1]/x', 'http://127.0.0.1:49732/v1/queue', 'data:text/plain,a']) {
+      verdicts[url] = await harness.gate(url);
+    }
+    harness.respond('https://cdn.example/show/master.m3u8', { body: LEAF });
+  } });
+  await env.resolve({ url: 'https://example.com/watch/9', timeoutMs: 3000, lookup });
+  assert.deepEqual(verdicts, {
+    'https://cdn.example/show/master.m3u8': true, 'https://rebind.example/admin': false, 'https://carrier.example/x': false,
+    'http://100.64.0.1/x': false, 'http://[fd00::1]/x': false, 'http://127.0.0.1:49732/v1/queue': false, 'data:text/plain,a': true,
+  });
 });

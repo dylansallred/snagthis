@@ -30,6 +30,8 @@ apps/extension/popup.css
 
 # Release outputs created by package:extension and the release workflow.
 /snagthis-extension.zip
+/*-extension.zip
+/*.zip
 /release-assets/
 /notarization.json
 # Canonical notices are copied here only for extension packaging.
