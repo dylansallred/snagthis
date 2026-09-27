@@ -8,8 +8,11 @@ test.beforeAll(async () => { renderer = await startRenderer(); });
 test.afterAll(async () => { await renderer?.close(); });
 
 // Escape goes to whatever has focus; wait until the dialog or menu has taken it (slower on CI).
+// Radix only treats a just-opened layer as the top one after a follow-up render, so let two
+// frames pass as well before pressing Escape.
 async function focusInside(page, selector) {
   await expect.poll(() => page.evaluate((value) => !!document.activeElement?.closest(value), selector)).toBe(true);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 test('Escape closes only the dialog or menu it was pressed in, and shortcuts never stack dialogs', async ({ page }) => {

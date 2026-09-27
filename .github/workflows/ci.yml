@@ -132,11 +132,12 @@ jobs:
         env:
           DEBUG: pw:browser
         run: xvfb-run --auto-servernum npm run test:e2e -- --project=chromium
-      - name: Keep failure evidence
-        if: failure()
+      - name: Keep failure and retry evidence (traces of flaky tests too)
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: checks-${{ runner.os }}
+          retention-days: 7
           path: |
             playwright-report/
             test-results/
