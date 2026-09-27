@@ -50,7 +50,8 @@ test('real Electron: accent migrates from localStorage, follows the extension li
     await native.app.close();
     native = await launchDesktop(renderer.baseUrl, { userDataDirectory: profile });
     window = await native.app.firstWindow();
-    await window.waitForLoadState('domcontentloaded');
+    // The first window can still be about:blank; wait for the renderer itself to load.
+    await window.waitForURL((url) => url.origin === renderer.baseUrl, { waitUntil: 'domcontentloaded' });
     // Applied before React renders anything, straight from settings.json.
     expect(await window.evaluate(() => document.documentElement.dataset.accent)).toBe('magenta');
   } finally { await native?.close(); await renderer.close(); }
