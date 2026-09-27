@@ -13,6 +13,7 @@ const { API, HEADER, CLIENT, validateSelection, classifyProblem, isAccent, isAcc
 const { createBridgeSecurity, redact, EXTENSION_ORIGIN } = require('./utils/security');
 const { generatePreviewAssets, PREVIEW_CLIP_SUFFIX } = require('@m3u8/downloader-engine/src/core/PreviewClip');
 const { isMediaFilePath, normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
+const { redactPaths } = require('@m3u8/downloader-engine/src/utils/redact');
 const {
   QueueManager,
   createJobProcessor,
@@ -662,7 +663,7 @@ function createApiServer(options = {}) {
       failedSegments: Array.isArray(job.failedSegments) ? job.failedSegments.length : 0,
       threadStates: Array.isArray(job.threadStates) ? job.threadStates : [],
       segmentStates: job.segmentStates || {},
-      error: job.error,
+      error: redactPaths(job.error),
       fallbackUrl: job.fallbackUrl || null,
       originalHlsUrl: job.originalHlsUrl || null,
       fallbackAttempted: !!job.fallbackAttempted,
@@ -1851,7 +1852,7 @@ function createApiServer(options = {}) {
         ...(validManifestText(source.manifestText) ? { manifestText: source.manifestText } : {}),
       });
       return res.status(result.ok ? 200 : 409).json(result);
-    } catch (error) { return res.status(400).json({ error: redact(error.message) }); }
+    } catch (error) { return res.status(400).json({ error: redactPaths(redact(error.message)) }); }
   });
 
   app.get(['/v1/diagnostics', '/api/diagnostics'], (req, res) => {
@@ -1862,7 +1863,7 @@ function createApiServer(options = {}) {
       jobs: queueManager.getQueue().map((job) => ({
         id: job.id, status: job.queueStatus || job.status, mediaType: job.mediaType,
         source: job.sourcePageUrl, progress: job.progress,
-        error: job.error, totalSegments: job.totalSegments, completedSegments: job.completedSegments,
+        error: redactPaths(job.error), totalSegments: job.totalSegments, completedSegments: job.completedSegments,
       })),
     }));
   });

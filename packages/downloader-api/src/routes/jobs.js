@@ -11,6 +11,7 @@ const { inferMediaMetadata } = require('../utils/mediaMetadata');
 const { buildDownloadAssetUrl, buildJobStorageDir } = require('../utils/downloadPaths');
 const config = require('../config');
 const { normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
+const { redactPaths } = require('@m3u8/downloader-engine/src/utils/redact');
 
 function isHttpUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return false;
@@ -553,7 +554,7 @@ function registerJobRoutes(
       threadStates: Array.isArray(job.threadStates) ? job.threadStates : [],
       segmentStates: changedSegments, // Only send changed segments
       segmentStatesCount: changeCount, // For debugging
-      error: job.error,
+      error: redactPaths(job.error),
       fallbackUrl: job.fallbackUrl || null,
       originalHlsUrl: job.originalHlsUrl || null,
       fallbackAttempted: !!job.fallbackAttempted,
@@ -561,7 +562,6 @@ function registerJobRoutes(
       thumbnailUrls: [...localThumbs, ...remoteThumbs],
       previewClipUrl: queueManager.buildPreviewClipUrl(job),
       previewClipDurationSeconds: job.previewClipDurationSeconds || null,
-      subtitlePath: job.subtitlePath || null,
       subtitleDownloadUrl,
       segmentDiagnosticsSummary: segmentDiagnostics ? {
         validatedSegments: Number(segmentDiagnostics.validatedSegments || 0) || 0,
@@ -600,7 +600,6 @@ function registerJobRoutes(
         issueCount: 0,
         expectedProfile: null,
         segmentsWithIssues: [],
-        reportPath: null,
         reportDownloadUrl: null,
       });
     }
@@ -619,7 +618,6 @@ function registerJobRoutes(
       segmentsWithIssues: Array.isArray(diagnostics.segmentsWithIssues)
         ? diagnostics.segmentsWithIssues
         : [],
-      reportPath: diagnostics.reportPath || null,
       reportDownloadUrl,
       updatedAt: diagnostics.updatedAt || null,
     });

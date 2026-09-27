@@ -9,6 +9,7 @@ const { normalizeMediaExtension } = require('../utils/mediaFiles');
 
 const { readJsonState, writeFileDurable } = require('../utils/durableJson');
 const { moveFileSync } = require('../utils/moveFile');
+const { redactPaths } = require('../utils/redact');
 
 const FINAL_FILE_NAME_MAX_BYTES = 200;
 const QUEUE_VERSION = 1;
@@ -624,7 +625,7 @@ class QueueManager {
       queuedAt: job.queuedAt,
       startedAt: job.startedAt,
       completedAt: job.completedAt,
-      error: job.error,
+      error: redactPaths(job.error),
       sourcePageUrl: job.sourcePageUrl || null,
       mediaType: job.mediaType || null,
       downloadMode: job.downloadMode || null,

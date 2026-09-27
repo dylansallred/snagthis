@@ -77,3 +77,31 @@ test('job creation bounds retries, keeps media extensions, refuses to open progr
     assert.equal(result.status, 200, `desktop link ${index + 1}: ${JSON.stringify(result.body)}`);
   }
 });
+
+test('job errors in queue, status and diagnostics payloads never name absolute local paths', { timeout: 20000 }, async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-error-paths-'));
+  const downloadDir = path.join(dataDir, 'downloads');
+  fs.mkdirSync(downloadDir, { recursive: true });
+  const privateDir = path.join(dataDir, 'Private Person', 'My Videos');
+  const rawError = `ENOSPC: no space left on device, write '${path.join(privateDir, 'Holiday clip.mp4')}' (scratch ${path.join(privateDir, 'temp-x', 'seg-1.ts')})`;
+  fs.writeFileSync(path.join(downloadDir, 'queue.json'), JSON.stringify({ queue: [{
+    id: 'failed-disk', title: 'Holiday', status: 'error', queueStatus: 'failed', url: 'https://example.org/a.mp4', error: rawError, completedAt: Date.now(),
+  }], settings: { autoStart: false, maxConcurrent: 1 } }));
+  const api = createApiServer({ dataDir, downloadDir, port: 0,
+    ffmpegPath: process.execPath, ffprobePath: process.execPath, ytDlpPath: process.execPath, trustBinaryPaths: true,
+    initialQueueSettings: { autoStart: false } });
+  const address = await api.start();
+  t.after(async () => { await api.stop(); fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 }); });
+  const get = async (route) => {
+    const response = await fetch(`http://127.0.0.1:${address.port}${route}`, { headers: { Authorization: `Bearer ${api.getAuthToken()}` } });
+    assert.equal(response.status, 200, route);
+    return response.text();
+  };
+  for (const route of ['/api/queue', '/api/jobs/failed-disk', '/api/diagnostics']) {
+    const body = await get(route);
+    assert.equal(body.includes('Private Person'), false, `${route} leaks the local folder: ${body.slice(0, 400)}`);
+    assert.equal(body.includes(dataDir), false, `${route} leaks an absolute path`);
+    assert.match(body, /ENOSPC: no space left on device, write 'Holiday clip\.mp4'/, `${route} keeps the cause and file name`);
+  }
+  assert.equal(api.getState().queue.find(job => job.id === 'failed-disk').error.includes('Private Person'), false);
+});
