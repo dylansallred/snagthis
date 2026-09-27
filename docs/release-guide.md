@@ -27,15 +27,15 @@ Set the `CORRESPONDING_SOURCE_RUN_ID` repository variable to a successful **Prep
 
 ## Verify Windows signing before a release
 
-Run **CI** manually with **Only build and verify an Azure-signed Windows installer (no release)**, or `gh workflow run ci.yml --ref workbench -f verify_windows_signing=true`. It signs with the Azure secrets, silently installs the exact installer, checks both signatures and runs a real packaged download. Test artifacts are kept for seven days; no tag or release is created.
+Run **CI** manually with **Only build and verify an Azure-signed Windows installer (no release)**, or `gh workflow run ci.yml --ref main -f verify_windows_signing=true`. It also checks that the signer's name matches the `publisherName` the installed app uses to verify future updates. It signs with the Azure secrets, silently installs the exact installer, checks both signatures and runs a real packaged download. Test artifacts are kept for seven days; no tag or release is created.
 
 ## Verify Apple signing before a release
 
 Run **CI** manually on the branch to test, selecting **Only build and verify a signed, notarized macOS installer (no release)**. Choose `arm64` for Apple Silicon or `x64` for Intel. Both use the same Apple certificate and notarization credentials. From the CLI:
 
 ```sh
-gh workflow run ci.yml --ref workbench -f verify_macos_signing=true -f macos_arch=arm64
-gh workflow run ci.yml --ref workbench -f verify_macos_signing=true -f macos_arch=x64
+gh workflow run ci.yml --ref main -f verify_macos_signing=true -f macos_arch=arm64
+gh workflow run ci.yml --ref main -f verify_macos_signing=true -f macos_arch=x64
 ```
 
 This mode uses the repository's Apple secrets to sign and notarize the app, DMG, and update ZIP on a native runner for the selected architecture, then checks Gatekeeper acceptance and runs real packaged downloads. It retains verified private test artifacts for seven days without creating a tag or release. It runs only the signing job; ordinary PR CI still runs the full validation matrix. The desktop release workflow always builds both Mac architectures. Windows signing and a real installed version-to-version upgrade need their separate release checks. GitHub's manual dispatch must be available for the workflow before it can be started.
@@ -64,7 +64,7 @@ The automated gate checks identity and coverage; a human reviewer must still che
 
 **Compliance note.** The macOS builds have the weakest provenance. The provider builds them on its own machines and publishes only the build script. Its x264 revision is inferred rather than recorded, and its library tarballs are fetched without upstream checksums. Consider replacing them before public launch with an FFmpeg built by this repository's CI from pinned sources. SnagThis needs only `libx264` plus native codecs and TLS (SecureTransport on macOS, Schannel on Windows). That build would reduce the packet to FFmpeg, x264 and one build script, at the cost of maintaining that build and 10 to 20 CI minutes per architecture.
 
-`fetch-yt-dlp.cjs` must pin the same yt-dlp version as `PINS.ytdlp` in `scripts/build-source-packet.cjs`. If the fetch script still downloads `latest`, the packet builder warns, and the release is covered only if `latest` still resolves to that version when the release builds. When any pin in `apps/desktop/scripts/fetch-*.cjs` changes, update `PINS` (and `MAC_LIBRARIES` if the macOS build script's set of libraries changes). The script refuses to run while `fetch-ffmpeg.cjs` no longer contains the pinned URLs and checksums.
+`fetch-yt-dlp.cjs` pins yt-dlp through `apps/desktop/scripts/yt-dlp-release.json`, and `PINS.ytdlp` in `scripts/build-source-packet.cjs` must name the same version; release verification fails if the packaged yt-dlp differs. When any pin in `apps/desktop/scripts/fetch-*.cjs` changes, update `PINS` (and `MAC_LIBRARIES` if the macOS build script's set of libraries changes). The script refuses to run while `fetch-ffmpeg.cjs` no longer contains the pinned URLs and checksums.
 
 ### 1. Build the packet
 

@@ -43,6 +43,8 @@ fs.mkdirSync(userDataDirectory, { recursive: true });
 app.setPath('userData', userDataDirectory);
 app.setAppUserModelId('com.snagthisvid.desktop');
 const UPDATER_CHECK_TIMEOUT_MS = 45_000;
+// A native updater that hasn't quit the app by now has stalled; don't leave "Installing" up forever.
+const UPDATER_INSTALL_TIMEOUT_MS = 180_000;
 const UPDATER_STARTUP_CHECK_DELAY_MS = 3_000;
 const UPDATER_PERIODIC_CHECK_MS = 6 * 60 * 60 * 1000;
 
@@ -463,20 +465,36 @@ function setUpdaterUnsupportedState(message) {
   });
 }
 
+// GitHub release notes arrive as HTML; the window and notifications show plain text lines.
+function releaseNoteLines(text) {
+  const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+  return String(text)
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<li[^>]*>/gi, '\n• ')
+    .replace(/<br\s*\/?>|<\/(p|div|li|h[1-6]|ul|ol|blockquote|pre)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, name) => {
+      if (name[0] === '#') {
+        const code = name[1].toLowerCase() === 'x' ? parseInt(name.slice(2), 16) : Number(name.slice(1));
+        return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+      }
+      return entities[name.toLowerCase()] ?? match;
+    })
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line && line !== '•');
+}
+
 function normalizeReleaseNotes(updateInfo) {
   const source = updateInfo?.releaseNotes;
   if (!source) return [];
-  if (typeof source === 'string') {
-    return source.trim() ? [source.trim()] : [];
-  }
+  if (typeof source === 'string') return releaseNoteLines(source);
   if (Array.isArray(source)) {
-    return source
-      .map((entry) => {
-        if (typeof entry === 'string') return entry.trim();
-        if (entry && typeof entry.note === 'string') return entry.note.trim();
-        return '';
-      })
-      .filter(Boolean);
+    return source.flatMap((entry) => {
+      if (typeof entry === 'string') return releaseNoteLines(entry);
+      if (entry && typeof entry.note === 'string') return releaseNoteLines(entry.note);
+      return [];
+    });
   }
   return [];
 }
@@ -534,7 +552,7 @@ function showUpdateNotification(title, body) {
       silent: false,
     });
     notification.on('click', () => {
-      focusMainWindow();
+      focusMainWindow('settings', 'about');
     });
     notification.show();
   } catch {
@@ -1266,6 +1284,17 @@ function registerIpc() {
       setImmediate(() => {
         try {
           autoUpdater.quitAndInstall(false, true);
+          updaterInstallTimer = setTimeout(() => {
+            updaterInstallTimer = null;
+            if (updaterState.phase !== 'installing') return;
+            updaterInstallRequested = false;
+            clearUpdaterInstallState();
+            updaterState.phase = 'error';
+            updaterState.message = 'Update install failed';
+            updaterState.error = 'SnagThis didn’t restart to install the update. Try again, or download the installer from snagthisvid.com.';
+            sendToRenderer('updater:event', updaterState);
+            console.error('[desktop] update install did not restart the app');
+          }, UPDATER_INSTALL_TIMEOUT_MS);
         } catch (err) {
           updaterInstallRequested = false;
           clearUpdaterInstallState();
