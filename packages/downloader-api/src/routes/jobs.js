@@ -1,7 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const http = require('http');
-const https = require('https');
 const { URL } = require('url');
 const logger = require('../utils/logger');
 const { jobValidation, jobIdValidation } = require('../utils/validators');
@@ -12,78 +10,8 @@ const { buildDownloadAssetUrl, buildJobStorageDir } = require('../utils/download
 const config = require('../config');
 const { normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
 const { redactPaths } = require('@m3u8/downloader-engine/src/utils/redact');
-
-function isHttpUrl(value) {
-  if (typeof value !== 'string' || !value.trim()) return false;
-  try {
-    const parsed = new URL(value.trim());
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function downloadRemoteImage(url, destinationPath, redirectBudget = 3) {
-  return new Promise((resolve) => {
-    if (!isHttpUrl(url)) {
-      resolve(false);
-      return;
-    }
-
-    const parsed = new URL(url);
-    const client = parsed.protocol === 'https:' ? https : http;
-    const tempPath = `${destinationPath}.tmp`;
-    let settled = false;
-
-    const settle = (value) => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-
-    const req = client.get(url, {
-      timeout: 12_000,
-      headers: { 'User-Agent': 'M3U8-Downloader/1.0' },
-    }, (res) => {
-      const status = Number(res.statusCode || 0);
-      if (status >= 300 && status < 400 && res.headers.location && redirectBudget > 0) {
-        res.resume();
-        const redirected = new URL(String(res.headers.location), url).toString();
-        downloadRemoteImage(redirected, destinationPath, redirectBudget - 1).then(settle);
-        return;
-      }
-
-      if (status < 200 || status >= 300) {
-        res.resume();
-        settle(false);
-        return;
-      }
-
-      const out = fs.createWriteStream(tempPath);
-      out.on('error', () => {
-        try { fs.unlinkSync(tempPath); } catch {}
-        settle(false);
-      });
-      res.on('error', () => {
-        try { fs.unlinkSync(tempPath); } catch {}
-        settle(false);
-      });
-      out.on('finish', () => {
-        try {
-          fs.renameSync(tempPath, destinationPath);
-          settle(true);
-        } catch {
-          try { fs.unlinkSync(tempPath); } catch {}
-          settle(false);
-        }
-      });
-      res.pipe(out);
-    });
-
-    req.on('timeout', () => req.destroy(new Error('timeout')));
-    req.on('error', () => settle(false));
-  });
-}
+const { isHttpUrl } = require('../utils/urls');
+const { downloadRemoteImage } = require('../utils/remoteImage');
 
 async function persistRemoteThumbnailLocally(job, downloadDir) {
   if (!job) return false;

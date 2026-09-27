@@ -3,7 +3,6 @@ const path = require('path');
 const { extractYouTubeVideoId, youtubeVideoIdOf, youtubeArtwork } = require('./utils/youtubeArtwork');
 const fs = require('fs');
 const http = require('http');
-const https = require('https');
 const { URL } = require('url');
 const { spawnSync } = require('child_process');
 const WebSocket = require('ws');
@@ -14,6 +13,8 @@ const { createBridgeSecurity, redact, EXTENSION_ORIGIN } = require('./utils/secu
 const { generatePreviewAssets, PREVIEW_CLIP_SUFFIX } = require('@m3u8/downloader-engine/src/core/PreviewClip');
 const { isMediaFilePath, normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
 const { redactPaths } = require('@m3u8/downloader-engine/src/utils/redact');
+const { isHttpUrl } = require('./utils/urls');
+const { downloadRemoteImage } = require('./utils/remoteImage');
 const {
   QueueManager,
   createJobProcessor,
@@ -1007,75 +1008,6 @@ function createApiServer(options = {}) {
     await persistTmdbCache();
   }
 
-  function downloadRemoteImage(url, destinationPath, redirectBudget = 3) {
-    return new Promise((resolve) => {
-      if (!isValidHttpUrl(url)) {
-        resolve(false);
-        return;
-      }
-
-      const parsed = new URL(url);
-      const client = parsed.protocol === 'https:' ? https : http;
-      const tempPath = `${destinationPath}.tmp`;
-      let settled = false;
-
-      const settle = (value) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-
-      const req = client.get(url, {
-        timeout: 12000,
-        headers: { 'User-Agent': 'M3U8-Downloader/1.0' },
-      }, (res) => {
-        const status = Number(res.statusCode || 0);
-        if (status >= 300 && status < 400 && res.headers.location && redirectBudget > 0) {
-          res.resume();
-          const redirected = new URL(String(res.headers.location), url).toString();
-          downloadRemoteImage(redirected, destinationPath, redirectBudget - 1).then(settle);
-          return;
-        }
-
-        if (status < 200 || status >= 300) {
-          res.resume();
-          settle(false);
-          return;
-        }
-
-        const out = fs.createWriteStream(tempPath);
-        out.on('error', async () => {
-          try { await fsPromises.unlink(tempPath); } catch {}
-          settle(false);
-        });
-
-        res.on('error', async () => {
-          try { await fsPromises.unlink(tempPath); } catch {}
-          settle(false);
-        });
-
-        out.on('finish', async () => {
-          try {
-            await fsPromises.rename(tempPath, destinationPath);
-            settle(true);
-          } catch {
-            try { await fsPromises.unlink(tempPath); } catch {}
-            settle(false);
-          }
-        });
-
-        res.pipe(out);
-      });
-
-      req.on('timeout', () => {
-        req.destroy(new Error('timeout'));
-      });
-      req.on('error', () => {
-        settle(false);
-      });
-    });
-  }
-
   async function ensureLocalTmdbThumbnail(job) {
     const remoteThumb = Array.isArray(job.thumbnailUrls)
       ? job.thumbnailUrls.find((url) => isValidHttpUrl(url))
@@ -1292,18 +1224,7 @@ function createApiServer(options = {}) {
     next();
   }
 
-  function isValidHttpUrl(value) {
-    if (typeof value !== 'string' || !value.trim()) {
-      return false;
-    }
-
-    try {
-      const parsed = new URL(value.trim());
-      return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password;
-    } catch {
-      return false;
-    }
-  }
+  const isValidHttpUrl = isHttpUrl;
 
   function sanitizeString(value, max = 255) {
     if (typeof value !== 'string') return '';

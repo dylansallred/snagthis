@@ -105,3 +105,27 @@ test('job errors in queue, status and diagnostics payloads never name absolute l
   }
   assert.equal(api.getState().queue.find(job => job.id === 'failed-disk').error.includes('Private Person'), false);
 });
+
+test('poster downloads survive a malformed redirect instead of crashing the bridge', { timeout: 10000 }, async (t) => {
+  const http = require('node:http');
+  const { downloadRemoteImage } = require('../packages/downloader-api/src/utils/remoteImage');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-poster-redirect-'));
+  const server = http.createServer((req, res) => {
+    if (req.url === '/bad') { res.writeHead(302, { Location: 'http://[not-a-host/poster.jpg' }); res.end(); return; }
+    if (req.url === '/moved') { res.writeHead(301, { Location: '/poster.jpg' }); res.end(); return; }
+    if (req.url === '/to-file') { res.writeHead(302, { Location: 'file:///etc/passwd' }); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+    res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.close(); fs.rmSync(directory, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const target = path.join(directory, 'thumb.jpg');
+
+  assert.equal(await downloadRemoteImage(`${base}/bad`, target), false);
+  assert.equal(await downloadRemoteImage(`${base}/to-file`, target), false);
+  assert.equal(fs.existsSync(target), false);
+  assert.equal(await downloadRemoteImage(`${base}/moved`, target), true, 'an ordinary relative redirect still works');
+  assert.deepEqual(fs.readFileSync(target), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  assert.deepEqual(fs.readdirSync(directory), ['thumb.jpg'], 'no temporary file is left behind');
+});
