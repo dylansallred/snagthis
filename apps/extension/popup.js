@@ -14,8 +14,9 @@
   const friendly = SnagThisDetection.friendlyError;
   const runtimeVersion = isDemo ? '1.0.0' : chrome.runtime.getManifest().version;
   const apiBase = (!isDemo && !chrome.runtime.getManifest().update_url && model.localApiBase(params.get('apiBase'))) || 'http://127.0.0.1:49732';
-  const RELEASES = 'https://github.com/dylansallred/snagthis/releases';
-  const HELP = 'https://github.com/dylansallred/snagthis/blob/main/README.md#troubleshooting';
+  // Public pages: the GitHub repository stays private until launch, and store reviewers must be able to open these.
+  const RELEASES = 'https://snagthisvid.com/#download';
+  const HELP = 'https://snagthisvid.com/help';
   const DEFAULT_PREFERENCES = { preferredQuality: 'best', subtitleLanguage: 'none', notifyOnComplete: true, launchAtLogin: false };
   let preferences = { ...DEFAULT_PREFERENCES };
   let appToken = ''; let activeTab = null; let mediaItems = []; let mappings = {}; let queue = []; let desktopQueue = []; let browserQueue = []; let visit = '';
@@ -273,8 +274,8 @@
     if (result && audioOnly) { result.qualityLabel = 'Audio only'; if (result.state === 'detected') result.statusLine = 'Audio only'; }
     if (result && !isDemo && !job && ['detected', 'problem'].includes(result.state) && !browserSupported(choice) && !desktopReady()) result.action = { id: 'use-desktop', label: 'Use desktop app', style: 'bordered' };
     if (result && storeBuild && !job && youtubeItem(item)) {
-      // The store build never downloads YouTube itself or hands it to desktop.
-      Object.assign(result, { state: 'external', tone: 'muted', statusLine: 'Paste this link into the SnagThis desktop app', action: { id: 'copy-link', label: 'Copy link', style: 'bordered' } });
+      // Chrome Web Store policy: the store build neither downloads YouTube nor points to another way to.
+      Object.assign(result, { state: 'external', tone: 'muted', statusLine: "SnagThis doesn't save videos from this site", action: null });
     }
     // Its URL only works inside the page's own Service Worker; a download would fail as "expired".
     if (result && !job && (item.serviceWorkerServed || choice.serviceWorkerServed)) Object.assign(result, { state: 'external', tone: 'muted', statusLine: 'This video only plays inside its own player', action: null });
@@ -289,12 +290,8 @@
     const link = el('button', 'text-link', 'Troubleshooting'); link.type = 'button'; link.addEventListener('click', () => external(HELP));
     pad.append(link); content.append(pad);
   }
-  function youtubeItem(item) { return item.mediaKind === 'youtube-page' || Boolean(SnagThisDetection.youtubeId(item.url)); }
-  function youtubeLink(item) { const id = SnagThisDetection.youtubeId(item.url) || SnagThisDetection.youtubeId(item.sourcePageUrl); return id ? `https://www.youtube.com/watch?v=${id}` : item.url; }
-  async function copyLink(item) {
-    try { await navigator.clipboard.writeText(youtubeLink(item)); notice('Link copied. Paste it into the SnagThis desktop app.'); }
-    catch { notice('Copy the link from the address bar, then paste it into the SnagThis desktop app.'); }
-  }
+  // YouTube pages, and its video servers when a YouTube player is embedded on another site.
+  function youtubeItem(item) { return item.mediaKind === 'youtube-page' || Boolean(SnagThisDetection.youtubeId(item.url)) || SnagThisDetection.isYoutubeMediaHost(item.url); }
   function mediaSizeLabel(choice) {
     return rows.formatSize(choice.sizeBytes, { estimated: choice.sizeEstimated }) || 'N/A';
   }
@@ -521,7 +518,6 @@
   }
   async function handleAction(current) {
     const { item, row, jobId } = current;
-    if (row.action.id === 'copy-link') { await copyLink(item); return; }
     if (row.action.id === 'drm-why') { showProtectedHelp(item); return; }
     if (isDemo) { if (row.action.id === 'play') { showDemoVideo(item); return; } SnagThisDemo.act(item.id, row.action.id); queue = SnagThisDemo.state.queue; renderRows(); return; }
     if (row.action.id === 'use-desktop') { useDesktop(item); return; }
@@ -754,10 +750,9 @@
   function showContext(item, event, trigger) {
     const menu = openMenu(trigger, event); const job = model.jobFor(item, mappings, queue); const jobId = job?.id || job?.jobId || null;
     const storeYoutube = storeBuild && youtubeItem(item);
-    if (storeYoutube) menuItem(menu, 'Copy link', () => copyLink(item));
-    menuItem(menu, 'Rename', () => showRename(item));
+    if (!storeYoutube) menuItem(menu, 'Rename', () => showRename(item));
     menuItem(menu, 'Hide', async () => { const ids = [...new Set([item.id, ...(item.detectedStreams || []).map(value => value.id)])]; if (isDemo) mediaItems = mediaItems.filter(value => value.id !== item.id); else await message({ cmd: 'HIDE_MEDIA', tabId: activeTab.id, mediaIds: ids }); renderRows(); await refresh(); });
-    if (item.drm) { menu.append(el('hr')); menuItem(menu, 'Show all detected streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); }); fitMenu(menu); return; }
+    if (item.drm || storeYoutube) { menu.append(el('hr')); menuItem(menu, 'Show all detected streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); }); fitMenu(menu); return; }
     menuItem(menu, 'Preview', () => preview(item));
     if (!item.serviceWorkerServed && (!jobId || (job?.backend === 'browser' && ['failed', 'completed', 'cancelled'].includes(job.queueStatus))) && browserSupported(model.selectMedia(item, preferences, selected.get(item.id)))) menuItem(menu, 'Download with desktop', () => useDesktop(item));
     if (!jobId && !storeYoutube) {

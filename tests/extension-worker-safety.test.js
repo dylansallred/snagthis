@@ -205,8 +205,17 @@ test('the store build refuses YouTube handoff while development builds keep it',
   worker.context.SnagThisBuild = { storeBuild: true };
   const blocked = await worker.message({ cmd: 'DOWNLOAD_MEDIA', backend: 'desktop', tabId: 7, mediaId: stored.item.id, apiBase: 'http://127.0.0.1:39999', payload: { mediaUrl: 'https://www.youtube.com/watch?v=abcdefghijk' } });
   assert.equal(blocked.ok, false);
-  assert.match(blocked.error, /paste it into the SnagThis desktop app/);
+  assert.equal(blocked.error, "SnagThis doesn't save videos from this site.");
   assert.deepEqual(worker.requests, [], 'no desktop handoff is attempted');
+  // A YouTube player embedded on another site streams from googlevideo.com; the store build refuses that too.
+  const blog = loadWorker({ tab: { id: 7, url: 'https://blog.example/post', title: 'A post', documentId: 'document-a' } });
+  blog.context.SnagThisBuild = { storeBuild: true };
+  const mediaUrl = 'https://rr3---sn-abc.googlevideo.com/videoplayback?itag=18';
+  const embedded = await blog.message({ cmd: 'STORE_DETECTED_MEDIA', media: { url: mediaUrl, contentType: 'video/mp4' } }, blog.content());
+  assert.ok(embedded.item, embedded.error);
+  const embeddedBlocked = await blog.message({ cmd: 'DOWNLOAD_MEDIA', backend: 'desktop', tabId: 7, mediaId: embedded.item.id, apiBase: 'http://127.0.0.1:39999', payload: { mediaUrl } });
+  assert.equal(embeddedBlocked.error, "SnagThis doesn't save videos from this site.");
+  assert.deepEqual(blog.requests, [], 'no desktop handoff for embedded YouTube media');
 });
 
 const reply = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });

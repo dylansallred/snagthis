@@ -40,6 +40,9 @@
       return /^[\w-]{6,20}$/.test(id || '') ? id : '';
     } catch { return ''; }
   }
+  function isYoutubeMediaHost(raw) {
+    try { return /(^|\.)googlevideo\.com$/.test(new URL(raw).hostname); } catch { return false; }
+  }
   function isYoutubeAuxiliaryResource(url, pageUrl, mediaKind) {
     const pageId = youtubeId(pageUrl);
     return Boolean(pageId && (mediaKind !== 'youtube-page' || youtubeId(url) !== pageId));
@@ -181,5 +184,5 @@
     if (error?.name === 'TypeError' || /failed to fetch|networkerror|load failed|network request failed|err_connection|err_network/i.test(text)) return "SnagThis desktop isn't running. Open it, then try again.";
     return text || fallback;
   }
-  return { httpUrl, mediaType, sanitizeHeaders, thumbnailUrl, youtubeId, isYoutubeAuxiliaryResource, manifestComponent, withoutManifestSegments, isJunkMedia, isStreamFragment, markProtected, withProtectedRow, protectedSiteName, friendlyError };
+  return { httpUrl, mediaType, sanitizeHeaders, thumbnailUrl, youtubeId, isYoutubeMediaHost, isYoutubeAuxiliaryResource, manifestComponent, withoutManifestSegments, isJunkMedia, isStreamFragment, markProtected, withProtectedRow, protectedSiteName, friendlyError };
 });

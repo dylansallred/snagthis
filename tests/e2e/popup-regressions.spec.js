@@ -155,12 +155,13 @@ test('the store build lists YouTube pages without a download or desktop handoff'
     sourcePageUrl: 'https://www.youtube.com/watch?v=abcdefghijk', sourcePageTitle: 'A real video - YouTube', youtubeMetadata: { videoId: 'abcdefghijk', title: 'A real video' } };
   await page.evaluate(value => window.popupFixture.load([value], [], {}), youtube);
   const row = page.locator('.video-row');
-  await expect(row.locator('.row-status')).toHaveText('Paste this link into the SnagThis desktop app');
-  await expect(row.getByRole('button', { name: 'Copy link', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^(Download|Use desktop app)$/ })).toHaveCount(0);
+  // Chrome Web Store policy: no download, no copy-link hand-off and no mention of the desktop app.
+  await expect(row.locator('.row-status')).toHaveText("SnagThis doesn't save videos from this site");
+  await expect(row.getByRole('button', { name: /Copy link|Download|Use desktop app/ })).toHaveCount(0);
   await row.click({ button: 'right' });
-  await expect(page.getByRole('menuitem', { name: 'Copy link', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: /Download with desktop|Continue previous download/ })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Hide', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /Copy link|Download with desktop|Continue previous download|Preview|Rename/ })).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText('desktop app');
   expect(errors).toEqual([]);
 });
 

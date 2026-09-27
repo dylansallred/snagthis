@@ -19,7 +19,7 @@ const NETWORK_URLS = ['http://*/*', 'https://*/*'];
 // Pages, scripts, styles, images and fonts never need their headers read.
 const REQUEST_TYPES = ['media', 'xmlhttprequest', 'other'];
 const DRM_MESSAGE = "This video is protected by DRM. SnagThis can't save it.";
-const YOUTUBE_STORE_MESSAGE = 'To save this video, copy its link and paste it into the SnagThis desktop app.';
+const YOUTUBE_STORE_MESSAGE = "SnagThis doesn't save videos from this site.";
 const inFlightRequests = new Map();
 const observedRequests = new Map();
 const removedTabs = new Set();
@@ -575,7 +575,7 @@ async function downloadMedia(message) {
   try { return await task; } finally { pendingDownloads.delete(key); }
 }
 function youtubeBlocked(item, payload) {
-  return SnagThisBuild.storeBuild && (item?.mediaKind === 'youtube-page' || Boolean(D.youtubeId(item?.url)) || Boolean(D.youtubeId(payload?.mediaUrl)));
+  return SnagThisBuild.storeBuild && (item?.mediaKind === 'youtube-page' || [item?.url, payload?.mediaUrl].some(url => Boolean(D.youtubeId(url)) || D.isYoutubeMediaHost(url)));
 }
 async function injectContentScripts(tabId) {
   // Tabs opened before install/update have no (or an orphaned) content script.
