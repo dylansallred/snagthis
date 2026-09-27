@@ -1,6 +1,6 @@
 # Releasing SnagThis
 
-Desktop and Chrome have separate update channels and version numbers. A desktop `vX.Y.Z` tag builds macOS Apple Silicon, macOS Intel, Windows x64, and a Chrome ZIP. An `extension-vX.Y.Z` tag prepares an extension-only release. Both workflows prepare **drafts in this repository**; a maintainer reviews and publishes them manually. The ZIP is not a Chrome Web Store publication. Follow [the Chrome release guide](extension-release.md) for the store and manual fallback.
+Desktop and Chrome have separate update channels and version numbers (see [version numbers](versioning.md)). A desktop `vX.Y.Z` tag builds macOS Apple Silicon, macOS Intel, Windows x64, and a Chrome ZIP. An `extension-vX.Y.Z` tag prepares an extension-only release. Both workflows prepare **drafts in this repository**; a maintainer reviews and publishes them manually. The ZIP is not a Chrome Web Store publication. Follow [the Chrome release guide](extension-release.md) for the store and manual fallback.
 
 ## Readiness and prerequisites
 
