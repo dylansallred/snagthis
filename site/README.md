@@ -10,22 +10,23 @@ npx http-server site
 
 Then open the address it prints. `/privacy` and `/help` work locally too, because http-server adds `.html`; missing pages show `404.html`.
 
-## Cloudflare Pages
+## Cloudflare deployment
 
-Connect this repository in **Workers & Pages → Create → Pages → Connect to Git**, with:
+The site deploys as a Cloudflare **Worker with static assets**, configured by `wrangler.jsonc` in this folder (`.assetsignore` keeps the config and this README off the public site). In **Workers & Pages → Create → Import a repository**, choose this repository and set:
 
 | Setting | Value |
 | --- | --- |
-| Framework preset | None |
+| Project name | `snagthis` (must match `name` in `wrangler.jsonc`) |
 | Build command | *(empty)* |
-| Build output directory | `site` |
+| Deploy command | `npx wrangler deploy` |
+| Advanced settings → Path | `site` |
 | Production branch | `main` |
 
-Pages serves `privacy.html` at `/privacy`, uses `404.html` for missing pages, and applies `_headers`.
+Every push to `main` redeploys. `/privacy` serves `privacy.html`, unknown paths get `404.html` with a 404 status, and `_headers` applies.
 
 ### Custom domain
 
-In the Pages project, open **Custom domains → Set up a custom domain**, enter `snagthisvid.com` and follow the prompts. If the domain's DNS is on Cloudflare, the record is added for you; otherwise add the CNAME it shows at your DNS provider. Add `www.snagthisvid.com` the same way if you want it, and redirect it to the apex domain with a Bulk Redirect or Redirect Rule.
+In the Worker, open **Settings → Domains & Routes → Add → Custom domain** and enter `snagthisvid.com` (and `www.snagthisvid.com` if you want it). With the domain's DNS on Cloudflare, the record is created for you.
 
 ## Editing notes
 
