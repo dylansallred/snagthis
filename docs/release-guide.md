@@ -17,12 +17,17 @@ The maintainer's final **Publish release** action is the publication approval. D
 | `APPLE_ID` | Apple developer account used for notarization |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that account |
 | `APPLE_TEAM_ID` | Team that owns the signing identity |
-| `WIN_CSC_LINK` | Windows code-signing certificate compatible with electron-builder's certificate-file workflow |
-| `WIN_CSC_KEY_PASSWORD` | Password for that certificate |
+| `AZURE_TENANT_ID` | Directory of the `snagthis-release-signing` app registration |
+| `AZURE_CLIENT_ID` | That app registration's client ID |
+| `AZURE_CLIENT_SECRET` | Its client secret (expires after two years; renew it in Microsoft Entra ID) |
 
-The current Windows path expects a usable signing certificate file. A hardware-only certificate or cloud signing service needs its own signing integration before this workflow can use it. Do not disable forced code signing to work around missing credentials. Keep a consistent signing identity across updates; macOS updates require signed applications, and the updater uses the ZIP alongside the installer. See [electron-builder's updater requirements](https://www.electron.build/docs/features/auto-update/) and [Electron code signing](https://www.electronjs.org/docs/latest/tutorial/code-signing).
+Windows installers are signed through Azure Artifact Signing: account `snagthisvid` (resource group `snagthis-release`, East US) with the Public Trust certificate profile `snagthis`, backed by a completed individual identity validation that expires 20 September 2027 and must be renewed before then. The app registration holds only the *Artifact Signing Certificate Profile Signer* role on that account. `scripts/dist-windows-signed.sh` passes the account settings to electron-builder. Its publisher name, `Dylan Allred`, must match the validated identity; Windows displays it, and the updater rejects an update whose signer differs, so never change it between releases. Do not disable forced code signing to work around missing credentials. Keep a consistent signing identity across updates; macOS updates require signed applications, and the updater uses the ZIP alongside the installer. See [electron-builder's updater requirements](https://www.electron.build/docs/features/auto-update/) and [Electron code signing](https://www.electronjs.org/docs/latest/tutorial/code-signing).
 
 Set the `CORRESPONDING_SOURCE_RUN_ID` repository variable to a successful **Prepare corresponding source** run for the exact release. This is required even if the source repository itself is public: bundled FFmpeg/ffprobe and yt-dlp builds need the reviewed source and build information identified below.
+
+## Verify Windows signing before a release
+
+Run **CI** manually with **Only build and verify an Azure-signed Windows installer (no release)**, or `gh workflow run ci.yml --ref workbench -f verify_windows_signing=true`. It signs with the Azure secrets, silently installs the exact installer, checks both signatures and runs a real packaged download. Test artifacts are kept for seven days; no tag or release is created.
 
 ## Verify Apple signing before a release
 

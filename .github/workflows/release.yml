@@ -52,10 +52,12 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || secrets.WIN_CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || secrets.WIN_CSC_KEY_PASSWORD }}
-      WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-      WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
+      CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
+      # Windows signs through Azure Artifact Signing (account snagthisvid, profile snagthis).
+      AZURE_TENANT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_TENANT_ID || '' }}
+      AZURE_CLIENT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_ID || '' }}
+      AZURE_CLIENT_SECRET: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_SECRET || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,7 +83,7 @@ jobs:
           if [[ "${{ matrix.platform }}" == "mac" ]]; then
             npm run dist --workspace @m3u8/desktop -- --mac --${{ matrix.arch }} --publish=never -c.forceCodeSigning=true -c.mac.notarize=true
           else
-            npm run dist --workspace @m3u8/desktop -- --win --${{ matrix.arch }} --publish=never -c.forceCodeSigning=true
+            bash scripts/dist-windows-signed.sh --${{ matrix.arch }}
           fi
       - name: Notarize and staple the exact DMG to be shipped
         if: matrix.platform == 'mac'

@@ -40,6 +40,6 @@ if [[ "$target" == mac || "$target" == all ]]; then
   if [[ "$(uname -s)" == Darwin ]]; then command -v xcrun >/dev/null; command -v codesign >/dev/null; fi
 fi
 if [[ "$target" == win || "$target" == all ]]; then
-  for name in WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do require_secret "$name"; done
+  for name in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do require_secret "$name"; done
 fi
 echo "Release prerequisites ready for $target. Installers still require verification before publication."
