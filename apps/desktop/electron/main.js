@@ -1,7 +1,7 @@
 const { app, BrowserWindow, Menu, ipcMain, shell, session, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { pathToFileURL } = require('url');
+const { pathToFileURL, fileURLToPath } = require('url');
 const preferences = require('./preferences');
 const diagnostics = require('./diagnostics');
 const { resolveMediaPage } = require('./mediaPageResolver');
@@ -149,8 +149,17 @@ function sameRendererUrl(value) {
   try {
     const target = new URL(value);
     const trusted = new URL(rendererUrl());
-    return target.protocol === trusted.protocol && target.host === trusted.host && target.pathname === trusted.pathname;
+    if (target.protocol !== trusted.protocol || target.host !== trusted.host) return false;
+    if (target.pathname === trusted.pathname) return true;
+    // Windows spells one file several ways (drive-letter case, 8.3 short names such as
+    // RUNNER~1, percent-encoding), so for the built page compare the file itself.
+    return trusted.protocol === 'file:' && sameFile(fileURLToPath(target), fileURLToPath(trusted));
   } catch { return false; }
+}
+
+function sameFile(a, b) {
+  const [first, second] = [a, b].map(file => fs.realpathSync.native(file));
+  return process.platform === 'win32' ? first.toLowerCase() === second.toLowerCase() : first === second;
 }
 
 // Deny by default. The renderer copies (links, the pairing code, diagnostics),
