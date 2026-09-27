@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SnagThis · landing page directions</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; background: #101216; color: #e8ebef; font: 14px/1.5 "Avenir Next", "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 1500px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .lede { color: #8d96a3; max-width: 860px; margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 18px; }
+  .set { background: #171a1f; border: 1px solid #2a2f37; border-radius: 12px; padding: 14px; }
+  .set header { display: flex; align-items: baseline; gap: 10px; }
+  .set .num { color: #fa5d0e; font-weight: 700; }
+  .set h2 { font-size: 17px; margin: 0; }
+  .set a.open { margin-left: auto; color: #160700; background: #fa5d0e; font-weight: 600; text-decoration: none; padding: 5px 12px; border-radius: 8px; }
+  .set p { color: #8d96a3; margin: 6px 0 10px; font-size: 13px; }
+  .set p b { color: #e8ebef; }
+  .shot { display: block; height: 560px; overflow: hidden; border-radius: 8px; border: 1px solid #2a2f37; }
+  .shot img { width: 100%; display: block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>snagthisvid.com — landing page directions</h1>
+  <p class="lede">Three directions for the website. Open each to scroll it, play with its animations, switch accents and resize the window. All three are static pages that deploy as-is on Cloudflare Pages, use real app screenshots, and keep YouTube out of the copy for Chrome Web Store policy.</p>
+  <div class="grid">
+    <section class="set"><header><span class="num">A</span><h2>Arcade</h2><a class="open" href="a-arcade/">Open →</a></header>
+      <p>Leans fully into the pixel brand. A CRT screen replays the <b>type, then press</b> launch animation, pixel headings, a download bar that fills as you scroll, and a mascot you can press.</p>
+      <a class="shot" href="a-arcade/"><img src="a-arcade/preview-desktop.jpg" alt="Arcade direction"></a></section>
+    <section class="set"><header><span class="num">B</span><h2>Cinematic product</h2><a class="open" href="b-cinematic/">Open →</a></header>
+      <p>A restrained, premium launch page. Big type over a tilted app screenshot that flattens as you scroll, then a <b>sticky scroll story</b>: found in the popup, snagged, filling in the app, landing on the Saved shelf.</p>
+      <a class="shot" href="b-cinematic/"><img src="b-cinematic/preview-desktop.jpg" alt="Cinematic direction"></a></section>
+    <section class="set"><header><span class="num">C</span><h2>Playable demo · chosen</h2><a class="open" href="c-playable/">Open →</a></header>
+      <p>The hero is a <b>working miniature of the product</b>: pick a quality, press Snag, watch it download and fly onto the Saved shelf. The rest of the page stays short and plain.</p>
+      <a class="shot" href="c-playable/"><img src="c-playable/preview-desktop.jpg" alt="Playable direction"></a></section>
+  </div>
+</main>
+</body>
+</html>

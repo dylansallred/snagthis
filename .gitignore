@@ -37,3 +37,6 @@ apps/extension/popup.css
 # Canonical notices are copied here only for extension packaging.
 /apps/extension/LICENSE
 /apps/extension/THIRD_PARTY_NOTICES.md
+
+# Cloudflare Wrangler local state (site/ deploys).
+.wrangler/
