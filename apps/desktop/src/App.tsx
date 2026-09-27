@@ -138,7 +138,8 @@ function App() {
     return window.desktop.onOpenSettings(({ section }) => openSettings(section));
   }, [openSettings]);
   // Any open dialog owns the keyboard: app shortcuts never open something behind or on top of it.
-  const modalOpen = settingsOpen || !!confirm || !!chromeSessionRow || !!galleryVideo;
+  const [pairingOpen, setPairingOpen] = useState(false);
+  const modalOpen = settingsOpen || pairingOpen || !!confirm || !!chromeSessionRow || !!galleryVideo;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -366,7 +367,7 @@ function App() {
         <button className="row-action" aria-label={ui.settings} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}><Settings /></button>
       </footer>
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} settings={settings} onSave={save} updater={updater} appInfo={appInfo} api={api} gallery={gallery} />
-      <PairingApproval />
+      <PairingApproval onOpenChange={setPairingOpen} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} actions={paletteActions} videos={baseRows} apiBase={gallery ? window.location.origin : apiBase} />
       <Dialog open={!!chromeSessionRow} onOpenChange={(open) => { if (!open && !(chromeSessionRow && busyIds.has(chromeSessionRow.id))) setChromeSessionRow(null); }}><DialogContent className="remove-dialog"><DialogTitle>{ui.chromeSessionTitle}</DialogTitle><DialogDescription>{ui.chromeSessionBody}</DialogDescription><p>{ui.chromeSessionHint}</p><div className="remove-options"><button className="row-action labelled primary-action" disabled={!!chromeSessionRow && busyIds.has(chromeSessionRow.id)} onClick={async () => {
         if (!chromeSessionRow) return;
