@@ -8,5 +8,7 @@
     "directory": ".",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
-  }
+  },
+  // Cloudflare's preview builds (for pull requests) run `wrangler preview`, which needs this block.
+  "previews": {}
 }
