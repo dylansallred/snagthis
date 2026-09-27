@@ -1,107 +1,105 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const https = require('node:https');
+const crypto = require('node:crypto');
 
-const platform = process.platform;
-const outputDir = path.resolve(process.cwd(), 'bin');
-const isWindows = platform === 'win32';
-const outputName = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
-const outputPath = path.join(outputDir, outputName);
+// The one place the bundled yt-dlp is chosen: version and the publisher's
+// SHA2-256SUMS values for each asset. Release verification and the
+// corresponding-source packet read the same file.
+const PIN_FILE = path.join(__dirname, 'yt-dlp-release.json');
+const outputDir = path.resolve(__dirname, '../bin');
 
-function resolveDownloadUrl() {
-  const explicit = String(process.env.YTDLP_DOWNLOAD_URL || '').trim();
-  if (explicit) return explicit;
+function readPin() {
+  return JSON.parse(fs.readFileSync(PIN_FILE, 'utf8'));
+}
 
-  if (platform === 'darwin') {
-    return 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
-  }
-  if (platform === 'win32') {
-    return 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
-  }
-  if (platform === 'linux') {
-    const arch = os.arch();
-    if (arch === 'arm64') {
-      return 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64';
-    }
-    return 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
-  }
-
+function assetFor(platform, arch) {
+  if (platform === 'darwin') return 'yt-dlp_macos';
+  if (platform === 'win32') return 'yt-dlp.exe';
+  if (platform === 'linux') return arch === 'arm64' ? 'yt-dlp_linux_aarch64' : 'yt-dlp';
   throw new Error(`Unsupported platform for bundled yt-dlp: ${platform}`);
 }
 
-function downloadWithRedirects(url, destinationPath, redirectBudget = 5) {
+function resolveDownload({ platform = process.platform, arch = process.arch, env = process.env, pin = readPin() } = {}) {
+  const explicitUrl = String(env.YTDLP_DOWNLOAD_URL || '').trim();
+  if (explicitUrl) {
+    const sha256 = String(env.YTDLP_SHA256 || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('A custom YTDLP_DOWNLOAD_URL requires its YTDLP_SHA256');
+    return { url: explicitUrl, sha256, version: null };
+  }
+  const asset = assetFor(platform, arch);
+  const sha256 = String(pin.assets?.[asset] || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error(`No pinned SHA-256 for ${asset} in ${path.basename(PIN_FILE)}`);
+  return {
+    url: `https://github.com/yt-dlp/yt-dlp/releases/download/${encodeURIComponent(pin.version)}/${asset}`,
+    sha256,
+    version: pin.version,
+  };
+}
+
+function download(url, destination, redirects = 5) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, {
-      headers: {
-        'User-Agent': 'M3U8-Downloader-Build/1.0',
-      },
-    }, (res) => {
+    let parsed;
+    try { parsed = new URL(url); } catch { reject(new Error(`Invalid download URL: ${url}`)); return; }
+    if (parsed.protocol !== 'https:') { reject(new Error('Tool downloads must use HTTPS')); return; }
+    const req = https.get(url, { headers: { 'User-Agent': 'SnagThis-Build/1.0' } }, (res) => {
       const status = Number(res.statusCode || 0);
-      if (status >= 300 && status < 400 && res.headers.location && redirectBudget > 0) {
+      if (status >= 300 && status < 400 && res.headers.location && redirects > 0) {
         res.resume();
-        const redirectedUrl = new URL(String(res.headers.location), url).toString();
-        downloadWithRedirects(redirectedUrl, destinationPath, redirectBudget - 1)
-          .then(resolve)
-          .catch(reject);
+        let next;
+        try { next = new URL(String(res.headers.location), url).href; } catch { reject(new Error('Invalid redirect while downloading yt-dlp')); return; }
+        download(next, destination, redirects - 1).then(resolve, reject);
         return;
       }
-
-      if (status < 200 || status >= 300) {
-        res.resume();
-        reject(new Error(`Download failed with HTTP ${status}`));
-        return;
-      }
-
-      const tempPath = `${destinationPath}.tmp`;
-      const out = fs.createWriteStream(tempPath);
-
-      out.on('error', (err) => {
-        try { fs.unlinkSync(tempPath); } catch {}
-        reject(err);
-      });
-
-      res.on('error', (err) => {
-        try { fs.unlinkSync(tempPath); } catch {}
-        reject(err);
-      });
-
-      out.on('finish', () => {
-        try {
-          fs.renameSync(tempPath, destinationPath);
-          resolve();
-        } catch (err) {
-          try { fs.unlinkSync(tempPath); } catch {}
-          reject(err);
-        }
-      });
-
+      if (status !== 200) { res.resume(); reject(new Error(`Download returned HTTP ${status}: ${url}`)); return; }
+      const out = fs.createWriteStream(destination);
+      out.on('error', reject);
+      res.on('error', reject);
+      out.on('finish', () => out.close(resolve));
       res.pipe(out);
     });
-
     req.on('error', reject);
-    req.setTimeout(30_000, () => {
-      req.destroy(new Error('Timed out downloading yt-dlp'));
-    });
+    req.setTimeout(60_000, () => req.destroy(new Error('Timed out downloading yt-dlp')));
   });
 }
 
-async function run() {
-  const url = resolveDownloadUrl();
-  fs.mkdirSync(outputDir, { recursive: true });
-
-  console.log(`[fetch-yt-dlp] Downloading from: ${url}`);
-  await downloadWithRedirects(url, outputPath);
-
-  if (!isWindows) {
-    fs.chmodSync(outputPath, 0o755);
-  }
-
-  const stat = fs.statSync(outputPath);
-  console.log(`[fetch-yt-dlp] Saved ${outputPath} (${stat.size} bytes)`);
+function sha256File(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-run().catch((err) => {
-  console.error('[fetch-yt-dlp] Failed:', err && err.message ? err.message : err);
-  process.exitCode = 1;
-});
+// Moves a verified download into place; a mismatch never replaces the binary.
+function installVerified(downloaded, destination, expectedSha256) {
+  const actual = sha256File(downloaded);
+  if (actual !== expectedSha256) {
+    fs.rmSync(downloaded, { force: true });
+    throw new Error(`yt-dlp did not match its pinned SHA-256 (expected ${expectedSha256}, got ${actual})`);
+  }
+  if (process.platform !== 'win32') fs.chmodSync(downloaded, 0o755);
+  fs.renameSync(downloaded, destination);
+  return actual;
+}
+
+async function main() {
+  const { url, sha256, version } = resolveDownload();
+  const outputName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+  const destination = path.join(outputDir, outputName);
+  fs.mkdirSync(outputDir, { recursive: true });
+  const temporary = `${destination}.download`;
+  console.log(`[fetch-yt-dlp] Downloading ${version ? `yt-dlp ${version}` : 'custom yt-dlp'} from ${url}`);
+  try {
+    await download(url, temporary);
+    installVerified(temporary, destination, sha256);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+  console.log(`[fetch-yt-dlp] Verified SHA-256 ${sha256} and saved ${destination}`);
+}
+
+module.exports = { PIN_FILE, readPin, assetFor, resolveDownload, installVerified };
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`[fetch-yt-dlp] ${error && error.message ? error.message : error}`);
+    process.exitCode = 1;
+  });
+}

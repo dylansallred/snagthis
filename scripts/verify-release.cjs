@@ -93,6 +93,9 @@ async function verifyRelease() {
     }
     const ytdlp = path.join(bin, 'yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
     const ytdlpVersion = run(ytdlp, ['--version']);
+    // Releases ship only the pinned, checksum-verified yt-dlp (apps/desktop/scripts/yt-dlp-release.json).
+    const pinnedYtDlp = require('../apps/desktop/scripts/yt-dlp-release.json');
+    if (ytdlpVersion !== pinnedYtDlp.version) throw new Error(`Packaged yt-dlp ${ytdlpVersion} is not the pinned ${pinnedYtDlp.version}`);
     const report = {
       platform: process.platform, arch: process.arch, checkedAt: new Date().toISOString(), smoke, updateRepository,
       releaseTag: process.env.GITHUB_REF_NAME || `v${expectedVersion}`, sourceCommit: process.env.GITHUB_SHA || null,
