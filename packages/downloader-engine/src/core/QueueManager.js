@@ -945,6 +945,7 @@ class QueueManager {
     if (hasPartial) {
       const candidate = { ...job, url, headers, manifestText, sourcePageUrl: sourcePageUrl || job.sourcePageUrl, selection: selection || job.selection, credentialOrigin: parsed.origin };
       const { playlistInfo: info } = await resolveHlsSelection(candidate);
+      if (this.activeJobs.has(jobId) || this.jobs.get(jobId) !== job) return { ok: false, resumable: false, reason: 'Download is still running' };
       if (info.unsupportedReason || info.topologyFingerprint !== job.playlistTopology) {
         return { ok: false, resumable: false, reason: 'The refreshed video has changed. Start a new download to keep the existing pieces safe.' };
       }
