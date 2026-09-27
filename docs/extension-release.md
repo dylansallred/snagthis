@@ -1,6 +1,6 @@
 # Chrome extension distribution and updates
 
-Chrome Web Store is the intended distribution and automatic-update channel. Store approval and a public listing are not yet established. If approval is unavailable, the release ZIP can be distributed from this repository's GitHub Releases with manual installation instructions; a future landing page can link to that same artifact. This repository stays private during testing and will become public at launch. Private artifacts are available only to authorized collaborators.
+Chrome Web Store is the intended distribution and automatic-update channel. Store approval and a public listing are not yet established. If approval is unavailable, the release ZIP can be distributed from this repository's GitHub Releases with manual installation instructions; [snagthisvid.com](https://snagthisvid.com) can link to that same artifact. This repository stays private during testing and will become public at launch. Private artifacts are available only to authorized collaborators.
 
 ## Build the reviewable package
 
@@ -43,7 +43,7 @@ The current Manifest V3 package declares:
 | `storage` | Trusted local pairing/preferences and Chrome-download references; temporary detected-media state. |
 | `downloads` | Start, monitor, pause/resume, cancel, and reveal user-requested direct MP4/WebM downloads in Chrome. |
 | `scripting` | Attach detection to pages that were already open when SnagThis was installed or updated, and to such a page when the popup opens on it. Otherwise those pages need a refresh. |
-| `webRequest` | Observe media responses and their required request context. Headers are read only for media, fetch/XHR and plugin requests. |
+| `webRequest` | Observe media responses and their required request context. Headers are read only for media, fetch/XHR and Chrome "other"-type requests. |
 | `webNavigation` | Reset detections when the source page changes. |
 | `declarativeNetRequestWithHostAccess` | Temporarily restore observed Origin/Referer headers for bounded source previews. |
 | HTTP/HTTPS hosts, including localhost | Detect embedded/CDN media and talk to the paired local desktop bridge. Host access also provides the current tab's URL and title, so the `tabs` permission is not requested. |

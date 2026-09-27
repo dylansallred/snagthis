@@ -8,7 +8,7 @@
     cancel:'<path d="m6 6 12 12M18 6 6 18"/>',pause:'<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>',play:'<path d="m7 3 14 9-14 9Z"/>',check:'<path d="m5 12 4 4L19 6"/>',trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
   };
   const icon = (name, className='') => `<svg class="${className}" viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
-  const folder = '/Users/dylanallred/Library/Application Support/VidSnag-development/data/downloads/Neon Rain (2)';
+  const folder = '/Users/you/Library/Application Support/SnagThis/data/downloads/Neon Rain (2)';
   const media = '/apps/extension/popup/media/neon-rain';
   document.getElementById('study').innerHTML = `<main class="study-shell">
     <div class="study-controls"><label>Progress <input id="progress" aria-label="Progress" type="range" min="0" max="100" value="29"><output>29%</output></label><label>State <select id="state"><option value="downloading">Downloading</option><option value="paused">Paused</option><option value="saved">Saved</option></select></label></div>

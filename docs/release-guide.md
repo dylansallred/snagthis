@@ -38,14 +38,14 @@ gh workflow run ci.yml --ref main -f verify_macos_signing=true -f macos_arch=arm
 gh workflow run ci.yml --ref main -f verify_macos_signing=true -f macos_arch=x64
 ```
 
-This mode uses the repository's Apple secrets to sign and notarize the app, DMG, and update ZIP on a native runner for the selected architecture, then checks Gatekeeper acceptance and runs real packaged downloads. It retains verified private test artifacts for seven days without creating a tag or release. It runs only the signing job; ordinary PR CI still runs the full validation matrix. The desktop release workflow always builds both Mac architectures. Windows signing and a real installed version-to-version upgrade need their separate release checks. GitHub's manual dispatch must be available for the workflow before it can be started.
+This mode uses the repository's Apple secrets to sign and notarize the app, DMG, and update ZIP on a native runner for the selected architecture, then checks Gatekeeper acceptance and runs real packaged downloads. It retains verified private test artifacts for seven days without creating a tag or release. It runs only the signing job; the test suite runs separately (see [CONTRIBUTING](../CONTRIBUTING.md) for the `run-ci` and `run-ci-all` labels). The desktop release workflow always builds both Mac architectures. Windows signing and a real installed version-to-version upgrade need their separate release checks. GitHub's manual dispatch must be available for the workflow before it can be started.
 
 ## Prepare a release PR
 
 1. Use Node from `.nvmrc`: `nvm install && nvm use`, then `npm ci`.
 2. Bump the desktop version with `npm version X.Y.Z --workspace @m3u8/desktop --no-git-tag-version`. Commit both the desktop manifest and lockfile. The root private workspace and internal packages do not need the same version. Bump the extension separately when its packaged files change.
 3. Include the intended code, notices, and user-facing release notes in a PR to `main`. Keep the installer identity (`appId`), product name, signing identity, user-data location, and updater repository stable. Changing them is a migration, not an ordinary release.
-4. Let the coordinated CI run pass on Linux, macOS and Windows. The release workflow repeats those checks for the exact tagged commit. Do not claim a local development run proves signed installers or a public update feed work.
+4. Run CI on all three platforms and let it pass: add the `run-ci-all` label to the PR, or run `gh workflow run ci.yml --ref <branch> -f platforms=all`. The release workflow repeats those checks for the exact tagged commit. Do not claim a local development run proves signed installers or a public update feed work.
 5. Merge the reviewed PR. From a clean, current checkout of `origin/main`, run `npm run release:tag -- X.Y.Z` when you intend to start the release. **This command runs verification, creates an annotated tag, and pushes the tag.** It refuses a dirty tree, a version mismatch, a different branch, an out-of-date `main`, or an existing tag.
 
 Only stable `vX.Y.Z` desktop tags are supported by this workflow. Use a version greater than every published stable release. The workflow also verifies that the tag points to a commit on `main`; a published tag's installers are never overwritten by a rerun.
@@ -68,7 +68,7 @@ The automated gate checks identity and coverage; a human reviewer must still che
 
 ### 1. Build the packet
 
-Requirements: Node from `.nvmrc`, `git`, `curl`, `xz`, and Docker. Docker runs BtbN's amd64 base image; on Apple Silicon it runs under emulation, and the script sends tar extractions to the image's `bsdtar` to work around an emulation bug. Expect about 7 GB of disk use (cache plus staging) and 20 to 30 minutes on the first run. For v2.0.44 the archive was 1.3 GB: about 0.94 GB of Windows stage sources, 0.30 GB of macOS sources, 36 MB of SnagThis and 28 MB of yt-dlp. To stay under 2 GiB, the Windows stage archives are repacked without their `.git` metadata, except for the few stages whose build uses Git. Everything goes under `work/source-packet/` (gitignored), and downloads are cached in `work/source-packet/cache/` for reruns.
+Requirements: Node from `.nvmrc`, `git`, `curl`, `xz`, and Docker. Docker runs BtbN's amd64 base image; on Apple Silicon it runs under emulation, and the script sends tar extractions to the image's `bsdtar` to work around an emulation bug. Expect about 7 GB of disk use (cache plus staging) and 20 to 30 minutes on the first run. A full rehearsal packet was 1.3 GB: about 0.94 GB of Windows stage sources, 0.30 GB of macOS sources, 36 MB of SnagThis and 28 MB of yt-dlp. To stay under 2 GiB, the Windows stage archives are repacked without their `.git` metadata, except for the few stages whose build uses Git. Everything goes under `work/source-packet/` (gitignored), and downloads are cached in `work/source-packet/cache/` for reruns.
 
 1. Wait for the desktop release run for `vX.Y.Z` to finish its platform jobs. Download its `release-*` artifacts, which contain `release-verification-darwin-arm64.json`, `release-verification-darwin-x64.json` and `release-verification-win32-x64.json`, for example with `gh run download <release-run-id> --pattern 'release-*' --dir work/release-reports`.
 2. From a checkout that has the tag:
@@ -117,7 +117,7 @@ The script prints both SHA-256 values. You can recompute them with `shasum -a 25
 
 ### 2. Publish the archive and manifest for the workflow
 
-**Prepare corresponding source** downloads both files anonymously over HTTPS, so draft assets and assets in this private repository do not work. Do not put tokens or pre-signed credentials in the URLs. Use a public location that you control, for example a public Cloudflare R2 bucket served from `https://source.snagthisvid.com/`:
+**Prepare corresponding source** downloads both files anonymously over HTTPS, so draft assets and assets in this private repository do not work. Do not put tokens or pre-signed credentials in the URLs. Use the public Cloudflare R2 bucket `snagthis-source`, served from `https://source.snagthisvid.com/`:
 
 ```sh
 aws s3 cp work/source-packet/release-source/snagthis-corresponding-source.tar.xz s3://BUCKET/vX.Y.Z/ --endpoint-url https://ACCOUNT.r2.cloudflarestorage.com
@@ -160,7 +160,7 @@ The complete set is attached to a draft for review:
 
 After reviewing the artifacts, source packet, and release notes, publish the desktop draft as the latest stable release. Make the repository public first when distributing to public users. Keep extension-only releases out of the desktop latest channel. The workflow never clicks Publish for you.
 
-The installed desktop checks its packaged GitHub feed; Settings offers a manual update check. It downloads an available update, then requires **Restart & install** to install it. Keep the public metadata, ZIPs/EXE and blockmaps together; the DMG alone cannot provide macOS updates. Do not delete the previous stable release's payloads/blockmaps needed for differential download fallback.
+The installed desktop checks its packaged GitHub feed at startup and every six hours (Settings also offers **Check now**). It downloads an available update in the background and shows a **NEW x.y.z** chip in the top bar that opens the update sheet with What's new; installing needs **Restart & install**, or **Install when downloads finish** while downloads are running. Keep the public metadata, ZIPs/EXE and blockmaps together; the DMG alone cannot provide macOS updates. Do not delete the previous stable release's payloads/blockmaps needed for differential download fallback.
 
 Before the first public launch, qualify a real signed N → N+1 update on macOS Apple Silicon, macOS Intel and Windows x64, using an isolated test installation/profile and the intended public feed. Confirm discovery, downloading, restart, the new installed version, settings/pairing retention, and saved-file retention. This cannot be truthfully completed without signed releases and reachable hosting. The automated installer smoke check proves packaged media behavior; it does not perform this end-to-end public-feed upgrade.
 

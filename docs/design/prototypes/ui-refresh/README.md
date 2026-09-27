@@ -10,7 +10,7 @@ Three directions for refreshing the desktop window and the Chrome popup together
 
 Open `index.html` directly or serve the repository and open `/docs/design/prototypes/ui-refresh/`. The controls switch the download state, progress and how many videos the popup finds. Click rows or posters for details, hover thumbnails for the muted excerpt, and press Download in the popup. Each design lists what changes and where it departs from `ui-design-spec.md`.
 
-All three keep the shared dark tokens, clean hover/focus thumbnails, the Pieces lane and one visible action per row. Media reuses the Blender open-film excerpts in `apps/extension/popup/media/`; see that directory's `CREDITS.md`. No downloader APIs or user files are touched.
+All three keep the shared dark tokens, clean hover/focus thumbnails, the Pieces lane and one visible action per row. These studies originally used Blender open-film excerpts; the app now uses the original Pixel worlds clips in `apps/extension/popup/media/` (see that directory's `CREDITS.md`). No downloader APIs or user files are touched.
 
 `edge.html` follows Focus mono into production: the 2px open-row edge and the 3px hover edge clash when an open row is hovered, and the owner wants hover to animate on and off more smoothly. It offers four open-row edge behaviours (A–D, plus Today) and five hover animations (1–5) that combine freely. The owner chose **C · Grey when open** with **2 · Grow**, now implemented in both apps.
 

@@ -87,8 +87,8 @@ jobs:
       matrix:
         os: ${{ fromJSON(needs.plan.outputs.os) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -134,7 +134,7 @@ jobs:
         run: xvfb-run --auto-servernum npm run test:e2e -- --project=chromium
       - name: Keep failure and retry evidence (traces of flaky tests too)
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: checks-${{ runner.os }}
           retention-days: 7
@@ -169,8 +169,8 @@ jobs:
     env:
       SNAGTHIS_RELEASE: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -215,7 +215,7 @@ jobs:
       - name: Verify signatures, Gatekeeper acceptance and real packaged downloads
         run: env -u GITHUB_REF_NAME node scripts/verify-release.cjs
       - name: Keep verified private test artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-signing-check-${{ inputs.macos_arch }}
           path: |
@@ -241,8 +241,8 @@ jobs:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -266,7 +266,7 @@ jobs:
         shell: bash
         run: env -u GITHUB_REF_NAME node scripts/verify-release.cjs
       - name: Keep verified private test artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-signing-check-x64
           path: |

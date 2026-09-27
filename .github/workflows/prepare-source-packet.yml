@@ -33,8 +33,8 @@ jobs:
       MANIFEST_URL: ${{ inputs.manifest_url }}
       MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
       - name: Fetch exactly the source packet reviewed by the maintainer
@@ -49,7 +49,7 @@ jobs:
           printf '%s  %s\n' "$ARCHIVE_SHA256" release-assets/release-source/snagthis-corresponding-source.tar.xz "$MANIFEST_SHA256" release-assets/release-source/corresponding-source.json | sha256sum --check --strict
           GITHUB_REF_NAME="$RELEASE_TAG" node scripts/verify-corresponding-source.cjs release-assets --packet-only
       - name: Stage for exact binary-source matching and required release approval
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: snagthis-corresponding-source
           path: |
