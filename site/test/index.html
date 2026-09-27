@@ -1,0 +1,64 @@
+<!doctype html>
+<!--
+  SnagThis extension test page for Chrome Web Store reviewers.
+  Deploy by copying this whole folder to site/test/ so it is served at
+  https://snagthisvid.com/test/ (see docs/store/README.md). It follows the
+  site's Content Security Policy: no inline scripts, no inline styles, no data: URIs.
+  The clips are original pixel-art animations made for SnagThis (GPL-3.0-only).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>SnagThis test clips</title>
+  <meta name="description" content="A page with two short original clips for trying the SnagThis Chrome extension.">
+  <link rel="icon" href="../img/favicon-48.png">
+  <link rel="stylesheet" href="test.css">
+</head>
+<body>
+  <header class="bar">
+    <a href="/" class="brand"><img src="../img/snagthis-logo-title.svg" width="120" height="22" alt="SnagThis"></a>
+    <span class="bar-note">For trying the Chrome extension</span>
+  </header>
+
+  <main class="wrap">
+    <p class="eyebrow">Test page</p>
+    <h1>SnagThis test clips</h1>
+    <p class="lede">This page exists so you can try the SnagThis Chrome extension on real files. Both clips are ten-second original pixel-art animations made for SnagThis. Play one, then click the SnagThis icon in the Chrome toolbar.</p>
+
+    <section class="clip" aria-labelledby="mp4-title">
+      <video controls preload="metadata" playsinline poster="star-courier.jpg" src="star-courier.mp4" width="640" height="360"></video>
+      <div class="clip-body">
+        <h2 id="mp4-title">Star Courier</h2>
+        <p>MP4 (H.264 and AAC), 1280×720, 10 seconds, about 0.7 MB.</p>
+        <p><a href="star-courier.mp4">Direct link to star-courier.mp4</a></p>
+      </div>
+    </section>
+
+    <section class="clip" aria-labelledby="webm-title">
+      <video controls preload="metadata" playsinline poster="sky-hop.jpg" src="sky-hop.webm" width="640" height="360"></video>
+      <div class="clip-body">
+        <h2 id="webm-title">Sky Hop</h2>
+        <p>WebM (VP9 and Opus), 640×360, 10 seconds, about 0.35 MB.</p>
+        <p><a href="sky-hop.webm">Direct link to sky-hop.webm</a></p>
+      </div>
+    </section>
+
+    <section class="steps" aria-labelledby="steps-title">
+      <h2 id="steps-title">What to do</h2>
+      <ol>
+        <li>Press play on either clip.</li>
+        <li>Click the SnagThis icon in the Chrome toolbar (pin it from the Extensions menu first if needed). Both clips are listed with their quality, size and length.</li>
+        <li>Click the download button on a row. Chrome saves the file to your usual Downloads folder, and it appears in Chrome Downloads.</li>
+      </ol>
+      <p>No account, sign-in or desktop app is needed for these files.</p>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p>SnagThis is for videos you own or have permission to save. DRM-protected video is always refused.</p>
+    <p><a href="/">snagthisvid.com</a> · <a href="/help">Help</a> · <a href="/privacy">Privacy</a></p>
+  </footer>
+</body>
+</html>
