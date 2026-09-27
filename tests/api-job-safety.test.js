@@ -129,3 +129,14 @@ test('poster downloads survive a malformed redirect instead of crashing the brid
   assert.deepEqual(fs.readFileSync(target), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
   assert.deepEqual(fs.readdirSync(directory), ['thumb.jpg'], 'no temporary file is left behind');
 });
+
+test('the bridge keeps one copy of its URL check, poster download and job metadata lookup', () => {
+  const read = (relative) => fs.readFileSync(path.join(__dirname, '../packages/downloader-api/src', relative), 'utf8');
+  const jobsRoute = read('routes/jobs.js');
+  const server = read('createApiServer.js');
+  assert.equal(jobsRoute.match(/lookupPoster\(/g).length, 1, 'immediate and queued jobs share one TMDB/SubDL lookup');
+  assert.equal(jobsRoute.match(/await fetchSubtitlesForJob\(/g).length, 1);
+  for (const [name, source] of [['routes/jobs.js', jobsRoute], ['createApiServer.js', server], ['services/audioSample.js', read('services/audioSample.js')]]) {
+    assert.doesNotMatch(source, /function (?:isHttpUrl|isValidHttpUrl|httpUrl|downloadRemoteImage)\(/, `${name} uses utils/urls.js and utils/remoteImage.js`);
+  }
+});
