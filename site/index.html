@@ -13,6 +13,7 @@
   <meta property="og:url" content="https://snagthisvid.com/">
   <meta property="og:image" content="https://snagthisvid.com/img/og-image.jpg">
   <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://snagthisvid.com/">
   <link rel="icon" type="image/png" href="img/favicon-48.png">
   <link rel="preload" href="fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/jersey15-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -43,9 +44,9 @@
       <h1 id="hero-title">Save the video<br>you’re <span class="accent-text">watching.</span></h1>
       <p class="lede">SnagThis finds the videos on a page. Pick a quality, press Snag, and it’s on your computer. <span class="lede-try">Try it right here.</span></p>
       <div class="cta-row">
-        <a class="btn btn-primary" id="cta-chrome" href="#chrome-web-store" data-store-url="">
+        <a class="btn btn-primary" id="cta-chrome" role="link" aria-disabled="true" data-chrome-link>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5h8.2M8.97 13.75 4.9 6.7M15.03 13.75l-4.1 7.1"/></svg>
-          <span>Add to Chrome</span><span class="soon" hidden>Coming soon</span>
+          <span>Add to Chrome</span><span class="soon">Coming soon</span>
         </a>
         <a class="btn btn-secondary os-btn" data-os="mac" href="https://github.com/dylansallred/snagthis/releases/latest">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 10l5 5 5-5M5 21h14"/></svg>
@@ -233,7 +234,7 @@
         </div>
         <figcaption>
           <h3>Keyboard first</h3>
-          <p>Press <kbd>⌘K</kbd> for every command. Paste or drop a link anywhere to snag it.</p>
+          <p>Press <kbd class="palette-key">⌘K / Ctrl K</kbd> for every command. Paste or drop a link anywhere to snag it.</p>
         </figcaption>
       </figure>
     </div>
@@ -259,11 +260,11 @@
         <p class="plan-sub">Nothing else to install.</p>
         <ul class="checks">
           <li>Finds videos on the page you’re watching</li>
-          <li>Pick quality, audio and subtitles</li>
+          <li>Shows quality, size and length</li>
           <li>Saves direct MP4 and WebM files</li>
           <li>Files land in Chrome Downloads</li>
         </ul>
-        <a class="btn btn-secondary btn-block" href="#chrome-web-store" data-chrome-link><span>Add to Chrome</span><span class="soon" hidden>Coming soon</span></a>
+        <a class="btn btn-secondary btn-block" role="link" aria-disabled="true" data-chrome-link><span>Add to Chrome</span><span class="soon">Coming soon</span></a>
       </div>
       <div class="plan plan-plus reveal" id="download">
         <h3>With the desktop app</h3>
@@ -273,7 +274,7 @@
           <li>Streams (HLS and DASH)</li>
           <li>Separate audio tracks and subtitles, joined for you</li>
           <li>A Saved library, progress pieces and speed traces</li>
-          <li><kbd>⌘K</kbd> commands. Paste or drop a link to snag it</li>
+          <li><kbd class="palette-key">⌘K / Ctrl K</kbd> commands. Paste or drop a link to snag it</li>
         </ul>
         <a class="btn btn-primary btn-block os-download" href="https://github.com/dylansallred/snagthis/releases/latest">Download the app</a>
         <p class="os-note">Mac: <a href="https://github.com/dylansallred/snagthis/releases/latest/download/SnagThis-mac-arm64.dmg">Apple Silicon</a> or <a href="https://github.com/dylansallred/snagthis/releases/latest/download/SnagThis-mac-x64.dmg">Intel</a>, macOS 13 or later. Windows 10 or later.</p>
@@ -341,7 +342,7 @@
     <div class="closing-mascot" aria-hidden="true"><svg class="px-btn" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><path class="px-face" d="M3 0h10v1h-10zM1 1h14v1h-14zM1 2h14v1h-14zM0 3h16v1h-16zM0 4h16v1h-16zM0 5h16v1h-16zM0 6h16v1h-16zM0 7h16v1h-16zM0 8h16v1h-16zM0 9h16v1h-16zM0 10h16v1h-16zM0 11h16v1h-16zM0 12h16v1h-16zM1 13h14v1h-14zM1 14h14v1h-14zM3 15h10v1h-10z"/><path class="px-light" d="M3 0h10v1h-10zM1 1h2v1h-2zM13 1h1v1h-1zM1 2h1v1h-1zM0 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM0 6h1v1h-1zM0 7h1v1h-1zM0 8h1v1h-1zM0 9h1v1h-1zM0 10h1v1h-1zM0 11h1v1h-1zM0 12h1v1h-1zM1 13h1v1h-1z"/><path class="px-dark" d="M14 1h1v1h-1zM14 2h1v1h-1zM15 3h1v1h-1zM15 4h1v1h-1zM15 5h1v1h-1zM15 6h1v1h-1zM15 7h1v1h-1zM15 8h1v1h-1zM15 9h1v1h-1zM15 10h1v1h-1zM15 11h1v1h-1zM15 12h1v1h-1zM14 13h1v1h-1zM1 14h2v1h-2zM13 14h2v1h-2zM3 15h10v1h-10z"/><path class="px-dark" d="M13 8h1v1h-1zM11 9h3v1h-3zM10 10h2v1h-2zM8 11h3v1h-3zM7 12h2v1h-2zM6 13h2v1h-2z"/><path class="px-glyph" d="M5 3h2v1h-2zM5 4h3v1h-3zM5 5h5v1h-5zM5 6h6v1h-6zM5 7h8v1h-8zM5 8h8v1h-8zM5 9h6v1h-6zM5 10h5v1h-5zM5 11h3v1h-3zM5 12h2v1h-2z"/></svg><i class="mascot-floor"></i></div>
     <h2 id="closing-title">Ready when the next video is.</h2>
     <div class="cta-row center">
-      <a class="btn btn-primary" href="#chrome-web-store" data-chrome-link><span>Add to Chrome</span><span class="soon" hidden>Coming soon</span></a>
+      <a class="btn btn-primary" role="link" aria-disabled="true" data-chrome-link><span>Add to Chrome</span><span class="soon">Coming soon</span></a>
       <a class="btn btn-secondary os-download" href="https://github.com/dylansallred/snagthis/releases/latest"><span class="os-download-label">Download the app</span></a>
     </div>
   </div>
