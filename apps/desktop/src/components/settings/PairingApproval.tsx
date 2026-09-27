@@ -63,7 +63,7 @@ const burstStyle = (angle: number, index: number) => ({ '--a': `${angle}deg`, '-
  * Connect Chrome?: the trusted desktop half of one-click pairing. Shown for
  * snagthis://open/pair while a request is pending, or from Settings → Review.
  */
-export function PairingApproval() {
+export function PairingApproval({ onOpenChange }: { onOpenChange?: (open: boolean) => void } = {}) {
   const [request, setRequest] = useState<PairingRequest | null>(null);
   const [outcome, setOutcome] = useState<'approved' | 'conflict' | null>(null);
   const [allowReady, setAllowReady] = useState(false);
@@ -105,6 +105,8 @@ export function PairingApproval() {
   }, [show, close]);
 
   // While the dialog is open, Settings hides its "Chrome is asking to connect · Review" row so the code shows once.
+  // The app's shortcuts, paste and drops stay off while it is open (spec §6).
+  useEffect(() => { onOpenChange?.(open); }, [open, onOpenChange]);
   useEffect(() => {
     if (!open) return undefined;
     document.documentElement.dataset.pairingDialog = 'open';

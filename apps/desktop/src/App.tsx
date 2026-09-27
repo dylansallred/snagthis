@@ -57,6 +57,7 @@ function App() {
   // Busy state is per row or action, so a long Locate dialog on one video does
   // not silently swallow clicks elsewhere (such as Undo on a cancel notice).
   const busyRef = useRef(new Set<string>());
+  const creatingJob = useRef(false);
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set());
   const [confirm, setConfirm] = useState<{ row: RowModel; mode: 'cancel' | 'remove' } | null>(null);
   const [confirmPlace, setConfirmPlace] = useState<{ left: number; top: number; above: boolean; caret: number } | null>(null);
@@ -138,7 +139,8 @@ function App() {
     return window.desktop.onOpenSettings(({ section }) => openSettings(section));
   }, [openSettings]);
   // Any open dialog owns the keyboard: app shortcuts never open something behind or on top of it.
-  const modalOpen = settingsOpen || !!confirm || !!chromeSessionRow || !!galleryVideo;
+  const [pairingOpen, setPairingOpen] = useState(false);
+  const modalOpen = settingsOpen || pairingOpen || !!confirm || !!chromeSessionRow || !!galleryVideo;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -335,11 +337,13 @@ function App() {
     } : undefined;
   const finishSelection = async (selection: MediaSelection) => {
     if (gallery) { setPending(null); return; }
-    if (!pending || !api) return;
+    // A second Enter can arrive before `checking` re-renders the picker as busy.
+    if (!pending || !api || creatingJob.current) return;
+    creatingJob.current = true;
     setChecking(true);
     try { await api.createJob(pending.url, selection, pending.inspection); setPending(null); setPaste(''); setFilter('all'); await library.refresh(); }
     catch (err) { setPasteError(classifyProblem(err instanceof Error ? err.message : err, { folder }).message); }
-    finally { setChecking(false); }
+    finally { creatingJob.current = false; setChecking(false); }
   };
   // Development gallery only: exercises the window-level error boundary.
   if (gallery && params.has('crash')) throw new Error('Gallery render failure at https://viewer:secret@example.com/video.m3u8?token=private');
@@ -366,7 +370,7 @@ function App() {
         <button className="row-action" aria-label={ui.settings} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}><Settings /></button>
       </footer>
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} settings={settings} onSave={save} updater={updater} appInfo={appInfo} api={api} gallery={gallery} />
-      <PairingApproval />
+      <PairingApproval onOpenChange={setPairingOpen} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} actions={paletteActions} videos={baseRows} apiBase={gallery ? window.location.origin : apiBase} />
       <Dialog open={!!chromeSessionRow} onOpenChange={(open) => { if (!open && !(chromeSessionRow && busyIds.has(chromeSessionRow.id))) setChromeSessionRow(null); }}><DialogContent className="remove-dialog"><DialogTitle>{ui.chromeSessionTitle}</DialogTitle><DialogDescription>{ui.chromeSessionBody}</DialogDescription><p>{ui.chromeSessionHint}</p><div className="remove-options"><button className="row-action labelled primary-action" disabled={!!chromeSessionRow && busyIds.has(chromeSessionRow.id)} onClick={async () => {
         if (!chromeSessionRow) return;

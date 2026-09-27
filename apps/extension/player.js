@@ -3,30 +3,26 @@
   const sourceEl = document.getElementById('source');
   const statusEl = document.getElementById('status');
   const videoEl = document.getElementById('player');
-  const debugLogEl = document.getElementById('debugLog');
-  const openSourceBtn = document.getElementById('openSourceBtn');
-  const openFallbackBtn = document.getElementById('openFallbackBtn');
+  const openPageBtn = document.getElementById('openPageBtn');
   const retryBtn = document.getElementById('retryBtn');
 
   if (!videoEl || !statusEl || !titleEl || !sourceEl) {
     return;
   }
 
-  const params = new URLSearchParams(window.location.search);
-  const sessionId = String(params.get('session') || '').trim();
+  // The popup opens this page with a short-lived session the worker created;
+  // nothing is taken from other query parameters.
+  const sessionId = String(new URLSearchParams(window.location.search).get('session') || '').trim();
 
-  let primaryUrl = String(params.get('src') || '').trim();
-  let fallbackUrl = String(params.get('fallback') || '').trim();
-  let declaredType = String(params.get('type') || '').trim().toLowerCase();
-  let displayTitle = String(params.get('title') || 'Stream Player').trim();
+  let primaryUrl = '';
+  let declaredType = '';
+  let displayTitle = 'Preview';
   let sourcePageUrl = '';
   let requestHeaders = {};
   // Cookies travel only for media Chrome itself observed on the source tab.
   let credentialed = true;
 
   let hls = null;
-  let usingFallback = false;
-  const debugLines = [];
 
   const BLOCKED_HEADER_NAMES = new Set([
     'origin',
@@ -55,32 +51,16 @@
     return /\.m3u8(\?|$)/i.test(String(url || ''));
   }
 
-  function getCurrentUrl() {
-    if (usingFallback && fallbackUrl) return fallbackUrl;
-    return primaryUrl || fallbackUrl || '';
-  }
-
   function setStatus(message, tone = 'ok') {
     statusEl.textContent = String(message || '');
     statusEl.className = `status ${tone}`;
   }
 
+  // Media URLs often carry signed tokens; show only where the video is from.
   function setSourceLabel() {
-    const src = getCurrentUrl();
-    sourceEl.textContent = src || 'No stream URL provided.';
-  }
-
-  function appendDebug(message, data = null) {
-    const line = `[${new Date().toISOString().slice(11, 19)}] ${String(message || '').trim()}`;
-    if (!line.trim()) return;
-    debugLines.push(data ? `${line} ${JSON.stringify(data)}` : line);
-    while (debugLines.length > 40) {
-      debugLines.shift();
-    }
-    if (debugLogEl) {
-      debugLogEl.textContent = debugLines.join('\n');
-      debugLogEl.scrollTop = debugLogEl.scrollHeight;
-    }
+    let host = '';
+    try { host = new URL(sourcePageUrl || primaryUrl).hostname; } catch { /* No source. */ }
+    sourceEl.textContent = host;
   }
 
   function destroyHls() {
@@ -162,53 +142,36 @@
     void tryPlay();
   }
 
-  function fallbackToDirectIfAvailable(reason) {
-    if (!fallbackUrl || usingFallback) {
-      appendDebug('No fallback available', { reason });
-      setStatus('Preview unavailable. Open the page to play this video.', 'error');
-      return false;
-    }
-    usingFallback = true;
-    setSourceLabel();
-    appendDebug('Switching to fallback source', { reason, fallbackUrl });
-    setStatus(`HLS unavailable (${reason}). Using fallback source.`, 'warn');
-    useDirectVideoUrl(fallbackUrl);
-    return true;
+  function isDashUrl(url) {
+    return /\.mpd(\?|$)/i.test(String(url || ''));
   }
 
-  async function loadCurrentSource() {
-    const url = getCurrentUrl();
+  function loadCurrentSource() {
+    const url = primaryUrl;
     if (!url) {
-      setStatus('No source URL available for playback.', 'error');
+      setStatus('This preview has expired. Choose Preview in SnagThis again.', 'error');
       return;
     }
 
     setSourceLabel();
-    appendDebug('Loading source', {
-      url,
-      declaredType,
-      usingFallback,
-      hasSourcePageUrl: !!sourcePageUrl,
-      forwardedHeaderKeys: Object.keys(normalizeRequestHeaders(requestHeaders)),
-    });
+    // The browser cannot play a DASH manifest as a file, and this page has no
+    // DASH player; say so instead of failing after a load.
+    if (declaredType === 'dash' || isDashUrl(url)) {
+      destroyHls();
+      setStatus('This video can only be previewed on its page. Open the page to play it.', 'warn');
+      return;
+    }
 
     const hlsCandidate = declaredType === 'hls' || isHlsUrl(url);
     if (!hlsCandidate) {
-      setStatus('Loading direct media source.', 'ok');
+      setStatus('Loading video…', 'ok');
       useDirectVideoUrl(url);
       return;
     }
 
-    if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-      appendDebug('Native HLS support detected, but forcing HLS.js to preserve request context');
-    }
-
     if (typeof window.Hls === 'undefined' || !window.Hls || !window.Hls.isSupported()
       || !window.fetch || !window.AbortController || !window.ReadableStream || !window.Request) {
-      const switched = fallbackToDirectIfAvailable('browser does not support HLS.js');
-      if (!switched) {
-        setStatus('This browser cannot preview this video. Open the page to play it.', 'error');
-      }
+      setStatus('This browser cannot preview this video. Open the page to play it.', 'error');
       return;
     }
 
@@ -224,47 +187,21 @@
         xhr.abort();
         throw new Error('Safe HLS preview requires the Fetch loader. Open the source page.');
       },
-      fetchSetup: (context, initParams) => {
-        const request = new Request(context.url, buildFetchOptions(context.url, initParams || {}));
-        appendDebug('Configured HLS fetch request', {
-          url: context.url,
-          sameOrigin: getHttpOrigin(context.url) === getHttpOrigin(primaryUrl),
-          headerKeys: [...request.headers.keys()],
-        });
-        return request;
-      },
+      fetchSetup: (context, initParams) => new Request(context.url, buildFetchOptions(context.url, initParams || {})),
     });
 
     hls.on(window.Hls.Events.MEDIA_ATTACHED, () => {
-      appendDebug('HLS media attached', { url });
       hls.loadSource(url);
     });
 
     hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-      appendDebug('HLS manifest parsed successfully');
-      setStatus('Streaming HLS manifest.', 'ok');
+      setStatus('Playing preview.', 'ok');
       void tryPlay();
     });
 
-    hls.on(window.Hls.Events.LEVEL_LOADED, (_event, data) => {
-      appendDebug('HLS level loaded', {
-        level: data && data.level,
-        url: data && data.details && data.details.url,
-      });
-    });
-
     hls.on(window.Hls.Events.ERROR, (_event, data) => {
-      const reason = data && (data.details || data.type) || 'unknown HLS error';
       const responseCode = Number(data && data.response && data.response.code || 0);
-      appendDebug('HLS error', {
-        fatal: !!(data && data.fatal),
-        type: data && data.type,
-        details: data && data.details,
-        responseCode,
-        url: data && data.context && data.context.url,
-      });
       if (!data || !data.fatal) return;
-      if (fallbackToDirectIfAvailable(reason)) return;
       if (responseCode === 403) {
         setStatus('This video needs its original page to play. Open the page to continue.', 'error');
         return;
@@ -273,7 +210,7 @@
     });
 
     hls.attachMedia(videoEl);
-    setStatus('Loading HLS stream with captured request context...', 'ok');
+    setStatus('Loading video…', 'ok');
   }
 
   function openInNewTab(url) {
@@ -303,9 +240,8 @@
     if (!session) return;
 
     primaryUrl = String(session.sourceUrl || '').trim();
-    fallbackUrl = String(session.fallbackUrl || '').trim();
     declaredType = String(session.declaredType || '').trim().toLowerCase();
-    displayTitle = String(session.title || displayTitle || 'Stream Player').trim();
+    displayTitle = String(session.title || displayTitle).trim();
     sourcePageUrl = String(session.sourcePageUrl || '').trim();
     requestHeaders = session.requestHeaders && typeof session.requestHeaders === 'object'
       ? session.requestHeaders
@@ -315,39 +251,22 @@
 
   async function init() {
     await initializeFromSessionIfAvailable();
-    appendDebug('Stream session initialized', {
-      hasPrimaryUrl: !!primaryUrl,
-      hasFallbackUrl: !!fallbackUrl,
-      declaredType,
-      sourcePageUrl: sourcePageUrl || null,
-      forwardedHeaderKeys: Object.keys(normalizeRequestHeaders(requestHeaders)),
-    });
 
-    titleEl.textContent = displayTitle || 'Stream Player';
-    document.title = `${displayTitle || 'Stream Player'} - Stream Player`;
+    titleEl.textContent = displayTitle || 'Preview';
+    document.title = `${displayTitle || 'Preview'} - SnagThis`;
 
-    openSourceBtn?.addEventListener('click', () => openInNewTab(sourcePageUrl || primaryUrl));
-    if (!sourcePageUrl && !primaryUrl && openSourceBtn) {
-      openSourceBtn.disabled = true;
-    }
+    // The page, not the raw media URL, plays the video with its own cookies
+    // and headers.
+    const pageUrl = getHttpOrigin(sourcePageUrl) ? sourcePageUrl : '';
+    openPageBtn?.addEventListener('click', () => openInNewTab(pageUrl));
+    if (openPageBtn) openPageBtn.hidden = !pageUrl;
 
-    openFallbackBtn?.addEventListener('click', () => openInNewTab(fallbackUrl));
-    if (!fallbackUrl && openFallbackBtn) {
-      openFallbackBtn.disabled = true;
-    }
-
-    retryBtn?.addEventListener('click', () => {
-      usingFallback = false;
-      appendDebug('Retry requested');
-      loadCurrentSource();
-    });
+    retryBtn?.addEventListener('click', () => loadCurrentSource());
+    if (retryBtn) retryBtn.hidden = !primaryUrl;
 
     videoEl.addEventListener('error', () => {
-      appendDebug('Video element emitted error');
-      const switched = fallbackToDirectIfAvailable('video element error');
-      if (!switched) {
-        setStatus('Preview unavailable. Open the page to play this video.', 'error');
-      }
+      if (!videoEl.getAttribute('src')) return;
+      setStatus('Preview unavailable. Open the page to play this video.', 'error');
     });
 
     setSourceLabel();

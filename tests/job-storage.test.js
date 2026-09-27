@@ -141,3 +141,55 @@ test('completed files get byte-bounded, device-safe media names and failed moves
   assert.equal(fs.existsSync(path.join(downloadDir, 'Failed Move')), false, 'the empty destination folder is removed');
   assert.equal(fs.existsSync(failed.mp4Path), true, 'the finished file stays where it was');
 });
+
+test('completed files move to a save folder on another volume without losing the file', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-cross-volume-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 }));
+  const downloadDir = path.join(dataDir, 'downloads');
+  const otherVolume = path.join(dataDir, 'other-volume');
+  fs.mkdirSync(otherVolume, { recursive: true });
+  const manager = new QueueManager({ queueFilePath: path.join(dataDir, 'queue.json'), downloadDir,
+    fsPromises: fs.promises, jobs: new Map(), runJob: async () => {}, runDirectJob: async () => {},
+    initialSettings: { autoStart: false }, getCompletedOutputDir: () => otherVolume });
+  await manager.ready;
+  const media = Buffer.alloc(256 * 1024, 7);
+  const complete = (id, title) => {
+    const directory = allocateJobStorageDir(downloadDir, id, 'video');
+    const filePath = path.join(directory, `${id}-source.mp4`);
+    const thumbnailPath = path.join(directory, `${id}-thumb.jpg`);
+    fs.writeFileSync(filePath, media);
+    fs.writeFileSync(thumbnailPath, 'poster');
+    return { id, title, filePath, mp4Path: filePath, storageDir: directory, thumbnailPath, thumbnailPaths: [thumbnailPath], status: 'completed', queueStatus: 'completed' };
+  };
+  // rename(2) cannot cross volumes; model that between the two roots.
+  const volumeOf = (file) => (path.resolve(file).startsWith(otherVolume) ? 'other' : 'data');
+  const originalRename = fs.renameSync;
+  fs.renameSync = (from, to) => {
+    if (volumeOf(from) !== volumeOf(to)) throw Object.assign(new Error(`EXDEV: cross-device link not permitted, rename '${from}' -> '${to}'`), { code: 'EXDEV' });
+    return originalRename(from, to);
+  };
+  t.after(() => { fs.renameSync = originalRename; });
+
+  const moved = complete('cross-volume', 'Far Away');
+  const sourceDir = moved.storageDir;
+  manager.relocateCompletedArtifact(moved);
+  assert.equal(moved.status, 'completed', moved.error);
+  assert.equal(moved.error, undefined);
+  assert.equal(path.dirname(moved.mp4Path), path.join(otherVolume, 'Far Away'));
+  assert.equal(moved.outputPath, moved.mp4Path);
+  assert.equal(moved.storageDir, path.join(otherVolume, 'Far Away'));
+  assert.deepEqual(fs.readFileSync(moved.mp4Path), media, 'the copied video is byte-identical');
+  assert.equal(path.dirname(moved.thumbnailPath), moved.storageDir, 'sidecars follow the video');
+  assert.equal(fs.existsSync(sourceDir), false, 'the scratch folder is emptied and removed');
+  assert.deepEqual(fs.readdirSync(moved.storageDir).filter(name => name.endsWith('.partial')), []);
+
+  // An incomplete copy must never replace the original.
+  const truncated = complete('cross-volume-short', 'Short Copy');
+  const originalCopy = fs.copyFileSync;
+  fs.copyFileSync = (from, to, mode) => { originalCopy(from, to, mode); fs.truncateSync(to, 10); };
+  try { manager.relocateCompletedArtifact(truncated); } finally { fs.copyFileSync = originalCopy; }
+  assert.equal(truncated.status, 'completed-with-errors');
+  assert.equal(truncated.error, 'Completed file move failed (EIO)');
+  assert.deepEqual(fs.readFileSync(truncated.mp4Path), media, 'the original file is untouched');
+  assert.equal(fs.existsSync(path.join(otherVolume, 'Short Copy')), false, 'no partial copy or empty folder is left');
+});
