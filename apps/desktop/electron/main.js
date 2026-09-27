@@ -4,6 +4,7 @@ const fs = require('fs');
 const { pathToFileURL, fileURLToPath } = require('url');
 const preferences = require('./preferences');
 const diagnostics = require('./diagnostics');
+const { findBundledExecutable } = require('./bundledBinaries');
 const { resolveMediaPage } = require('./mediaPageResolver');
 const { adoptLegacyUserData } = require('./legacyData');
 // electron-updater takes ~50ms to load; loadAutoUpdater() defers it until an update check.
@@ -278,21 +279,9 @@ function getBundledYtDlpPath() {
     path.join(process.resourcesPath || '', 'bin', binaryName),
     path.join(app.getAppPath(), 'bin', binaryName),
     path.join(__dirname, '..', 'bin', binaryName),
-  ].filter(Boolean);
+  ];
 
-  for (const candidate of candidates) {
-    try {
-      if (!candidate || !fs.existsSync(candidate)) continue;
-      if (process.platform !== 'win32') {
-        fs.chmodSync(candidate, 0o755);
-      }
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-
-  return '';
+  return findBundledExecutable(candidates);
 }
 
 function getBundledBinaryPath(binaryNames = []) {
@@ -306,19 +295,7 @@ function getBundledBinaryPath(binaryNames = []) {
     candidates.push(path.join(__dirname, '..', 'bin', name));
   }
 
-  for (const candidate of candidates) {
-    try {
-      if (!candidate || !fs.existsSync(candidate)) continue;
-      if (process.platform !== 'win32') {
-        fs.chmodSync(candidate, 0o755);
-      }
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-
-  return '';
+  return findBundledExecutable(candidates);
 }
 
 function getWindowIconPath() {
