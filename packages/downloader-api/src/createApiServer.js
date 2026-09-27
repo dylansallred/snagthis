@@ -308,6 +308,10 @@ function createApiServer(options = {}) {
   });
 
   app.post('/api/maintenance/clear-temp-downloads', async (req, res) => {
+    if (!queueManager.queueRestored) {
+      res.status(409).json({ error: 'The download list could not be restored, so partial downloads are being kept.' });
+      return;
+    }
     try {
       const result = await clearInactiveTempDownloadArtifacts();
       logger.info('Cleared inactive temp download artifacts', result);
@@ -2399,7 +2403,9 @@ function createApiServer(options = {}) {
       intervalMs: engineConfig.cleanupIntervalMs,
       tempMaxAgeHours: engineConfig.cleanupAgeHours,
       downloadMaxAgeHours: 0,
-      getProtectedJobIds: () => [...jobs.values()].filter((job) => !['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)).map((job) => job.id),
+      // null means "ownership unknown": nothing is treated as abandoned.
+      getProtectedJobIds: () => (!queueManager.queueRestored ? null
+        : [...jobs.values()].filter((job) => !['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)).map((job) => job.id)),
     });
     historyRefreshTimer = setInterval(() => {
       historyIndex.refreshFromDisk().catch((err) => {
