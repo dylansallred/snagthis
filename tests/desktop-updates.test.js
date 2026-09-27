@@ -28,7 +28,7 @@ function fixture() {
   const sandbox = {
     app, autoUpdater: updater, updaterState: state, path, process: { platform: 'darwin' },
     updaterReminderTimer: null, updaterInstallTimer: null, updaterCheckTimeout: null,
-    updaterCheckPromise: null, updaterInstallRequested: false, UPDATER_CHECK_TIMEOUT_MS: 45000,
+    updaterCheckPromise: null, updaterInstallRequested: false, UPDATER_CHECK_TIMEOUT_MS: 45000, UPDATER_INSTALL_TIMEOUT_MS: 180000,
     apiServer: { getState: () => ({ queue }) },
     Notification: { isSupported: () => false },
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
@@ -113,6 +113,32 @@ test('desktop updates preserve a downloaded or installing update and recover fro
   f.flushInstall();
   assert.equal(f.installs.length, 1);
   assert.equal(f.updater.autoInstallOnAppQuit, false, 'keep the explicit native installer path');
+});
+
+test('a stalled native install gives up with a retryable error instead of installing forever', async () => {
+  const f = fixture();
+  const info = { version: '2.0.45', releaseNotes: '' };
+  f.updater.checkForUpdates = async () => ({ updateInfo: info, downloadPromise: Promise.resolve() });
+  await f.check();
+  f.updater.emit('update-downloaded', info);
+  assert.equal((await f.install()).ok, true);
+  f.flushInstall();
+  const stall = [...f.timers.values()].find(timer => timer.delay === 180000);
+  assert.ok(stall, 'installing arms a stall timeout');
+  stall.callback();
+  assert.equal(f.state.phase, 'error');
+  assert.equal(f.state.message, 'Update install failed');
+  assert.match(f.state.error, /didn’t restart/);
+  assert.equal(f.sandbox.updaterInstallRequested, false);
+});
+
+test('GitHub HTML release notes become plain lines for the window and notifications', () => {
+  const { sandbox } = fixture();
+  const html = '<h2>What&#39;s new</h2>\n<ul>\n<li>Faster <strong>HLS</strong> downloads</li>\n<li>Fixes &amp; tidy-ups</li>\n</ul>\n<p>Thanks!<br>The team</p><script>alert(1)</script>';
+  assert.deepEqual([...sandbox.normalizeReleaseNotes({ releaseNotes: html })], ["What's new", '• Faster HLS downloads', '• Fixes & tidy-ups', 'Thanks!', 'The team']);
+  assert.deepEqual([...sandbox.normalizeReleaseNotes({ releaseNotes: [{ version: '2.0.45', note: '<p>One</p><p>Two</p>' }] })], ['One', 'Two']);
+  assert.deepEqual([...sandbox.normalizeReleaseNotes({ releaseNotes: 'Plain text note' })], ['Plain text note']);
+  assert.equal(sandbox.summarizeReleaseNote({ releaseNotes: html }), "What's new");
 });
 
 test('desktop update checks support installed apps and permit retry after a failed check', async () => {

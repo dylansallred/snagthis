@@ -182,18 +182,34 @@ jobs:
         run: node scripts/release-assets.cjs release-assets
       - name: Prepare release notes for owner review
         shell: bash
+        # The body is what users read on GitHub and in the app's "What's new", so the
+        # maintainer checklist goes to the run summary instead.
         run: |
-          cat > release-notes.md <<'NOTES'
-          SnagThis desktop and Chrome extension.
+          VERSION="${GITHUB_REF_NAME#v}"
+          cat > release-notes.md <<NOTES
+          ## What's new
 
-          Desktop installers are signed and verified. Chrome's ZIP is the manual-install package; Chrome Web Store publication is separate.
+          - REPLACE BEFORE PUBLISHING: the changes people will notice in this version.
 
-          Maintainer review before publishing:
-          - Confirm the corresponding-source archive is complete for every bundled build.
-          - Review the signed installer and update verification reports, checksums, and user-facing release notes.
-          - Keep this release a draft during private testing. Make the repository public before public launch so downloads and automatic desktop updates are accessible without credentials.
-          - Select **Set as the latest release** when publishing this desktop release. Extension-only releases must not replace the desktop latest release.
+          ## Which file do I need?
+
+          - **Mac with Apple Silicon (M1 or later):** SnagThis-mac-arm64.dmg
+          - **Intel Mac:** SnagThis-mac-x64.dmg
+          - **Windows:** SnagThis-${VERSION}-win-x64.exe
+
+          Needs macOS 13 or later, or Windows 10 or later. If SnagThis is already installed, it updates itself.
+
+          Get the Chrome extension from the Chrome Web Store. snagthis-extension.zip is for manual installs, which don't update automatically.
           NOTES
+          cat >> "$GITHUB_STEP_SUMMARY" <<'CHECKLIST'
+          ## Before publishing this draft
+
+          - Replace the "What's new" placeholder. Users see these notes in the app's update panel.
+          - Confirm the corresponding-source archive is complete for every bundled build.
+          - Review the signed installer and update verification reports and the checksums.
+          - Keep the release a draft during private testing. Make the repository public before launch so downloads and automatic updates work without credentials.
+          - Select **Set as the latest release** when publishing. Extension-only releases must never become the latest release.
+          CHECKLIST
       - name: Upload every verified artifact to a draft without publishing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
