@@ -47,6 +47,7 @@ jobs:
             platform: win
             arch: x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     env:
       SNAGTHIS_RELEASE: '1'
       APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -116,6 +117,7 @@ jobs:
   extension:
     needs: checks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -135,6 +137,7 @@ jobs:
   prepare-draft:
     needs: [checks, desktop, extension]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Publication remains a separate, explicit owner action in GitHub Releases.
     permissions:
       contents: write
