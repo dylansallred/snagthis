@@ -15,7 +15,7 @@ Reviewed 2026-09-27 on `main`. The first release is desktop `v1.0.0` with extens
 
 ## Verification
 
-Run with Node **22.23.2** on macOS arm64 on `main`:
+Run with Node **24.21.0** on macOS arm64 on `main`:
 
 - `npm run verify`: ESLint, desktop TypeScript, **343/343** unit/integration/media tests (no skips), both production builds and design-token parity all passed. The yt-dlp tests use the pinned bundled binary (`npm run fetch:yt-dlp --workspace @m3u8/desktop`), as CI does.
 - `npx playwright test`: **47/47** browser and Electron cases passed. One run had a single timing failure in `desktop-overlays.spec.js` ("closing Settings with Escape…") under full-suite load; that spec passed 15/15 on repeat and the full suite passed on rerun.

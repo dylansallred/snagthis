@@ -115,7 +115,7 @@ Until then, run it from a local checkout.
 
 ## Run locally
 
-You'll need Git, Chrome and the Node.js version pinned in [`.nvmrc`](.nvmrc) (22.x).
+You'll need Git, Chrome and the Node.js version pinned in [`.nvmrc`](.nvmrc) (24.x).
 
 ```sh
 nvm install && nvm use
