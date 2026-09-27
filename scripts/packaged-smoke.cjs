@@ -24,7 +24,13 @@ async function packagedSmoke(executablePath, resourcesPath) {
     delete env.YTDLP_PATH;
     application = await electron.launch({ executablePath, args: [`--user-data-dir=${env.E2E_USER_DATA_DIR}`], env, timeout: 60_000 });
     const window = await application.firstWindow();
-    await window.waitForFunction(async () => (await window.desktop?.getAppInfo())?.apiStartupState === 'ready', null, { timeout: 30_000 });
+    // waitForFunction doesn't await an async predicate (a Promise is truthy), so poll instead:
+    // a slow first launch after installing otherwise read the app info before the API was ready.
+    const readyBy = Date.now() + 30_000;
+    while ((await window.evaluate(async () => (await window.desktop?.getAppInfo())?.apiStartupState)) !== 'ready') {
+      if (Date.now() > readyBy) throw new Error('The packaged download service never became ready');
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
     const info = await window.evaluate(() => window.desktop.getAppInfo());
     assert.equal(info.isPackaged, true);
     assert.ok(info.apiAuthToken, 'Packaged API did not supply an installation token');
