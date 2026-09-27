@@ -20,6 +20,18 @@ function topLevel(extension) { return fs.readdirSync(dist).filter(name => name.e
 function verifyUpdateFeed(resources) {
   return verifyUpdateConfig(yaml.load(fs.readFileSync(path.join(resources, 'app-update.yml'), 'utf8')));
 }
+// A Windows update only installs when its signer's CN matches publisherName in the
+// installed app-update.yml, so a mismatch here would break every future update.
+function verifyWindowsPublisher(resources, files) {
+  const expected = [].concat(yaml.load(fs.readFileSync(path.join(resources, 'app-update.yml'), 'utf8'))?.publisherName || []);
+  if (!expected.length) throw new Error('app-update.yml names no publisherName; Windows updates would not verify their signer');
+  for (const file of files) {
+    const subject = run('powershell.exe', ['-NoProfile', '-Command', `(Get-AuthenticodeSignature -LiteralPath '${file.replace(/'/g, "''")}').SignerCertificate.Subject`]);
+    const commonName = /(?:^|,\s*)CN=(?:"((?:[^"]|"")*)"|([^,]*))/.exec(subject);
+    const signer = commonName ? (commonName[1] ?? commonName[2]).replace(/""/g, '"').trim() : '';
+    if (!expected.includes(signer)) throw new Error(`${path.basename(file)} is signed by "${signer || subject}", but updates expect ${expected.map(name => `"${name}"`).join(' or ')}`);
+  }
+}
 function verifyMacApp(installed) {
   run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', installed]);
   run('xcrun', ['stapler', 'validate', installed]);
@@ -63,6 +75,7 @@ async function verifyRelease() {
       run('powershell.exe', ['-NoProfile', '-Command', `$s = Get-AuthenticodeSignature -LiteralPath ${quote(executable)}; if ($s.Status -ne 'Valid') { throw ('Invalid app signature: ' + $s.Status) }`]);
     }
     const updateRepository = verifyUpdateFeed(resources);
+    if (process.platform === 'win32') verifyWindowsPublisher(resources, [artifact, executable]);
     const smoke = await packagedSmoke(executable, resources);
     if (smoke.version !== expectedVersion) throw new Error(`Installed version ${smoke.version} does not match ${expectedVersion}`);
     let updateArchive;
