@@ -291,8 +291,6 @@ kbd { font: 500 .82em/1 var(--font-sans); padding: 2px 6px; border-radius: 5px; 
 .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--sw); }
 .swatch[aria-checked="true"]::after { content: ""; position: absolute; left: 50%; top: 46%; width: 10px; height: 6px; border: solid #fff; border-width: 0 0 2.4px 2.4px; transform: translate(-50%, -50%) rotate(-45deg); }
 .swatch:focus-visible { outline-offset: 5px; border-radius: 50%; }
-.accent-picker.compact { margin-top: 14px; }
-.accent-picker.compact .swatch { width: 24px; height: 24px; }
 
 @media (min-width: 720px) {
   .page { padding: 16px 16px 18px; min-height: 380px; }
@@ -335,55 +333,150 @@ kbd { font: 500 .82em/1 var(--font-sans); padding: 2px 6px; border-radius: 5px; 
 .how p { color: var(--color-foreground-muted); font-size: 15px; }
 @media (min-width: 760px) { .how { grid-template-columns: repeat(3, 1fr); } }
 
-.features { display: grid; gap: 16px; }
+/* Features: two small product recordings, then a scannable list with pixel icons. */
+.feature-duo { display: grid; gap: 16px; }
 .feature { margin: 0; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
-.feature figcaption { padding: 20px 22px 24px; }
-.feature h3 { font-size: 18px; margin-bottom: 6px; }
-.feature p { color: var(--color-foreground-muted); font-size: 15px; }
+.feature figcaption { padding: 16px 20px 20px; }
+.feature h3 { font-size: 17px; margin-bottom: 4px; }
+.feature p { color: var(--color-foreground-muted); font-size: 14.5px; }
+@media (min-width: 820px) { .feature-duo { grid-template-columns: 1fr 1fr; gap: 20px; } }
 
 /* Product recordings (scripts/capture-site-media.cjs). The clip is the bare UI; the stage, rounded frame,
    shadow and the accent glow that follows the pointer are all drawn here. */
-.shot { --gx: 30%; --gy: 0%; --rx: 0deg; --ry: 0deg; --lift: 0px; position: relative; flex: 1; display: grid; place-items: center; padding: clamp(14px, 4vw, 34px);
+.shot { --gx: 30%; --gy: 0%; --rx: 0deg; --ry: 0deg; position: relative; flex: 1; display: grid; place-items: center; padding: clamp(14px, 3vw, 26px);
   border-bottom: 1px solid var(--color-border-subtle); overflow: hidden; isolation: isolate; perspective: 1400px;
   background: radial-gradient(70% 80% at var(--gx) var(--gy), color-mix(in srgb, var(--color-primary-hover) 20%, transparent), transparent 70%),
     radial-gradient(60% 60% at 100% 100%, color-mix(in srgb, var(--color-primary-hover) 7%, transparent), transparent 70%), linear-gradient(160deg, #13161b, #090b0e); }
-.shot::before { content: ""; position: absolute; inset: 0; z-index: -1; background-image: var(--pixel-dots); opacity: .5; -webkit-mask-image: radial-gradient(closest-side, #000, transparent); mask-image: radial-gradient(closest-side, #000, transparent); }
-.clip-frame { position: relative; width: 100%; border-radius: 10px; overflow: hidden; background: var(--color-background);
-  box-shadow: 0 0 0 1px rgb(255 255 255 / .09), 0 30px 70px -24px rgb(0 0 0 / .9), 0 8px 22px rgb(0 0 0 / .4), 0 0 60px -20px color-mix(in srgb, var(--color-primary-hover) 45%, transparent);
-  transform: translateY(var(--lift)) rotateX(var(--rx)) rotateY(var(--ry)); transform-style: preserve-3d; transition: transform 500ms var(--ease-out), box-shadow 500ms; will-change: transform; }
-.shot-popup .clip-frame { width: min(100%, 480px); }
+.shot::before { content: ""; position: absolute; inset: -24px 0; z-index: -1; background-image: var(--pixel-dots); opacity: .5; -webkit-mask-image: radial-gradient(closest-side, #000, transparent); mask-image: radial-gradient(closest-side, #000, transparent); }
+.clip-frame { position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: var(--color-background);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / .09), 0 24px 56px -22px rgb(0 0 0 / .9), 0 6px 18px rgb(0 0 0 / .4), 0 0 50px -20px color-mix(in srgb, var(--color-primary-hover) 45%, transparent);
+  transform: rotateX(var(--rx)) rotateY(var(--ry)); transform-style: preserve-3d; transition: transform 500ms var(--ease-out), box-shadow 500ms; will-change: transform; }
 .clip { display: block; width: 100%; height: auto; background: var(--color-background); }
 /* A sheen that tracks the pointer over the frame. */
 .clip-frame::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 400ms;
   background: radial-gradient(40% 50% at var(--gx) var(--gy), rgb(255 255 255 / .07), transparent 70%); }
 .shot.tilting .clip-frame { transition: transform 120ms linear, box-shadow 500ms; }
 .shot.tilting .clip-frame::after { opacity: 1; }
-.clip-toggle { position: absolute; right: 12px; bottom: 12px; z-index: 2; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #fff;
+.clip-toggle { position: absolute; right: 10px; bottom: 10px; z-index: 2; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff;
   background: rgb(10 12 15 / .72); border: 1px solid rgb(255 255 255 / .16); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity 200ms, background-color 160ms; }
-.clip-toggle .icon { width: 15px; height: 15px; }
+.clip-toggle .icon { width: 14px; height: 14px; }
 .clip-toggle .icon-play { display: none; }
 .clip-toggle[data-paused] .icon-play { display: block; }
 .clip-toggle[data-paused] .icon-pause { display: none; }
 .clip-toggle:hover { background: var(--color-primary); }
 .shot:hover .clip-toggle, .clip-toggle:focus-visible, .clip-toggle[data-paused] { opacity: 1; }
 @media (hover: none) { .clip-toggle { opacity: .85; } }
-@media (min-width: 760px) {
-  .features { grid-template-columns: repeat(2, 1fr); }
-  .feature-wide { grid-column: 1 / -1; display: grid; grid-template-columns: 1.9fr 1fr; }
-  .feature-wide .shot { border-bottom: 0; border-right: 1px solid var(--color-border-subtle); }
-  .feature-flip { grid-template-columns: 1fr 1.9fr; }
-  .feature-flip .shot { order: 2; border-right: 0; border-left: 1px solid var(--color-border-subtle); }
-  .feature-wide figcaption { align-self: center; padding: 32px; }
-  .feature-wide h3 { font-size: 22px; }
-}
 
-/* Scroll-in reveals: only when main.js adds .motion (JavaScript on, motion allowed). */
-.motion .reveal { opacity: 0; transform: translateY(26px); transition: opacity 700ms var(--ease-out), transform 800ms var(--ease-out); transition-delay: var(--delay, 0ms); }
+.feature-list { list-style: none; margin: 36px 0 0; padding: 0; display: grid; gap: 0 32px; }
+.feature-item { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; align-items: start; padding: 18px 0; border-top: 1px solid var(--color-border-subtle); }
+.feature-item h3 { font-size: 15.5px; letter-spacing: -.01em; margin: 1px 0 3px; }
+.feature-item p { font-size: 14px; line-height: 1.5; color: var(--color-foreground-muted); }
+@media (min-width: 620px) { .feature-list { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 980px) { .feature-list { grid-template-columns: repeat(3, 1fr); } }
+/* A pixel tile built like the logo's bevel button: light top-left, dark bottom-right. */
+.px-tile { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 4px; background: color-mix(in srgb, var(--color-primary-muted) 70%, var(--color-background-raised));
+  box-shadow: inset 2px 2px 0 color-mix(in srgb, var(--accent-bevel-light) 28%, transparent), inset -2px -2px 0 rgb(0 0 0 / .45), 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 22%, var(--color-border-subtle)); }
+.px-icon { width: 24px; height: 24px; }
+.ic-a { fill: var(--accent-bevel-light); }
+.ic-b { fill: var(--accent-bevel-face); }
+.ic-c { fill: var(--color-foreground-muted); }
+.ic-o { fill: #fa5d0e; } .ic-k { fill: #3b7bff; } .ic-v { fill: #8b5cf6; } .ic-m { fill: #1fbf8a; }
+
+/* How it works: ten progress pieces per step (desktop .progress-pieces). Shown full without motion. */
+.how-pieces { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; height: 7px; margin-top: 18px; }
+.how-pieces i { position: relative; border-radius: 2px; background: #292f37; border: 1px solid #333a44; }
+.how-pieces i::after { content: ""; position: absolute; inset: -1px; border-radius: 2px; background: var(--color-segment-completed); box-shadow: inset 0 0 0 1px #91cbb4; }
+
+/* ── Scroll motion ───────────────────────────────────────────
+   Everything below applies only once main.js adds .motion to <html> (JavaScript on, IntersectionObserver
+   available, motion allowed). Without it every element is simply visible. Only transform and opacity move. */
+
+/* Rise-in reveals. */
+.motion .reveal { opacity: 0; transform: translateY(22px); transition: opacity 700ms var(--ease-out), transform 800ms var(--ease-out); transition-delay: var(--delay, 0ms); }
 .motion .reveal.in { opacity: 1; transform: none; }
 .motion .how li:nth-child(2), .motion .compare .plan:nth-child(2), .motion .privacy-points li:nth-child(2) { --delay: 90ms; }
 .motion .how li:nth-child(3), .motion .privacy-points li:nth-child(3) { --delay: 180ms; }
 .motion .privacy-points li:nth-child(4) { --delay: 270ms; }
-@media (min-width: 760px) { .motion .features > .feature:nth-child(3n) { --delay: 110ms; } }
+.motion .feature-duo .feature:nth-child(2) { --delay: 110ms; }
+.motion .feature-item { --delay: calc(var(--n, 0) * 70ms); transform: translateY(14px); }
+.motion .section h2.reveal, .motion .closing h2.reveal { --delay: 140ms; }
+
+/* Pixel kickers type in like the logo: letters appear one by one behind a block cursor. */
+.type { position: relative; }
+.type-ch { position: relative; }
+.motion .typing .type-ch { opacity: 0; }
+.motion .typing.in .type-ch { animation: type-on 1ms linear forwards; animation-delay: calc(var(--i) * 42ms + 60ms); }
+.type-ch::after { content: ""; position: absolute; left: 100%; top: .08em; width: .5em; height: .8em; margin-left: .06em; background: var(--accent-logo); opacity: 0; pointer-events: none; }
+.motion .typing.in .type-ch::after { animation: type-cursor 42ms steps(1); animation-delay: calc(var(--i) * 42ms + 60ms); }
+.motion .typing.in .type-ch:last-child::after { animation: type-cursor-end 1000ms steps(1); animation-delay: calc(var(--i) * 42ms + 60ms); }
+@keyframes type-on { to { opacity: 1; } }
+@keyframes type-cursor { 0%, 100% { opacity: 1; } }
+@keyframes type-cursor-end { 0%, 30% { opacity: 1; } 31%, 55% { opacity: 0; } 56%, 99% { opacity: 1; } 100% { opacity: 0; } }
+
+/* How it works: thirty pieces fill across the three steps, one working amber cell at a time. */
+.motion .how-pieces i::after { opacity: 0; }
+.motion .how-pieces i::before { content: ""; position: absolute; inset: -1px; border-radius: 2px; background: var(--color-segment-downloading); opacity: 0; }
+.motion .how li.in .how-pieces i::before { animation: piece-work 100ms steps(1) forwards; animation-delay: calc(var(--step-delay, 0ms) + var(--p) * 65ms + 380ms); }
+.motion .how li.in .how-pieces i::after { animation: piece-done 240ms var(--ease-out) forwards; animation-delay: calc(var(--step-delay, 0ms) + var(--p) * 65ms + 470ms); }
+.motion .how li.in .how-pieces i:last-child { animation: piece-pop 360ms steps(3) both; animation-delay: calc(var(--step-delay, 0ms) + 9 * 65ms + 520ms); }
+@keyframes piece-work { 0% { opacity: 1; } 99% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes piece-done { from { opacity: 0; transform: scaleY(1.9); } to { opacity: 1; transform: none; } }
+@keyframes piece-pop { 0% { transform: none; } 33% { transform: scale(1.35, 1.8); } 66% { transform: scale(1.12, 1.3); } 100% { transform: none; } }
+@media (min-width: 760px) {
+  .motion .how li:nth-child(2) { --step-delay: 650ms; }
+  .motion .how li:nth-child(3) { --step-delay: 1300ms; }
+}
+
+/* Feature list: each pixel tile presses in after its row appears. */
+.motion .feature-item .px-tile { transform: scale(.4); opacity: 0; }
+.motion .feature-item.in .px-tile { animation: tile-pop 420ms steps(4, end) forwards; animation-delay: calc(var(--delay) + 160ms); }
+@keyframes tile-pop { 0% { transform: scale(.4); opacity: 1; } 50% { transform: scale(1.15); opacity: 1; } 75% { transform: translateY(2px) scale(.94); opacity: 1; } 100% { transform: none; opacity: 1; } }
+
+/* Comparison: pixel checks pop in one by one. */
+.motion .plan .checks li::before { transform: scale(0); }
+.motion .plan.in .checks li::before { animation: check-pop 300ms steps(3, end) forwards; animation-delay: calc(var(--delay, 0ms) + 300ms + var(--c, 0) * 90ms); }
+.motion .checks li:nth-child(2) { --c: 1; } .motion .checks li:nth-child(3) { --c: 2; } .motion .checks li:nth-child(4) { --c: 3; } .motion .checks li:nth-child(5) { --c: 4; }
+@keyframes check-pop { 0% { transform: scale(0); } 34% { transform: scale(1.5); } 67% { transform: scale(.85); } 100% { transform: none; } }
+
+/* Closing: the mascot drops in and presses, then the button does the same press. */
+.motion .closing .closing-mascot { opacity: 0; transform: translateY(-48px); }
+.motion .closing.in .closing-mascot { animation: mascot-drop 640ms steps(8, end) forwards 120ms; }
+@keyframes mascot-drop { 0% { opacity: 1; transform: translateY(-48px); } 55% { opacity: 1; transform: none; } 75% { opacity: 1; transform: translateY(-10px); } 100% { opacity: 1; transform: none; } }
+.closing .btn-primary { position: relative; }
+.closing .btn-primary::after { content: ""; position: absolute; inset: -2px; border-radius: 11px; border: 2px solid var(--color-primary-hover); opacity: 0; pointer-events: none; }
+.motion .closing.in .btn-primary { animation: cta-press 560ms cubic-bezier(.3, .7, .3, 1) 1150ms; }
+.motion .closing.in .btn-primary::after { animation: cta-ring 900ms ease-out 1250ms; }
+@keyframes cta-press { 0% { transform: none; } 30% { transform: translateY(3px) scale(.95); } 70% { transform: translateY(-1px) scale(1.02); } 100% { transform: none; } }
+@keyframes cta-ring { 0% { opacity: .9; transform: scale(.96); } 100% { opacity: 0; transform: scale(1.18, 1.5); } }
+
+/* Reading progress: pixel pieces along the header's bottom edge (the content width), one amber working cell,
+   and the mascot hopping piece to piece. Scroll-driven where supported; main.js sets --read and --ri otherwise. */
+.read-bar { display: none; }
+.motion .read-bar { --gutter: calc((100% - min(100% - 40px, var(--wrap))) / 2); display: block; position: absolute; left: var(--gutter); right: var(--gutter); bottom: -1px; height: 3px; pointer-events: none; container-type: inline-size; }
+.read-track { position: absolute; inset: 0; overflow: hidden; background: rgb(255 255 255 / .07);
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 calc(100% / 48 - 2px), transparent 0 calc(100% / 48)); mask-image: repeating-linear-gradient(90deg, #000 0 calc(100% / 48 - 2px), transparent 0 calc(100% / 48)); }
+.read-fill { position: absolute; inset: 0; background: var(--color-segment-completed); transform-origin: 0 50%; transform: scaleX(var(--read, 0)); }
+.read-head { position: absolute; left: 0; top: 0; bottom: 0; width: calc(100% / 48); background: var(--color-segment-downloading); transform: translateX(calc(var(--read, 0) * 100cqw)); }
+.read-rider { position: absolute; left: calc(100% / 96 - 7px); bottom: 5px; width: 14px; height: 14px; transform: translateX(calc(var(--ri, 0) * 100cqw / 48)); }
+.read-rider .px-btn { width: 14px; height: 14px; }
+.read-rider.running .rider-bob { animation: bob .36s steps(1) infinite; }
+@supports (animation-timeline: scroll()) {
+  .motion .read-fill, .motion .read-head, .motion .read-rider { animation-duration: auto; animation-fill-mode: both; animation-timeline: scroll(root); animation-timing-function: steps(48, end); }
+  .motion .read-fill { animation-name: read-fill; }
+  .motion .read-head { animation-name: read-head; }
+  .motion .read-rider { animation-name: read-ride; animation-timing-function: steps(48, jump-none); }
+  @keyframes read-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes read-head { from { transform: translateX(0); } to { transform: translateX(100cqw); } }
+  @keyframes read-ride { from { transform: translateX(0); } to { transform: translateX(calc(100cqw * 47 / 48)); } }
+}
+
+/* Depth: product frames drift against the scroll, the dot grid behind them the other way. */
+@supports (animation-timeline: view()) {
+  .motion .clip-frame { animation: depth-front linear both; animation-timeline: view(); }
+  .motion .shot::before { animation: depth-back linear both; animation-timeline: view(); }
+  @keyframes depth-front { from { translate: 0 22px; } to { translate: 0 -22px; } }
+  @keyframes depth-back { from { translate: 0 -18px; } to { translate: 0 18px; } }
+}
 
 .compare { display: grid; gap: 16px; }
 .plan { display: flex; flex-direction: column; padding: 26px; border-radius: 14px; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); }
@@ -392,7 +485,8 @@ kbd { font: 500 .82em/1 var(--font-sans); padding: 2px 6px; border-radius: 5px; 
 .plan-sub { color: var(--color-foreground-muted); font-size: 14.5px; margin: 4px 0 18px; }
 .checks { list-style: none; margin: 0 0 24px; padding: 0; display: grid; gap: 10px; flex: 1; align-content: start; }
 .checks li { position: relative; padding-left: 28px; font-size: 15px; }
-.checks li::before { content: ""; position: absolute; left: 3px; top: 7px; width: 11px; height: 6px; border: solid var(--color-segment-completed); border-width: 0 0 2.2px 2.2px; transform: rotate(-45deg); }
+/* A pixel check, drawn with box-shadow cells (2px each). */
+.checks li::before { content: ""; position: absolute; left: 2px; top: 6px; width: 2px; height: 2px; transform-origin: 7px 5px; box-shadow: 12px 0px var(--color-segment-completed), 10px 2px var(--color-segment-completed), 12px 2px var(--color-segment-completed), 0px 4px var(--color-segment-completed), 8px 4px var(--color-segment-completed), 10px 4px var(--color-segment-completed), 0px 6px var(--color-segment-completed), 2px 6px var(--color-segment-completed), 6px 6px var(--color-segment-completed), 8px 6px var(--color-segment-completed), 2px 8px var(--color-segment-completed), 4px 8px var(--color-segment-completed), 6px 8px var(--color-segment-completed); }
 .plan-plus .checks li:first-child { color: var(--color-foreground-muted); }
 @media (min-width: 760px) { .compare { grid-template-columns: 1fr 1fr; } }
 

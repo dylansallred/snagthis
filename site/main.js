@@ -534,23 +534,46 @@
     reduced.addEventListener('change', () => clips.forEach(video => { states.get(video).want = !reduced.matches; sync(video); }));
   }
 
-  /* ── Layout motion: scroll-in reveals, a drifting glow and tilt on the product frames ── */
+  /* ── Scroll motion ──────────────────────────────────────────────────── */
+  // Progressive enhancement: content is visible by default. Only when motion is allowed and
+  // IntersectionObserver exists does <html> get .motion, which lets styles.css hide things until they
+  // arrive. Everything animates transform and opacity only. Reduced motion turns it all off at once.
   function initMotion() {
-    const reveals = $$('.reveal');
-    const shots = $$('.shot[data-tilt]');
     const canMove = () => !reduced.matches && 'IntersectionObserver' in window;
-    if (!canMove()) { reveals.forEach(node => node.classList.add('in')); }
+    const onHome = Boolean($('#demo'));
+
+    // Mark what arrives: section headings rise, pixel kickers type in, list rows get their stagger index.
+    if (onHome) {
+      $$('.section h2, .closing h2').forEach(h2 => h2.classList.add('reveal'));
+      $$('.section .kicker.pixel-label').forEach(typeable);
+      $$('.feature-item').forEach((item, i) => item.style.setProperty('--n', String(i)));
+      $$('.how-pieces').forEach(bar => [...bar.children].forEach((piece, i) => piece.style.setProperty('--p', String(i))));
+    }
+    const reveals = $$('.reveal, .typing, .closing');
+    const showAll = () => reveals.forEach(node => node.classList.add('in'));
+
+    if (!canMove()) showAll();
     else {
       root.classList.add('motion');
       const io = new IntersectionObserver(entries => entries.forEach(entry => {
-        if (entry.isIntersecting) { entry.target.classList.add('in'); io.unobserve(entry.target); }
-      }), { rootMargin: '0px 0px -8% 0px', threshold: .1 });
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('in');
+        io.unobserve(entry.target);
+        if (entry.target.classList.contains('closing')) {
+          const mascot = $('.closing-mascot .px-btn');
+          setTimeout(() => press(mascot), 560);
+        }
+      }), { rootMargin: '0px 0px -10% 0px', threshold: .12 });
       reveals.forEach(node => io.observe(node));
     }
     reduced.addEventListener('change', () => {
       root.classList.toggle('motion', canMove());
-      if (reduced.matches) { reveals.forEach(node => node.classList.add('in')); shots.forEach(reset); }
+      if (reduced.matches) { showAll(); shots.forEach(reset); shots.forEach(shot => $('.clip-frame', shot).style.removeProperty('translate')); }
     });
+
+    if (onHome) readingProgress();
+
+    const shots = $$('.shot[data-tilt]');
     if (!shots.length) return;
 
     // Tilt and a pointer-following glow, for mouse and trackpad only.
@@ -577,7 +600,8 @@
       shot.addEventListener('pointerleave', () => reset(shot));
     });
 
-    // Gentle parallax: frames drift a few pixels against the scroll while they are on screen.
+    // Depth: styles.css drives it with animation-timeline: view(). Elsewhere the frames drift here.
+    if (CSS.supports && CSS.supports('animation-timeline: view()')) return;
     const onScreen = new Set();
     let ticking = false;
     const drift = () => {
@@ -587,7 +611,7 @@
       onScreen.forEach(shot => {
         const box = shot.getBoundingClientRect();
         const offset = Math.max(-1, Math.min(1, (box.top + box.height / 2 - middle) / innerHeight));
-        shot.style.setProperty('--lift', `${(offset * 14).toFixed(1)}px`);
+        $('.clip-frame', shot).style.translate = `0 ${(offset * 22).toFixed(1)}px`;
       });
     };
     const request = () => { if (!ticking && onScreen.size) { ticking = true; requestAnimationFrame(drift); } };
@@ -600,6 +624,72 @@
       addEventListener('scroll', request, { passive: true });
       addEventListener('resize', request, { passive: true });
     }
+  }
+
+  // Splits a pixel label into letters for the type-in. Screen readers get the plain text once.
+  function typeable(node) {
+    const text = node.textContent.trim();
+    const plain = document.createElement('span');
+    plain.className = 'sr-only';
+    plain.textContent = text;
+    const letters = document.createElement('span');
+    letters.className = 'type';
+    letters.setAttribute('aria-hidden', 'true');
+    [...text].forEach((char, i) => {
+      const letter = document.createElement('span');
+      letter.className = 'type-ch';
+      letter.textContent = char;
+      letter.style.setProperty('--i', String(i));
+      letters.append(letter);
+    });
+    node.replaceChildren(plain, letters);
+    node.classList.add('typing');
+  }
+
+  // A pixel progress bar along the header, with the mascot hopping piece to piece as the page is read.
+  // It presses at each section boundary and bobs faster while the page is moving.
+  function readingProgress() {
+    const header = $('.site-header');
+    const source = $('.mascot .px-btn');
+    if (!header || !source) return;
+    const bar = document.createElement('div');
+    bar.className = 'read-bar';
+    bar.setAttribute('aria-hidden', 'true');
+    bar.innerHTML = '<div class="read-track"><div class="read-fill"></div><div class="read-head"></div></div><div class="read-rider"><div class="rider-bob"></div></div>';
+    const rider = $('.read-rider', bar);
+    const svg = source.cloneNode(true);
+    $('.rider-bob', bar).append(svg);
+    header.append(bar);
+
+    const PIECES = 48;
+    const cssDriven = CSS.supports && CSS.supports('animation-timeline: scroll()');
+    let ticking = false; let idle = 0;
+    const update = () => {
+      ticking = false;
+      if (cssDriven) return;
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const read = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+      const piece = Math.floor(read * PIECES);
+      bar.style.setProperty('--read', (piece / PIECES).toFixed(4));
+      bar.style.setProperty('--ri', String(Math.min(PIECES - 1, piece)));
+    };
+    addEventListener('scroll', () => {
+      if (reduced.matches) return;
+      if (!ticking) { ticking = true; requestAnimationFrame(update); }
+      if (!idle) rider.classList.add('running');
+      clearTimeout(idle);
+      idle = setTimeout(() => { idle = 0; rider.classList.remove('running'); }, 160);
+    }, { passive: true });
+    addEventListener('resize', () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+    update();
+
+    // Press as each section's top crosses the middle of the screen.
+    let ready = false;
+    const boundary = new IntersectionObserver(entries => {
+      if (!ready) { ready = true; return; }
+      if (entries.some(entry => entry.isIntersecting)) press(svg);
+    }, { rootMargin: '-49% 0px -50% 0px' });
+    $$('main > section').forEach(section => boundary.observe(section));
   }
 
   buildPickers();
