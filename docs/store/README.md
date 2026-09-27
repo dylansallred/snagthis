@@ -44,7 +44,7 @@ The output is `snagthis-extension.zip` in the repository root. It is the store b
 
 1. **Send the item ID.** Add the 32-character ID to `STORE_EXTENSION_IDS` in `packages/downloader-api/src/utils/security.js`, for example `Object.freeze(['abcdefghijklmnopabcdefghijklmnop'])`, and ship it in a desktop release. Until then, the desktop app shows a store-installed extension as unrecognised when it pairs. The ID is fixed from the first upload, so this can happen while the item is still in review.
 2. After approval, install from the store, then check that the extension pairs, downloads and updates.
-3. Switch visibility to **Public**, then point the site's "Add to Chrome" buttons (`#chrome-web-store` in `site/index.html`) to the listing.
+3. Switch visibility to **Public**, then paste the listing URL into `CHROME_STORE_URL` at the top of `site/main.js`. Until it is set, the site's "Add to Chrome" buttons are disabled and show "Coming soon"; once it is set, they link to the listing.
 4. For each update, raise the version in both `apps/extension/manifest.json` and `apps/extension/package.json`, rebuild the ZIP, upload it to the **same** item, and update the privacy answers if permissions changed. See `docs/extension-release.md`.
 
 ## Regenerating the images

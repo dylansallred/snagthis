@@ -12,6 +12,7 @@
  * 3. From the repository root:
  *      node scripts/capture-site-media.cjs                      # every clip
  *      node scripts/capture-site-media.cjs quality pairing      # only the named clips (see CLIPS below)
+ *      node scripts/capture-site-media.cjs og                   # only the social preview (needs neither demo)
  *
  * Each clip is written as <name>-<hash>.webm (VP9), <name>-<hash>.mp4 (H.264, faststart) and <name>-<hash>.webp
  * (poster). The hash changes with the content, because site/_headers caches /media for a year; the script
@@ -19,10 +20,14 @@
  * deviceScaleFactor 2 through the DevTools screencast, resampled to 30 fps, and joined end-to-start with a
  * short crossfade so they loop without a jump. Encoding steps up the CRF until each file is under MAX_BYTES.
  *
+ * `og` also rewrites site/img/og-image-neon.jpg (1200×630), the social preview: the landing page itself, served from
+ * site/ by a private local server, a moment after pressing Snag in its playable demo.
+ *
  * Needs ffmpeg with libvpx-vp9 and libx264 on PATH (or FFMPEG_PATH). DESKTOP_URL / POPUP_URL override the
  * demo addresses. KEEP_FRAMES=1 keeps the temporary frames and masters for inspection.
  */
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -274,6 +279,50 @@ async function publish(browser, name, clip, segments) {
   console.log(`wrote site/media/ui/${id}.{webm,mp4,webp}  ${w}×${h}  ${seconds.toFixed(1)} s  webm ${kb('webm')} KB · mp4 ${kb('mp4')} KB · poster ${kb('webp')} KB`);
 }
 
+/* ---------- social preview ---------- */
+
+const OG_IMAGE = path.join(ROOT, 'site/img/og-image-neon.jpg');
+const OG_MAX_BYTES = 200 * 1024;
+const SITE_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.woff2': 'font/woff2' };
+
+/** Serves site/ on a free local port (no range requests: the demo's video only needs its poster here). */
+function serveSite() {
+  const siteRoot = path.join(ROOT, 'site');
+  const server = http.createServer((req, res) => {
+    const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    let file = path.join(siteRoot, pathname);
+    if (!file.startsWith(siteRoot) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
+    if (fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
+    res.writeHead(200, { 'Content-Type': SITE_TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    fs.createReadStream(file).pipe(res);
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+}
+
+/** The landing page's hero at 1200×630, mid-snag in the playable demo, as a JPEG under OG_MAX_BYTES. */
+async function captureOgImage(browser) {
+  const server = await serveSite();
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1, colorScheme: 'dark', reducedMotion: 'no-preference' });
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.evaluate(() => document.fonts.ready);
+    await sleep(1500); // The logo types itself in and the popup settles.
+    await page.locator('#snag-button').click();
+    await page.mouse.move(0, 629);
+    await sleep(2600); // Pieces fill and the speed trace starts drawing.
+    await page.evaluate(() => document.querySelector('.read-bar')?.remove()); // Scroll progress means nothing in a still.
+    for (const quality of [88, 82, 76, 70, 64]) {
+      await page.screenshot({ path: OG_IMAGE, type: 'jpeg', quality });
+      if (fs.statSync(OG_IMAGE).size <= OG_MAX_BYTES) break;
+    }
+    console.log(`wrote site/img/og-image-neon.jpg  1200×630  ${Math.round(fs.statSync(OG_IMAGE).size / 1024)} KB`);
+    await ctx.close();
+  } finally {
+    server.close();
+  }
+}
+
 /* ---------- clips ---------- */
 
 /*
@@ -341,10 +390,11 @@ const CLIPS = {
 
 (async () => {
   const wanted = process.argv.slice(2);
-  const unknown = wanted.filter((name) => !CLIPS[name]);
-  if (unknown.length) throw new Error(`Unknown clip(s): ${unknown.join(', ')}. Choose from: ${Object.keys(CLIPS).join(', ')}`);
+  const unknown = wanted.filter((name) => !CLIPS[name] && name !== 'og');
+  if (unknown.length) throw new Error(`Unknown clip(s): ${unknown.join(', ')}. Choose from: ${[...Object.keys(CLIPS), 'og'].join(', ')}`);
   const browser = await chromium.launch();
   try {
+    if (!wanted.length || wanted.includes('og')) await captureOgImage(browser);
     for (const [name, clip] of Object.entries(CLIPS)) {
       if (wanted.length && !wanted.includes(name)) continue;
       const segments = await clip.record(browser);

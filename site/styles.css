@@ -109,6 +109,10 @@ kbd { font: 500 .82em/1 var(--font-sans); padding: 2px 6px; border-radius: 5px; 
 .btn-secondary.is-os { border-color: color-mix(in srgb, var(--color-primary-hover) 70%, var(--color-border)); background: color-mix(in srgb, var(--color-primary-muted) 55%, var(--color-background-raised)); }
 .btn-secondary.is-other-os { height: 46px; opacity: .8; }
 .btn-block { width: 100%; }
+.btn[aria-disabled="true"] { cursor: default; opacity: .75; box-shadow: none; }
+.btn-primary[aria-disabled="true"]:hover { background: var(--color-primary); }
+.btn-secondary[aria-disabled="true"]:hover { background: var(--color-background-raised); }
+.btn[aria-disabled="true"]:active { transform: none; }
 .soon { font-size: 11px; font-weight: 600; letter-spacing: .02em; padding: 2px 7px; border-radius: 999px; background: rgb(255 255 255 / .18); }
 .btn-ghost { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 550; color: var(--color-foreground); border: 1px solid var(--color-border); background: var(--color-background-raised); }
 .btn-ghost:hover { background: var(--color-background-active); }

@@ -15,11 +15,11 @@ jobs:
   release-contract:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
       - name: Require a matching extension version from main
@@ -36,10 +36,10 @@ jobs:
     needs: checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -49,7 +49,7 @@ jobs:
         run: |
           npm run build:extension:css
           RELEASE_SOURCE_COMMIT="$(git rev-parse HEAD)" node scripts/extension-release.cjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: extension-release
           path: |
@@ -65,13 +65,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: extension-release
           path: release-assets/extension-only
@@ -79,7 +79,7 @@ jobs:
         working-directory: release-assets/extension-only
         run: sha256sum --check --strict SHA256SUMS
       - name: Create a draft only; owner publication remains manual
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('node:fs');

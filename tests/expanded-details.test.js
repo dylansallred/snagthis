@@ -109,7 +109,7 @@ test('expanded location opens its trusted folder and three design studies remain
   for (const design of ['streamlined', 'grouped', 'pieces-first']) {
     await study.goto(`${base}/${design}/`);
     await study.locator('.location').waitFor();
-    assert.ok((await study.locator('.location-path').innerText()).startsWith('/Users/dylanallred/Library/'));
+    assert.ok((await study.locator('.location-path').innerText()).startsWith('/Users/you/Library/'));
     assert.equal(await study.getByText('Technical details', { exact: true }).count(), 0);
     await study.getByRole('button', { name: 'Open download folder' }).click();
     await study.locator('.notice[role="status"]').waitFor();

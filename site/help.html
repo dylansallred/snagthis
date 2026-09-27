@@ -12,7 +12,7 @@
   <meta property="og:title" content="Help &amp; troubleshooting · SnagThis">
   <meta property="og:description" content="Connect the SnagThis desktop app, find where your files go, and fix videos that won’t save.">
   <meta property="og:url" content="https://snagthisvid.com/help">
-  <meta property="og:image" content="https://snagthisvid.com/img/og-image.jpg">
+  <meta property="og:image" content="https://snagthisvid.com/img/og-image-neon.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="/img/favicon-48.png">
   <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -53,8 +53,10 @@
         <li><a href="#two-parts">Extension alone or with the app</a></li>
         <li><a href="#connect">Connect the desktop app</a></li>
         <li><a href="#files">Where your files go</a></li>
+        <li><a href="#updates">Updating SnagThis</a></li>
         <li><a href="#troubleshooting">Troubleshooting</a></li>
         <li><a href="#no-video">No video found</a></li>
+        <li><a href="#site-not-supported">Site not supported</a></li>
         <li><a href="#app-not-open">App not open</a></li>
         <li><a href="#link-expired">Link expired</a></li>
         <li><a href="#download-failed">Download failed</a></li>
@@ -111,6 +113,17 @@
         <p>Removing a video from the desktop list keeps its file. Moving the file to the Trash is a separate choice.</p>
       </section>
 
+      <section id="updates" aria-labelledby="updates-title">
+        <h2 id="updates-title">Updating SnagThis</h2>
+        <p>The desktop app looks for a new version when it starts and every few hours after that. It downloads the update in the background while you keep snagging.</p>
+        <ol class="doc-steps">
+          <li>When the update is ready, a <b>NEW</b> chip with the version number (for example <b>NEW 1.2.0</b>) appears in the top bar.</li>
+          <li>Click it to see <b>What’s new</b>, then choose <b>Restart &amp; install</b>. SnagThis closes and reopens by itself, and your queue picks up where it left off.</li>
+          <li>If downloads are still running, tick <b>Install when downloads finish</b> so they aren’t interrupted. Or choose <b>Later</b> and SnagThis reminds you.</li>
+        </ol>
+        <p>To stop the automatic checks, turn off <b>Check automatically</b> in <b>Settings → Updates &amp; support</b>. You can still choose <b>Check now</b> there at any time. The Chrome extension updates through Chrome.</p>
+      </section>
+
       <section id="troubleshooting" aria-labelledby="troubleshooting-title">
         <h2 id="troubleshooting-title">Troubleshooting</h2>
         <p>Find the message you see below.</p>
@@ -123,6 +136,11 @@
             <li>Choose <b>No video?</b> in the popup for these tips at any time.</li>
             <li>If the popup says <b>This video only plays inside its own player</b>, the site delivers it in a way that only works in its own page, so it can’t be saved.</li>
           </ul>
+        </div>
+
+        <div class="doc-card" id="site-not-supported">
+          <h3>SnagThis doesn’t save videos from this site</h3>
+          <p>Some sites aren’t supported in the Chrome Web Store version of SnagThis. The video is still listed, dimmed, with this message and no Snag button. Nothing is downloaded or sent to the desktop app.</p>
         </div>
 
         <div class="doc-card" id="app-not-open">

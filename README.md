@@ -22,7 +22,7 @@
 </p>
 
 > [!NOTE]
-> **SnagThis hasn't launched yet.** This repository stays private until launch, and there are no public installers or Chrome Web Store listing so far. You can [run it locally](#run-locally) now. The website will be [snagthisvid.com](https://snagthisvid.com).
+> **SnagThis hasn't launched yet.** This repository stays private until launch, and there are no public installers or Chrome Web Store listing so far. You can [run it locally](#run-locally) now. The website is [snagthisvid.com](https://snagthisvid.com).
 
 <p align="center">
   <img src="docs/images/hero.png" alt="The SnagThis desktop app listing downloads in progress, with the SnagThis Chrome popup in front showing three videos found on a page" width="100%">

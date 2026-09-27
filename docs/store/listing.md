@@ -225,6 +225,8 @@ Unlisted is the simplest way to test with anyone who has the link. Private limit
 >
 > If a page was already open before you installed the extension, SnagThis adds its detection when you open the popup. You can also reload the page.
 >
+> On some sites, this build lists the video muted with "SnagThis doesn't save videos from this site" and offers no action. That is intended: nothing is downloaded or handed to the desktop app there.
+>
 > What needs the optional desktop app: streaming formats (HLS/DASH), choosing audio tracks or subtitles, and the "Connect" button. Connect needs the SnagThis desktop app running on the same computer. The extension talks only to that app, at http://127.0.0.1:49732, and brings it forward with its snagthis:// link. You don't need it to test the direct MP4/WebM path above.
 >
 > Data: SnagThis has no server. Detected videos and their request headers stay in memory for that tab (chrome.storage.session). They are sent only to the user's own desktop app on 127.0.0.1, and only when the user asks it to download a video. The extension never modifies page requests. Its only declarativeNetRequest rule is a temporary session rule for its own preview requests. DRM-protected video is detected only to tell the user it can't be saved. It is never recorded or decrypted. Privacy policy: https://snagthisvid.com/privacy

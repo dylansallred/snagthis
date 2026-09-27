@@ -155,6 +155,8 @@
     });
     const mine = $(`.os-btn[data-os="${os}"]`);
     if (mine) mine.parentElement.insertBefore(mine, mine.parentElement.children[1]);
+    // The command palette is ⌘K on a Mac and Ctrl K elsewhere; the HTML shows both until the OS is known.
+    if (os === 'mac' || os === 'windows') $$('.palette-key').forEach(key => { key.textContent = os === 'mac' ? '⌘K' : 'Ctrl K'; });
     if (names[os]) {
       $$('.os-download').forEach(link => {
         const label = $('.os-download-label', link) || link;
@@ -196,12 +198,15 @@
       note.replaceChildren(`For ${MAC_CHIP[chip]} Macs, macOS 13 or later. Not right? Get the `, link, '.');
     });
   }
+  // The HTML ships the buttons disabled with "Coming soon"; they only become links once the listing exists.
   function markStore() {
-    $$('#cta-chrome, [data-chrome-link]').forEach(link => {
-      if (CHROME_STORE_URL) { link.href = CHROME_STORE_URL; return; }
+    if (!CHROME_STORE_URL) return;
+    $$('[data-chrome-link]').forEach(link => {
+      link.href = CHROME_STORE_URL;
+      link.removeAttribute('role');
+      link.removeAttribute('aria-disabled');
       const soon = $('.soon', link);
-      if (soon) soon.hidden = false;
-      link.setAttribute('aria-label', 'Add to Chrome, coming soon');
+      if (soon) soon.hidden = true;
     });
   }
 

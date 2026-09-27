@@ -18,7 +18,7 @@ window.SnagThisDemo = (() => {
     if (mode === 'snag') { jobs[1].progress = 97; jobs[1].etaSeconds = 4; }
     if (mode === 'problem') { jobs[0].queueStatus = 'failed'; jobs[0].error = 'SOURCE_EXPIRED'; jobs[1].progress = 97; jobs[1].status = 'Verifying output'; }
     state.mode = mode;
-    Object.assign(state, { items, mappings, queue: jobs, reachable: mode !== 'offline', compatible: mode !== 'version', tab: { id: 1, title: 'Open movies', url: 'https://videos.example/watch' }, preferences: { outputDirectory: '~/Movies/SnagThis', subtitleLanguage: 'en' } });
+    Object.assign(state, { items, mappings, queue: jobs, reachable: mode !== 'offline', compatible: mode !== 'version', tab: { id: 1, title: 'Pixel Worlds', url: 'https://videos.example/watch' }, preferences: { outputDirectory: '~/Movies/SnagThis', subtitleLanguage: 'en' } });
     return state;
   }
   function act(id, action) {

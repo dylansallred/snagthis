@@ -10,7 +10,7 @@ Implement the requested scope and follow `docs/design/ui-design-spec.md`. The ap
 
 Use the version in `.nvmrc`. `npm run verify` is the coordinated validation command; relevant browser/Electron checks use `npm run test:e2e`. Make one focused verification pass and rerun only when a concrete failure and subsequent fix justify it. Do not add speculative optimizations or repeated verification loops.
 
-Keep one quiet row and one visible action at rest. Keep thumbnails unobscured for hover/focus video loops, with duration beside the title; progress belongs on the row background under the latest owner revision in the design spec. Keep dark token values identical across desktop and extension. Put technical detail behind Details or Advanced.
+Keep one quiet row and one visible action at rest. Keep thumbnails unobscured for hover/focus video loops, with duration beside the title; progress belongs in the Pieces lane beneath the text and actions, per the design spec. Keep dark token values identical across desktop and extension. Put technical detail behind Details or Advanced.
 
 Never replace a real-media correctness assertion with a command-argument assertion. Never suppress an authentication check to make a test pass. Keep credentials out of persisted queue state and diagnostics. Saved-file removal must distinguish list removal from moving the file to Trash.
 

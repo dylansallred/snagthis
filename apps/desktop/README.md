@@ -17,7 +17,7 @@ On startup the desktop app:
 
 - Starts local API server on `127.0.0.1:49732`
 - Hosts queue/history/download management endpoints
-- Accepts extension bridge requests from local machine without pairing
+- Accepts extension bridge requests on 127.0.0.1 only from paired extensions, each with its own token
 - Checks GitHub Releases for updates (startup + every 6 hours)
 
 ## Bundled yt-dlp
