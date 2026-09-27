@@ -108,7 +108,7 @@ Keep the desktop app open while it's downloading. To send a direct file to the d
 
 | | Status |
 | --- | --- |
-| **Desktop app** (macOS and Windows) | Planned on this repository's [GitHub Releases](https://github.com/dylansallred/snagthis/releases): notarized for macOS and signed through Azure Artifact Signing for Windows, with automatic updates. |
+| **Desktop app** (macOS and Windows) | Planned on this repository's [GitHub Releases](https://github.com/dylansallred/snagthis/releases): notarized for macOS and signed through Azure Artifact Signing for Windows, with automatic updates. Separate Mac builds for Apple Silicon (`SnagThis-mac-arm64.dmg`) and Intel (`SnagThis-mac-x64.dmg`). Requires macOS 13 Ventura or later, or Windows 10 or later. |
 | **Chrome extension** | Chrome Web Store listing planned. A ZIP from GitHub Releases is the fallback; ZIP installs have to be updated by hand ([extension guide](docs/extension-release.md)). |
 
 Until then, run it from a local checkout.

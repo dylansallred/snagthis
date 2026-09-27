@@ -124,6 +124,9 @@ kbd { font: 500 .82em/1 var(--font-sans); padding: 2px 6px; border-radius: 5px; 
 .hero h1 { font-size: clamp(40px, 10.5vw, 64px); letter-spacing: -.035em; line-height: 1.02; margin-bottom: 18px; }
 .lede { font-size: 18px; color: var(--color-foreground-muted); max-width: 30em; margin-bottom: 26px; }
 .lede-try { color: var(--color-foreground); font-weight: 550; }
+.os-note { margin-top: 10px; font-size: 13px; color: var(--color-foreground-subtle); }
+.os-note a { color: var(--color-foreground-muted); text-decoration: underline; text-underline-offset: 2px; }
+.os-note a:hover { color: var(--color-foreground); }
 .fine { margin-top: 16px; font-size: 13px; color: var(--color-foreground-subtle); max-width: 34em; }
 @media (min-width: 1080px) {
   .hero { padding: 44px 0 72px; }
