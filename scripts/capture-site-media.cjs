@@ -20,7 +20,7 @@
  * deviceScaleFactor 2 through the DevTools screencast, resampled to 30 fps, and joined end-to-start with a
  * short crossfade so they loop without a jump. Encoding steps up the CRF until each file is under MAX_BYTES.
  *
- * `og` also rewrites site/img/og-image.jpg (1200×630), the social preview: the landing page itself, served from
+ * `og` also rewrites site/img/og-image-neon.jpg (1200×630), the social preview: the landing page itself, served from
  * site/ by a private local server, a moment after pressing Snag in its playable demo.
  *
  * Needs ffmpeg with libvpx-vp9 and libx264 on PATH (or FFMPEG_PATH). DESKTOP_URL / POPUP_URL override the
@@ -281,7 +281,7 @@ async function publish(browser, name, clip, segments) {
 
 /* ---------- social preview ---------- */
 
-const OG_IMAGE = path.join(ROOT, 'site/img/og-image.jpg');
+const OG_IMAGE = path.join(ROOT, 'site/img/og-image-neon.jpg');
 const OG_MAX_BYTES = 200 * 1024;
 const SITE_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.woff2': 'font/woff2' };
 
@@ -316,7 +316,7 @@ async function captureOgImage(browser) {
       await page.screenshot({ path: OG_IMAGE, type: 'jpeg', quality });
       if (fs.statSync(OG_IMAGE).size <= OG_MAX_BYTES) break;
     }
-    console.log(`wrote site/img/og-image.jpg  1200×630  ${Math.round(fs.statSync(OG_IMAGE).size / 1024)} KB`);
+    console.log(`wrote site/img/og-image-neon.jpg  1200×630  ${Math.round(fs.statSync(OG_IMAGE).size / 1024)} KB`);
     await ctx.close();
   } finally {
     server.close();
