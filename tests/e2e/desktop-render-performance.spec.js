@@ -111,6 +111,8 @@ test('queue updates skip unchanged saved rows while keeping actions, focus and m
   const saved = page.locator('[data-row-key="saved"]');
   await saved.getByRole('button', { name: 'Play: Saved fixture', exact: true }).click();
   expect(await page.evaluate(() => window.commands.at(-1))).toEqual({ id: 'saved', command: 'play', revision: 1 });
+  // The click itself may re-render the row (hover and press state); let that settle before counting.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const savedRenders = await page.evaluate(() => window.rowRenders.saved);
   await page.evaluate(() => window.updateRows({ revision: 2 }));
   expect(await page.evaluate(() => window.rowRenders.saved)).toBe(savedRenders);
