@@ -1369,7 +1369,32 @@ app.on('activate', () => {
   if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
+// yt-dlp runs in its own process group and FFmpeg is not tied to this
+// process, so neither stops when the app exits abruptly (update install,
+// app.exit, a signal, an uncaught error). Kill what is still running.
+process.on('exit', () => {
+  if (!apiServer) return;
+  try { require('@m3u8/downloader-api/src/utils/childProcesses').killTrackedChildProcesses(); } catch { /* Exiting anyway. */ }
+});
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.once(signal, () => { quitConfirmed = true; app.quit(); setTimeout(() => app.exit(0), SHUTDOWN_TIMEOUT_MS + 2000).unref(); });
+}
+// After an uncaught error the main process state is unknown. Save the queue
+// through the normal shutdown instead of leaving downloads running headless.
+let uncaughtErrorSeen = false;
+process.on('uncaughtException', (error) => {
+  console.error('[desktop] Uncaught exception:', safeDiagnostics(String(error?.stack || error?.message || error)));
+  if (uncaughtErrorSeen) return;
+  uncaughtErrorSeen = true;
+  quitConfirmed = true;
+  try { app.quit(); } catch { /* Forced below. */ }
+  setTimeout(() => app.exit(1), SHUTDOWN_TIMEOUT_MS + 2000).unref();
+});
+
 let apiShutdownPromise = null;
+// Pausing and saving downloads normally takes a few seconds; never let a stuck
+// child or socket keep the app from quitting.
+const SHUTDOWN_TIMEOUT_MS = 15_000;
 let apiShutdownComplete = false;
 let quitConfirmed = false;
 let quitPrompt = null;
@@ -1430,10 +1455,16 @@ app.on('before-quit', (event) => {
   if (!installingUpdate) event.preventDefault();
   if (apiShutdownPromise) return;
   apiShutdownPromise = (async () => {
+    let shutdownTimer;
     try {
-      await apiServer.stop();
+      await Promise.race([
+        apiServer.stop(),
+        new Promise((resolve) => { shutdownTimer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS); }),
+      ]);
     } catch {
       // ignore shutdown error
+    } finally {
+      clearTimeout(shutdownTimer);
     }
     apiShutdownComplete = true;
     if (!installingUpdate) app.quit();

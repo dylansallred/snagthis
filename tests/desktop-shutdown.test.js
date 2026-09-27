@@ -12,13 +12,14 @@ if (process.versions.electron) {
   app.setPath('crashDumps', path.join(profile, 'crashes'));
   const record = (event, details = {}) => fs.appendFileSync(path.join(profile, 'events.jsonl'), JSON.stringify({ event, ...details }) + '\n');
   const sourcePath = path.resolve(__dirname, '../apps/desktop/electron/main.js');
-  const source = fs.readFileSync(sourcePath, 'utf8');
+  // A stuck stop is exercised with a short limit instead of the real 15 s.
+  const source = fs.readFileSync(sourcePath, 'utf8').replace(/const SHUTDOWN_TIMEOUT_MS = [\d_]+;/, scenario === 'hang' ? 'const SHUTDOWN_TIMEOUT_MS = 300;' : '$&');
   const start = source.indexOf('let apiShutdownPromise = null;');
   const end = source.lastIndexOf('\nbootstrap();');
   if (start < 0 || end < start) throw new Error('Could not isolate actual shutdown handler');
   let prompts = 0;
   const sandbox = {
-    app, updaterInstallRequested: scenario === 'update', updaterTimer: null, clearInterval,
+    app, updaterInstallRequested: scenario === 'update', updaterTimer: null, clearInterval, setTimeout, clearTimeout,
     Promise, mainWindow: null, skipQuitConfirmation: false,
     // The first prompt answers "Keep downloading", the second "Quit".
     dialog: { async showMessageBox(options) {
@@ -31,6 +32,7 @@ if (process.versions.electron) {
     autoUpdater: { quitAndInstall() { record('unexpected-install'); } },
     apiServer: { getState: () => ({ queue: scenario === 'confirm' ? [{ queueStatus: 'downloading' }] : [] }), async stop() {
       record('stop-started');
+      if (scenario === 'hang') await new Promise(() => {});
       await new Promise(resolve => setTimeout(resolve, scenario === 'update' ? 1000 : 100));
       if (scenario === 'reject') { record('stop-rejected'); throw new Error('Expected shutdown failure'); }
       record('stop-completed');
@@ -55,8 +57,15 @@ if (process.versions.electron) {
   const os = require('node:os');
   const { spawn } = require('node:child_process');
   const electron = require('electron');
+  test('the desktop kills leftover downloader children on exit and quits cleanly on signals and uncaught errors', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../apps/desktop/electron/main.js'), 'utf8');
+    assert.match(source, /process\.on\('exit', \(\) => \{[\s\S]{0,200}killTrackedChildProcesses\(\)/);
+    assert.match(source, /for \(const signal of \['SIGINT', 'SIGTERM', 'SIGHUP'\]\)/);
+    assert.match(source, /process\.on\('uncaughtException'/);
+  });
+
   test('Electron waits for normal shutdown once, tolerates stop failure, and preserves direct update quit', async () => {
-    for (const scenario of ['delayed', 'repeat', 'reject', 'update', 'confirm']) {
+    for (const scenario of ['delayed', 'repeat', 'reject', 'update', 'confirm', 'hang']) {
       const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-shutdown-test-'));
       try {
         const environment = { ...process.env, SNAGTHIS_SHUTDOWN_TEST_PROFILE: profile, SNAGTHIS_SHUTDOWN_TEST_SCENARIO: scenario };
@@ -82,6 +91,9 @@ if (process.versions.electron) {
           assert.equal(matching('before-quit').length, 1, 'update quit is not recursively restarted');
           assert.equal(matching('before-quit')[0].prevented, false, 'update quit remains direct');
           assert.equal(matching('stop-completed').length, 0, 'update quit is not held for the normal-quit guard');
+        } else if (scenario === 'hang') {
+          assert.equal(matching('stop-completed').length, 0, 'the stuck stop never finished');
+          assert.equal(matching('before-quit').at(-1).prevented, false, 'a stuck shutdown still ends in a real quit');
         } else {
           assert.equal(matching(scenario === 'reject' ? 'stop-rejected' : 'stop-completed').length, 1, `${scenario}: stop settles before exit`);
           const quits = matching('before-quit');

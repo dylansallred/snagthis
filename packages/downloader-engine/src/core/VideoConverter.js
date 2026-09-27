@@ -3,6 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const logger = require('../utils/logger');
 const { buildFfmpegMetadataArgs } = require('../utils/mediaTags');
+const { trackChildProcess } = require('./ProcessTermination');
 
 function escapeConcatEntry(filePath) {
   return `file '${String(filePath || '').replace(/'/g, "'\\''")}'`;
@@ -383,7 +384,7 @@ async function normalizeMp4ForPlayback(job, mp4Path, {
       withSubs,
     });
     const stderrChunks = [];
-    const ff = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const ff = trackChildProcess(spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', 'pipe'] }));
 
     if (ff.stderr) {
       ff.stderr.on('data', (chunk) => {
@@ -720,7 +721,7 @@ async function remuxAndGenerateThumbnails(job, filePathFinal, {
       }
 
       const stderrChunks = [];
-      const ff = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      const ff = trackChildProcess(spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'ignore', 'pipe'] }));
       if (ff.stderr) {
         ff.stderr.on('data', (chunk) => {
           if (!chunk) return;
