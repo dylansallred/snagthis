@@ -53,6 +53,8 @@ export interface WindowState {
 export interface DesktopBridge {
   platform: string;
   getWindowState(): Promise<WindowState>;
+  startWindowDrag?(): Promise<{ ok: boolean }>;
+  endWindowDrag?(): Promise<{ ok: boolean }>;
   onWindowState(cb: (state: WindowState) => void): () => void;
   getAppInfo(): Promise<AppInfo>;
   /** The saved accent at load time (settings.json), read synchronously by the preload. */
