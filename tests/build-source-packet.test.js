@@ -16,6 +16,12 @@ test('source-packet pins describe the FFmpeg builds the desktop fetch script dow
   assert.match(checkFetchScriptPins(fetchFfmpeg.replace(PINS.win.tag, 'autobuild-2099-01-01-00-00'), ytdlpPinned).problems.join('\n'), /BtbN release/);
 });
 
+test('the yt-dlp version pinned in yt-dlp-release.json must match the packet', () => {
+  const script = "const pin = require('./yt-dlp-release.json');";
+  assert.deepEqual(checkFetchScriptPins(fetchFfmpeg, script, PINS, { version: PINS.ytdlp.version }).problems, []);
+  assert.match(checkFetchScriptPins(fetchFfmpeg, script, PINS, { version: '2020.01.01' }).problems.join('\n'), /yt-dlp-release\.json pins yt-dlp 2020\.01\.01/);
+});
+
 test('yt-dlp pins must match; an unpinned latest download only warns', () => {
   assert.match(checkFetchScriptPins(fetchFfmpeg, ytdlpPinned.replace(PINS.ytdlp.version, '2020.01.01')).problems.join('\n'), /pins yt-dlp 2020\.01\.01/);
   const latest = checkFetchScriptPins(fetchFfmpeg, "'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos'");
