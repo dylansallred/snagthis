@@ -10,8 +10,14 @@ const { verifyUpdateConfig } = require('./verify-update-config.cjs');
 const root = path.resolve(__dirname, '..');
 const dist = path.join(root, 'apps/desktop/dist-electron');
 const expectedVersion = require('../apps/desktop/package.json').version;
+// Windows PowerShell 5.1 started from a PowerShell 7 step inherits 7's PSModulePath and then
+// can't load its own modules (Get-AuthenticodeSignature fails to autoload), so drop it.
+function childEnv(command) {
+  if (!/powershell(\.exe)?$/i.test(path.basename(command))) return process.env;
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psmodulepath'));
+}
 function run(command, args, extra = {}) {
-  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 180_000, ...extra });
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 180_000, env: childEnv(command), ...extra });
   if (result.error || result.status !== 0) throw new Error(`${path.basename(command)} failed: ${result.error?.message || result.stderr || result.stdout}`);
   return String(result.stdout || '').trim();
 }

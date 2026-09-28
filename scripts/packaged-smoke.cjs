@@ -27,7 +27,9 @@ async function packagedSmoke(executablePath, resourcesPath) {
     // waitForFunction doesn't await an async predicate (a Promise is truthy), so poll instead:
     // a slow first launch after installing otherwise read the app info before the API was ready.
     const readyBy = Date.now() + 30_000;
-    while ((await window.evaluate(async () => (await window.desktop?.getAppInfo())?.apiStartupState)) !== 'ready') {
+    // The first window starts blank and then loads the app, so a check can land mid-navigation.
+    const startupState = () => window.evaluate(async () => (await window.desktop?.getAppInfo())?.apiStartupState).catch(() => null);
+    while ((await startupState()) !== 'ready') {
       if (Date.now() > readyBy) throw new Error('The packaged download service never became ready');
       await new Promise(resolve => setTimeout(resolve, 250));
     }

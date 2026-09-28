@@ -101,6 +101,8 @@ jobs:
             xcrun stapler staple "$dmg"
           done
       - name: Install exact artifact, verify signature and run a real packaged download
+        # bash on every OS, as in CI's signing checks (PowerShell 7 broke Windows PowerShell's modules).
+        shell: bash
         run: node scripts/verify-release.cjs
       - name: Stage validated artifacts privately within this workflow
         uses: actions/upload-artifact@v7
