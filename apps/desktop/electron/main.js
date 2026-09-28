@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell, session, Notification, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, session, Notification, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL, fileURLToPath } = require('url');
@@ -1276,8 +1276,39 @@ function createWindow() {
   }
 }
 
+// The logo and tabs move the window from JavaScript instead of a native drag region, where
+// macOS delivers no pointer events (no hover, no clicks). The renderer starts a drag once the
+// pointer has moved a few pixels and ends it on release; the window follows the cursor meanwhile.
+let windowDrag = null;
+function stopWindowDrag() {
+  if (!windowDrag) return;
+  clearInterval(windowDrag.timer);
+  clearTimeout(windowDrag.limit);
+  if (!windowDrag.window.isDestroyed()) windowDrag.window.removeListener('blur', stopWindowDrag);
+  windowDrag = null;
+}
+function startWindowDrag(window) {
+  stopWindowDrag();
+  if (!window || window.isDestroyed() || window.isFullScreen() || window.isMaximized()) return { ok: false };
+  const cursor = screen.getCursorScreenPoint();
+  const [left, top] = window.getPosition();
+  const offset = { x: cursor.x - left, y: cursor.y - top };
+  const timer = setInterval(() => {
+    if (window.isDestroyed()) { stopWindowDrag(); return; }
+    const point = screen.getCursorScreenPoint();
+    window.setPosition(Math.round(point.x - offset.x), Math.round(point.y - offset.y));
+  }, 16);
+  // A lost release (focus moved elsewhere, a missed pointerup) must never leave the window stuck to the cursor.
+  const limit = setTimeout(stopWindowDrag, 30_000);
+  window.once('blur', stopWindowDrag);
+  windowDrag = { window, timer, limit };
+  return { ok: true };
+}
+
 function registerIpc() {
   handleIpc('app:get-info', async () => appInfo());
+  handleIpc('window:drag-start', async (event) => startWindowDrag(BrowserWindow.fromWebContents(event.sender)));
+  handleIpc('window:drag-end', async () => { stopWindowDrag(); return { ok: true }; });
   handleIpc('window:get-state', async (event) => windowState(BrowserWindow.fromWebContents(event.sender)));
   handleIpc('settings:get', async () => currentSettings());
   handleIpc('settings:save', async (_event, next) => saveSettings(next));

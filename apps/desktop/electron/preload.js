@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('desktop', {
   // The header clears the macOS traffic lights or the Windows/Linux caption buttons.
   platform: process.platform,
   getWindowState: () => ipcRenderer.invoke('window:get-state'),
+  startWindowDrag: () => ipcRenderer.invoke('window:drag-start'),
+  endWindowDrag: () => ipcRenderer.invoke('window:drag-end'),
   onWindowState: (cb) => {
     const handler = (_event, payload) => cb(payload);
     ipcRenderer.on('window:state', handler);
