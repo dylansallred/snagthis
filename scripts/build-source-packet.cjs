@@ -162,7 +162,8 @@ function pickLicenseEntries(entries) {
 }
 
 // Verifies the pins above still describe what the fetch scripts download.
-function checkFetchScriptPins(ffmpegScript, ytdlpScript, pins = PINS) {
+// fetch-yt-dlp.cjs reads its version from yt-dlp-release.json; pass that file's contents as ytdlpRelease.
+function checkFetchScriptPins(ffmpegScript, ytdlpScript, pins = PINS, ytdlpRelease = null) {
   const problems = [];
   const warnings = [];
   const requireText = (text, needle, what) => { if (!text.includes(needle)) problems.push(`fetch-ffmpeg.cjs no longer pins ${what} (${needle})`); };
@@ -174,6 +175,10 @@ function checkFetchScriptPins(ffmpegScript, ytdlpScript, pins = PINS) {
   requireText(ffmpegScript, `releases/download/${pins.win.tag}`, 'the BtbN release');
   requireText(ffmpegScript, `ffmpeg-${pins.win.ffmpegTag}-`, 'the BtbN FFmpeg revision');
   requireText(ffmpegScript, `-gpl-${pins.win.addin}.`, 'the BtbN GPL 9.0 variant');
+  if (ytdlpRelease?.version) {
+    if (ytdlpRelease.version !== pins.ytdlp.version) problems.push(`yt-dlp-release.json pins yt-dlp ${ytdlpRelease.version} but this packet pins ${pins.ytdlp.version}`);
+    return { problems, warnings };
+  }
   const pinned = [...ytdlpScript.matchAll(/yt-dlp\/releases\/download\/([0-9.]+)\//g)].map(match => match[1]);
   const versions = [...new Set([...pinned, ...[...ytdlpScript.matchAll(/['"`](\d{4}\.\d{2}\.\d{2}(?:\.\d+)?)['"`]/g)].map(match => match[1])])];
   if (versions.length) {
@@ -632,7 +637,9 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   const ffmpegScript = fs.readFileSync(path.join(root, 'apps/desktop/scripts/fetch-ffmpeg.cjs'), 'utf8');
   const ytdlpScript = fs.readFileSync(path.join(root, 'apps/desktop/scripts/fetch-yt-dlp.cjs'), 'utf8');
-  const { problems, warnings } = checkFetchScriptPins(ffmpegScript, ytdlpScript);
+  const releasePin = path.join(root, 'apps/desktop/scripts/yt-dlp-release.json');
+  const ytdlpRelease = fs.existsSync(releasePin) ? JSON.parse(fs.readFileSync(releasePin, 'utf8')) : null;
+  const { problems, warnings } = checkFetchScriptPins(ffmpegScript, ytdlpScript, PINS, ytdlpRelease);
   if (problems.length) throw new Error(`Pins are out of date:\n- ${problems.join('\n- ')}`);
   for (const warning of warnings) console.warn(`[source-packet] WARNING: ${warning}`);
 
