@@ -191,7 +191,7 @@
     if (!chip) return; // Unknown (Safari): the note keeps offering both builds.
     const other = chip === 'arm64' ? 'x64' : 'arm64';
     $$('.os-btn[data-os="mac"], .os-download').forEach(link => { link.href = MAC_DMG[chip]; });
-    $$('.os-note').forEach(note => {
+    $$('.os-note:not([data-manual-extension])').forEach(note => {
       const link = document.createElement('a');
       link.href = MAC_DMG[other];
       link.textContent = `${MAC_CHIP[other]} build`;
@@ -208,6 +208,8 @@
       const soon = $('.soon', link);
       if (soon) soon.hidden = true;
     });
+    // The by-hand install is only a stopgap until the listing exists.
+    $$('[data-manual-extension]').forEach(note => { note.hidden = true; });
   }
 
   /* ── The playable demo ──────────────────────────────────────────────── */
