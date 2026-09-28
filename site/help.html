@@ -52,6 +52,7 @@
       <ol>
         <li><a href="#two-parts">Extension alone or with the app</a></li>
         <li><a href="#connect">Connect the desktop app</a></li>
+        <li><a href="#install-by-hand">Install the extension by hand</a></li>
         <li><a href="#files">Where your files go</a></li>
         <li><a href="#updates">Updating SnagThis</a></li>
         <li><a href="#troubleshooting">Troubleshooting</a></li>
@@ -85,6 +86,22 @@
           </table>
         </div>
         <p>Keep the desktop app open while it’s downloading. To send a direct file to the app instead of Chrome Downloads, right-click its row in the popup and choose <b>Download with desktop</b>.</p>
+      </section>
+
+      <section id="install-by-hand" aria-labelledby="install-by-hand-title">
+        <h2 id="install-by-hand-title">Install the extension by hand</h2>
+        <p>The Chrome Web Store listing is on its way. Until it’s live, you can load SnagThis into Chrome yourself. It’s the same extension the store will offer.</p>
+        <ol class="doc-steps">
+          <li><a href="https://github.com/dylansallred/snagthis/releases/latest/download/snagthis-extension.zip">Download snagthis-extension.zip</a> and unzip it. Keep the folder somewhere it won’t be deleted: Chrome runs the extension from it.</li>
+          <li>In Chrome, go to <b>chrome://extensions</b> and turn on <b>Developer mode</b> at the top right.</li>
+          <li>Choose <b>Load unpacked</b> and select the unzipped <b>snagthis-extension</b> folder.</li>
+          <li>Click the Extensions puzzle icon and pin <b>SnagThis</b> to the toolbar.</li>
+        </ol>
+        <p>Two things work differently from a store install:</p>
+        <ul>
+          <li><b>No automatic updates.</b> To update, download the new zip, replace the folder’s contents, then click the reload arrow on SnagThis in chrome://extensions. When the store version is available, remove this copy and install that one instead.</li>
+          <li><b>The desktop app says “Not Web Store”</b> when you connect. That only means it wasn’t installed from the store. Check the four digits match, then choose <b>Allow</b>.</li>
+        </ul>
       </section>
 
       <section id="connect" aria-labelledby="connect-title">
