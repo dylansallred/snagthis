@@ -21,7 +21,7 @@ const FINISHED_RETENTION_MS = 5 * 60_000;
 const LAST_SEEN_SAVE_MS = 60_000;
 // Web Store item IDs, recorded once the store item exists (docs/extension-release.md,
 // "Establish the store identity"). Any other ID is shown to the user as unrecognised.
-const STORE_EXTENSION_IDS = Object.freeze([]);
+const STORE_EXTENSION_IDS = Object.freeze(['dempkhcipnakfiidcnlckkjfbieggcbp']);
 
 function sameSecret(left, right) {
   const a = Buffer.from(String(left || ''));

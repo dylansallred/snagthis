@@ -372,3 +372,10 @@ test('media inspection is desktop-only and never fetches this computer or the lo
     assert.match(refused.body.error, /public websites/);
   }
 });
+
+test('the Chrome Web Store build pairs as the store extension, any other ID as unrecognised', async (t) => {
+  const bridge = await startBridge(t);
+  const store = await bridge.ask('chrome-extension://dempkhcipnakfiidcnlckkjfbieggcbp');
+  assert.equal(store.status, 201);
+  assert.equal(bridge.api.getPendingPairing().identity, 'store');
+});
