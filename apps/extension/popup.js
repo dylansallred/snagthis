@@ -68,6 +68,9 @@
     if (iconOnly) button.title = label;
     button.addEventListener('click', handler); return button;
   }
+  async function copyText(text, done) {
+    try { await navigator.clipboard.writeText(text); notice(done); } catch { notice('Couldn’t copy. Try again.'); }
+  }
   function notice(message) { $('notice').textContent = String(message); $('notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 5000); }
   function external(url) { if (isDemo) { notice('Preview only — no app or page was opened.'); return; } chrome.tabs.create({ url }).catch(() => notice('Open SnagThis from your Applications folder.')); }
   async function request(path, options = {}) {
@@ -762,6 +765,14 @@
     menuItem(menu, 'Hide', async () => { const ids = [...new Set([item.id, ...(item.detectedStreams || []).map(value => value.id)])]; if (isDemo) mediaItems = mediaItems.filter(value => value.id !== item.id); else await message({ cmd: 'HIDE_MEDIA', tabId: activeTab.id, mediaIds: ids }); renderRows(); await refresh(); });
     if (item.drm || storeYoutube) { menu.append(el('hr')); menuItem(menu, 'Show all detected streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); }); fitMenu(menu); return; }
     menuItem(menu, 'Preview', () => preview(item));
+    // Copies for other tools or for pasting into SnagThis. The page address is the reliable one to paste:
+    // the desktop app finds the video again with a fresh address, while a bare stream address can need
+    // the page's cookies or expire. Service-worker and blob addresses only work inside the page, so they're left out.
+    if (!item.serviceWorkerServed && /^https?:\/\//i.test(item.url || '') && item.mediaKind !== 'youtube-page') menuItem(menu, 'Copy video address', () => copyText(item.url, 'Video address copied'));
+    const pageAddress = item.sourcePageUrl || activeTab?.url || '';
+    // Chrome Web Store policy: the store build never hands out a YouTube page to download elsewhere.
+    const youtubePage = storeBuild && (Boolean(SnagThisDetection.youtubeId(pageAddress)) || /^https?:\/\/([^/]+\.)?youtube\.com\//i.test(pageAddress));
+    if (/^https?:\/\//i.test(pageAddress) && !youtubePage) menuItem(menu, 'Copy page address', () => copyText(pageAddress, 'Page address copied. Paste it into SnagThis to download this video.'));
     if (!item.serviceWorkerServed && (!jobId || (job?.backend === 'browser' && ['failed', 'completed', 'cancelled'].includes(job.queueStatus))) && browserSupported(model.selectMedia(item, preferences, selected.get(item.id)))) menuItem(menu, 'Download with desktop', () => useDesktop(item));
     if (!jobId && !storeYoutube) {
       const expired = queue.filter(job => job.queueStatus === 'failed' && job.sourcePageUrl === item.sourcePageUrl && rows.classifyProblem(job.error).code === 'expired');
