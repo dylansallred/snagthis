@@ -1,8 +1,11 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { isCurrentPreviewClipPath } = require('@m3u8/downloader-engine/src/core/PreviewClip');
 const { readJsonState, writeFileDurable } = require('@m3u8/downloader-engine/src/utils/durableJson');
 const logger = require('../utils/logger');
+const { compareSaved, isSort } = require('@m3u8/contracts/src/library');
+const { isJunkName, isMediaName, isSkippedDirName, isVideoFolder, looksLikeJobId, stemOf } = require('./libraryLayout');
 const { youtubeVideoIdOf, youtubeArtwork } = require('../utils/youtubeArtwork');
 const {
   buildDownloadAssetUrl,
@@ -15,6 +18,9 @@ const {
 
 const INDEX_VERSION = 2;
 const DEFAULT_LIMIT = 200;
+// A save folder chosen by mistake (a whole drive) must not stall every rescan.
+const MAX_LIBRARY_DEPTH = 8;
+const MAX_LIBRARY_ENTRIES = 50_000;
 const HISTORY_MEDIA_EXTENSIONS = new Set([
   '.mp4',
   '.ts',
@@ -180,6 +186,7 @@ class HistoryIndexService {
       jobs,
       onChange,
       minRefreshIntervalMs = 1_000,
+      getLibraryRoot,
     } = options;
 
     if (!downloadDir) {
@@ -190,6 +197,8 @@ class HistoryIndexService {
     }
 
     this.downloadDir = downloadDir;
+    // The save folder people see as Saved: Settings' "Save videos to", else the download folder.
+    this.getLibraryRoot = typeof getLibraryRoot === 'function' ? getLibraryRoot : () => downloadDir;
     this.fsPromises = fsPromises;
     this.jobs = jobs || new Map();
     this.onChange = typeof onChange === 'function' ? onChange : null;
@@ -211,6 +220,33 @@ class HistoryIndexService {
     // Directory listings and existence answers gathered during one rescan.
     this.scanListing = null;
     this.scanExists = null;
+    // Directory contents gathered during one rescan (see libraryLayout.readDirInfo).
+    this.scanDirs = null;
+    // User folders in the save folder, from the last rescan.
+    this.folders = [];
+    this.folderSignature = '';
+    this.libraryRoot = path.resolve(downloadDir);
+    // Folder operations run alone: a rescan never interleaves with a move.
+    this.exclusive = null;
+  }
+
+  libraryRootPath() {
+    const configured = String(this.getLibraryRoot() || '').trim();
+    return path.resolve(configured && path.isAbsolute(configured) ? configured : this.downloadDir);
+  }
+
+  /** Runs `task` with rescans held back, after any rescan in progress has finished. */
+  async runExclusive(task) {
+    while (this.exclusive) await this.exclusive.catch(() => {});
+    let release;
+    this.exclusive = new Promise((resolve) => { release = resolve; });
+    try {
+      if (this.refreshInFlight) await this.refreshInFlight.catch(() => {});
+      return await task();
+    } finally {
+      this.exclusive = null;
+      release();
+    }
   }
 
   async init() {
@@ -357,10 +393,30 @@ class HistoryIndexService {
     return byFile;
   }
 
-  async walkMediaFiles(currentDir = this.downloadDir, relativeDir = '') {
-    const entries = await this.fsPromises.readdir(currentDir, { withFileTypes: true });
+  async walkMediaFiles(currentDir = this.downloadDir, relativeDir = '', walk = null) {
+    if (walk) {
+      walk.entries += 1;
+      if (walk.entries > MAX_LIBRARY_ENTRIES || walk.depth > MAX_LIBRARY_DEPTH) return [];
+    }
+    let entries;
+    try {
+      entries = await this.fsPromises.readdir(currentDir, { withFileTypes: true });
+    } catch (error) {
+      // The download folder must be readable; a vanished or locked folder in the save folder is skipped.
+      if (!walk) throw error;
+      return [];
+    }
     const files = [];
     if (this.scanListing) this.scanListing.set(currentDir, new Set(entries.filter((entry) => entry && !entry.isDirectory()).map((entry) => entry.name)));
+    if (this.scanDirs) {
+      const info = { files: [], dirs: [], hasMarker: false };
+      for (const entry of entries) {
+        if (!entry) continue;
+        if (entry.isDirectory()) { if (!isSkippedDirName(entry.name)) info.dirs.push(entry.name); }
+        else if (entry.isFile()) { if (entry.name === '.snagthis-job.json') info.hasMarker = true; else info.files.push(entry.name); }
+      }
+      this.scanDirs.set(currentDir, info);
+    }
 
     for (const entry of entries) {
       if (!entry) continue;
@@ -372,7 +428,10 @@ class HistoryIndexService {
           || (!relativeDir && (entry.name.startsWith('temp-') || entry.name === '__previews'))) {
           continue;
         }
-        const nested = await this.walkMediaFiles(fullPath, childRelative);
+        if (walk && (isSkippedDirName(entry.name) || walk.skip.has(path.resolve(fullPath)))) continue;
+        if (walk) walk.depth += 1;
+        const nested = await this.walkMediaFiles(fullPath, childRelative, walk);
+        if (walk) walk.depth -= 1;
         files.push(...nested);
         continue;
       }
@@ -388,7 +447,15 @@ class HistoryIndexService {
       }
       if (!stat) continue;
 
-      files.push({
+      files.push(walk ? {
+        fullPath,
+        absolutePath: fullPath,
+        relativePath: this.toRelativePath(fullPath) || entry.name,
+        fileName: entry.name,
+        // Keep sibling checks (a .ts beside its .mp4) within this folder of the save folder.
+        dirRelative: `library:${relativeDir}`,
+        stat,
+      } : {
         fullPath,
         relativePath: childRelative,
         fileName: entry.name,
@@ -398,6 +465,63 @@ class HistoryIndexService {
     }
 
     return files;
+  }
+
+  /** The save folder's own videos, when it is not the download folder (walked separately). */
+  async walkLibraryRoot(root) {
+    const downloadRoot = path.resolve(this.downloadDir);
+    if (root === downloadRoot) return [];
+    const inside = path.relative(downloadRoot, root);
+    if (inside && !inside.startsWith('..') && !path.isAbsolute(inside)) return [];
+    try {
+      const stat = await this.fsPromises.stat(root);
+      if (!stat.isDirectory()) return [];
+    } catch { return []; }
+    const skip = new Set([downloadRoot, path.resolve(path.dirname(this.indexFilePath))]);
+    return this.walkMediaFiles(root, '', { skip, entries: 0, depth: 0 });
+  }
+
+  /**
+   * The user folder a file is in, as a path below the save folder ('' for the save folder itself
+   * and for files kept elsewhere). A video's own folder is part of the video, not a user folder.
+   * `previous` is the folder recorded before, used when a missing file's folder is gone.
+   */
+  folderOf(absolutePath, root, previous) {
+    const relative = path.relative(root, path.resolve(absolutePath));
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return '';
+    const parts = relative.split(path.sep).slice(0, -1);
+    const kept = [];
+    let current = root;
+    for (let index = 0; index < parts.length; index += 1) {
+      current = path.join(current, parts[index]);
+      if (isSkippedDirName(parts[index])) break;
+      const info = this.scanDirs ? this.scanDirs.get(current) : null;
+      const last = index === parts.length - 1;
+      const videoFolder = info ? isVideoFolder(parts[index], info)
+        : last && (looksLikeJobId(parts[index]) || (typeof previous === 'string' && previous === kept.join('/')));
+      if (videoFolder) break;
+      kept.push(parts[index]);
+    }
+    return kept.join('/');
+  }
+
+  collectFolders(root) {
+    const folders = [];
+    if (!this.scanDirs) return folders;
+    const visit = (directory, relative) => {
+      const info = this.scanDirs.get(directory);
+      if (!info) return;
+      for (const name of [...info.dirs].sort((a, b) => a.localeCompare(b))) {
+        const child = path.join(directory, name);
+        const childInfo = this.scanDirs.get(child);
+        if (!childInfo || isVideoFolder(name, childInfo)) continue;
+        const childRelative = relative ? `${relative}/${name}` : name;
+        folders.push({ path: childRelative, name, parent: relative, files: childInfo.files.filter((file) => !isJunkName(file)) });
+        visit(child, childRelative);
+      }
+    };
+    visit(root, '');
+    return folders;
   }
 
   collectExternalJobMediaFiles() {
@@ -619,7 +743,7 @@ class HistoryIndexService {
 
   static buildSignature(items) {
     return items
-      .map((item) => `${item.absolutePath || item.relativePath || item.fileName}:${item.sizeBytes}:${item.modifiedAt}:${item.thumbnailUrl || ''}:${item.previewClipUrl || ''}:${item.missing ? 1 : 0}`)
+      .map((item) => `${item.absolutePath || item.relativePath || item.fileName}:${item.sizeBytes}:${item.modifiedAt}:${item.thumbnailUrl || ''}:${item.previewClipUrl || ''}:${item.missing ? 1 : 0}:${item.folder || ''}`)
       .join('|');
   }
 
@@ -633,13 +757,19 @@ class HistoryIndexService {
     if (this.refreshInFlight) {
       return this.refreshInFlight;
     }
+    // A folder operation in progress changes the files being scanned; rescan once it is done.
+    while (this.exclusive) await this.exclusive.catch(() => {});
+    if (this.refreshInFlight) return this.refreshInFlight;
 
     this.refreshInFlight = (async () => {
       this.lastRefreshAt = Date.now();
       this.scanListing = new Map();
       this.scanExists = new Map();
+      this.scanDirs = new Map();
+      const root = this.libraryRootPath();
 
       const mediaFiles = await this.walkMediaFiles();
+      mediaFiles.push(...await this.walkLibraryRoot(root));
       mediaFiles.push(...this.collectExternalJobMediaFiles());
       mediaFiles.push(...this.collectPersistedExternalMediaFiles());
       const filesByDir = new Map();
@@ -684,14 +814,41 @@ class HistoryIndexService {
         }
       }
       const nextItems = Array.from(nextItemsByLocator.values());
+      // Identities start as the file's path. A video moved into a folder keeps its identity, so a
+      // new file later saved at its old path needs one of its own.
+      const owners = new Map(this.items.map((item) => [item.id, getHistoryItemLocator(item)]));
+      const seenIds = new Set();
+      for (const item of nextItems) {
+        const locator = getHistoryItemLocator(item);
+        const owner = owners.get(item.id);
+        if (seenIds.has(item.id) || (owner && owner !== locator)) item.id = encodeHistoryItemId(`${locator}#${item.modifiedAt}#${seenIds.size}`);
+        seenIds.add(item.id);
+      }
+      const previousFolders = new Map(this.items.map((item) => [getHistoryItemLocator(item), item.folder]));
+      const folders = this.collectFolders(root);
+      const folderPaths = new Set(folders.map((folder) => folder.path));
+      for (const item of nextItems) {
+        const previous = previousFolders.get(getHistoryItemLocator(item));
+        // A missing file stays in the folder it was last seen in, while that folder exists.
+        item.folder = item.missing && typeof previous === 'string'
+          ? (folderPaths.has(previous) ? previous : '')
+          : this.folderOf(item.absolutePath || path.join(this.downloadDir, item.relativePath), root, previous);
+      }
 
       nextItems.sort((a, b) => Number(b.modifiedAt || 0) - Number(a.modifiedAt || 0));
+
+      const folderSignature = `${root}\n${folders.map((folder) => `${folder.path}:${folder.files.join('/')}`).join('\n')}`;
+      const foldersChanged = folderSignature !== this.folderSignature;
+      this.folders = folders;
+      this.folderSignature = folderSignature;
+      this.libraryRoot = root;
 
       const currentSignature = HistoryIndexService.buildSignature(this.items);
       const nextSignature = HistoryIndexService.buildSignature(nextItems);
 
       if (currentSignature === nextSignature) {
-        return { changed: false, reason: 'unchanged' };
+        if (foldersChanged) this.emitChange('folders');
+        return { changed: foldersChanged, reason: foldersChanged ? 'folders' : 'unchanged' };
       }
 
       this.items = nextItems;
@@ -701,6 +858,7 @@ class HistoryIndexService {
     })().finally(() => {
       this.scanListing = null;
       this.scanExists = null;
+      this.scanDirs = null;
       this.refreshInFlight = null;
     });
 
@@ -727,7 +885,11 @@ class HistoryIndexService {
     const offset = decodeCursor(options.cursor);
     const nextOffset = offset + limit;
     const query = String(options.q || '').trim().toLocaleLowerCase();
-    const matchingItems = query ? this.items.filter((item) => [item.title, item.label, item.fileName, item.sourcePageUrl].some((value) => String(value || '').toLocaleLowerCase().includes(query))) : this.items;
+    // Search covers the whole library; otherwise a folder shows only its own videos.
+    const folder = !query && typeof options.folder === 'string' ? options.folder : null;
+    let matchingItems = query ? this.items.filter((item) => [item.title, item.label, item.fileName, item.sourcePageUrl].some((value) => String(value || '').toLocaleLowerCase().includes(query))) : this.items;
+    if (folder !== null) matchingItems = matchingItems.filter((item) => (item.folder || '') === folder);
+    if (isSort(options.sort) && options.sort !== 'newest') matchingItems = [...matchingItems].sort(compareSaved(options.sort));
     const slice = matchingItems.slice(offset, nextOffset);
     const nextCursor = nextOffset < matchingItems.length ? encodeCursor(nextOffset) : null;
 
@@ -835,6 +997,47 @@ class HistoryIndexService {
     await this.persistIndex();
     this.emitChange('locate');
     return item;
+  }
+
+  /**
+   * The save folder and its user folders for Saved: each with its videos (counted through
+   * subfolders), their size, the newest posters for a mosaic, and files SnagThis didn't save.
+   */
+  async library() {
+    await this.refreshFromDisk({ force: this.items.length === 0 });
+    const root = this.libraryRoot;
+    const byPath = new Map(this.folders.map((folder) => [folder.path, {
+      path: folder.path, name: folder.name, parent: folder.parent,
+      videoCount: 0, sizeBytes: 0, thumbnails: [], otherFiles: [],
+    }]));
+    const chain = (folder, visit) => {
+      for (let current = folder; current; current = current.includes('/') ? current.slice(0, current.lastIndexOf('/')) : '') {
+        const entry = byPath.get(current);
+        if (entry) visit(entry);
+      }
+    };
+    // Newest first, so the mosaic shows the latest posters.
+    for (const item of this.items) {
+      if (item.missing || !item.folder) continue;
+      chain(item.folder, (entry) => {
+        entry.videoCount += 1;
+        entry.sizeBytes += Number(item.sizeBytes) || 0;
+        if (item.thumbnailUrl && entry.thumbnails.length < 4) entry.thumbnails.push(item.thumbnailUrl);
+      });
+    }
+    for (const folder of this.folders) {
+      const stems = folder.files.filter(isMediaName).map(stemOf);
+      const others = folder.files.filter((name) => !isMediaName(name) && !stems.some((stem) => name.startsWith(`${stem}.`)) && !/^[a-z0-9]{7,10}-[a-z0-9]{1,8}-/i.test(name));
+      if (others.length) chain(folder.path, (entry) => { entry.otherFiles.push(...others); });
+    }
+    const home = os.homedir();
+    const relativeHome = path.relative(home, root);
+    const displayPath = home && relativeHome && !relativeHome.startsWith('..') && !path.isAbsolute(relativeHome)
+      ? `~/${relativeHome.split(path.sep).join('/')}` : root;
+    return {
+      root: { name: root === path.resolve(this.downloadDir) ? 'SnagThis' : path.basename(root) || root, path: root, displayPath },
+      folders: [...byPath.values()].map((entry) => ({ ...entry, otherFiles: { count: entry.otherFiles.length, names: entry.otherFiles.slice(0, 3) } })),
+    };
   }
 
   async clear() {
