@@ -39,12 +39,12 @@ concurrency:
 
 jobs:
   plan:
-    # Decides which platforms run. Skipped (and free) on PRs without a CI label.
+    # Decides which platforms run. On PRs it reads the PR's labels as they are now, not the
+    # event's copy: opening a PR with a label fires "opened" and "labeled" together, and the
+    # concurrency group keeps only one of them, which must still see the label.
     if: >-
       ${{ (github.event_name != 'workflow_dispatch' || (!inputs.verify_macos_signing && !inputs.verify_windows_signing))
-      && (github.event_name != 'pull_request' || ((contains(github.event.pull_request.labels.*.name, 'run-ci')
-      || contains(github.event.pull_request.labels.*.name, 'run-ci-all'))
-      && (github.event.action != 'labeled' || github.event.label.name == 'run-ci' || github.event.label.name == 'run-ci-all'))) }}
+      && (github.event.action != 'labeled' || github.event.label.name == 'run-ci' || github.event.label.name == 'run-ci-all') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -58,18 +58,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           PR: ${{ github.event.pull_request.number }}
-          ALL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'run-ci-all') }}
           PLATFORMS: ${{ inputs.platforms }}
         run: |
           all='["ubuntu-latest","macos-15","windows-latest"]'
           if [ "$EVENT" = pull_request ]; then
+            labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name')
+            if ! grep -qxE 'run-ci|run-ci-all' <<< "$labels"; then
+              echo "The test suite didn't run. Add the run-ci (Linux) or run-ci-all label to run it." >> "$GITHUB_STEP_SUMMARY"
+              echo 'os=[]' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             # Docs, site and Markdown changes don't touch the app.
             code=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' \
               | grep -Ev '^(docs|site)/|\.md$' || true)
             if [ -z "$code" ]; then
               echo "Only docs or site files changed, so the suite is skipped." >> "$GITHUB_STEP_SUMMARY"
               echo 'os=[]' >> "$GITHUB_OUTPUT"
-            elif [ "$ALL_LABEL" = true ]; then echo "os=$all" >> "$GITHUB_OUTPUT"
+            elif grep -qx 'run-ci-all' <<< "$labels"; then echo "os=$all" >> "$GITHUB_OUTPUT"
             else echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"; fi
           elif [ "$EVENT" = workflow_dispatch ] && [ "$PLATFORMS" != all ]; then
             echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
