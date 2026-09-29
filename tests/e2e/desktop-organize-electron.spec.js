@@ -15,7 +15,10 @@ test('real Electron: a downloaded video moves into a folder of the save folder a
   try {
     native = await launchDesktop(renderer.baseUrl);
     const window = await native.app.firstWindow();
-    await expect.poll(() => window.evaluate(async () => (await window.desktop.getAppInfo()).apiStartupState)).toBe('ready');
+    await expect(window.getByPlaceholder('Paste a video link')).toBeVisible();
+    // The development renderer may reload once while it prepares its modules; ask again after it does.
+    await expect.poll(() => window.evaluate(async () => (await window.desktop.getAppInfo()).apiStartupState).catch(() => 'reloading'), { timeout: 30_000 }).toBe('ready');
+    await expect(window.getByPlaceholder('Paste a video link')).toBeVisible();
     await window.evaluate(async (folder) => window.desktop.saveSettings({ outputDirectory: folder, notifyOnComplete: false }), saveDir);
     const paste = window.getByPlaceholder('Paste a video link');
     await paste.fill(`${fixture.baseUrl}/cases/plain/direct.mp4`);
