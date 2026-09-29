@@ -3,7 +3,7 @@ import type { HistoryItem } from '@/types/history';
 import type { DeleteMode, LibraryInfo, MoveResult } from '@/types/library';
 import { normalizeLocalApiBase } from '@/lib/network';
 
-export interface LibraryPage { items: HistoryItem[]; total: number; nextCursor: string | null }
+export interface LibraryPage { items: HistoryItem[]; total: number; nextCursor: string | null; savedJobIds?: string[] }
 export interface ThumbnailPreview { status: 'pending' | 'ready' | 'unavailable'; previewClipUrl?: string | null; previewClipDurationSeconds?: number }
 export interface MediaSelection { variantUrl?: string; height?: number; audioLang?: string; audioTrack?: string; subtitleLang?: string; audioOnly?: boolean }
 export interface AudioRendition { language?: string | null; name?: string | null; url?: string | null; groupId?: string | null; default?: boolean; channels?: string | null; characteristics?: string | null; role?: string | null; streamIndex?: number }

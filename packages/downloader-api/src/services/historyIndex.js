@@ -897,6 +897,9 @@ class HistoryIndexService {
       items: slice,
       total: matchingItems.length,
       nextCursor,
+      // Finished downloads already in the library, wherever they are filed, so a list of one
+      // folder never shows another folder's video again as its finished download.
+      savedJobIds: [...new Set(this.items.map((item) => item.jobId).filter(Boolean))],
     };
   }
 

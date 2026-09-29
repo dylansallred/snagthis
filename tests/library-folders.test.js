@@ -107,6 +107,8 @@ test('folders are real subfolders: create, rename, move a video with its side fi
   assert.equal(movedEmber.missing, false);
   assert.equal((await items('&folder=Road%20trips')).map((item) => item.id).join(), ember.id);
   assert.equal((await items('&folder=')).some((item) => item.id === ember.id), false);
+  assert.deepEqual((await request('/api/history?folder=')).body.savedJobIds, [JOB_ID], 'a folder list still says which finished downloads are saved elsewhere');
+  assert.deepEqual((await items('&sort=size')).map((item) => item.sizeBytes), [4096, 2048, 1024, 512], 'the whole library in the Largest order');
   const job = (await request('/api/queue')).body.queue.find((entry) => entry.id === JOB_ID);
   assert.ok(job, 'the finished job is still known');
   const persistedQueue = JSON.parse(fs.readFileSync(path.join(library.dataDir, 'queue.json'), 'utf8')).queue.find((entry) => entry.id === JOB_ID);

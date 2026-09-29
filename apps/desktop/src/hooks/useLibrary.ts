@@ -13,6 +13,8 @@ import { toWebSocketUrl } from '@/lib/network';
 export function useLibrary(api: ApiClient | null, query: string, scope: HistoryScope = {}) {
   const [queue, setQueue] = useState<QueueData>({ queue: [], settings: { maxConcurrent: 1, autoStart: true } });
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  // Finished downloads the library already holds in any folder (the list may show only one).
+  const [savedJobIds, setSavedJobIds] = useState<ReadonlySet<string>>(() => new Set());
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -45,6 +47,7 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
       // A WebSocket update received while this request was pending is newer.
       if (revision === queueRevision.current) setQueue(nextQueue);
       setHistory(items); setCursor(nextCursor || null); setError(''); setLoading(false); setRevision((value) => value + 1);
+      setSavedJobIds(new Set(firstPage.savedJobIds || []));
     } catch (err) {
       if (current !== generation.current || request !== refreshSequence.current) return;
       setError(err instanceof Error ? err.message : 'Unable to load your videos'); setLoading(false);
@@ -129,8 +132,9 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
   }, [api, cursor, loadingMore, query]);
   const rows = useMemo(() => {
     const text = query.trim().toLowerCase();
-    const visibleQueue = text ? queue.queue.filter((job) => job.title?.toLowerCase().includes(text)) : queue.queue;
+    const visibleQueue = (text ? queue.queue.filter((job) => job.title?.toLowerCase().includes(text)) : queue.queue)
+      .filter((job) => !(job.queueStatus === 'completed' && savedJobIds.has(job.id)));
     return mergeRows(visibleQueue, history, { surface: 'desktop' });
-  }, [queue.queue, history, query]);
+  }, [queue.queue, history, query, savedJobIds]);
   return { rows, queue, history, loading, loadingMore, error, hasMore: !!cursor, refresh, loadMore, revision };
 }
