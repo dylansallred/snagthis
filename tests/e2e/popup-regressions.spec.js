@@ -149,6 +149,42 @@ test('row extras open from a keyboard-accessible More button and return focus', 
   expect(errors).toEqual([]);
 });
 
+test('the row menu copies the video and page addresses, and the store build never offers a YouTube page', async ({ page }) => {
+  const errors = await loadPopup(page);
+  await page.evaluate(() => {
+    window.copied = [];
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied.push(text); } } });
+  });
+  await page.evaluate(value => window.popupFixture.load([value], [], {}), item);
+  const row = page.locator('.video-row');
+  await row.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Copy video address', exact: true }).click();
+  await expect(page.locator('#notice')).toHaveText('Video address copied');
+  await row.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Copy page address', exact: true }).click();
+  await expect(page.locator('#notice')).toContainText('Page address copied');
+  expect(await page.evaluate(() => window.copied)).toEqual([item.url, item.sourcePageUrl]);
+  // Addresses that only work inside the page aren't offered.
+  await page.evaluate(value => window.popupFixture.load([{ ...value, id: 'sw', serviceWorkerServed: true }, { ...value, id: 'blob', url: 'blob:https://fixture.invalid/1' }], [], {}), item);
+  for (const index of [0, 1]) {
+    await page.locator('.video-row').nth(index).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: 'Copy page address', exact: true })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Copy video address', exact: true })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+  }
+  expect(errors).toEqual([]);
+});
+
+test('the store build never copies a YouTube page address, even for another video on it', async ({ page }) => {
+  const errors = await loadPopup(page, { storeBuild: true });
+  const embedded = { ...item, id: 'embedded', url: 'https://cdn.fixture.invalid/ad.mp4', type: 'file', sourcePageUrl: 'https://www.youtube.com/watch?v=abcdefghijk' };
+  await page.evaluate(value => window.popupFixture.load([value], [], {}), embedded);
+  await page.locator('.video-row').click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Hide', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Copy page address', exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test('the store build lists YouTube pages without a download or desktop handoff', async ({ page }) => {
   const errors = await loadPopup(page, { storeBuild: true });
   const youtube = { id: 'yt', url: 'https://www.youtube.com/watch?v=abcdefghijk', type: 'file', mediaKind: 'youtube-page', contentType: 'video/youtube',
@@ -160,7 +196,7 @@ test('the store build lists YouTube pages without a download or desktop handoff'
   await expect(row.getByRole('button', { name: /Copy link|Download|Use desktop app/ })).toHaveCount(0);
   await row.click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: 'Hide', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: /Copy link|Download with desktop|Continue previous download|Preview|Rename/ })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: /Copy|Download with desktop|Continue previous download|Preview|Rename/ })).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('desktop app');
   expect(errors).toEqual([]);
 });

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SnagThis",
   "description": "Save MP4 and WebM videos in Chrome. Use the free SnagThis desktop app for streaming video and more options.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "action": {
     "default_popup": "popup.html",
     "default_title": "SnagThis",
