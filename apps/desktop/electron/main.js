@@ -1349,6 +1349,27 @@ function registerIpc() {
     const error = await shell.openPath(folderPath);
     return error ? { ok: false, error } : { ok: true, folderPath };
   });
+  handleIpc('library:open-folder', async (_event, folderPath) => {
+    try {
+      // The renderer names a folder of Saved; it is resolved inside the save folder and never follows links out of it.
+      const root = path.resolve(readSettings().outputDirectory || getDownloadDirPath());
+      const segments = typeof folderPath === 'string' && folderPath ? folderPath.split('/') : [];
+      if (typeof folderPath !== 'string' || folderPath.length > 4096 || /[\\\0]/.test(folderPath) || segments.some((part) => !part || part === '.' || part === '..')) {
+        return { ok: false, error: 'Folder not found' };
+      }
+      let current = root;
+      if (!segments.length) fs.mkdirSync(root, { recursive: true });
+      for (const segment of segments) {
+        current = path.join(current, segment);
+        const stat = fs.lstatSync(current, { throwIfNoEntry: false });
+        if (!stat || !stat.isDirectory() || stat.isSymbolicLink()) return { ok: false, error: 'Folder not found' };
+      }
+      const error = await shell.openPath(current);
+      return error ? { ok: false, error } : { ok: true, folderPath: current };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  });
   handleIpc('app:trash-history-file', async (_event, id) => historyRequest(id, 'trash'));
   handleIpc('app:locate-history-file', async (_event, id) => historyRequest(id, 'locate'));
 

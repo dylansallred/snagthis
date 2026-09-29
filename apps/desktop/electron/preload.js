@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('desktop', {
     return () => ipcRenderer.removeListener('pairing:extensions', handler);
   },
   openSaveFolder: () => ipcRenderer.invoke('app:open-save-folder'),
+  openLibraryFolder: (folderPath) => ipcRenderer.invoke('library:open-folder', folderPath),
   openSettings: () => ipcRenderer.invoke('app:open-settings'),
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
   onAppInfoUpdate: (cb) => {

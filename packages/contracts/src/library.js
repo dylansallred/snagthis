@@ -226,7 +226,6 @@
     const fail = function (code, extra) { return { code: code, message: t(code, Object.assign({ name: name }, extra || {})) }; };
     if (!name.trim()) return fail('nameEmpty');
     if (/[/\\]/.test(name)) return fail('nameSeparator');
-    // eslint-disable-next-line no-control-regex
     if (/[<>:"|?*\u0000-\u001f\u007f]/.test(name)) return fail('nameCharacters');
     if (name === '.' || name === '..' || name.startsWith('.')) return fail('nameLeadingDot');
     if (/[. ]$/.test(name)) return fail('nameTrailing');

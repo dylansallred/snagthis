@@ -61,6 +61,32 @@ test('partly corrupted persisted preferences recover valid choices and safe defa
   assert.equal(preferences.read(file).subtitleLanguage, 'none');
 });
 
+test('Saved remembers its sort and grouping per place, validated, and keeps folder names out of diagnostics', (t) => {
+  const file = settingsFile(t);
+  preferences.write(file, { tmdbApiKey: 'private-tmdb-key' });
+  const views = { all: { sort: 'size', group: 'none' }, 'saved:': { sort: 'name', group: 'site' }, 'saved:Road trips/2024': { sort: 'length', group: 'date' } };
+  preferences.write(file, { libraryViews: views });
+  assert.deepEqual(preferences.read(file).libraryViews, views);
+  assert.equal(preferences.read(file).tmdbApiKey, 'private-tmdb-key', 'saving a view keeps the other settings');
+  const before = fs.readFileSync(file, 'utf8');
+  for (const libraryViews of [
+    { all: { sort: 'random', group: 'none' } },
+    { all: { sort: 'name', group: 'folder' } },
+    { downloading: { sort: 'name', group: 'none' } },
+    { 'saved:x\nAuthorization: secret': { sort: 'name', group: 'none' } },
+    JSON.parse('{"__proto__":{"sort":"name","group":"none"}}'),
+    Object.fromEntries(Array.from({ length: 501 }, (_, index) => [`saved:${index}`, { sort: 'name', group: 'none' }])),
+    ['all'],
+    'all',
+  ]) {
+    assert.throws(() => preferences.write(file, { libraryViews }));
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+  }
+  assert.equal({}.sort, undefined);
+  const exported = JSON.stringify(redact({ settings: preferences.read(file) }, []));
+  assert.equal(exported.includes('Road trips'), false, 'folder names stay out of support bundles');
+});
+
 test('failed atomic settings replacement leaves no temporary credential file', (t) => {
   const file = settingsFile(t);
   fs.mkdirSync(file);
