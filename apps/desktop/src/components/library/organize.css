@@ -1,0 +1,123 @@
+/* Organise the library (owner choice B · Real folders, with C's Sort & group): see ui-design-spec §6.2. */
+
+/* Path bar: where Saved is, its path, Sort & group, New folder and Show in Finder. */
+.path-bar { display: flex; align-items: center; gap: 4px; height: 42px; padding: 0 8px 0 10px; flex-shrink: 0; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; min-width: 0; }
+.path-bar .crumbs { display: flex; align-items: center; gap: 2px; margin: 0; padding: 0; list-style: none; min-width: 0; flex-shrink: 1; overflow: hidden; }
+.path-bar .crumbs li { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.crumb { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--color-foreground); font-size: 13px; font-weight: 620; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.crumb > svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--color-foreground-muted); }
+.crumb.up { color: var(--color-foreground-muted); font-weight: 500; transition: background-color 140ms ease, color 140ms ease; }
+.crumb.up:hover, .crumb.up:focus-visible { outline: none; background: var(--color-background-active); color: var(--color-foreground); }
+.crumb.up:focus-visible { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 50%, transparent); }
+.crumb-sep { width: 13px; height: 13px; flex-shrink: 0; color: var(--color-foreground-subtle); }
+.path-back { margin-right: 2px; }
+.path-text { min-width: 0; flex: 0 1 auto; margin-left: 6px; overflow: hidden; text-overflow: ellipsis; color: var(--color-foreground-subtle); font: 11.5px/1 var(--font-mono); }
+.path-space { flex: 1; }
+.sort-button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 7px; border: 0; border-radius: 7px; background: none; color: var(--color-foreground-muted); font-size: 12px; white-space: nowrap; }
+.sort-button > span { color: var(--color-foreground); font-weight: 560; }
+.sort-button > svg { width: 14px; height: 14px; }
+.sort-button .chev { width: 12px; height: 12px; color: var(--color-primary-hover); transition: transform 160ms ease; }
+.sort-button:not(:disabled):hover, .sort-button[data-state="open"] { background: var(--color-background-active); color: var(--color-foreground); }
+.sort-button:focus-visible { outline: none; background: var(--color-background-active); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 50%, transparent); }
+.sort-button[data-state="open"] .chev { transform: rotate(180deg); }
+.sort-button:disabled > span { color: var(--color-foreground-muted); font-weight: 500; }
+.sort-menu { min-width: 214px; }
+.video-menu [data-slot="dropdown-menu-label"] { padding: 6px 9px 3px; color: var(--color-foreground-subtle); font-size: 10.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.sort-menu [data-slot="dropdown-menu-radio-item"] { padding-left: 28px !important; }
+.sort-menu [data-slot="dropdown-menu-radio-item"] svg { color: var(--color-primary-hover); }
+.menu-note { max-width: 250px; margin: 4px 0 0; padding: 7px 9px 4px; border-top: 1px solid hsl(221 8% 23% / .7); color: var(--color-foreground-subtle); font-size: 11px; line-height: 15px; white-space: normal; }
+.menu-hint { margin-left: auto; padding-left: 14px; color: var(--color-foreground-subtle); font-size: 11px; font-variant-numeric: tabular-nums; }
+.menu-anchor { position: fixed; pointer-events: none; }
+.move-menu { width: 280px; max-height: min(420px, calc(100vh - 120px)); }
+.move-menu [role="menuitem"] > svg { width: 14px; height: 14px; color: #e3b35c; }
+.move-menu [role="menuitem"][data-disabled] { opacity: .55; }
+.move-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.move-menu .menu-note { word-break: break-all; }
+
+/* Folder rows: the poster mosaic sits where a video's thumbnail does. */
+.folder-item { position: relative; border-top: 1px solid var(--color-border-subtle); }
+.folder-item:first-child { border-top: 0; }
+.video-list > .folder-item:last-child { border-bottom: 1px solid var(--color-border-subtle); }
+.folder-item::after { content: ""; position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); pointer-events: none; opacity: 0; transform: scaleY(0); transition: transform 380ms cubic-bezier(.4, 0, .2, 1), opacity 380ms ease; }
+.folder-item:has(> .saved-folder-row:is(:hover, :focus-visible, :has(:focus-visible), .menu-open, .drop-hot))::after { opacity: 1; transform: none; transition: transform 300ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
+.saved-folder-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-height: 64px; padding-right: 14px; background: hsl(215 22% 7%); cursor: pointer; outline: none; transition: background-color 160ms ease; }
+.saved-folder-row:hover, .saved-folder-row:focus-visible, .saved-folder-row:has(:focus-visible), .saved-folder-row.menu-open { background: var(--color-surface-row-hover); }
+.saved-folder-row:focus-visible { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--color-primary-hover) 75%, transparent); }
+.saved-folder-row.editing { cursor: default; }
+.saved-folder-row > .row-text { padding: 10px 0; }
+.folder-mosaic { align-self: stretch; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; min-height: 64px; background: var(--color-background); overflow: hidden; }
+.folder-mosaic img, .folder-mosaic i { display: block; width: 100%; height: 100%; min-height: 0; object-fit: cover; background: #1a2029; }
+.folder-mosaic.none { grid-template-columns: 1fr; grid-template-rows: 1fr; place-items: center; color: var(--color-foreground-subtle); }
+.folder-mosaic.none svg { width: 22px; height: 22px; }
+.folder-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; font-weight: 570; }
+.folder-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-name > svg { width: 15px; height: 15px; flex-shrink: 0; color: #e3b35c; }
+.folder-meta { font-variant-numeric: tabular-nums; }
+.folder-hint { font: 11px/1.5 var(--font-mono); color: var(--color-foreground-subtle); }
+.folder-name-field .inline-rename { max-width: 320px; font-size: 13px; }
+.folder-chevron { display: grid; place-items: center; width: 30px; color: var(--color-foreground-subtle); }
+.folder-chevron svg { width: 15px; height: 15px; }
+.saved-folder-row:hover .hover-action, .video-list[data-input-mode="keyboard"] .saved-folder-row:focus-within .hover-action, .saved-folder-row .hover-action.menu-open { opacity: 1; pointer-events: auto; }
+.folder-list { border-bottom: 0; }
+/* A drop target: a folder row or a breadcrumb the dragged videos would move into. */
+.saved-folder-row.drop-hot, .crumb.drop-hot { background: color-mix(in srgb, var(--color-primary-hover) 16%, transparent); box-shadow: inset 0 0 0 1.5px var(--color-primary-hover); color: var(--color-foreground); }
+.saved-folder-row.drop-hot .folder-mosaic { opacity: .7; }
+.saved-folder-row .drop-hint { color: var(--color-primary-hover); overflow: hidden; text-overflow: ellipsis; }
+.drag-ghost { position: fixed; top: -200px; left: 0; z-index: -1; display: inline-flex; align-items: center; gap: 8px; max-width: 320px; height: 30px; padding: 0 10px 0 4px; border-radius: 7px; background: hsl(215 22% 11.5%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 70%, transparent); color: var(--color-foreground); font-size: 12px; font-weight: 560; white-space: nowrap; }
+.drag-ghost img { width: 36px; height: 22px; border-radius: 3px; object-fit: cover; }
+.drag-ghost span { overflow: hidden; text-overflow: ellipsis; }
+.drag-ghost b { padding: 1px 6px; border-radius: 9px; background: var(--color-primary); color: #fff; font-size: 11px; font-weight: 600; }
+.video-item.dragging { opacity: .55; }
+
+/* Group headers (Sort & group ▸ Group by): collapsible, with the group's count and size. */
+.group-item { position: sticky; top: 0; z-index: 3; }
+.group-header { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 14px 0 10px; border: 0; border-top: 1px solid var(--color-border-subtle); border-bottom: 1px solid var(--color-border-subtle); background: hsl(215 22% 6%); color: var(--color-foreground); font-size: 12px; text-align: left; outline: none; }
+.video-list > .group-item:first-child .group-header { border-top: 0; }
+.group-item + .video-item { border-top: 0; }
+.group-header:hover { background: hsl(215 22% 9%); }
+.group-header:focus-visible { box-shadow: inset 3px 0 0 var(--color-primary-hover); }
+.group-header .chev { width: 14px; height: 14px; color: var(--color-foreground-muted); transition: transform 160ms ease; }
+.group-header[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.group-header b { font-weight: 620; }
+.group-meta { color: var(--color-foreground-subtle); font-variant-numeric: tabular-nums; }
+
+/* The folder a saved video is in, in All and in search results. */
+.row-location { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--color-foreground-muted); white-space: nowrap; }
+.row-location svg { width: 12px; height: 12px; }
+
+/* Multi-select. */
+.video-item.selected > .video-row { background: color-mix(in srgb, var(--color-primary-hover) 11%, var(--color-surface-row)); }
+.video-item.selected::after { opacity: 1; transform: none; background: var(--color-primary-hover); }
+.video-list:has(.video-item.selected) .video-item.selected :is(.video-row, .row-details) { opacity: 1 !important; }
+.selection-bar { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--color-foreground); font-size: 12.5px; }
+.selection-count { display: inline-flex; align-items: center; gap: 8px; margin-right: 6px; font-weight: 600; white-space: nowrap; }
+.selection-count i { width: 8px; height: 8px; background: var(--color-primary-hover); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-hover) 30%, transparent); }
+.selection-bar .row-action { height: 28px; }
+.selection-bar .row-action.labelled > svg { color: #e3b35c; }
+
+/* Delete a folder: two explicit choices. */
+.folder-delete { padding: 14px; }
+.remove-popover.folder-delete > h2.folder-delete-title { position: static; width: auto; height: auto; overflow: visible; clip-path: none; margin: 0 0 10px; font-size: 13.5px; font-weight: 620; white-space: normal; }
+.folder-delete-choices { display: grid; gap: 6px; }
+.folder-choice { display: flex; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; background: hsl(215 22% 9%); color: var(--color-foreground); text-align: left; }
+.folder-choice strong { display: block; font-size: 12.5px; font-weight: 620; }
+.folder-choice small { display: block; margin-top: 2px; color: var(--color-foreground-muted); font-size: 11.5px; line-height: 16px; }
+.folder-choice[aria-checked="true"] { border-color: color-mix(in srgb, var(--color-primary-hover) 70%, transparent); background: color-mix(in srgb, var(--color-primary-hover) 7%, hsl(215 22% 9%)); }
+.folder-choice.destructive-text strong { color: hsl(0 68% 70%); }
+.folder-choice:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--color-primary-hover); }
+.folder-choice .radio { flex-shrink: 0; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--color-foreground-subtle); }
+.folder-choice[aria-checked="true"] .radio { border-color: var(--color-primary-hover); background: radial-gradient(circle, var(--color-primary-hover) 0 3.5px, transparent 4px); }
+.folder-delete-note { margin: 10px 2px 0; color: var(--color-foreground-muted); font-size: 11.5px; line-height: 16px; }
+.folder-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.folder-dialog .inline-rename { font-size: 13px; font-weight: 500; }
+.folder-dialog-problem { min-height: 18px; margin: 6px 0 0; font-size: 12px; }
+
+.folder-empty { flex-direction: column; }
+.folder-empty .empty-note { padding-bottom: 6px; }
+.folder-empty-body { max-width: 420px; margin: 0 auto; padding: 0 24px; color: var(--color-foreground-subtle); font-size: 12px; text-align: center; }
+
+[data-sonner-toast][data-type="warning"] { color: var(--color-status-paused); }
+
+@media (prefers-reduced-motion: reduce) {
+  .folder-item::after, .saved-folder-row, .sort-button .chev, .group-header .chev { transition: none; }
+}
