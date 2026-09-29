@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Organise B · Real folders</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+/* B · Real folders: Saved shows the save folder like Finder — folder rows first, then loose videos. */
+.crumbs { display: flex; align-items: center; gap: 6px; height: 42px; padding: 0 8px 0 10px; flex: none; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; }
+.crumbs .seg-c { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 620; color: var(--color-foreground); }
+.crumbs .seg-c.up { color: var(--color-foreground-muted); font-weight: 500; }
+.crumbs .seg-c.up:hover { background: var(--color-background-active); color: var(--color-foreground); }
+.crumbs .seg-c svg.i { width: 14px; height: 14px; color: var(--color-foreground-muted); }
+.crumbs .sepc { color: var(--color-foreground-subtle); display: inline-flex; }
+.crumbs .sepc svg.i { width: 13px; height: 13px; }
+.crumbs .path { min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: 6px; color: var(--color-foreground-subtle); }
+.crumbs .sp { flex: 1; }
+.crumbs .iconbtn { width: 28px; height: 28px; }
+/* Folder row: a 2×2 mosaic of its first posters in the thumbnail column. */
+.frow { position: relative; display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; height: 64px; padding-right: 14px; border-bottom: 1px solid var(--color-border-subtle); background: hsl(215 22% 7%); cursor: default; outline: none; transition: background 160ms; }
+.frow::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); transform: scaleY(0); transition: transform 300ms; z-index: 1; }
+.frow:hover, .frow:focus-visible, .frow.menu-open { background: var(--color-surface-row-hover); }
+.frow:hover::before, .frow:focus-visible::before, .frow.menu-open::before { transform: none; }
+.mosaic { align-self: stretch; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--color-background); }
+.mosaic i { background: center / cover; }
+.mosaic.none { display: grid; place-items: center; grid-template-columns: 1fr; grid-template-rows: 1fr; color: var(--color-foreground-subtle); }
+.mosaic.none svg.i { width: 22px; height: 22px; }
+.frow .nm { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 570; }
+.frow .nm svg.i { width: 15px; height: 15px; color: #e3b35c; }
+.frow .fm { margin-top: 3px; font-size: 12px; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; }
+.frow .act { display: flex; align-items: center; gap: 2px; }
+.frow .act .hx { opacity: 0; display: flex; gap: 2px; }
+.frow:is(:hover, :focus-within, .menu-open) .act .hx { opacity: 1; }
+.frow .chevr { color: var(--color-foreground-subtle); display: grid; place-items: center; width: 30px; }
+.frow.edit .nm input { max-width: 300px; }
+.frow.drop-hot .fm { color: var(--color-primary-hover); }
+.frow.drop-hot .mosaic { opacity: .7; }
+.vrow .st.warn .btnb { margin-left: 4px; }
+.dest { padding: 6px 9px 4px; font-size: 11px; color: var(--color-foreground-subtle); max-width: 270px; }
+.dest .mono { color: var(--color-foreground-muted); font-size: 10.5px; word-break: break-all; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Organise the library</a> · <span>B</span>Real folders</div>
+    <h1>B · Real folders</h1>
+    <p>Folders <b>are subfolders of the save folder on disk</b>. Saved shows ~/Downloads/SnagThis the way Finder would: <b>folder rows first</b>, then loose videos, with a <b>path bar</b> that holds the sort. Moving a video <b>moves its file</b> (and its subtitles and poster). Folders made in Finder or Explorer appear here too.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+  <h2 class="section-title">Key-state screenshots</h2>
+  <p class="section-sub">Captured with <code>node docs/design/prototypes/organize/capture.cjs</code>.</p>
+  <div id="shots" class="dirs"></div>
+</main>
+<script src="../brand.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org;
+  const STATES = [['sorted', 'Folders + sorted list'], ['sortmenu', 'Sort menu'], ['create', 'New folder'], ['drag', 'Drag onto folder'], ['moveto', 'Move to… (3 selected)'], ['folder', 'Folder view'], ['delete', 'Delete folder'], ['empty', 'Empty folder'], ['failed', 'Move failed']];
+  const here = (m) => m.tab === 'folder' ? P.folder(m, m.folder) : null;
+  const pathOf = (f) => `~/Downloads/SnagThis${f ? '/' + f.name : ''}`;
+  const byName = (m) => [...m.folders].sort((a, b) => a.name.localeCompare(b.name));
+
+  const folderRow = (m, f) => {
+    const vids = P.inFolder(m, f.id);
+    const mosaic = vids.length ? `<div class="mosaic">${P.sort(vids, 'newest').slice(0, 4).map((it) => `<i style="${P.thumbStyle(it.img, it.look)}"></i>`).join('')}</div>` : `<div class="mosaic none">${P.icon('folder')}</div>`;
+    const open = (m.menu && m.menu.kind === 'folder' && m.menu.fid === f.id) || (m.confirm && m.confirm.id === f.id);
+    if (m.renaming === f.id) return `<div class="frow edit">${mosaic}<div><div class="nm">${P.icon('folder')}<input class="namefield" data-name value="${P.esc(f.name)}" aria-label="Rename folder"></div><div class="fm mono">Renames the folder on disk</div></div><div></div></div>`;
+    return `<div class="frow${open ? ' menu-open' : ''}${m.drag && m.drag.target === f.id ? ' drop-hot' : ''}" role="option" aria-selected="false" tabindex="0" data-nav data-act="open" data-arg="${f.id}" data-drop="${f.id}" data-fk="folder:${f.id}" aria-label="Folder ${P.esc(f.name)}, ${P.count(vids.length)}">
+      ${mosaic}<div style="min-width:0"><div class="nm">${P.icon('folder')}${f.name}</div><div class="fm">${m.drag && m.drag.target === f.id ? `Move here · ${pathOf(f)}` : vids.length ? `${P.count(vids.length)} · ${P.size(P.sumMb(vids))}` : 'Empty'}</div></div>
+      <div class="act"><span class="hx"><button class="iconbtn" data-act="noop" aria-label="Show ${P.esc(f.name)} in Finder" title="Show in Finder">${P.icon('reveal')}</button><button class="iconbtn" data-act="foldermenu" data-arg="${f.id}" data-fk="fmore:${f.id}" aria-haspopup="menu" aria-label="Folder options: ${P.esc(f.name)}">${P.icon('more')}</button></span><span class="chevr">${P.icon('chevronRight')}</span></div></div>`;
+  };
+  const creatingRow = (m) => `<div class="frow edit"><div class="mosaic none">${P.icon('folder')}</div><div><div class="nm">${P.icon('folder')}<input class="namefield" data-name value="${m.draft || ''}" placeholder="Folder name" aria-label="New folder name"></div><div class="fm mono">${pathOf({ name: m.draft || '…' })}</div></div><div></div></div>`;
+
+  const crumbs = (m) => {
+    const f = here(m), dl = m.tab === 'downloading';
+    const sort = dl ? `<button class="sortbtn" disabled title="Drag waiting videos to reorder">${P.icon('sort')}Queue order</button>`
+      : `<button class="sortbtn" data-act="sortmenu" data-fk="sortbtn" aria-haspopup="menu" aria-expanded="${!!(m.menu && m.menu.kind === 'sort')}" aria-label="Sort: ${P.sortLabel(P.getSort(m), true)}">${P.icon('sort')}<b>${P.sortLabel(P.getSort(m), true)}</b>${P.icon('chevron', 'chev')}</button>`;
+    if (m.tab !== 'saved' && !f) return `<div class="crumbs"><span class="seg-c">${m.tab === 'all' ? 'All videos' : 'Downloading'}</span><span class="subtle" style="font-size:12px">${m.tab === 'all' ? 'Every video, wherever its folder' : ''}</span><span class="sp"></span>${sort}</div>`;
+    const root = f ? `<button class="seg-c up" data-act="tab" data-arg="saved" data-drop="root" data-fk="crumb-root">${P.icon('folder')}SnagThis</button><span class="sepc">${P.icon('chevronRight')}</span><span class="seg-c" aria-current="page">${f.name}</span>`
+      : `<span class="seg-c">${P.icon('folder')}SnagThis</span>`;
+    return `<nav class="crumbs" aria-label="Folder">${root}<span class="path mono" title="${pathOf(f)}">${pathOf(f)}</span><span class="sp"></span>${sort}
+      ${f ? '' : `<button class="iconbtn" data-act="newfolder" data-arg="row" data-fk="newfolder" aria-label="New folder" title="New folder (⇧⌘N)">${P.icon('folderPlus')}</button>`}
+      <button class="iconbtn" data-act="noop" aria-label="Show in Finder" title="Show in Finder">${P.icon('reveal')}</button>${f ? `<button class="iconbtn" data-act="foldermenu" data-arg="${f.id}" data-fk="headmore" aria-haspopup="menu" aria-label="Folder options">${P.icon('more')}</button>` : ''}</nav>`;
+  };
+
+  const rowOpts = (m, withLoc) => ({
+    sort: P.getSort(m),
+    loc: withLoc ? (it) => it.f.length ? `<span class="loc">${P.icon('folder')}${P.folder(m, it.f[0]).name}</span>` : '' : null,
+    status: (it) => m.failed && m.failed[it.id] ? `<div class="st warn">Couldn’t move to ${P.folder(m, m.failed[it.id]).name}: the file is open in another app</div>` : '',
+    action: (it) => m.failed && m.failed[it.id] ? `<button class="btnb" data-act="retry" data-arg="${it.id}">Try again</button>` : '',
+  });
+
+  const rowMenu = (m) => {
+    const id = m.menu.id, many = m.sel.length > 1;
+    return P.menu([
+      ...(many ? [{ lbl: `${m.sel.length} videos` }] : [{ label: 'Details', icon: 'list' }]),
+      { label: 'Move to…', icon: 'folderInput', act: 'move', arg: id, r: 'M' },
+      ...(many ? [] : [{ label: 'Copy link', icon: 'link' }, { label: 'Open page', icon: 'reveal' }, { label: 'Show in Finder', icon: 'folder' }]),
+      'sep', { label: many ? `Remove ${m.sel.length} videos…` : 'Remove…', danger: 1 },
+    ], { anchor: `[data-fk="more:${id}"]`, label: 'Video actions', width: 220 });
+  };
+  const moveMenu = (m) => {
+    const ids = m.menu.ids, locs = new Set(ids.map((id) => m.items.find((x) => x.id === id).f[0] || 'root'));
+    const one = locs.size === 1 ? [...locs][0] : null;
+    const target = m.menu.kb || null;
+    return P.menu([
+      { lbl: ids.length > 1 ? `Move ${ids.length} videos to` : 'Move to' },
+      { label: 'SnagThis', icon: 'folder', act: 'into', arg: 'root', r: one === 'root' ? 'Here' : '', disabled: one === 'root' },
+      ...byName(m).map((f) => ({ html: `<button class="mi${target === f.id ? ' kb' : ''}" role="menuitem" tabindex="-1" data-act="into" data-arg="${f.id}"${one === f.id ? ' aria-disabled="true"' : ''} style="padding-left:24px">${P.icon('folder')}<span>${f.name}</span><span class="r">${one === f.id ? 'Here' : P.inFolder(m, f.id).length}</span></button>` })),
+      'sep', { label: 'New folder…', icon: 'folderPlus', act: 'newfolder', arg: 'row' },
+      { html: `<div class="dest">Moves the file, its subtitles and poster into <span class="mono">${target ? pathOf(P.folder(m, target)) : '~/Downloads/SnagThis/…'}</span></div>` },
+    ], { anchor: m.menu.id ? `[data-fk="more:${m.menu.id}"]` : '[data-fk="selmove"]', label: 'Move to', width: 270 });
+  };
+  const folderMenu = (m) => {
+    const f = P.folder(m, m.menu.fid), head = m.menu.head;
+    return P.menu([
+      ...(head ? [] : [{ label: 'Open', icon: 'folderOpen', act: 'open', arg: f.id, r: '↵' }]),
+      { label: 'Show in Finder', icon: 'reveal' },
+      { label: 'Rename', icon: 'pencil', act: 'rename', arg: f.id, r: 'F2' },
+      { label: 'Save new downloads here', icon: 'folderInput' },
+      'sep', { label: 'Delete folder…', icon: 'trash', danger: 1, act: 'delete', arg: f.id, r: '⌫' },
+    ], { anchor: head ? '[data-fk="headmore"]' : `[data-fk="fmore:${f.id}"]`, label: 'Folder options', width: 230 });
+  };
+  const confirm = (m) => {
+    const f = P.folder(m, m.confirm.id), vids = P.inFolder(m, f.id), n = vids.length, trash = m.confirm.mode === 'trash';
+    const anchor = m.tab === 'folder' ? '[data-fk="headmore"]' : `[data-fk="fmore:${f.id}"]`;
+    return `<div class="pop confirm" style="width:370px" role="alertdialog" aria-label="Delete folder" data-anchor='${anchor}' data-align="end"><span class="caret"></span>
+      <h4>Delete the folder “${f.name}”?</h4>
+      ${n ? `<div role="radiogroup" aria-label="What happens to its videos" style="display:grid;gap:6px">
+        <button class="choice" role="radio" aria-checked="${!trash}" data-act="mode" data-arg="keep" data-default><span class="radio"></span><span><b>Keep the videos</b><small>Move its ${P.count(n)} up to SnagThis, then remove the empty folder.</small></span></button>
+        <button class="choice danger" role="radio" aria-checked="${trash}" data-act="mode" data-arg="trash"><span class="radio"></span><span><b>Move folder to Trash</b><small>The folder and its ${P.count(n)} (${P.size(P.sumMb(vids))}) go to the Trash. You can put them back from there.</small></span></button></div>
+        <p>It also holds 2 files SnagThis didn’t save (<span class="mono">route.gpx</span>, <span class="mono">notes.txt</span>). They go with your choice.</p>`
+        : '<p>It’s empty, so it goes to the Trash.</p>'}
+      <div class="acts"><button class="btn" data-act="close">Cancel</button><button class="btn ${trash ? 'danger' : 'primary'}" data-act="dodelete">${trash ? 'Move to Trash' : 'Delete folder'}</button></div></div>`;
+  };
+
+  window.Org.mount({
+    states: STATES,
+    view(m) {
+      const f = here(m), dl = m.tab === 'downloading';
+      let list;
+      if (dl) list = P.activeRows();
+      else if (m.tab === 'all') list = P.activeRows() + P.sort(m.items, P.getSort(m)).map((it) => P.row(it, m, rowOpts(m, true))).join('');
+      else if (f) {
+        const vids = P.sort(P.inFolder(m, f.id), P.getSort(m));
+        list = vids.length ? vids.map((it) => P.row(it, m, rowOpts(m))).join('')
+          : P.empty({ title: `${f.name} is empty`, text: `Drag videos onto this folder in Saved, or choose ⋯ ▸ Move to…. Anything you put in <span class="mono">${pathOf(f)}</span> with Finder shows up here too.`, acts: '<button class="btn" data-act="noop">Show in Finder</button><button class="btn quiet" data-act="tab" data-arg="saved">Back to SnagThis</button>', drop: f.id });
+      } else {
+        const loose = P.sort(m.items.filter((it) => !it.f.length), P.getSort(m));
+        list = (m.creating ? creatingRow(m) : '') + byName(m).map((x) => folderRow(m, x)).join('') + loose.map((it) => P.row(it, m, rowOpts(m))).join('');
+      }
+      const scope = f ? `“${f.name}”` : m.tab === 'all' ? 'All (in-progress downloads stay on top)' : 'SnagThis (folders stay first, A–Z)';
+      const over = [
+        m.menu && m.menu.kind === 'sort' ? P.sortMenu(m, '[data-fk="sortbtn"]', { scope }) : '',
+        m.menu && m.menu.kind === 'row' ? rowMenu(m) : '',
+        m.menu && m.menu.kind === 'move' ? moveMenu(m) : '',
+        m.menu && m.menu.kind === 'folder' ? folderMenu(m) : '',
+        m.confirm ? confirm(m) : '',
+      ].join('');
+      const selbar = P.selbar(m, `<button class="btn" data-act="move" data-fk="selmove" aria-haspopup="menu" aria-expanded="${!!(m.menu && m.menu.kind === 'move')}">${P.icon('folderInput')}Move to…</button><button class="btn quiet" data-act="noop">Remove…</button>`);
+      return { head: crumbs(m), list, over, selbar };
+    },
+    acts: {
+      foldermenu(fid, el, ev, m) { const open = m.menu && m.menu.kind === 'folder'; m.confirm = null; m.menu = open ? null : { kind: 'folder', fid, head: el && el.dataset.fk === 'headmore' }; },
+      // New folders are created at the top level, so show it (the generic action focuses the name field).
+      newfolder(a, el, ev, m) { this.newfolder('row'); m.tab = 'saved'; m.folder = null; m.draft = ''; },
+      retry(id, el, ev, m) { const fid = m.failed[id]; delete m.failed[id]; m.items.find((x) => x.id === id).f = [fid]; m.toast = { text: `Moved to ${P.folder(m, fid).name}` }; m.undo = null; },
+    },
+    moveInto(m, ids, fid) {
+      const dest = fid === 'root' ? null : fid;
+      ids.forEach((id) => { m.items.find((x) => x.id === id).f = dest ? [dest] : []; });
+      m.sel = [];
+      m.toast = { text: `Moved ${ids.length > 1 ? P.count(ids.length) : `“${m.items.find((x) => x.id === ids[0]).title.slice(0, 30)}”`} to ${dest ? P.folder(m, dest).name : 'SnagThis'}`, btn: ['Show in Finder', 'noop'] };
+    },
+    canDrop: (m, ids, fid) => !(fid === 'root' && ids.every((id) => !m.items.find((x) => x.id === id).f.length)),
+    deleteFolder(m, fid, mode) {
+      const f = P.folder(m, fid), n = P.inFolder(m, fid).length;
+      if (mode === 'trash') { m.items = m.items.filter((it) => !it.f.includes(fid)); m.toast = { text: `Moved “${f.name}” and ${P.count(n)} to the Trash` }; }
+      else { m.items.forEach((it) => { if (it.f.includes(fid)) it.f = []; }); m.toast = { text: `Deleted “${f.name}”. Its ${P.count(n)} are now in SnagThis.` }; }
+      m.folders = m.folders.filter((x) => x.id !== fid);
+    },
+    folderFocus: (id) => 'folder:' + id,
+    navKey(ev, nav, m, act) {
+      const fid = nav.dataset.fk && nav.dataset.fk.startsWith('folder:') ? nav.dataset.arg : null;
+      if (fid && ev.key === 'Enter') { act('open', fid); return true; }
+      if (fid && ev.key === 'F2') { act('rename', fid); return true; }
+      if (fid && (ev.key === 'Delete' || ev.key === 'Backspace')) { act('delete', fid); return true; }
+      if (fid && ((ev.key === 'F10' && ev.shiftKey) || ev.key === 'ContextMenu')) { m.menu = { kind: 'folder', fid }; return true; }
+      return false;
+    },
+    presets: {
+      sorted(m) { m.sort.saved = 'name'; },
+      sortmenu(m) { m.sort.saved = 'name'; m.menu = { kind: 'sort' }; },
+      create(m) { m.sort.saved = 'name'; m.creating = { where: 'row' }; m.draft = 'Game jams'; },
+      drag(m) { m.drag = { ids: ['i2'], target: 'road', anchor: '[data-drop="road"]', hint: '→ Road trips', preset: 1 }; },
+      moveto(m) { m.sel = ['i2', 'i6', 'i10']; m.menu = { kind: 'move', ids: m.sel, id: null, kb: 'later' }; m.scroll = '[data-row="i10"]'; },
+      folder(m) { m.tab = 'folder'; m.folder = 'road'; m.sort['f:road'] = 'length'; },
+      delete(m) { m.confirm = { id: 'road', mode: 'keep' }; },
+      empty(m) { m.folders.push({ id: 'jams', name: 'Game jams', color: '' }); m.tab = 'folder'; m.folder = 'jams'; },
+      failed(m) { m.tab = 'saved'; m.sort.saved = 'newest'; ['i6', 'i10'].forEach((id) => { m.items.find((x) => x.id === id).f = ['later']; }); m.failed = { i2: 'later' }; m.toast = { text: 'Moved 2 of 3 videos to Watch later. 1 couldn’t move.', warn: 1 }; m.scroll = '[data-row="i2"]'; },
+    },
+    notes(state) {
+      const N = {
+        sorted: `<h2>Saved = the save folder</h2><p>The path bar shows where you are (<span class="mono">~/Downloads/SnagThis</span>) and holds the sort, <b>New folder</b> and <b>Show in Finder</b>. <b>Folder rows come first</b>, A–Z, each with a mosaic of its first four posters, count and size; loose videos follow in the chosen order (Name A–Z here).</p><p>Enter or click opens a folder; the sort's value is brightened in each row.</p>`,
+        sortmenu: `<h2>Sort menu</h2><p>The same six orders as A. Each folder remembers its own order, and so do All and the top level. Folders always stay first and A–Z, like Finder's “Keep folders on top”. <b>All</b> is a flat view of every saved video with its folder name in the status line; <b>Downloading</b> keeps queue order.</p>`,
+        create: `<h2>New folder</h2><p>The folder-plus button (⇧⌘N) adds a folder row with a name field; the path it will create is shown live beneath. Enter makes the real directory. Characters a filesystem refuses (<span class="mono">/ : \\ ?</span>) are replaced, and a name in use gets “ (2)”, as new downloads already do (§8 note).</p>`,
+        drag: `<h2>Drag onto a folder</h2><p>Drop a row, or a selection, on a folder row; the row says <b>Move here</b> with the destination path. In a folder, the <b>SnagThis</b> crumb is a drop target to move videos back up. Same-disk moves are an instant rename; a save folder on another drive shows progress in the footer.</p>`,
+        moveto: `<h2>Move to… for 3 selected videos</h2><p>Select with ⌘/Shift-click or Shift+↑/↓; the footer becomes a selection bar. <b>Move to…</b> lists the top level and every folder (the current one reads <i>Here</i>), then <b>New folder…</b> which creates it and moves the videos in one step. The footnote names the real destination path. Single rows: ⋯ ▸ Move to… or <kbd>M</kbd>.</p>`,
+        folder: `<h2>Inside a folder</h2><p>The crumb <b>SnagThis ›</b> goes back (and accepts drops); the path is shown in mono. ⋯ offers Show in Finder, Rename (renames the directory), <b>Save new downloads here</b>, and Delete. This folder remembers Longest first.</p>`,
+        delete: `<h2>Delete a folder</h2><p>Deleting a real folder is a file operation, so it gets the §9 Popover with two explicit choices. Default: <b>Keep the videos</b> (moved up to SnagThis). The other choice is <b>Move folder to Trash</b> via <code>shell.trashItem</code>, never unlink. Files SnagThis didn't save are named, because they're affected too.</p>`,
+        empty: `<h2>Empty folder</h2><p>The shelf mascot, how to fill it, and a reminder that files added in Finder appear here. <b>Show in Finder</b> is offered because the folder exists on disk. The empty area accepts drops.</p>`,
+        failed: `<h2>A move that fails</h2><p>If one file can't move (open in a player, permissions, disk full), it <b>stays where it was</b> and its row shows one amber sentence and <b>Try again</b> (§3.3). The others still move; an amber toast summarises. Nothing is half-moved: SnagThis moves the video, subtitles and poster together or not at all.</p>`,
+      };
+      return N[state] + `<div class="trade"><h3>Trade-offs</h3><ul>
+        <li><b>On disk:</b> what you see in SnagThis is what Finder / Explorer, Plex or a backup sees. No second source of truth, and it survives reinstalling.</li>
+        <li><b>One place per video</b> (a file lives in one folder), and every move is a real file operation, so it needs failure, progress and Trash handling.</li>
+        <li><b>Outside changes:</b> the library index already rescans the save folder recursively, so folders made, renamed or filled in Finder show up. A video moved <i>out</i> of the save folder becomes <i>File was moved or deleted</i> → Locate.</li>
+        <li><b>Chrome:</b> no Saved view in the extension, so nothing changes. <b>Save new downloads here</b> could later let the popup pick a destination folder.</li>
+        <li>Nested folders: this shows one level. Folders inside folders (made in Finder) would need a decision.</li></ul></div>`;
+    },
+  });
+  document.getElementById('shots').innerHTML = STATES.map(([id, l]) => `<a class="dir" href="state-${id}.png" style="text-decoration:none"><b style="font-size:12.5px">${l}</b><img src="state-${id}.png" alt="${l}" style="width:100%;border-radius:6px" loading="lazy"></a>`).join('');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Organise · Current baseline</title>
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Organise the library</a> · <span>0</span>Current baseline</div>
+    <h1>0 · Today’s Saved tab</h1>
+    <p>Saved videos are always <b>newest first</b> (<code>mergeRows</code> in <code>packages/contracts/src/rows.js</code>; the history index also sorts by file time). There is no sort control, no folders and no multi-select. The only view choice is the <b>list ⇄ shelf</b> toggle beside search on Saved.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../brand.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org;
+  P.mount({
+    states: [['baseline', 'Saved today']],
+    view: (m) => ({
+      topExtra: `<button class="iconbtn" data-act="noop" aria-label="Shelf view">${P.icon('grid')}</button>`,
+      list: P.sort(m.items, 'newest').map((it) => P.row(it, m, {})).join(''),
+    }),
+    moveInto() {}, deleteFolder() {}, presets: {},
+    notes: () => `<h2>What a saved item knows today</h2><ul>
+      <li><b>Title</b> (job title, else file name), <b>file name</b>, relative and absolute <b>path</b>.</li>
+      <li><b>Size</b> and <b>file time</b> (<code>sizeBytes</code>, <code>modifiedAt</code>; “Saved {when}”).</li>
+      <li><b>Quality</b> from the job's selection height, <b>duration</b> when the site or TMDB supplied it (not always).</li>
+      <li><b>Source page URL</b> (the site for Site A–Z / grouping), YouTube channel if any.</li>
+      <li><b>Thumbnail</b> and preview clip.</li></ul>
+      <h3>How files are stored</h3><p>Each download gets its own folder under <span class="mono">~/Downloads/SnagThis/{title}/</span> (with subtitles and poster). The history index rescans the save folder recursively and persists <span class="mono">history-index.json</span> in app data.</p>
+      <h3>Rules that constrain organising</h3><ul><li>§9: Remove from list vs Move file to Trash stay distinct; no bulk clear.</li><li>§6: waiting rows already drag to reorder; the tabs drag the window.</li><li>§13 lists “collections/folders” and “multi-select and bulk actions” as out of scope for v1.</li><li>The extension has no Saved library view.</li></ul>`,
+  });
+})();
+</script>
+</body>
+</html>
