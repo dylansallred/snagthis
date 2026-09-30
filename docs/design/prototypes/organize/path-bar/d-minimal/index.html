@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Path bar D · Minimal</title>
+<link rel="stylesheet" href="../../shared.css">
+<link rel="stylesheet" href="../../folder-rows/common.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* D · Minimal: plain text segments, pixel "/" separators, current in the accent; no back button, no path text.
+   Middle folders collapse to "…". The path is in ⋯ (and right-click) as Copy path. */
+.pd { height: 42px; gap: 6px; padding-left: 14px; }
+.pd [data-fit] { gap: 4px; flex: 0 1 auto; }
+.pd .s { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 5px; flex: 0 1 auto; min-width: 0; max-width: 220px; color: var(--color-foreground-muted); font-size: 13px; font-weight: 520; transition: color 120ms; }
+.pd .s .pxf { width: 16px; height: 13px; }
+.pd .s .pxf.k-open { display: none; }
+.pd .s.cur { max-width: 380px; color: var(--color-primary-hover); font-weight: 650; }
+/* A 2px pixel underline (dashed at rest on hover, solid when current). */
+.pd .s::after { content: ""; position: absolute; left: 5px; right: 5px; bottom: 3px; height: 2px; background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 4px); opacity: 0; transition: opacity 120ms; }
+.pd .s:not(.cur):is(:hover, .is-hover) { color: var(--color-foreground); }
+.pd .s:not(.cur):is(:hover, .is-hover)::after { opacity: .9; }
+.pd .s:is(:focus-visible, .is-focus) { color: var(--color-foreground); border-radius: 4px; box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.pd .s.drop-hot { color: var(--color-foreground) !important; border-radius: 4px; background: var(--color-primary-muted) !important; box-shadow: inset 0 0 0 1px var(--color-primary-hover) !important; }
+.pd .s.drop-hot::after { opacity: 1; background: var(--color-primary-hover); }
+.pd .s.drop-hot .pxf.k-closed { display: none; } .pd .s.drop-hot .pxf.k-open { display: block; }
+.pd .s.more { padding: 0 6px; color: var(--color-foreground-muted); font-weight: 700; letter-spacing: .05em; }
+.pd .s.more[aria-expanded="true"] { color: var(--color-foreground); }
+.pd .slash { color: var(--color-foreground-subtle); opacity: .7; }
+.pb-fmenu { width: 300px; }
+.pb-fmenu .pathnote { padding: 2px 9px 7px 32px; margin-top: -3px; color: var(--color-foreground-subtle); font: 11px/1.5 var(--font-mono); }
+.pb-fmenu .mi .pxm { color: var(--color-foreground-muted); margin: 0 1px; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Path bar</a> · <span>D</span>Minimal</div>
+    <h1>D · Minimal</h1>
+    <p>The quietest: <b>plain text segments</b> with <b>pixel “/” separators</b>, the <b>current folder in the accent</b>, and a dotted pixel underline on hover. <b>No back button</b> (the parent segment, <kbd>⌘↑</kbd> and Backspace go up) and <b>no path text</b>: <b>⋯ ▸ Copy path</b> (or right-click a segment) shows and copies it. Middle folders collapse to <b>…</b>.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../brand.js"></script>
+<script src="../../shared.js"></script>
+<script src="../../folder-rows/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org, B = window.PB;
+  const seg = (m, s) => s.more
+    ? `<button class="s more" data-more aria-haspopup="menu" aria-expanded="${m.menu === 'more'}" aria-label="${s.items.length} hidden folders">…</button>`
+    : `<button class="s${s.cur ? ' cur' : ''}${B.st(m, s.i)}" ${B.at(s)}>${s.root ? B.glyph(16, 'closed') + B.glyph(16, 'open') : ''}<span class="nm">${P.esc(s.name)}</span></button>`;
+  PB.mount({
+    bar: (m) => `<nav class="pbar pd" aria-label="Folder"><span data-fit>${B.visible(m).map((s, n) => `${n ? B.px.slash() : ''}${seg(m, s)}`).join('')}</span>
+      ${B.tools(m).replace(/<\/span>$/, m.path.length ? '</span>' : `<button class="iconbtn" data-more-folder aria-haspopup="menu" aria-expanded="${m.menu === 'folder'}" aria-label="Save folder options" title="Save folder options">${P.icon('more')}</button></span>`)}</nav>`,
+    over: (m) => (m.menu === 'folder' || m.reveal) ? `<div class="pop pb-fmenu" role="menu" aria-label="Folder options" data-anchor="[data-more-folder]" data-align="end">
+      <button class="mi" role="menuitem" data-copy>${B.px.copy()}<span>Copy path</span><span class="r">⌘⇧C</span></button>
+      <div class="pathnote" role="presentation">${B.wrapPath(m.path)}</div>
+      <button class="mi" role="menuitem" data-act="noop">${P.icon('reveal')}<span>Show in Finder</span></button>
+      ${m.path.length ? `<div class="sep"></div><button class="mi" role="menuitem" data-act="noop">${P.icon('pencil')}<span>Rename folder</span><span class="r">F2</span></button><button class="mi danger" role="menuitem" data-act="noop">${P.icon('trash')}<span>Delete folder…</span></button>` : ''}</div>` : '',
+    notes: () => `<h2>How it behaves</h2><ul>
+      <li><b>Root</b>: just the pixel folder and <i>SnagThis</i> in the accent. <b>Inside</b>: parents in muted text, pixel “/” between, the current folder in the accent. No back button: click a parent, or <kbd>⌘↑</kbd> / Backspace.</li>
+      <li><b>Hover</b>: the segment brightens and gets a dotted 2px pixel underline. <b>Focus</b>: 2px accent ring.</li>
+      <li><b>Drag onto a segment</b>: muted-accent fill with an accent outline, solid underline, and the root's folder opens.</li>
+      <li><b>Long paths</b>: segments cap at 220px (current 380px); folders nearest the root fold into <b>…</b> first, whose menu is an indented tree of drop targets.</li>
+      <li><b>Disk path</b>: never in the bar. <b>⋯ ▸ Copy path</b> shows the path under the item and copies it (⌘⇧C); right-click any segment for the same. ⋯ is also shown at the root.</li></ul>
+      <div class="trade"><h3>Trade-off</h3>The least visual weight and the closest to today, fixed rather than restyled. Without a back button, going up relies on the trail itself; the path is two clicks away.</div>`,
+  });
+})();
+</script>
+</body>
+</html>

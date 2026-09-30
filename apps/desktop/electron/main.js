@@ -275,6 +275,16 @@ function getDiagnosticsDirPath() {
   return diagnosticsDir;
 }
 
+// Where finished videos go: the chosen save folder, or Downloads/SnagThis as Settings, the help
+// page and the site say. (Unset used to leave them in the app's hidden data folder.)
+function saveFolderPath() {
+  const chosen = String(readSettings().outputDirectory || '').trim();
+  if (chosen) return chosen;
+  // Tests run with a throwaway profile and must never read or fill the real Downloads folder.
+  const downloads = process.env.E2E_USER_DATA_DIR ? path.join(app.getPath('userData'), 'Downloads') : app.getPath('downloads');
+  return path.join(downloads, 'SnagThis');
+}
+
 function getDownloadDirPath() {
   const dataDir = path.join(app.getPath('userData'), 'data');
   const downloadDir = path.join(dataDir, 'downloads');
@@ -1059,7 +1069,7 @@ async function startLocalApi() {
     appVersion: app.getVersion(),
     dataDir,
     downloadDir,
-    getCompletedOutputDir: () => String(readSettings().outputDirectory || '').trim(),
+    getCompletedOutputDir: () => saveFolderPath(),
     ffmpegPath: bundledFfmpegPath || process.env.FFMPEG_PATH,
     ffprobePath: bundledFfprobePath || process.env.FFPROBE_PATH,
     ytDlpPath: bundledYtDlpPath || process.env.YTDLP_PATH || process.env.YT_DLP_PATH,
@@ -1357,10 +1367,31 @@ function registerIpc() {
   });
   handleIpc('app:open-external', async (_event, url) => openExternal(url));
   handleIpc('app:open-save-folder', async () => {
-    const folderPath = readSettings().outputDirectory || getDownloadDirPath();
+    const folderPath = saveFolderPath();
     fs.mkdirSync(folderPath, { recursive: true });
     const error = await shell.openPath(folderPath);
     return error ? { ok: false, error } : { ok: true, folderPath };
+  });
+  handleIpc('library:open-folder', async (_event, folderPath) => {
+    try {
+      // The renderer names a folder of Saved; it is resolved inside the save folder and never follows links out of it.
+      const root = path.resolve(saveFolderPath());
+      const segments = typeof folderPath === 'string' && folderPath ? folderPath.split('/') : [];
+      if (typeof folderPath !== 'string' || folderPath.length > 4096 || /[\\\0]/.test(folderPath) || segments.some((part) => !part || part === '.' || part === '..')) {
+        return { ok: false, error: 'Folder not found' };
+      }
+      let current = root;
+      if (!segments.length) fs.mkdirSync(root, { recursive: true });
+      for (const segment of segments) {
+        current = path.join(current, segment);
+        const stat = fs.lstatSync(current, { throwIfNoEntry: false });
+        if (!stat || !stat.isDirectory() || stat.isSymbolicLink()) return { ok: false, error: 'Folder not found' };
+      }
+      const error = await shell.openPath(current);
+      return error ? { ok: false, error } : { ok: true, folderPath: current };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
   });
   handleIpc('app:trash-history-file', async (_event, id) => historyRequest(id, 'trash'));
   handleIpc('app:locate-history-file', async (_event, id) => historyRequest(id, 'locate'));

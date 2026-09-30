@@ -10,6 +10,8 @@ export interface HistoryItem {
   modifiedAt: number;
   ext: string;
   thumbnailUrl: string | null;
+  /** The folder of Saved it is in ('' for the save folder itself). */
+  folder?: string;
   previewClipUrl?: string | null;
   previewClipDurationSeconds?: number;
   tmdbReleaseDate: string | null;

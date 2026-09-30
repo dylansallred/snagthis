@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Organise C · Smart groups + pins</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+/* C · Smart groups + pins (revised from header tabs, which did not fit beside the paste field at 960px): a quiet strip under the header holds pinned-folder chips and one Sort & group control. */
+.strip { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 10px; flex: none; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; }
+.strip .sp { flex: 1; }
+.strip .note { font-size: 12px; color: var(--color-foreground-subtle); padding-left: 4px; }
+.chips { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 6px; font-size: 12px; color: var(--color-foreground-muted); box-shadow: inset 0 0 0 1px var(--color-border); }
+.chip:hover, .chip.menu-open { color: var(--color-foreground); background: var(--color-background-active); }
+.chip[aria-selected="true"] { color: var(--color-foreground); background: var(--color-background-active); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 65%, transparent); }
+.chip svg.i { width: 13px; height: 13px; color: var(--color-foreground-subtle); }
+.chip[aria-selected="true"] svg.i { color: var(--color-primary-hover); }
+.chip .n { font-size: 11px; color: var(--color-foreground-subtle); font-variant-numeric: tabular-nums; }
+.chip.drop-hot .n { color: var(--color-primary-hover); }
+.chips .add { width: 26px; height: 26px; }
+.chips .add svg.i { width: 14px; height: 14px; }
+.chips .edit { display: inline-flex; align-items: center; }
+.chips .edit .namefield { width: 140px; height: 26px; }
+.chips .sepv { width: 1px; height: 16px; margin: 0 4px; background: var(--color-border); }
+.ghdr { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 14px 0 10px; text-align: left; background: hsl(215 22% 6%); border-bottom: 1px solid var(--color-border-subtle); color: var(--color-foreground); font-size: 12px; outline: none; }
+.ghdr:hover { background: hsl(215 22% 9%); }
+.ghdr:focus-visible { box-shadow: inset 3px 0 0 var(--color-primary-hover); }
+.ghdr .chev { width: 14px; height: 14px; color: var(--color-foreground-muted); transition: transform 160ms; }
+.ghdr[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.ghdr b { font-weight: 620; }
+.ghdr .gm { color: var(--color-foreground-subtle); font-variant-numeric: tabular-nums; }
+.ghdr .gpip { width: 8px; height: 8px; background: var(--accent-bevel-face); box-shadow: inset 1px 1px 0 var(--accent-bevel-light), inset -1px -1px 0 var(--accent-bevel-dark); }
+.vrow .loc { color: var(--color-foreground-muted); }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Organise the library</a> · <span>C</span>Smart groups + pins</div>
+    <h1>C · Smart groups + pins</h1>
+    <p>The least new UI. A quiet strip under the header holds one <b>Sort &amp; group</b> button that names the current view (<i>Site · Newest</i>). Grouping by <b>site, date saved, quality or folder</b> adds collapsible headers to the same list, so most organising needs no filing. Folders are lightweight labels (one per video); <b>pinned folders are chips</b> in the strip, and you file a video by dropping it on a chip. Nothing moves on disk.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+  <h2 class="section-title">Key-state screenshots</h2>
+  <p class="section-sub">Captured with <code>node docs/design/prototypes/organize/capture.cjs</code>.</p>
+  <div id="shots" class="dirs"></div>
+</main>
+<script src="../brand.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org;
+  const STATES = [['sorted', 'Grouped by site'], ['sortmenu', 'Sort & group menu'], ['create', 'New folder'], ['drag', 'Drag onto a pin'], ['moveto', 'Move to… (3 selected)'], ['folder', 'Pinned folder'], ['delete', 'Delete folder'], ['empty', 'Empty folder']];
+  const GROUPS = [['none', 'None'], ['site', 'Site'], ['date', 'Date saved'], ['quality', 'Quality'], ['folder', 'Folder']];
+  const here = (m) => m.tab === 'folder' ? P.folder(m, m.folder) : null;
+  const getGroup = (m) => m.group[P.ctxKey(m)] || 'none';
+  const QL = { 2160: '4K · 2160p', 1080: 'FHD · 1080p', 720: 'HD · 720p', 480: 'SD · 480p', 360: '360p' };
+  const dateBucket = (d) => d === 0 ? ['0', 'Today'] : d === 1 ? ['1', 'Yesterday'] : d < 7 ? ['2', 'Earlier this week'] : d < 27 ? ['3', 'Earlier in September'] : d < 58 ? ['4', 'August'] : d < 88 ? ['5', 'July'] : ['6', 'Older'];
+  const groupsOf = (m, items) => {
+    const g = getGroup(m), sort = P.getSort(m), map = new Map();
+    const keyOf = (it) => g === 'site' ? [it.site, it.site] : g === 'date' ? dateBucket(it.days) : g === 'quality' ? [String(9999 - it.h), QL[it.h]] : it.f.length ? [P.folder(m, it.f[0]).name, P.folder(m, it.f[0]).name, it.f[0]] : ['￿', 'Not in a folder'];
+    for (const it of P.sort(items, sort)) { const [k, label, fid] = keyOf(it); if (!map.has(k)) map.set(k, { k, label, fid, items: [] }); map.get(k).items.push(it); }
+    const out = [...map.values()].sort((a, b) => a.k.localeCompare(b.k));
+    if (g === 'date' && sort === 'oldest') out.reverse();
+    return out;
+  };
+
+  const strip = (m) => {
+    if (m.tab === 'all' || m.tab === 'downloading') return `<div class="strip"><span class="note">${m.tab === 'all' ? 'Downloads in progress stay on top' : 'Drag waiting videos to reorder'}</span><span class="sp"></span>${trigger(m)}</div>`;
+    const busy = (m.menu && m.menu.kind === 'folder' && m.menu.fid) || (m.confirm && m.confirm.id);
+    const pins = m.folders.filter((f) => m.pins.includes(f.id)).map((f) => m.renaming === f.id
+      ? `<span class="edit"><input class="namefield" data-name value="${P.esc(f.name)}" aria-label="Rename folder"></span>`
+      : `<button class="chip${busy === f.id ? ' menu-open' : ''}${m.drag && m.drag.target === f.id ? ' drop-hot' : ''}" role="tab" aria-selected="${m.tab === 'folder' && m.folder === f.id}" data-act="open" data-arg="${f.id}" data-drop="${f.id}" data-fk="chip:${f.id}">${P.icon('folder')}${f.name}<span class="n">${P.inFolder(m, f.id).length}</span></button>`).join('');
+    const add = m.creating ? `<span class="edit"><input class="namefield" data-name value="${m.draft || ''}" placeholder="Folder name" aria-label="New folder name"></span>`
+      : `<button class="iconbtn add" data-act="newfolder" data-arg="tab" data-fk="addchip" aria-label="New folder" title="New folder">${P.icon('plus')}</button>`;
+    return `<div class="strip"><div class="chips" role="tablist" aria-label="Saved folders"><button class="chip" role="tab" aria-selected="${m.tab === 'saved'}" data-act="tab" data-arg="saved" data-drop="none" data-fk="chip:all">Everything<span class="n">${m.items.length}</span></button><span class="sepv" aria-hidden="true"></span>${pins}${add}</div><span class="sp"></span>${trigger(m)}</div>`;
+  };
+
+  const trigger = (m) => {
+    if (m.tab === 'downloading') return `<button class="sortbtn" disabled title="Drag waiting videos to reorder">${P.icon('sort')}Queue order</button>`;
+    const g = getGroup(m), s = P.sortLabel(P.getSort(m));
+    const label = g === 'none' ? `<b>${s}</b>` : `<b>${GROUPS.find((x) => x[0] === g)[1]}</b> · ${s}`;
+    return `<button class="sortbtn" data-act="sortmenu" data-fk="sortbtn" aria-haspopup="menu" aria-expanded="${!!(m.menu && m.menu.kind === 'sort')}" aria-label="Sort and group: ${g === 'none' ? '' : 'grouped by ' + g + ', '}${P.sortLabel(P.getSort(m), true)}">${P.icon('sort')}${label}${P.icon('chevron', 'chev')}</button>`;
+  };
+
+  const sortMenu = (m) => {
+    const f = here(m), g = getGroup(m);
+    return P.menu([
+      { lbl: 'Sort by' }, ...P.SORTS.map(([k, l]) => ({ label: l, act: 'sort', arg: k, radio: P.getSort(m) === k })),
+      'sep', { lbl: 'Group by' }, ...GROUPS.filter(([k]) => !(f && k === 'folder')).map(([k, l]) => ({ label: l, act: 'group', arg: k, radio: g === k })),
+      ...(f ? ['sep', { lbl: f.name }, { label: 'Rename…', icon: 'pencil', act: 'rename', arg: f.id, r: 'F2' }, { label: 'Unpin from tabs', icon: 'pin', act: 'unpin', arg: f.id }, { label: 'Delete folder…', icon: 'trash', danger: 1, act: 'delete', arg: f.id }] : []),
+      { note: `${f ? `“${f.name}”` : m.tab === 'all' ? 'All' : 'Saved'} remembers this view.${m.tab === 'all' ? ' Downloads in progress stay on top.' : ''}` },
+    ], { anchor: '[data-fk="sortbtn"]', label: 'Sort and group', width: 232 });
+  };
+  const rowMenu = (m) => {
+    const id = m.menu.id, f = here(m), many = m.sel.length > 1;
+    return P.menu([
+      ...(many ? [{ lbl: `${m.sel.length} videos` }] : [{ label: 'Details', icon: 'list' }]),
+      { label: 'Move to folder…', icon: 'folderInput', act: 'move', arg: id, r: 'M' },
+      ...(f ? [{ label: `Remove from “${f.name}”`, icon: 'minus', act: 'into', arg: 'none' }] : []),
+      ...(many ? [] : [{ label: 'Copy link', icon: 'link' }, { label: 'Open page', icon: 'reveal' }, { label: 'Show in folder', icon: 'folder' }]),
+      'sep', { label: many ? `Remove ${m.sel.length} videos…` : 'Remove…', danger: 1 },
+    ], { anchor: `[data-fk="more:${id}"]`, label: 'Video actions', width: 236 });
+  };
+  const moveMenu = (m) => {
+    const ids = m.menu.ids, cur = new Set(ids.map((id) => m.items.find((x) => x.id === id).f[0] || 'none'));
+    const one = cur.size === 1 ? [...cur][0] : null;
+    return P.menu([
+      { lbl: ids.length > 1 ? `Move ${ids.length} videos to` : 'Move to folder' },
+      { label: 'No folder', act: 'into', arg: 'none', radio: one === 'none' },
+      ...[...m.folders].sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ label: f.name, act: 'into', arg: f.id, radio: one === f.id, r: m.pins.includes(f.id) ? '<svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px">' + '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>' : '' })),
+      'sep', { label: 'New folder…', icon: 'plus', act: 'newfolder', arg: 'tab' },
+      { note: 'One folder per video. Files stay where they are.' },
+    ], { anchor: m.menu.id ? `[data-fk="more:${m.menu.id}"]` : '[data-fk="selmove"]', label: 'Move to folder', width: 236 });
+  };
+  const tabMenu = (m) => {
+    const f = P.folder(m, m.menu.fid), pinned = m.pins.includes(f.id);
+    return P.menu([
+      { label: 'Rename…', icon: 'pencil', act: 'rename', arg: f.id, r: 'F2' },
+      { label: pinned ? 'Unpin from tabs' : 'Pin to tabs', icon: 'pin', act: pinned ? 'unpin' : 'pin', arg: f.id },
+      'sep', { label: 'Delete folder…', icon: 'trash', danger: 1, act: 'delete', arg: f.id },
+    ], { anchor: `[data-fk="chip:${f.id}"]`, label: 'Folder options', width: 200 });
+  };
+  const confirm = (m) => {
+    const f = P.folder(m, m.confirm.id), n = P.inFolder(m, f.id).length;
+    return `<div class="pop confirm" role="alertdialog" aria-label="Delete folder" data-anchor='[data-fk="chip:${f.id}"]' data-align="end"><span class="caret"></span>
+      <h4>Delete “${f.name}”?</h4><p>${n ? `Its ${P.count(n)} go back to Saved with no folder.` : 'It’s empty.'} Nothing on disk changes.</p>
+      <div class="acts"><button class="btn" data-act="close" data-default>Cancel</button><button class="btn danger" data-act="dodelete">Delete folder</button></div></div>`;
+  };
+
+  window.Org.mount({
+    states: STATES,
+    init(m) { m.group = {}; m.pins = ['road', 'tut', 'later']; },
+    view(m) {
+      const f = here(m), g = getGroup(m), ck = P.ctxKey(m);
+      const o = { sort: P.getSort(m), loc: f || g === 'folder' ? null : (it) => it.f.length ? `<span class="loc">${P.icon('folder')}${P.folder(m, it.f[0]).name}</span>` : '' };
+      let list;
+      if (m.tab === 'downloading') list = P.activeRows();
+      else {
+        const items = f ? P.inFolder(m, f.id) : m.items;
+        if (f && !items.length) list = P.empty({ title: `Nothing in ${f.name} yet`, text: `Drag videos onto the <b style="color:var(--color-foreground)">${f.name}</b> tab, or choose ⋯ ▸ Move to folder… on any saved video.`, acts: '<button class="btn" data-act="tab" data-arg="saved">Go to Saved</button>', drop: f.id });
+        else if (g === 'none') list = P.sort(items, P.getSort(m)).map((it) => P.row(it, m, o)).join('');
+        else list = groupsOf(m, items).map((gr) => {
+          const key = ck + '|' + gr.k, open = !m.collapsed.includes(key);
+          return `<button class="ghdr" data-act="collapse" data-arg="${P.esc(key)}" aria-expanded="${open}" data-nav data-fk="g:${P.esc(gr.k)}"${gr.fid ? ` data-drop="${gr.fid}"` : ''}>${P.icon('chevron', 'chev')}${g === 'folder' && gr.fid ? P.icon('folder') : ''}<b>${gr.label}</b><span class="gm">${P.count(gr.items.length)} · ${P.size(P.sumMb(gr.items))}</span></button>${open ? gr.items.map((it) => P.row(it, m, o)).join('') : ''}`;
+        }).join('');
+        if (m.tab === 'all') list = P.activeRows() + list;
+      }
+      const over = [
+        m.menu && m.menu.kind === 'sort' ? sortMenu(m) : '',
+        m.menu && m.menu.kind === 'row' ? rowMenu(m) : '',
+        m.menu && m.menu.kind === 'move' ? moveMenu(m) : '',
+        m.menu && m.menu.kind === 'folder' ? tabMenu(m) : '',
+        m.confirm ? confirm(m) : '',
+      ].join('');
+      const selbar = P.selbar(m, `<button class="btn" data-act="move" data-fk="selmove" aria-haspopup="menu" aria-expanded="${!!(m.menu && m.menu.kind === 'move')}">${P.icon('folderInput')}Move to folder…</button><button class="btn quiet" data-act="noop">Remove…</button>`);
+      const tabs = [['all', 'All'], ['downloading', 'Downloading'], ['saved', 'Saved']].map(([id, label]) => ({ id, label, act: 'tab', sel: m.tab === id || (id === 'saved' && m.tab === 'folder') }));
+      return { tabs, head: strip(m), list, over, selbar };
+    },
+    acts: {
+      group(k, el, ev, m) { m.group[P.ctxKey(m)] = k; m.menu = null; },
+      collapse(k, el, ev, m) { m.collapsed = m.collapsed.includes(k) ? m.collapsed.filter((x) => x !== k) : [...m.collapsed, k]; },
+      unpin(fid, el, ev, m) { m.pins = m.pins.filter((x) => x !== fid); m.menu = null; if (m.folder === fid) { m.tab = 'saved'; m.folder = null; m.group.saved = 'folder'; } m.toast = { text: `Unpinned “${P.folder(m, fid).name}”. Find it under Group by ▸ Folder.` }; },
+      pin(fid, el, ev, m) { m.pins.push(fid); m.menu = null; },
+    },
+    moveInto(m, ids, fid) {
+      const dest = fid === 'none' ? null : fid;
+      ids.forEach((id) => { m.items.find((x) => x.id === id).f = dest ? [dest] : []; });
+      m.sel = [];
+      const what = ids.length > 1 ? P.count(ids.length) : `“${m.items.find((x) => x.id === ids[0]).title.slice(0, 30)}”`;
+      m.toast = { text: dest ? `Moved ${what} to ${P.folder(m, dest).name}` : `Took ${what} out of its folder` };
+    },
+    deleteFolder(m, fid) { const f = P.folder(m, fid); m.items.forEach((it) => { if (it.f.includes(fid)) it.f = []; }); m.folders = m.folders.filter((x) => x.id !== fid); m.pins = m.pins.filter((x) => x !== fid); m.toast = { text: `Deleted “${f.name}”. Its videos are in Saved.` }; },
+    onCreate(m, id, c) { m.pins.push(id); if (!c.ids) { m.tab = 'folder'; m.folder = id; m.sel = []; } },
+    folderFocus: (id) => 'chip:' + id,
+    navKey() { return false; },
+    presets: {
+      sorted(m) { m.group.saved = 'site'; m.collapsed = ['saved|dailymotion.com']; },
+      sortmenu(m) { m.group.saved = 'site'; m.collapsed = ['saved|dailymotion.com']; m.menu = { kind: 'sort' }; },
+      create(m) { m.group.saved = 'site'; m.creating = { where: 'tab' }; m.draft = 'Game jams'; },
+      drag(m) { m.drag = { ids: ['i6'], target: 'road', anchor: '[data-drop="road"]', hint: '→ Road trips', preset: 1 }; },
+      moveto(m) { m.group.saved = 'date'; m.sel = ['i2', 'i6', 'i10']; m.menu = { kind: 'move', ids: m.sel, id: null }; },
+      folder(m) { m.tab = 'folder'; m.folder = 'road'; m.sort['f:road'] = 'length'; },
+      delete(m) { m.tab = 'folder'; m.folder = 'road'; m.confirm = { id: 'road' }; },
+      empty(m) { m.folders.push({ id: 'jams', name: 'Game jams', color: '' }); m.pins.push('jams'); m.tab = 'folder'; m.folder = 'jams'; },
+    },
+    notes(state) {
+      const N = {
+        sorted: `<h2>Grouped by site, newest first</h2><p>The strip's button reads <b>Site · Newest</b>, so the current view is always named. Group headers are sticky, show count and size, and collapse with a click or Enter/Space (<i>dailymotion.com</i> is collapsed here). Videos filed in a folder show its name in the status line. No sidebar: the list keeps its full width.</p>`,
+        sortmenu: `<h2>Sort &amp; group menu</h2><p>One menu, two radio sets. <b>Sort by</b>: Newest saved, Oldest saved, Name A–Z, Largest first, Longest first, Site A–Z. <b>Group by</b>: None, Site, Date saved (Today, Yesterday, Earlier this week, then months), Quality, Folder. Saved, All and each pinned folder remember their own pair. In All, groups apply to saved videos below the ones in progress; Downloading keeps queue order.</p>`,
+        create: `<h2>New folder</h2><p><b>+</b> after the chips turns into a name field. Enter creates the folder, pins it and opens it. About five pins fit at 960px; more scroll sideways or collapse into <i>More ⌄</i> (not drawn). Unpinned folders stay reachable through Move to…, Group by ▸ Folder and ⌘K.</p>`,
+        drag: `<h2>Drag onto a pinned folder</h2><p>Chips are the drop targets: drop a row or a selection on <b>Road trips</b> to file it there. A video has one folder, so dropping moves it from its previous one; dropping on <b>Everything</b> takes it out of its folder. The header tabs are untouched, so they keep their window-drag behaviour (§6).</p>`,
+        moveto: `<h2>Move to folder… (3 selected, grouped by date)</h2><p>⌘/Shift-click or Shift+↑/↓ selects; the footer becomes a selection bar. <b>Move to folder…</b> is a single-choice list (a pin marks the pinned ones), with <b>No folder</b> to take videos out and <b>New folder…</b> to create one and move them into it. Here Saved is grouped by <b>Date saved</b>.</p>`,
+        folder: `<h2>A pinned folder</h2><p>A pinned folder is a filtered Saved view (Saved stays selected in the header) with its own sort and group (Longest first here). Its options sit at the bottom of the same Sort &amp; group menu, and on right-click or Shift+F10 on the chip: Rename, Unpin, Delete.</p>`,
+        delete: `<h2>Delete a folder</h2><p>Folders are labels, so deleting one is safe: its videos return to Saved with no folder, nothing on disk changes, and Undo is offered. The popover points at the chip (keyboard: Delete on a focused chip).</p>`,
+        empty: `<h2>Empty folder</h2><p>The shelf mascot and one line: drag onto the chip, or use ⋯ ▸ Move to folder…. The empty list is also a drop target.</p>`,
+      };
+      return N[state] + `<div class="trade"><h3>Trade-offs</h3><ul>
+        <li><b>Least new UI</b>: the header is unchanged. One 40px strip carries the chips and the Sort &amp; group button. Grouping solves a lot of “organise” without the user filing anything.</li>
+        <li><b>Virtual, one folder per video</b>: simpler than A's many-to-many, but Finder / Explorer never sees the folders.</li>
+        <li><b>Pins are shortcuts, not a tree</b>: many folders need the Group by ▸ Folder view or an overflow menu.</li>
+        <li><b>Outside changes:</b> as A: a moved file becomes <i>File was moved or deleted</i> and keeps its folder through Locate. Site and quality groups come from saved metadata, so they never drift.</li>
+        <li><b>Chrome:</b> no Saved view in the extension; nothing changes.</li></ul></div>`;
+    },
+  });
+  // Right-click (or Shift+F10) on a folder tab opens its options.
+  const stage = document.getElementById('window');
+  document.addEventListener('contextmenu', (ev) => {
+    const tab = ev.target.closest('.chip[data-drop]:not([data-drop="none"])');
+    if (!tab || !stage.contains(tab)) return;
+    ev.preventDefault(); P.run('foldermenu', tab.dataset.drop);
+  });
+  document.addEventListener('keydown', (ev) => {
+    const tab = ev.target.closest && ev.target.closest('.chip[data-drop]:not([data-drop="none"])');
+    if (!tab || !stage.contains(tab)) return;
+    const fid = tab.dataset.drop;
+    if ((ev.key === 'F10' && ev.shiftKey) || ev.key === 'ContextMenu') { ev.preventDefault(); P.run('foldermenu', fid); }
+    else if (ev.key === 'F2') { ev.preventDefault(); P.run('rename', fid); }
+    else if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); P.run('delete', fid); }
+  });
+  document.getElementById('shots').innerHTML = STATES.map(([id, l]) => `<a class="dir" href="state-${id}.png" style="text-decoration:none"><b style="font-size:12.5px">${l}</b><img src="state-${id}.png" alt="${l}" style="width:100%;border-radius:6px" loading="lazy"></a>`).join('');
+})();
+</script>
+</body>
+</html>
