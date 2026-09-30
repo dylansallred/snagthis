@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Folder rows A · Pixel folder</title>
+<link rel="stylesheet" href="../../shared.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* A · Pixel folder: a bevelled pixel-art folder in the accent colour holds the newest poster, peeking out.
+   The folder is built in em units (1em = 1px at font-size 1px) so the row and the shelf scale one drawing. */
+.pf { position: relative; flex: none; width: 84em; height: 62em; font-size: 1px; }
+.pf .back { position: absolute; left: 0; right: 0; top: 8em; bottom: 0; background: var(--accent-bevel-dark); box-shadow: 0 0 0 2em #0c0e11; }
+.pf .back::before { content: ""; position: absolute; left: 0; top: -8em; width: 34em; height: 10em; background: var(--accent-bevel-dark); clip-path: polygon(0 0, 76% 0, 76% 40%, 100% 40%, 100% 100%, 0 100%); }
+.pf .back::after { content: ""; position: absolute; inset: 4em 4em 0; background: color-mix(in srgb, var(--accent-bevel-dark) 45%, #0c0e11); }
+.pf .paper { position: absolute; width: 62em; height: 34em; background: #cfd3da; box-shadow: inset -3em -3em 0 #9ea4ae, 0 0 0 2em #0c0e11; transition: transform 260ms cubic-bezier(.2, .8, .2, 1); }
+.pf .paper.p2 { left: 16em; top: 7em; }
+.pf .paper.p3 { left: 12em; top: 3em; background: #e3e6ea; }
+.pf .shot { position: absolute; left: 8em; top: 12em; width: 66em; height: 37em; background: #0c0e11 center / cover; box-shadow: inset 0 0 0 3em #f1ece4, 0 0 0 2em #0c0e11; transition: transform 260ms cubic-bezier(.2, .8, .2, 1); }
+.pf .shot i { position: absolute; inset: 3em; background: inherit; background-size: cover; }
+.pf .front { position: absolute; left: 0; right: 0; bottom: 0; height: 34em; background: var(--accent-bevel-face); box-shadow: inset 0 4em 0 var(--accent-bevel-light), inset 0 -4em 0 var(--accent-bevel-dark), inset -4em 0 0 color-mix(in srgb, var(--accent-bevel-dark) 70%, var(--accent-bevel-face)), 0 0 0 2em #0c0e11; transform-origin: 50% 100%; transition: transform 260ms cubic-bezier(.2, .8, .2, 1); }
+.pf .count { position: absolute; right: .42em; bottom: .36em; min-width: 1.15em; height: 1.05em; padding: .06em .22em 0; display: grid; place-items: center; background: #0c0e11; color: var(--accent-bevel-light); font: 400 18em/1 var(--font-pixel); }
+/* Empty: the folder is hollow — the dark inside shows, the front sits lower, no poster and no count. */
+.pf.none .front { height: 30em; background: color-mix(in srgb, var(--accent-bevel-face) 40%, #1a1f27); box-shadow: inset 0 4em 0 color-mix(in srgb, var(--accent-bevel-light) 40%, #1a1f27), inset 0 -4em 0 color-mix(in srgb, var(--accent-bevel-dark) 40%, #0c0e11), 0 0 0 2em #0c0e11; }
+.pf.none .back { background: color-mix(in srgb, var(--accent-bevel-dark) 45%, #1a1f27); }
+.pf.none .back::before { background: color-mix(in srgb, var(--accent-bevel-dark) 45%, #1a1f27); }
+/* Hover lifts the poster; drag-over drops the front flap open and lifts it further. */
+:is(.frow, .ftile):is(:hover, .is-hover, :focus-visible, .is-focus) .pf .shot { transform: translateY(-5em); }
+:is(.frow, .ftile):is(:hover, .is-hover, :focus-visible, .is-focus) .pf .paper { transform: translateY(-3em); }
+:is(.frow, .ftile).drop-hot .pf .front { transform: perspective(120em) rotateX(-38deg); }
+:is(.frow, .ftile).drop-hot .pf .shot { transform: translateY(-9em); }
+:is(.frow, .ftile).drop-hot .pf .paper { transform: translateY(-6em); }
+
+/* List row: shorter (68px vs 85px), tinted, a permanent accent rail, the folder centred in the thumbnail column. */
+.frow { position: relative; display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; height: 68px; padding-right: 14px; border-bottom: 1px solid var(--color-border-subtle);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary-hover) 9%, var(--color-surface-row)), color-mix(in srgb, var(--color-primary-hover) 3%, var(--color-surface-row)) 60%); transition: background 160ms; }
+.frow::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); opacity: .45; transition: opacity 160ms; }
+.frow .cell { align-self: stretch; display: grid; place-items: center; background: repeating-linear-gradient(0deg, transparent 0 2px, #ffffff05 2px 3px), color-mix(in srgb, var(--color-primary-hover) 6%, var(--color-background)); border-right: 1px solid color-mix(in srgb, var(--color-primary-hover) 18%, var(--color-border-subtle)); }
+.frow .cell .pf { font-size: .92px; margin-top: 3px; }
+.frow .nm { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.frow .nm b { font: 400 21px/1 var(--font-pixel); letter-spacing: .02em; color: var(--color-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frow .fm { margin-top: 5px; font-size: 12px; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; }
+.frow.is-empty .nm b { color: var(--color-foreground-muted); }
+.frow:is(:hover, .is-hover, :focus-visible, .is-focus) { background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary-hover) 14%, var(--color-surface-row-hover)), color-mix(in srgb, var(--color-primary-hover) 5%, var(--color-surface-row-hover)) 60%); }
+.frow:is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot)::before { opacity: 1; }
+.frow:is(:focus-visible, .is-focus) { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.frow + .vrow { border-top: 2px solid #0c0e11; }
+.frow.drop-hot { background: color-mix(in srgb, var(--color-primary-hover) 20%, var(--color-surface-row)) !important; box-shadow: inset 0 0 0 2px var(--color-primary-hover) !important; }
+.frow.drop-hot .cell { background: color-mix(in srgb, var(--color-primary-hover) 16%, var(--color-background)); }
+
+/* Shelf tile: the same folder, bigger, on a tinted 16:9 "cubby" instead of a full-bleed poster. */
+.ftile { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.ftile .cubby { position: relative; aspect-ratio: 16 / 9; display: grid; place-items: center; background: repeating-linear-gradient(0deg, transparent 0 2px, #ffffff05 2px 3px), color-mix(in srgb, var(--color-primary-hover) 9%, var(--color-background)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 22%, transparent); transition: background 160ms; }
+.ftile .cubby .pf { font-size: 1.12px; margin-top: 6px; }
+.ftile .cubby::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--color-primary-hover); opacity: .45; }
+.ftile .sh b { font: 400 19px/1 var(--font-pixel); letter-spacing: .02em; }
+.ftile.is-empty .sh b { color: var(--color-foreground-muted); }
+.ftile:is(:hover, .is-hover, :focus-visible, .is-focus) .cubby { background: repeating-linear-gradient(0deg, transparent 0 2px, #ffffff06 2px 3px), color-mix(in srgb, var(--color-primary-hover) 15%, var(--color-background)); }
+.ftile:is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot) .cubby::after { opacity: 1; }
+.ftile:is(:focus-visible, .is-focus) .cubby { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.ftile.drop-hot .cubby { background: color-mix(in srgb, var(--color-primary-hover) 24%, var(--color-background)); box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.ftile .ss { gap: 6px; }
+.ftile .fact .chevr { width: 20px; }
+.ftile .fact .hx .iconbtn:first-child { display: none; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Folder rows</a> · <span>A</span>Pixel folder</div>
+    <h1>A · Pixel folder</h1>
+    <p>A <b>bevelled pixel-art folder in the accent colour</b> sits where a video's poster would. The <b>newest poster peeks out</b> of it, extra sheets show behind when there are more, and a <b>count badge</b> sits on the front. The row is <b>shorter, tinted, with a permanent accent rail</b>, and the name is in the <b>Jersey 15 pixel font</b>, so a folder never reads as a video.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../brand.js"></script>
+<script src="../../shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org, R = window.FR;
+  const folder = (f, big) => {
+    const d = R.info(f);
+    if (!d.n) return `<div class="pf none${big ? ' big' : ''}" aria-hidden="true"><div class="back"></div><div class="front"></div></div>`;
+    return `<div class="pf${big ? ' big' : ''}" aria-hidden="true"><div class="back"></div>${d.n >= 3 ? '<div class="paper p3"></div>' : ''}${d.n >= 2 ? '<div class="paper p2"></div>' : ''}<div class="shot"><i style="${d.thumbs[0]}"></i></div><div class="front"><span class="count">${d.n}</span></div></div>`;
+  };
+  const hot = (m, f) => m.drop === f.id;
+  R.mount({
+    states: R.STATES,
+    row: (m, f) => { const d = R.info(f); return `<div ${R.attrs(m, f, 'frow')}><div class="cell">${folder(f)}</div>
+      <div style="min-width:0"><div class="nm"><b>${P.esc(f.name)}</b></div><div class="fm${hot(m, f) ? ' fhint' : ''}">${hot(m, f) ? d.hint : d.n ? `${d.meta} · newest ${d.newest}` : 'Empty · drag videos here'}</div></div>${R.actions(f)}</div>`; },
+    tile: (m, f) => { const d = R.info(f); return `<div ${R.attrs(m, f, 'ftile')}><div class="cubby">${folder(f, true)}</div><div class="ledge"></div>
+      <div class="sh"><b title="${P.esc(f.name)}">${P.esc(f.name)}</b>${R.actions(f)}</div><div class="ss${hot(m, f) ? ' fhint' : ''}">${hot(m, f) ? `Move here` : d.meta}</div></div>`; },
+    notes: (s) => `<h2>How it handles every count</h2><ul>
+      <li><b>0</b>: a hollow, greyed folder with no poster and no badge; the line reads <i>Empty · drag videos here</i>.</li>
+      <li><b>1</b>: the poster peeks out of the folder.</li><li><b>2</b>: one plain sheet behind the poster.</li><li><b>3+</b>: two sheets behind; the badge carries the real number (6, 42…), so nothing ever shows blank tiles.</li></ul>
+      <h3>States</h3><ul><li><b>Hover / focus</b>: the poster rises a few pixels, the rail goes full strength, and focus adds a 2px accent ring.</li><li><b>Drag-over</b>: the front flap drops open, the poster lifts, the row fills with the accent and the line becomes <i>Move here · path</i>.</li><li><b>Shelf</b>: the same drawing, larger, in a tinted 16:9 cubby, so folders sit in the grid before the videos.</li></ul>
+      <div class="trade"><h3>Trade-off</h3>The strongest folder signal and the most “SnagThis” look. It shows only one poster, so you recognise a folder by its name more than its contents. The accent folder is loud when there are many folders; it follows the accent picker.</div>`,
+  });
+})();
+</script>
+</body>
+</html>

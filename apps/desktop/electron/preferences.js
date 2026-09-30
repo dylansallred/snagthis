@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { isAccent, isAccentTimestamp } = require('@m3u8/contracts');
+const { isAccent, isAccentTimestamp, isGroup, isSort } = require('@m3u8/contracts');
 
 const DEFAULTS = Object.freeze({
   queueMaxConcurrent: 1,
@@ -19,7 +19,21 @@ const DEFAULTS = Object.freeze({
   // Shared with the Chrome extension; the later change wins (see write()).
   accent: 'orange',
   accentChangedAt: 0,
+  // Saved's sort and grouping, remembered per place: `all`, or `saved:` plus a folder path.
+  libraryViews: Object.freeze({}),
 });
+
+const MAX_LIBRARY_VIEWS = 500;
+function validateLibraryViews(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid library views');
+  const entries = Object.entries(value);
+  if (entries.length > MAX_LIBRARY_VIEWS) throw new Error('Too many library views');
+  // fromEntries defines plain data properties, so no key can reach an object's prototype.
+  return Object.fromEntries(entries.map(([key, view]) => {
+    if (!/^(?:all|saved:[^\0\r\n]{0,1024})$/.test(key) || !view || typeof view !== 'object' || !isSort(view.sort) || !isGroup(view.group)) throw new Error('Invalid library view');
+    return [key, { sort: view.sort, group: view.group }];
+  }));
+}
 
 function validatePatch(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Settings must be an object');
@@ -28,6 +42,9 @@ function validatePatch(input) {
     if (!Object.hasOwn(DEFAULTS, key)) throw new Error(`Unknown setting: ${key}`);
     if (typeof DEFAULTS[key] === 'boolean') {
       if (typeof value !== 'boolean') throw new Error(`Invalid setting: ${key}`);
+    } else if (key === 'libraryViews') {
+      patch[key] = validateLibraryViews(value);
+      continue;
     } else if (key === 'accentChangedAt') {
       if (!isAccentTimestamp(value)) throw new Error('Invalid accent time');
     } else if (key === 'queueMaxConcurrent' || key === 'downloadThreads') {

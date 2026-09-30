@@ -1,0 +1,55 @@
+/* Folder-row options: shared window pieces on top of ../shared.css (tokens, window, VideoRow, hub chrome).
+   The window is the real 1200×800 size so previews match work/organize-shots. */
+.win { width: 1200px; height: 800px; }
+.stage { flex-direction: column; }
+.notes { max-width: 1200px; columns: 2 380px; column-gap: 32px; }
+.notes > * { break-inside: avoid; }
+.hub { max-width: 1260px; }
+
+/* Top bar list ⇄ shelf toggle (SavedViewToggle). */
+.viewtoggle { display: inline-flex; gap: 2px; margin: 0 2px 0 6px; }
+.viewtoggle .iconbtn[aria-pressed="true"] { background: var(--color-background-active); color: var(--color-foreground); }
+
+/* Path bar (PathBar.tsx). */
+.crumbs { display: flex; align-items: center; gap: 6px; height: 42px; padding: 0 8px 0 10px; flex: none; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; }
+.crumbs .seg-c { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; font-size: 13px; font-weight: 620; }
+.crumbs .seg-c svg.i { width: 14px; height: 14px; color: var(--color-foreground-muted); }
+.crumbs .path { margin-left: 6px; color: var(--color-foreground-subtle); }
+.crumbs .sp { flex: 1; }
+.crumbs .iconbtn { width: 28px; height: 28px; }
+
+/* Shared row bits every option reuses. */
+.fhint { color: var(--color-primary-hover) !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fact { display: flex; align-items: center; gap: 2px; }
+.fact .hx { display: flex; gap: 2px; opacity: 0; }
+:is(.frow, .ftile):is(:hover, .is-hover, :focus-visible, .is-focus, :focus-within) .fact .hx { opacity: 1; }
+.chevr { display: grid; place-items: center; width: 30px; color: var(--color-foreground-subtle); }
+.chevr svg.i { width: 15px; height: 15px; }
+.frow, .ftile { outline: none; cursor: pointer; }
+.list:has(.drop-hot) .vrow.dragging { opacity: .35; }
+
+/* Shelf view (SavedShelf.css): 16:9 posters on a faint ledge. */
+.shelf { padding: 16px 16px 8px; }
+.sgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 22px 14px; }
+.stile { position: relative; display: flex; flex-direction: column; min-width: 0; outline: none; }
+.stile .poster { position: relative; aspect-ratio: 16 / 9; background: var(--color-background) center / cover; overflow: hidden; }
+.stile .poster::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--color-primary-hover); transform: scaleX(0); transition: transform 300ms; }
+.stile:is(:hover, :focus-visible) .poster::after { transform: none; }
+.stile:focus-visible .poster { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.stile.dragging { opacity: .35; }
+.ledge { height: 3px; margin-bottom: 8px; background: linear-gradient(#ffffff10, #0000); }
+.sh { display: flex; align-items: center; gap: 6px; min-width: 0; height: 24px; }
+.sh b { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; font-weight: 570; }
+.sh small { flex: none; font-size: 11px; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; }
+.ss { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11.5px; color: var(--color-foreground-muted); white-space: nowrap; overflow: hidden; }
+.ss .ok svg.i { width: 12px; height: 12px; stroke-width: 2.2; color: hsl(145 44% 62%); vertical-align: -2px; margin-right: 3px; }
+.ss .dot { color: var(--color-foreground-subtle); }
+
+/* Pixel folder glyph (SVG, crisp): face/light/dark follow the accent bevel. */
+.pxf { display: block; flex: none; shape-rendering: crispEdges; }
+.pxf .b { fill: var(--accent-bevel-dark); } .pxf .f { fill: var(--accent-bevel-face); } .pxf .l { fill: var(--accent-bevel-light); } .pxf .p { fill: #ece7df; } .pxf .k { fill: #0c0e11; }
+.pxf.k-empty .f, .pxf.k-empty .l { fill: none; } .pxf.k-empty .b { fill: none; }
+.pxf.k-empty .o { fill: var(--color-foreground-subtle); }
+
+/* The drag chip that follows the pointer (drop states). */
+.ghost { transform: none; }

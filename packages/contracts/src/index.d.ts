@@ -7,3 +7,4 @@ export * from './hls';
 export * from './audioTracks';
 export * from './strings';
 export * from './accents';
+export * from './library';

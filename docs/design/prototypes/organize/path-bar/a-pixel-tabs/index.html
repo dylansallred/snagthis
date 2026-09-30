@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Path bar A · Pixel tabs</title>
+<link rel="stylesheet" href="../../shared.css">
+<link rel="stylesheet" href="../../folder-rows/common.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* A · Pixel tabs: each folder is a small bevelled chip with notched pixel corners; the current one is the accent
+   key, like the SnagThis pixel button. Pixel ▸ between chips. No path text: it lives in a hover card and ⋯. */
+.pa { height: 46px; gap: 8px; }
+.pa [data-fit] { gap: 5px; }
+.pa .key, .pa .chip { --notch: 2px; clip-path: polygon(var(--notch) 0, calc(100% - var(--notch)) 0, 100% var(--notch), 100% calc(100% - var(--notch)), calc(100% - var(--notch)) 100%, var(--notch) 100%, 0 calc(100% - var(--notch)), 0 var(--notch)); }
+.pa .key { display: grid; place-items: center; width: 28px; height: 28px; flex: none; color: var(--color-foreground-muted); background: hsl(215 20% 12%); box-shadow: inset 0 0 0 1px hsl(215 16% 20%), inset 2px 2px 0 #ffffff10, inset -2px -2px 0 #0009; }
+.pa .key:is(:hover, .is-hover) { color: var(--color-foreground); background: hsl(215 20% 15%); }
+.pa .key:active { box-shadow: inset 0 0 0 1px hsl(215 16% 20%), inset -2px -2px 0 #ffffff10, inset 2px 2px 0 #0009; }
+.pa .chip { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px 1px; flex: 0 1 auto; min-width: 0; max-width: 230px;
+  color: var(--color-foreground-muted); background: hsl(215 20% 10.5%); box-shadow: inset 0 0 0 1px hsl(215 16% 17%), inset 2px 2px 0 #ffffff0c, inset -2px -2px 0 #0008;
+  font: 400 18px/1 var(--font-pixel); letter-spacing: .02em; transition: background 120ms, color 120ms, transform 120ms; }
+.pa .chip .pxf { width: 16px; height: 13px; }
+.pa .chip .pxf.k-open { display: none; }
+.pa .chip.cur { flex-shrink: 1; max-width: 380px; color: #fff; background: var(--accent-bevel-face); box-shadow: inset 2px 2px 0 color-mix(in srgb, var(--accent-bevel-light) 85%, transparent), inset -2px -2px 0 var(--accent-bevel-dark); text-shadow: 1px 1px 0 color-mix(in srgb, var(--accent-bevel-dark) 80%, #000); }
+.pa .chip.cur .pxf .f, .pa .chip.cur .pxf .l { fill: #fff; } .pa .chip.cur .pxf .b { fill: var(--accent-bevel-dark); }
+.pa .chip:not(.cur):is(:hover, .is-hover) { color: var(--color-foreground); background: hsl(215 20% 14%); transform: translateY(-1px); box-shadow: inset 0 0 0 1px hsl(215 16% 24%), inset 2px 2px 0 #ffffff14, inset -2px -2px 0 #0008; }
+.pa .chip:not(.cur):active { transform: translateY(1px); }
+.pa :is(.chip, .key):is(:focus-visible, .is-focus) { clip-path: none; outline: 2px solid var(--color-primary-hover); outline-offset: 1px; color: var(--color-foreground); }
+.pa .chip.drop-hot { color: #fff !important; transform: translateY(-1px); background: var(--color-primary-muted) !important; box-shadow: inset 0 0 0 2px var(--color-primary-hover), inset 4px 4px 0 #ffffff10 !important; }
+.pa .chip.drop-hot .pxf.k-closed { display: none; } .pa .chip.drop-hot .pxf.k-open { display: block; }
+.pa .chip.more { padding: 0 9px; color: var(--color-foreground-muted); }
+.pa .chip.more[aria-expanded="true"] { color: var(--color-foreground); background: hsl(215 20% 15%); }
+.pa .tri { color: var(--color-foreground-subtle); opacity: .8; }
+.pa .count { flex: none; margin-left: 6px; color: var(--color-foreground-subtle); font-size: 12px; font-variant-numeric: tabular-nums; }
+.win.narrow .pa .count { display: none; }
+/* Hover card on the current chip: the full disk path, Copy path. */
+.pop.pb-tip { padding: 8px 8px 8px 12px; }
+.pop.pb-tip .pb-pathcard .mono { max-width: 520px; }
+.pop.pb-tip .hint { display: block; margin-top: 6px; color: var(--color-foreground-subtle); font-size: 11px; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Path bar</a> · <span>A</span>Pixel tabs</div>
+    <h1>A · Pixel tabs</h1>
+    <p>Every folder in the trail is a <b>small bevelled chip with notched pixel corners</b>, set in <b>Jersey 15</b>; <b>the current folder is the accent key</b>, bevelled like the SnagThis button. Pixel <b>▸</b> between chips and a bevelled <b>back key</b>. <b>No path text</b>: rest on the current chip (or ⋯) for the disk path and <b>Copy path</b>. Hidden middle folders fold into a <b>“···” chip</b> that opens a menu.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../brand.js"></script>
+<script src="../../shared.js"></script>
+<script src="../../folder-rows/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org, B = window.PB;
+  const chip = (m, s) => s.more
+    ? `<button class="chip more" data-more aria-haspopup="menu" aria-expanded="${m.menu === 'more'}" aria-label="${s.items.length} hidden folders" title="${s.items.map((x) => P.esc(x.name)).join(' ▸ ')}">${B.px.dots()}</button>`
+    : `<button class="chip${s.cur ? ' cur' : ''}${B.st(m, s.i)}" ${B.at(s)}>${s.root ? B.glyph(16, 'closed') + B.glyph(16, 'open') : ''}<span class="nm">${P.esc(s.name)}</span></button>`;
+  PB.mount({
+    bar: (m) => {
+      const vis = B.visible(m);
+      return `<nav class="pbar pa" aria-label="Folder">${m.path.length ? `<button class="key${m.hover === 'back' ? ' is-hover' : ''}" data-seg="back" data-go="${P.esc(m.path.slice(0, -1).join('/'))}" aria-label="Back to ${P.esc(B.parentName(m))}" title="Back to ${P.esc(B.parentName(m))}">${B.px.left()}</button>` : ''}
+        <span data-fit>${vis.map((s, n) => `${n ? B.px.tri() : ''}${chip(m, s)}`).join('')}</span>
+        <span class="count">${B.summary(m)}</span>${B.tools(m)}</nav>`;
+    },
+    over: (m) => m.reveal ? `<div class="pop pb-tip" role="tooltip" data-anchor=".pa .chip.cur" data-align="start"><i class="caret"></i>${B.pathCard(m)}<span class="hint">Right-click any chip: Open · Copy path · Show in Finder</span></div>` : '',
+    notes: () => `<h2>How it behaves</h2><ul>
+      <li><b>Root</b>: one accent chip with the pixel folder, no back key. <b>Inside</b>: the bevelled back key appears; parents are dark chips, the current one is the accent key.</li>
+      <li><b>Hover</b>: a parent chip lifts 1px and brightens; press sinks it. <b>Focus</b>: 2px accent ring, square (the notches drop so the ring stays crisp).</li>
+      <li><b>Drag onto a chip</b>: it lifts, fills with the muted accent, gets a 2px accent border and its pixel folder <b>opens</b>; the drag chip says <i>Move to Road trips</i>.</li>
+      <li><b>Long paths</b>: each chip caps at 230px with an ellipsis (current 380px); if they still don't fit, folders nearest the root fold into <b>···</b>. Its menu lists them as an indented tree; each item opens the folder and takes drops (hovering ··· while dragging opens it).</li>
+      <li><b>Disk path</b>: not in the bar. Rest on the current chip for a card with the path and <b>Copy path</b>; right-click any chip for Open · Copy path · Show in Finder. The count on the right is optional context.</li></ul>
+      <div class="trade"><h3>Trade-off</h3>The most on-brand and the clearest “you are here”. Jersey 15 at 18px is a touch less readable than Inter for long names, and a row of chips is louder than today's text.</div>`,
+  });
+})();
+</script>
+</body>
+</html>

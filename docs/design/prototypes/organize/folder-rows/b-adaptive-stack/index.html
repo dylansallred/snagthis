@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Folder rows B · Adaptive stack</title>
+<link rel="stylesheet" href="../../shared.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* B · Adaptive stack: a folder's posters become a small stack of framed cards on a dark tray.
+   The stack is drawn in em units (font-size 1px in rows, 1.55px on the shelf). --k spreads it on hover and drop. */
+.stk { position: relative; width: 100%; height: 100%; font-size: 1px; --k: 1; }
+.stk .card { position: absolute; left: 50%; top: 50%; width: 66em; height: 37em; margin: -18.5em 0 0 -33em; background: #0c0e11 center / cover; border-radius: 1em;
+  box-shadow: inset 1.5em 1.5em 0 #ffffff26, inset -1.5em -1.5em 0 #00000040, 0 0 0 2em #0c0e11, 2em 3em 0 2em #0008;
+  transform: translate(calc(var(--x) * var(--k) * 1em), calc(var(--y) * var(--k) * 1em)) rotate(calc(var(--r) * var(--k) * 1deg)); transition: transform 260ms cubic-bezier(.2, .8, .2, 1); }
+.stk .card i { position: absolute; inset: 0; border-radius: inherit; background: inherit; background-size: cover; }
+.stk .card { background-size: cover; }
+.stk .more { position: absolute; right: 7px; bottom: 6px; z-index: 3; padding: 2px 5px 0; background: #0c0e11; color: var(--accent-bevel-light); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 60%, transparent); font: 400 16px/1 var(--font-pixel); }
+/* Empty: a dashed pixel folder outline, nothing pretending to be a poster. */
+.stk .hollow { position: absolute; left: 50%; top: 50%; width: 58em; height: 38em; margin: -17em 0 0 -29em; border: 2px dashed var(--color-foreground-subtle); border-radius: 1px; opacity: .8; transition: border-color 160ms; }
+.stk .hollow::before { content: ""; position: absolute; left: -2px; top: -10em; width: 22em; height: 8em; border: 2px dashed var(--color-foreground-subtle); border-bottom: 0; }
+/* Drop: the stack fans and an accent slot appears in front, where the dropped video will land. */
+.stk .slot { position: absolute; left: 50%; top: 50%; z-index: 2; width: 66em; height: 37em; margin: -18.5em 0 0 -33em; display: none; place-items: center; border: 2px dashed var(--color-primary-hover); background: color-mix(in srgb, var(--color-primary-hover) 22%, #0c0e11e6); color: var(--color-primary-hover); transform: translateY(6em); }
+.stk .slot svg.i { width: 16px; height: 16px; stroke-width: 2.4; }
+.drop-hot .stk .slot { display: grid; }
+.drop-hot .stk .hollow { border-color: var(--color-primary-hover); }
+.drop-hot .stk .hollow::before { border-color: var(--color-primary-hover); }
+:is(.frow, .ftile):is(:hover, .is-hover, :focus-visible, .is-focus) .stk { --k: 1.55; }
+:is(.frow, .ftile).drop-hot .stk { --k: 2.1; }
+
+/* List row: 76px (between a folder's 64 and a video's 85), a raised surface with a top highlight, the stack on a sunken tray. */
+.frow { position: relative; display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; height: 76px; padding-right: 14px; border-bottom: 1px solid var(--color-border-subtle); background: hsl(215 20% 10.5%); box-shadow: inset 0 1px 0 #ffffff0b; transition: background 160ms; }
+.frow::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); transform: scaleY(0); transition: transform 300ms; z-index: 1; }
+.frow .tray { position: relative; align-self: stretch; overflow: hidden; background: radial-gradient(ellipse at 50% 60%, hsl(215 22% 9%), hsl(215 22% 4%)); box-shadow: inset 0 2px 5px #000a, inset -1px 0 0 var(--color-border-subtle); }
+.frow .tray .stk { margin-left: -8px; }
+.frow .nm { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.frow .nm b { font-size: 14.5px; font-weight: 700; letter-spacing: -.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frow .fm { margin: 5px 0 0 25px; font-size: 12px; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; }
+.frow.is-empty .nm b { color: var(--color-foreground-muted); font-weight: 620; }
+.frow:is(:hover, .is-hover, :focus-visible, .is-focus) { background: hsl(215 20% 13%); }
+.frow:is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot)::before { transform: none; }
+.frow:is(:focus-visible, .is-focus) { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.frow.drop-hot .tray { background: radial-gradient(ellipse at 50% 60%, color-mix(in srgb, var(--color-primary-hover) 20%, hsl(215 22% 9%)), hsl(215 22% 4%)); }
+.frow:last-of-type { border-bottom: 0; }
+.frow + .vrow { border-top: 6px solid hsl(215 22% 4%); }
+
+/* Shelf tile: a bigger stack on the same sunken tray; bold name with the pixel folder glyph. */
+.ftile { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.ftile .tray { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: radial-gradient(ellipse at 50% 60%, hsl(215 22% 10%), hsl(215 22% 4%)); box-shadow: inset 0 2px 6px #000a, inset 0 0 0 1px var(--color-border-subtle); }
+.ftile .stk { font-size: 1.55px; }
+.ftile .stk .more { font-size: 20px; right: 9px; bottom: 8px; }
+.ftile .tray::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--color-primary-hover); transform: scaleX(0); transition: transform 300ms; }
+.ftile:is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot) .tray::after { transform: none; }
+.ftile:is(:focus-visible, .is-focus) .tray { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.ftile.drop-hot .tray { background: radial-gradient(ellipse at 50% 60%, color-mix(in srgb, var(--color-primary-hover) 22%, hsl(215 22% 10%)), hsl(215 22% 4%)); box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.ftile .sh { gap: 7px; }
+.ftile .sh b { font-size: 13px; font-weight: 700; }
+.ftile.is-empty .sh b { color: var(--color-foreground-muted); font-weight: 620; }
+.ftile .fact .chevr { width: 20px; }
+.ftile .fact .hx .iconbtn:first-child { display: none; }
+.ftile .ss { margin-left: 23px; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Folder rows</a> · <span>B</span>Adaptive stack</div>
+    <h1>B · Adaptive stack</h1>
+    <p>A folder's newest posters become a <b>stack of framed cards on a sunken tray</b>: 1 card, 2 offset cards, then a 3-card stack with <b>+N</b>. Empty is a <b>dashed pixel folder outline</b>. The name is <b>bolder, with a pixel folder glyph</b>, on a slightly raised surface. It keeps the “see what's inside” of today's mosaic without ever showing blank tiles.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../brand.js"></script>
+<script src="../../shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org, R = window.FR;
+  // Back to front: [x, y, rotation] per card, for 1, 2 and 3+ videos.
+  const LAYOUT = { 1: [[0, 0, 0]], 2: [[-8, -4, -5], [6, 3, 3]], 3: [[-11, -3, -8], [10, -4, 6], [0, 4, 0]] };
+  const stack = (f) => {
+    const d = R.info(f);
+    if (!d.n) return `<div class="stk" aria-hidden="true"><div class="hollow"></div><div class="slot">${P.icon('plus')}</div></div>`;
+    const shown = Math.min(d.n, 3), cards = LAYOUT[shown];
+    // The newest poster is the front card.
+    const html = cards.map(([x, y, r], i) => `<div class="card" style="--x:${x};--y:${y};--r:${r};${d.thumbs[shown - 1 - i]}"></div>`).join('');
+    return `<div class="stk" aria-hidden="true">${html}<div class="slot">${P.icon('plus')}</div>${d.n > 3 ? `<span class="more">+${d.n - 3}</span>` : ''}</div>`;
+  };
+  const hot = (m, f) => m.drop === f.id;
+  R.mount({
+    states: R.STATES,
+    row: (m, f) => { const d = R.info(f); return `<div ${R.attrs(m, f, 'frow')}><div class="tray">${stack(f)}</div>
+      <div style="min-width:0"><div class="nm">${R.glyph(16, d.n ? (hot(m, f) ? 'open' : 'closed') : 'empty')}<b>${P.esc(f.name)}</b></div><div class="fm${hot(m, f) ? ' fhint' : ''}">${hot(m, f) ? d.hint : d.meta}</div></div>${R.actions(f)}</div>`; },
+    tile: (m, f) => { const d = R.info(f); return `<div ${R.attrs(m, f, 'ftile')}><div class="tray">${stack(f)}</div><div class="ledge"></div>
+      <div class="sh">${R.glyph(16, d.n ? (hot(m, f) ? 'open' : 'closed') : 'empty')}<b title="${P.esc(f.name)}">${P.esc(f.name)}</b>${R.actions(f)}</div><div class="ss${hot(m, f) ? ' fhint' : ''}">${hot(m, f) ? 'Move here' : d.meta}</div></div>`; },
+    notes: (s) => `<h2>How it handles every count</h2><ul>
+      <li><b>0</b>: a dashed pixel folder outline on the tray; the glyph beside the name is hollow too.</li>
+      <li><b>1</b>: one framed card, straight.</li><li><b>2</b>: two cards, offset and slightly turned.</li><li><b>3</b>: a three-card stack.</li><li><b>4+</b>: the same three cards and a pixel <b>+N</b> tag (6 → +3), never blank cells.</li></ul>
+      <h3>States</h3><ul><li><b>Hover / focus</b>: the cards fan a little wider; the accent edge grows; focus adds a 2px accent ring.</li><li><b>Drag-over</b>: the cards fan further and a dashed accent slot appears in front, where the video will land; the glyph opens and the line reads <i>Move here · path</i>.</li><li><b>Shelf</b>: the same stack, bigger, on the tray, with the bold name under it. Folder tiles lead the grid.</li></ul>
+      <div class="trade"><h3>Trade-off</h3>Closest to today (you still see what's inside), and the tray + framed cards + bold name separate it from full-bleed video posters. Less loud than A. The row is still close in height to a video row, so the difference is mainly shape, not size.</div>`,
+  });
+})();
+</script>
+</body>
+</html>

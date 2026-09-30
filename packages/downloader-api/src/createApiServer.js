@@ -26,6 +26,8 @@ const registerHistoryRoutes = require('./routes/history');
 const registerQueueRoutes = require('./routes/queue');
 const registerJobRoutes = require('./routes/jobs');
 const { HistoryIndexService } = require('./services/historyIndex');
+const { createLibraryFolders } = require('./services/libraryFolders');
+const registerLibraryRoutes = require('./routes/library');
 const logger = require('./utils/logger');
 const { inferMediaMetadata } = require('./utils/mediaMetadata');
 const { inspectMedia } = require('./services/mediaInspection');
@@ -468,6 +470,7 @@ function createApiServer(options = {}) {
     indexDir: dataDir,
     fsPromises,
     jobs,
+    getLibraryRoot: () => (typeof getCompletedOutputDir === 'function' ? getCompletedOutputDir() : '') || resolvedDownloadDir,
     onChange: (payload) => notifyHistoryChange(payload),
   });
 
@@ -1909,6 +1912,18 @@ function createApiServer(options = {}) {
       }
     },
   });
+  registerLibraryRoutes(app, historyIndex, createLibraryFolders({
+    historyIndex, jobs, downloadDir: resolvedDownloadDir, onTrashFile,
+    saveQueue: () => queueManager.saveQueue(),
+    // A trashed folder's finished downloads leave the queue too, as a trashed video's do.
+    onRemoveItem: async (item) => {
+      const job = item.jobId && jobs.get(item.jobId);
+      if (job && ['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)) {
+        queueManager.removeJob(item.jobId, false);
+        await queueManager.waitForJobIdle(item.jobId);
+      }
+    },
+  }));
   registerQueueRoutes(app, queueManager, {
     onRenameJob: async (jobId, title) => {
       const job = jobs.get(jobId);

@@ -1,0 +1,181 @@
+/* Organise the library (owner choice B · Real folders, with C's Sort & group; folder rows C · Sections): see ui-design-spec §6.2. */
+
+/* Path bar (owner choice D · Minimal): plain folder names with a pixel "/" between, the current one in the accent.
+   No back button and no path text: the path is in ⋯ ▸ Copy path. Middle folders fold into "…" when it doesn't fit. */
+.path-bar { display: flex; align-items: center; gap: 4px; height: 42px; padding: 0 8px 0 10px; flex-shrink: 0; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; min-width: 0; }
+.saved-path-bar { gap: 6px; padding-left: 14px; }
+/* Room for the focus ring inside the clipped trail. */
+.path-bar .crumbs { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; margin: -4px; padding: 4px; list-style: none; overflow: hidden; }
+.path-bar .crumbs li { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.path-bar .crumbs li:first-child, .path-bar .crumbs li:has(> .crumb-more) { flex-shrink: 0; }
+.path-bar .crumbs.measuring :is(li, .crumb, .crumb-name) { flex-shrink: 0 !important; }
+.crumb { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border: 0; border-radius: 4px; background: none; color: var(--color-foreground); font-size: 13px; font-weight: 620; min-width: 0; outline: none; }
+.crumb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-path-bar .crumb { flex: 0 1 auto; padding: 0 5px; max-width: 220px; color: var(--color-foreground-muted); font-weight: 520; transition: color 120ms ease; }
+.saved-path-bar .crumb.current { max-width: 380px; color: var(--color-primary-hover); font-weight: 650; }
+.crumb .folder-glyph.small { width: 16px; height: 13px; }
+/* A 2px pixel underline: dotted on hover, solid on a drop target. */
+.saved-path-bar .crumb.up::after { content: ""; position: absolute; left: 5px; right: 5px; bottom: 3px; height: 2px; background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 4px); opacity: 0; transition: opacity 120ms ease; pointer-events: none; }
+.saved-path-bar .crumb.up:hover { color: var(--color-foreground); }
+.saved-path-bar .crumb.up:hover::after { opacity: .9; }
+.saved-path-bar .crumb.up:focus-visible { color: var(--color-foreground); box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.saved-path-bar .crumb-more { padding: 0 6px; font-weight: 700; letter-spacing: .05em; }
+.saved-path-bar .crumb-more[data-state="open"] { color: var(--color-foreground); }
+.saved-path-bar .crumb-more::after { content: none !important; }
+.crumb-sep { flex: none; width: 5px; height: 12px; fill: var(--color-foreground-subtle); opacity: .7; shape-rendering: crispEdges; }
+.crumb.drop-hot, .hidden-folders-menu .hidden-folder.drop-hot { background: color-mix(in srgb, var(--color-primary-hover) 16%, transparent); box-shadow: inset 0 0 0 1px var(--color-primary-hover); color: var(--color-foreground) !important; }
+.saved-path-bar .crumb.drop-hot::after { opacity: 1; background: var(--color-primary-hover); }
+:is(.crumb, .hidden-folder).drop-hot .k-closed { visibility: hidden; }
+:is(.crumb, .hidden-folder).drop-hot .k-open { visibility: visible; }
+/* "…": the folded folders as an indented tree of places to open or drop on. */
+.hidden-folders-menu { min-width: 260px; max-width: 420px; }
+.hidden-folders-menu .hidden-folder { gap: 8px; }
+.hidden-folders-menu .folder-glyph.small { width: 16px; height: 13px; }
+.hidden-folders-menu .folder-glyph.small .pixel-folder { width: 16px; height: 13px; }
+/* ⋯: Copy path, with the path under it; Show in Finder; Rename and Delete inside a folder. */
+.folder-options-menu { width: 300px; }
+.folder-options-menu .menu-path { margin: -2px 0 4px; padding: 0 8px 4px 32px; color: var(--color-foreground-subtle); font: 11px/1.5 var(--font-mono); white-space: normal; overflow-wrap: anywhere; }
+.path-space { flex: 1; }
+.sort-button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 7px; border: 0; border-radius: 7px; background: none; color: var(--color-foreground-muted); font-size: 12px; white-space: nowrap; }
+.sort-button > span { color: var(--color-foreground); font-weight: 560; }
+.sort-button > svg { width: 14px; height: 14px; }
+.sort-button .chev { width: 12px; height: 12px; color: var(--color-primary-hover); transition: transform 160ms ease; }
+.sort-button:not(:disabled):hover, .sort-button[data-state="open"] { background: var(--color-background-active); color: var(--color-foreground); }
+.sort-button:focus-visible { outline: none; background: var(--color-background-active); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 50%, transparent); }
+.sort-button[data-state="open"] .chev { transform: rotate(180deg); }
+.sort-button:disabled > span { color: var(--color-foreground-muted); font-weight: 500; }
+.sort-menu { min-width: 214px; }
+.video-menu [data-slot="dropdown-menu-label"] { padding: 6px 9px 3px; color: var(--color-foreground-subtle); font-size: 10.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.sort-menu [data-slot="dropdown-menu-radio-item"] { padding-left: 28px !important; }
+.sort-menu [data-slot="dropdown-menu-radio-item"] svg { color: var(--color-primary-hover); }
+.menu-note { max-width: 250px; margin: 4px 0 0; padding: 7px 9px 4px; border-top: 1px solid hsl(221 8% 23% / .7); color: var(--color-foreground-subtle); font-size: 11px; line-height: 15px; white-space: normal; }
+.menu-hint { margin-left: auto; padding-left: 14px; color: var(--color-foreground-subtle); font-size: 11px; font-variant-numeric: tabular-nums; }
+.menu-anchor { position: fixed; pointer-events: none; }
+.move-menu { width: 280px; max-height: min(420px, calc(100vh - 120px)); }
+.move-menu [role="menuitem"] > svg { width: 14px; height: 14px; color: #e3b35c; }
+.move-menu [role="menuitem"][data-disabled] { opacity: .55; }
+.move-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.move-menu .menu-note { word-break: break-all; }
+
+/* Saved's sections (owner choice C · Sections): FOLDERS n above compact folder rows, then VIDEOS n with their size.
+   Only a place with subfolders has them. The labels stay pinned while the list scrolls. */
+.list-section { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; border-bottom: 1px solid var(--color-border-subtle); background: hsl(215 22% 5.5%); }
+.list-section-title { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--color-foreground-subtle); font: 400 16px/1 var(--font-pixel, var(--font-sans)); letter-spacing: .08em; text-transform: uppercase; }
+.list-section-title b { font-weight: 400; color: var(--color-primary-hover); }
+.list-section-meta { margin-left: auto; color: var(--color-foreground-subtle); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.list-section + :is(.video-item, .group-item) { border-top: 0; }
+.list-section + .group-item .group-header { border-top: 0; }
+
+/* A folder: pixel folder · name · "N videos · size" on one 44px line, no posters, so it never reads as a video. */
+.folder-item { position: relative; border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent); }
+.folder-item + .video-item { border-top: 0; }
+.folder-item::after { content: ""; position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); pointer-events: none; opacity: 0; transform: scaleY(0); transition: transform 380ms cubic-bezier(.4, 0, .2, 1), opacity 380ms ease; }
+.folder-item:has(> .saved-folder-row:is(:hover, :focus-visible, :has(:focus-visible), .menu-open, .drop-hot))::after { opacity: 1; transform: none; transition: transform 300ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
+.saved-folder-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 14px 0 18px; background: hsl(215 22% 6.5%); cursor: pointer; outline: none; transition: background-color 140ms ease; }
+.saved-folder-row:is(:hover, :focus-visible, :has(:focus-visible), .menu-open) { background: var(--color-surface-row-hover); }
+.saved-folder-row:focus-visible { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.folder-text { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
+.folder-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; }
+.folder-meta { flex: none; color: var(--color-foreground-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.saved-folder-row .folder-meta::before { content: "·"; margin-right: 8px; color: var(--color-foreground-subtle); }
+.saved-folder-row .folder-meta.drop-hint::before { content: none; }
+.folder-meta.drop-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-primary-hover); }
+:is(.saved-folder-row, .saved-folder-chip).is-empty .folder-name { color: var(--color-foreground-muted); font-weight: 520; }
+:is(.saved-folder-row, .saved-folder-chip).editing { cursor: default; }
+:is(.saved-folder-row, .saved-folder-chip).editing .folder-text { display: block; padding: 6px 0; }
+.folder-hint { font: 11px/1.5 var(--font-mono); color: var(--color-foreground-subtle); }
+.folder-name-field .inline-rename { max-width: 320px; font-size: 13px; }
+.folder-chevron { display: grid; place-items: center; width: 30px; color: var(--color-foreground-subtle); }
+.folder-chevron svg { width: 15px; height: 15px; }
+.saved-folder-row:hover .hover-action, .video-list[data-input-mode="keyboard"] .saved-folder-row:focus-within .hover-action, .saved-folder-row .hover-action.menu-open { opacity: 1; pointer-events: auto; }
+
+/* The pixel folder, in the accent's bevel colours. With videos in it, it opens on hover, focus and drag-over;
+   an empty one is a dotted outline that lights in the accent as a drop target. */
+.folder-glyph { position: relative; flex: none; width: 32px; height: 26px; }
+.pixel-folder { position: absolute; inset: 0; width: 100%; height: 100%; shape-rendering: crispEdges; }
+.pixel-folder .b { fill: var(--accent-bevel-dark, #bd3f00); }
+.pixel-folder .f { fill: var(--accent-bevel-face, #fa5d0e); }
+.pixel-folder .l { fill: var(--accent-bevel-light, #ffb238); }
+.pixel-folder .p { fill: #ece7df; }
+.pixel-folder .o { fill: var(--color-foreground-subtle); }
+.pixel-folder.k-open { visibility: hidden; }
+:is(.saved-folder-row, .saved-folder-chip):not(.is-empty):is(:hover, :focus-visible, :has(:focus-visible), .menu-open, .drop-hot) .k-closed { visibility: hidden; }
+:is(.saved-folder-row, .saved-folder-chip):not(.is-empty):is(:hover, :focus-visible, :has(:focus-visible), .menu-open, .drop-hot) .k-open { visibility: visible; }
+.drop-hot .pixel-folder.k-empty .o { fill: var(--color-primary-hover); }
+
+/* The shelf: FOLDERS chips in a grid above the posters. */
+.folder-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); gap: 10px; padding: 14px 16px 18px; }
+.folder-chip-item { min-width: 0; }
+.saved-folder-chip { display: flex; align-items: center; gap: 11px; min-height: 54px; padding: 0 8px 0 12px; background: hsl(215 20% 9.5%); box-shadow: inset 1px 1px 0 #ffffff12, inset -1px -1px 0 #0008, 0 0 0 1px var(--color-border-subtle); cursor: pointer; outline: none; transition: background-color 140ms ease; }
+.saved-folder-chip:is(:hover, :focus-visible, :has(:focus-visible), .menu-open) { background: hsl(215 20% 12.5%); }
+.saved-folder-chip:focus-visible { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.saved-folder-chip .folder-text { flex-direction: column; align-items: stretch; gap: 2px; }
+.saved-folder-chip .folder-name { font-size: 13px; }
+.saved-folder-chip .folder-meta { overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.saved-folder-chip .row-actions { gap: 0; }
+.saved-folder-chip .folder-chevron { width: 20px; }
+/* At rest a chip keeps its width for the name and count: ⋯ only takes space on hover, focus or while its menu is open. */
+.saved-folder-chip:not(:hover, :focus-within, .menu-open) .hover-action { display: none; }
+.saved-folder-chip:is(:hover, :focus-within, .menu-open) .hover-action { opacity: 1; pointer-events: auto; }
+
+/* A drop target: a folder the dragged videos would move into. */
+:is(.saved-folder-row, .saved-folder-chip).drop-hot { background: color-mix(in srgb, var(--color-primary-hover) 16%, transparent); box-shadow: inset 0 0 0 1.5px var(--color-primary-hover); color: var(--color-foreground); }
+:is(.saved-folder-row, .saved-folder-chip).drop-hot { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.drag-ghost { position: fixed; top: -200px; left: 0; z-index: -1; display: inline-flex; align-items: center; gap: 8px; max-width: 320px; height: 30px; padding: 0 10px 0 4px; border-radius: 7px; background: hsl(215 22% 11.5%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 70%, transparent); color: var(--color-foreground); font-size: 12px; font-weight: 560; white-space: nowrap; }
+.drag-ghost img { width: 36px; height: 22px; border-radius: 3px; object-fit: cover; }
+.drag-ghost span { overflow: hidden; text-overflow: ellipsis; }
+.drag-ghost b { padding: 1px 6px; border-radius: 9px; background: var(--color-primary); color: #fff; font-size: 11px; font-weight: 600; }
+.video-item.dragging, .shelf-tile.dragging { opacity: .55; }
+
+/* Group headers (Sort & group ▸ Group by): collapsible, with the group's count and size. */
+.group-item { position: sticky; top: 0; z-index: 3; }
+.group-header { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 14px 0 10px; border: 0; border-top: 1px solid var(--color-border-subtle); border-bottom: 1px solid var(--color-border-subtle); background: hsl(215 22% 6%); color: var(--color-foreground); font-size: 12px; text-align: left; outline: none; }
+.video-list > .group-item:first-child .group-header { border-top: 0; }
+.group-item + .video-item { border-top: 0; }
+.group-header:hover { background: hsl(215 22% 9%); }
+.group-header:focus-visible { box-shadow: inset 3px 0 0 var(--color-primary-hover); }
+.group-header .chev { width: 14px; height: 14px; color: var(--color-foreground-muted); transition: transform 160ms ease; }
+.group-header[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.group-header b { font-weight: 620; }
+.group-meta { color: var(--color-foreground-subtle); font-variant-numeric: tabular-nums; }
+
+/* The folder a saved video is in, in All and in search results. */
+.row-location { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--color-foreground-muted); white-space: nowrap; }
+.row-location svg { width: 12px; height: 12px; }
+
+/* Multi-select. */
+.video-item.selected > .video-row { background: color-mix(in srgb, var(--color-primary-hover) 11%, var(--color-surface-row)); }
+.video-item.selected::after { opacity: 1; transform: none; background: var(--color-primary-hover); }
+.video-list:has(.video-item.selected) .video-item.selected :is(.video-row, .row-details) { opacity: 1 !important; }
+.selection-bar { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--color-foreground); font-size: 12.5px; }
+.selection-count { display: inline-flex; align-items: center; gap: 8px; margin-right: 6px; font-weight: 600; white-space: nowrap; }
+.selection-count i { width: 8px; height: 8px; background: var(--color-primary-hover); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-hover) 30%, transparent); }
+.selection-bar .row-action { height: 28px; }
+.selection-bar .row-action.labelled > svg { color: #e3b35c; }
+
+/* Delete a folder: two explicit choices. */
+.folder-delete { padding: 14px; }
+.remove-popover.folder-delete > h2.folder-delete-title { position: static; width: auto; height: auto; overflow: visible; clip-path: none; margin: 0 0 10px; font-size: 13.5px; font-weight: 620; white-space: normal; }
+.folder-delete-choices { display: grid; gap: 6px; }
+.folder-choice { display: flex; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; background: hsl(215 22% 9%); color: var(--color-foreground); text-align: left; }
+.folder-choice strong { display: block; font-size: 12.5px; font-weight: 620; }
+.folder-choice small { display: block; margin-top: 2px; color: var(--color-foreground-muted); font-size: 11.5px; line-height: 16px; }
+.folder-choice[aria-checked="true"] { border-color: color-mix(in srgb, var(--color-primary-hover) 70%, transparent); background: color-mix(in srgb, var(--color-primary-hover) 7%, hsl(215 22% 9%)); }
+.folder-choice.destructive-text strong { color: hsl(0 68% 70%); }
+.folder-choice:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--color-primary-hover); }
+.folder-choice .radio { flex-shrink: 0; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--color-foreground-subtle); }
+.folder-choice[aria-checked="true"] .radio { border-color: var(--color-primary-hover); background: radial-gradient(circle, var(--color-primary-hover) 0 3.5px, transparent 4px); }
+.folder-delete-note { margin: 10px 2px 0; color: var(--color-foreground-muted); font-size: 11.5px; line-height: 16px; }
+.folder-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.folder-dialog .inline-rename { font-size: 13px; font-weight: 500; }
+.folder-dialog-problem { min-height: 18px; margin: 6px 0 0; font-size: 12px; }
+
+.folder-empty { flex-direction: column; }
+.folder-empty .empty-note { padding-bottom: 6px; }
+.folder-empty-body { max-width: 420px; margin: 0 auto; padding: 0 24px; color: var(--color-foreground-subtle); font-size: 12px; text-align: center; }
+
+[data-sonner-toast][data-type="warning"] { color: var(--color-status-paused); }
+
+@media (prefers-reduced-motion: reduce) {
+  .folder-item::after, .saved-folder-row, .saved-folder-chip, .sort-button .chev, .group-header .chev, .saved-path-bar .crumb, .saved-path-bar .crumb::after { transition: none; }
+}

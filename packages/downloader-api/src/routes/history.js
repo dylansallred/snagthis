@@ -29,8 +29,8 @@ function registerHistoryRoutes(app, historyIndex, fsPromises, downloadDir, optio
 
   app.get('/api/history', async (req, res) => {
     try {
-      const result = await historyIndex.list({ limit: req.query.limit, cursor: req.query.cursor, q: req.query.q || req.query.search });
-      res.json({ items: result.items, nextCursor: result.nextCursor, total: result.total });
+      const result = await historyIndex.list({ limit: req.query.limit, cursor: req.query.cursor, q: req.query.q || req.query.search, folder: typeof req.query.folder === 'string' ? req.query.folder : undefined, sort: req.query.sort });
+      res.json({ items: result.items, nextCursor: result.nextCursor, total: result.total, savedJobIds: result.savedJobIds });
     } catch { res.status(500).json({ error: 'The saved list could not be loaded' }); }
   });
 
