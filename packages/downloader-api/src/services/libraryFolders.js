@@ -31,7 +31,9 @@ const joinFolder = (parent, name) => (parent ? `${parent}/${name}` : name);
  * original where it was; the library index and any finished job follow the new paths.
  */
 function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTrashFile, onRemoveItem, platform = process.platform }) {
-  const caseInsensitive = platform === 'darwin' || platform === 'win32';
+  // Names that differ only in case count as the same folder everywhere, as they do on macOS and
+  // Windows, so a library moved between systems never ends up with look-alike folders.
+  const caseInsensitive = true;
   const root = () => historyIndex.libraryRootPath();
 
   /** The absolute path of a user folder ('' is the save folder), refusing anything that could escape it. */
