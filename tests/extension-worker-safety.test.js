@@ -360,3 +360,99 @@ test('the store build asks on its own when Chrome starts while SnagThis waits; a
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(unpacked.calls.length, 0);
 });
+
+// Preview player (ui-design-spec §5.5): the player page holds only its session; the worker binds it to
+// the popup row and makes that row's download decision for Snag it.
+const MASTER = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080\n1080/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=854x480\n480/index.m3u8\n';
+const CHILD = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n' + Array.from({ length: 60 }, (_, index) => `#EXTINF:10,\nseg-${index}.ts\n`).join('') + '#EXT-X-ENDLIST\n';
+async function previewFixture(options) {
+  const jobs = [];
+  const worker = loadWorker({ ...options, fetch: options?.fetch || (async (url, request) => {
+    if (new URL(url).pathname === '/v1/jobs') { jobs.push(JSON.parse(request.body)); return { ok: true, json: async () => ({ jobId: 'desktop-job' }) }; }
+    return { ok: true, json: async () => ({ status: 'ok', minExtensionVersion: '1.0.0' }) };
+  }) });
+  const master = 'https://media.example/movie/master.m3u8';
+  await worker.message({ cmd: 'STORE_DETECTED_MEDIA', media: { url: master, contentType: 'application/vnd.apple.mpegurl', manifestText: MASTER } }, worker.content());
+  await worker.message({ cmd: 'STORE_DETECTED_MEDIA', media: { url: 'https://media.example/movie/1080/index.m3u8', contentType: 'application/vnd.apple.mpegurl', manifestText: CHILD } }, worker.content());
+  const listed = await worker.message({ cmd: 'GET_TAB_MEDIA', tabId: 7 });
+  const row = listed.items.find(item => item.url === master);
+  const player = { id: worker.context.chrome.runtime.id, url: worker.context.chrome.runtime.getURL('player.html?session=x') };
+  const open = async (session) => {
+    const created = await worker.message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: master, sourcePageUrl: 'https://cinema.example/watch', title: 'Movie', declaredType: 'hls', credentialed: false, tabId: 7, mediaId: row.id, apiBase: 'http://127.0.0.1:39999', ...session } });
+    assert.equal(created.ok, true);
+    return created.sessionId;
+  };
+  return { worker, jobs, row, master, player, open };
+}
+
+test('a preview session is bound to its popup row and offers that row\'s qualities, sizes and backend', async () => {
+  const { worker, row, player, open } = await previewFixture();
+  assert.ok(row && row.variants.length === 2, 'the master and its rendition collapse into one row with two qualities');
+  const opened = await worker.message({ cmd: 'GET_STREAM_SESSION', sessionId: await open() }, player);
+  assert.equal(opened.ok, true);
+  assert.equal(opened.session.sourceUrl, row.url);
+  assert.equal(opened.snag.backend, 'desktop', 'a stream downloads with SnagThis');
+  assert.equal(opened.snag.height, 1080, 'the popup default (Best) is offered');
+  assert.equal(opened.snag.sizeBytes, 300_000_000, 'bitrate × the playlist duration ÷ 8');
+  assert.equal(opened.snag.sizeEstimated, true);
+  assert.deepEqual(opened.snag.variants.map(variant => [variant.height, variant.sizeBytes]), [[1080, 300_000_000], [480, 75_000_000]]);
+  // A session for a different source, or a row from another visit, is never bound to Snag it.
+  const forged = await worker.message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: 'https://other.example/a.m3u8', tabId: 7, mediaId: row.id } });
+  assert.equal((await worker.message({ cmd: 'GET_STREAM_SESSION', sessionId: forged.sessionId }, player)).snag, null);
+  const stale = await open();
+  worker.session.values['snagthis:tab:7'].visit = 'a-new-visit'; // The tab navigated since Preview was chosen.
+  assert.equal((await worker.message({ cmd: 'GET_STREAM_SESSION', sessionId: stale }, player)).snag, null);
+});
+
+test('Snag it sends the quality picked in the player through the existing desktop download path', async () => {
+  const { worker, jobs, master, player, open } = await previewFixture();
+  const sessionId = await open();
+  const picked = await worker.message({ cmd: 'SNAG_STREAM_SESSION', sessionId, variantUrl: 'https://media.example/movie/480/index.m3u8' }, player);
+  assert.equal(picked.ok, true, picked.error);
+  assert.equal(picked.backend, 'desktop');
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].mediaUrl, master);
+  assert.equal(jobs[0].mediaType, 'hls');
+  assert.equal(jobs[0].selection.variantUrl, 'https://media.example/movie/480/index.m3u8');
+  assert.equal(jobs[0].selection.height, 480);
+  // A URL that is not one of the row's qualities falls back to the popup's default choice.
+  const second = await open();
+  worker.session.values['snagthis:tab:7'].mappings = {};
+  await worker.message({ cmd: 'SNAG_STREAM_SESSION', sessionId: second, variantUrl: 'https://attacker.example/x.m3u8' }, player);
+  assert.equal(jobs[1].selection.variantUrl, 'https://media.example/movie/1080/index.m3u8');
+  // Only extension pages may ask, and an expired session sends nothing.
+  assert.equal((await worker.message({ cmd: 'SNAG_STREAM_SESSION', sessionId }, worker.content())).ok, false);
+  worker.session.values[`snagthis:preview:${sessionId}`].createdAt = Date.now() - 601_000;
+  const expired = await worker.message({ cmd: 'SNAG_STREAM_SESSION', sessionId }, player);
+  assert.equal(expired.ok, false);
+  assert.match(expired.error, /expired/);
+  assert.equal(jobs.length, 2);
+});
+
+test('the store build offers no Snag it for YouTube media or YouTube pages in the preview', async () => {
+  const blog = await previewFixture({ tab: { id: 7, url: 'https://blog.example/post', title: 'A post', documentId: 'document-a' } });
+  const mediaUrl = 'https://rr3---sn-abc.googlevideo.com/videoplayback?itag=18';
+  const stored = await blog.worker.message({ cmd: 'STORE_DETECTED_MEDIA', media: { url: mediaUrl, contentType: 'video/mp4' } }, blog.worker.content());
+  const created = await blog.worker.message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: mediaUrl, tabId: 7, mediaId: stored.item.id } });
+  assert.ok((await blog.worker.message({ cmd: 'GET_STREAM_SESSION', sessionId: created.sessionId }, blog.player)).snag, 'development builds keep it');
+  blog.worker.context.SnagThisBuild = { storeBuild: true };
+  assert.equal((await blog.worker.message({ cmd: 'GET_STREAM_SESSION', sessionId: created.sessionId }, blog.player)).snag, null);
+  const refused = await blog.worker.message({ cmd: 'SNAG_STREAM_SESSION', sessionId: created.sessionId }, blog.player);
+  assert.equal(refused.error, "SnagThis doesn't save videos from this site.");
+  // Detection drops other media on YouTube pages; the preview still refuses one listed for a YouTube page.
+  const youtube = await previewFixture();
+  youtube.worker.context.SnagThisBuild = { storeBuild: true };
+  const session = await youtube.open();
+  youtube.worker.session.values['snagthis:tab:7'].url = 'https://www.youtube.com/watch?v=abcdefghijk';
+  assert.equal((await youtube.worker.message({ cmd: 'GET_STREAM_SESSION', sessionId: session }, youtube.player)).snag, null);
+  assert.equal((await youtube.worker.message({ cmd: 'SNAG_STREAM_SESSION', sessionId: session }, youtube.player)).ok, false);
+  assert.equal(blog.jobs.length + youtube.jobs.length, 0, 'nothing reaches the desktop app');
+});
+
+test('the preview reports the popup banner state: ready, unpaired, offline or an update', async () => {
+  const state = async (options) => { const fixture = await previewFixture(options); return (await fixture.worker.message({ cmd: 'PREVIEW_DESKTOP_STATE', sessionId: await fixture.open() }, fixture.player)).state; };
+  assert.equal(await state(), 'ready');
+  assert.equal(await state({ local: {} }), 'unpaired');
+  assert.equal(await state({ fetch: async () => { throw new TypeError('Failed to fetch'); } }), 'offline');
+  assert.equal(await state({ fetch: async () => ({ ok: true, json: async () => ({ minExtensionVersion: '9.0.0' }) }) }), 'update-extension');
+});

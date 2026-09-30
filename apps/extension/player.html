@@ -1,150 +1,128 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="player-page">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Preview - SnagThis</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0b1020;
-        --surface: rgba(23, 29, 50, 0.7);
-        --surface-border: rgba(42, 53, 88, 0.7);
-        --text: #ecf2ff;
-        --muted: #8a9dc4;
-        --accent: #31c48d;
-        --warn: #f59e0b;
-        --error: #ef4444;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        min-height: 100vh;
-        font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
-        color: var(--text);
-        background: linear-gradient(160deg, #111833, var(--bg));
-      }
-
-      .layout {
-        width: min(1120px, calc(100vw - 32px));
-        margin: 16px auto 22px;
-      }
-
-      .card {
-        background: var(--surface);
-        border: 1px solid var(--surface-border);
-        border-radius: 14px;
-        padding: 14px 16px;
-        backdrop-filter: blur(14px);
-      }
-
-      .title {
-        margin: 0;
-        font-size: 18px;
-        line-height: 1.2;
-      }
-
-      .sub {
-        margin: 8px 0 0;
-        color: var(--muted);
-        font-size: 12px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .status {
-        margin: 8px 0 0;
-        font-size: 12px;
-      }
-
-      .status.ok {
-        color: var(--accent);
-      }
-
-      .status.warn {
-        color: var(--warn);
-      }
-
-      .status.error {
-        color: var(--error);
-      }
-
-      .video-wrap {
-        margin-top: 12px;
-        border-radius: 12px;
-        overflow: hidden;
-        border: 1px solid var(--surface-border);
-        background: #000;
-      }
-
-      video {
-        width: 100%;
-        height: min(76vh, 760px);
-        display: block;
-        background: #000;
-      }
-
-      .actions {
-        margin-top: 12px;
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      button {
-        border: 1px solid var(--surface-border);
-        background: rgba(17, 24, 49, 0.8);
-        color: var(--text);
-        border-radius: 8px;
-        padding: 8px 12px;
-        font-size: 13px;
-        cursor: pointer;
-      }
-
-      button:hover {
-        border-color: rgba(49, 196, 141, 0.45);
-      }
-
-      button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-      }
-
-      .meta {
-        margin-top: 10px;
-        color: var(--muted);
-        font-size: 11px;
-      }
-    </style>
+    <link rel="stylesheet" href="popup.css" />
+    <!-- The saved accent is on <html> before the first paint, as in the popup. -->
+    <script src="shared/accents.js"></script>
+    <script src="popup/accent.js"></script>
   </head>
   <body>
-    <main class="layout">
-      <section class="card">
-        <h1 id="title" class="title">Preview</h1>
-        <p id="source" class="sub"></p>
-        <p id="status" class="status" role="status">Preparing preview…</p>
+    <!-- A · Cinema (docs/design/prototypes/preview-player): the video owns the tab; one top bar and one floating control bar. -->
+    <div class="pl is-loading" id="player-root">
+      <div class="pl-stage" id="stage">
+        <video id="player" playsinline preload="auto" aria-label="Video preview"></video>
+        <div class="pl-cues" id="cues"></div>
+      </div>
+      <div class="pl-skeleton" aria-hidden="true"><div><div class="pl-dots"><i></i><i></i><i></i></div><p id="loadingText">Loading preview</p></div></div>
+      <div class="pl-buffering" aria-hidden="true"><div class="pl-stepspin"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+      <button class="pl-bigplay" id="bigPlay" type="button" aria-label="Play"></button>
+      <div class="pl-osd" id="osd" aria-hidden="true"></div>
+      <div class="pl-shade pl-fade" aria-hidden="true"></div>
 
-        <div class="video-wrap">
-          <video id="player" controls playsinline preload="metadata"></video>
+      <header class="pl-top pl-fade">
+        <div class="pl-brand">
+          <span class="pl-mark" id="mark" aria-hidden="true"></span>
+          <div class="pl-titles">
+            <h1 id="title" class="pl-title">Preview</h1>
+            <p class="pl-sub"><span class="pl-chip" id="source"></span><i class="pl-dot" aria-hidden="true"></i><span id="previewLabel">Preview</span><i class="pl-dot" aria-hidden="true"></i><span id="kind"></span></p>
+          </div>
         </div>
-
-        <div class="actions">
-          <button id="openPageBtn" type="button">Open page</button>
-          <button id="retryBtn" type="button">Try again</button>
+        <div class="pl-acts">
+          <button class="pl-glass" id="infoBtn" type="button" aria-label="Details (I)" aria-expanded="false" aria-controls="info" data-icon="info"></button>
+          <div class="pl-snag-wrap" id="snagWrap" hidden>
+            <button class="pl-snag" type="button" data-act="snag"><span data-icon="down"></span><span class="pl-snag-label">Snag it</span><span class="pl-snag-meta" data-role="snag-meta"></span></button>
+            <span class="pl-under" data-role="snag-sub"></span>
+            <div class="pl-guide" id="guide" role="region" aria-label="SnagThis for desktop" hidden></div>
+          </div>
         </div>
+      </header>
 
-        <p class="meta">
-          Some sites only play their videos on their own page. If the preview does not start, open the page.
-        </p>
-      </section>
-    </main>
+      <div class="pl-dock pl-fade" id="dock">
+        <div class="pl-menus">
+          <div class="pl-menu" id="menu-speed" role="menu" aria-label="Speed" hidden><h4 aria-hidden="true">Speed</h4><div class="pl-opts" data-list="speed"></div></div>
+          <div class="pl-menu" id="menu-quality" role="menu" aria-label="Quality" hidden><h4 aria-hidden="true">Quality</h4><div class="pl-opts" data-list="quality"></div><p class="pl-menu-foot" id="qualityFoot" hidden></p></div>
+          <div class="pl-menu pl-tracks" id="menu-tracks" role="menu" aria-label="Audio and subtitles" hidden>
+            <div role="group" aria-label="Audio" id="audioGroup"><h4 aria-hidden="true">Audio</h4><div class="pl-opts" data-list="audio"></div></div>
+            <div role="group" aria-label="Subtitles" id="subsGroup"><h4 aria-hidden="true">Subtitles</h4><div class="pl-opts" data-list="subs"></div></div>
+            <p class="pl-menu-foot" id="tracksFoot"></p>
+          </div>
+        </div>
+        <div class="pl-bar">
+          <div class="pl-scrub" id="scrub" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0:00 of 0:00">
+            <div class="pl-rail"><div class="pl-buf"></div><div class="pl-hov"></div><div class="pl-fill"></div></div><div class="pl-knob"></div><div class="pl-tip" aria-hidden="true"><b id="tipTime">0:00</b></div>
+          </div>
+          <div class="pl-row">
+            <button class="pl-cb" type="button" data-act="play" aria-label="Play (K)"></button>
+            <button class="pl-cb pl-hide-sm" type="button" data-act="back" aria-label="Back 10 seconds (J)" data-icon="back"></button>
+            <button class="pl-cb pl-hide-sm" type="button" data-act="fwd" aria-label="Forward 10 seconds (L)" data-icon="fwd"></button>
+            <div class="pl-vol"><button class="pl-cb" type="button" data-act="mute" aria-label="Mute (M)"></button><input type="range" id="volume" min="0" max="1" step="0.05" value="1" aria-label="Volume" /></div>
+            <span class="pl-time" aria-hidden="true"><span id="cur">0:00</span><span class="pl-sep">/</span><span class="pl-dur" id="dur">0:00</span></span>
+            <span class="pl-grow"></span>
+            <button class="pl-cb" type="button" data-menu="speed" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-speed" aria-label="Speed, 1×"><span class="pl-pill" id="speedLabel">1×</span></button>
+            <button class="pl-cb" type="button" data-menu="quality" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-quality" aria-label="Quality, Auto" hidden><span class="pl-pill" id="qualityLabel">Auto</span></button>
+            <button class="pl-cb" type="button" data-menu="tracks" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-tracks" aria-label="Audio and subtitles (C)" data-icon="cc" hidden></button>
+            <button class="pl-cb pl-hide-sm" type="button" data-act="help" aria-label="Keyboard shortcuts (?)" data-icon="keys"></button>
+            <button class="pl-cb" type="button" data-act="pip" aria-label="Picture in picture (P)" data-icon="pip"></button>
+            <button class="pl-cb" type="button" data-act="fs" aria-label="Full screen (F)" data-icon="fs"></button>
+          </div>
+        </div>
+      </div>
 
-    <script src="vendor/hls.min.js"></script>
+      <aside class="pl-info" id="info" aria-label="Details" inert>
+        <button class="pl-cb pl-info-close" type="button" data-act="info" aria-label="Close details" data-icon="close"></button>
+        <h3>Details</h3>
+        <dl id="infoList"></dl>
+        <button class="pl-snag" type="button" data-act="snag" hidden><span data-icon="down"></span><span class="pl-snag-label">Snag it</span><span class="pl-snag-meta" data-role="snag-meta"></span></button>
+        <p class="pl-note" data-role="snag-sub"></p>
+        <button class="pl-ghost" type="button" data-act="open" hidden><span data-icon="ext"></span>Open page</button>
+      </aside>
+
+      <div class="pl-fail" id="fail" hidden>
+        <div class="pl-card" role="alert">
+          <span class="pl-failmark" id="failMark" aria-hidden="true"></span>
+          <h2 id="failTitle"></h2>
+          <p id="failBody"></p>
+          <div class="pl-fail-actions">
+            <button class="pl-bevel" type="button" data-act="open" id="openPageBtn">Open page</button>
+            <button class="pl-ghost" type="button" data-act="retry" id="retryBtn">Try again</button>
+            <button class="pl-ghost" type="button" data-act="snag" id="snagAnyway" hidden>Snag it anyway</button>
+          </div>
+          <details id="failWhy" hidden><summary></summary><ul></ul></details>
+        </div>
+      </div>
+
+      <div class="pl-help" id="help" hidden>
+        <div class="pl-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+          <button class="pl-cb pl-help-close" type="button" data-act="help" aria-label="Close keyboard shortcuts" data-icon="close"></button>
+          <h3 id="helpTitle">Keyboard</h3>
+          <dl>
+            <dt><kbd>Space</kbd><kbd>K</kbd></dt><dd>Play / pause</dd>
+            <dt><kbd>J</kbd><kbd>L</kbd></dt><dd>Back / forward 10 seconds</dd>
+            <dt><kbd>←</kbd><kbd>→</kbd></dt><dd>Back / forward 5 seconds</dd>
+            <dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>Volume</dd>
+            <dt><kbd>M</kbd></dt><dd>Mute</dd>
+            <dt><kbd>F</kbd></dt><dd>Full screen</dd>
+            <dt><kbd>C</kbd></dt><dd>Subtitles on / off</dd>
+            <dt><kbd>P</kbd></dt><dd>Picture in picture</dd>
+            <dt><kbd>I</kbd></dt><dd>Details</dd>
+            <dt><kbd>0</kbd>–<kbd>9</kbd></dt><dd>Jump to 0–90%</dd>
+            <dt><kbd>&lt;</kbd><kbd>&gt;</kbd></dt><dd>Slower / faster</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Close</dd>
+          </dl>
+        </div>
+      </div>
+
+      <p class="pl-sr" id="status" role="status" aria-live="polite">Preparing preview…</p>
+      <div class="pl-toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+
+    <script src="shared/strings.js"></script>
+    <script src="shared/rows.js"></script>
+    <script src="popup/pixel.js"></script>
+    <!-- hls.js (vendor/hls.min.js) loads only for HLS sources. -->
     <script src="player.js"></script>
   </body>
 </html>
