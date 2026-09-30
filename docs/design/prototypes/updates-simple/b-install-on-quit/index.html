@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Simpler updates · B Install on quit or idle</title>
+<link rel="stylesheet" href="../../updates/shared.css">
+<link rel="stylesheet" href="../story.css">
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">← Simpler updates</a> · <span>B</span>Install on quit or idle</div>
+    <h1>B · Updates install themselves when you’re done</h1>
+    <p>Downloads silently, then installs the next time SnagThis <b>quits</b>, or on macOS when its window has been closed and nothing has downloaded for 10 minutes. A neutral chip says <b>1.1.0 · installs when you quit</b>, with an optional <b>Restart now</b>. After relaunch a fading <b>Updated to 1.1.0</b> toast. Zero clicks in the common path.</p>
+  </div>
+  <div class="toolbar"><div class="seg" id="scen" role="group" aria-label="Path"></div><div class="swatches" id="acc" role="group" aria-label="Accent"></div></div>
+  <div class="sb"><div id="stage"></div><div class="cap-box" id="caption"></div></div>
+  <div class="strip" id="strip"></div>
+
+  <div class="impl">
+    <section><h3>Behaviour</h3><ul>
+      <li><b>Idle or busy:</b> nothing to click. Never installs while a download is active; quitting still shows today’s “downloads in progress” prompt, with one added line saying the update installs as it quits.</li>
+      <li><b>macOS background install:</b> window closed + no active download + no pending pairing request for 10 min → install silently and relaunch <b>without a window</b>, so Chrome can keep sending videos.</li>
+      <li><b>Later / defer:</b> removed; the whole design is “later”. <b>Restart now</b> is the only action.</li>
+      <li><b>Failures:</b> an install that didn’t finish is detected on the next launch (install-state file) and shows the amber chip + friendly popover with <b>Download installer ↗</b> and <b>Try again</b>.</li>
+      <li><b>/Applications:</b> unsupported copies show no chip; Settings explains and offers <b>Move to Applications</b>.</li>
+    </ul></section>
+    <section><h3>Code changes</h3><ul>
+      <li><b>main.js:</b> in <code>before-quit</code>, when <code>phase === 'downloaded'</code> and the quit is confirmed, call <code>quitAndInstall(true, false)</code> ourselves (silent, don’t reopen), rather than setting <code>autoInstallOnAppQuit</code>. The code comment warns that flag breaks MacUpdater’s <code>update-downloaded</code> wait.</li>
+      <li>A background timer (window hidden + no blocking downloads for 10 min) calls <code>quitAndInstall(true, true)</code>; install state gets <code>reopenHidden</code>, and bootstrap then creates the window hidden.</li>
+      <li>Remove both OS notifications, the reminder/Later IPC and timers, and the <code>installWhenIdle</code> checkbox (the idle install replaces it).</li>
+      <li><b>Renderer:</b> chip kinds <code>quiet / restarting / failed</code>; small popover; <code>UpdateSheet</code> removed; <code>updater:updated</code> → toast.</li>
+      <li><b>Settings:</b> hint <code>1.1.0 installs when you quit</code> with <b>Restart now</b>; Check now answers inline.</li>
+    </ul></section>
+    <section><h3>Risks</h3><ul>
+      <li><b>macOS quit path:</b> Squirrel.Mac must have staged the update before the quit; if it hasn’t, <code>quitAndInstall</code> waits for the native event and the quit hangs. Needs a timeout that falls back to a plain quit (the update then installs next time).</li>
+      <li>Mac users rarely quit (the app lives in the background), so most installs use the 10-minute background path: a silent restart the person never sees. Chrome requests during those ~5 s fail, so the extension should retry quietly.</li>
+      <li>Windows: NSIS installs silently on quit; a UAC prompt would appear only for per-machine installs.</li>
+      <li>The update lands “sometime later”: harder for support to know which version someone runs (Settings shows it).</li>
+    </ul></section>
+  </div>
+</main>
+<script src="../../updates/brand.js"></script>
+<script src="../../updates/shared.js"></script>
+<script src="../story.js"></script>
+<script>
+const S = window.Story, P = window.SnagProto, V = S.V;
+const quietChip = (next) => S.chip('quiet', { text: 'installs when you quit', next });
+const readyPop = S.pop(`<h4>SnagThis ${V} is ready</h4><p>It installs by itself the next time you quit SnagThis. Your queue is saved.</p><div class="row"><a class="link" href="#" onclick="return false">What’s new</a><span class="sp"></span><button class="btn primary hotspot" data-next="1">Restart now</button></div>`, { right: 250, arrow: 90 });
+S.mount({
+  scenarios: [
+    { id: 'quit', label: 'Update, then quit', frames: [
+      { t: 'Downloads quietly', k: 'none', cap: 'Found at launch or on the 6-hour check, downloaded in the background. No notification, no meter.', r: () => S.win() },
+      { t: 'Neutral chip', n: { s: 1 }, cap: 'A neutral chip, not an accent alarm: <b>1.1.0 · installs when you quit</b>. It is information, not a task. Clicking it is optional.', r: () => S.win({ chip: quietChip(false) }) },
+      { t: 'You quit (⌘Q)', k: 'auto', cap: 'Whenever you quit, SnagThis installs the update silently as it closes (a few seconds) and does <b>not</b> reopen. You asked it to quit.', r: () => S.desk({ running: false, overlay: '<div class="gone">SnagThis quit · 1.1.0 installed silently</div>' }) },
+      { t: 'Next open: updated', k: 'auto', n: { s: 1 }, cap: 'Next time you open SnagThis: the fading <b>Updated to 1.1.0 · What’s new</b> toast. <b>Total: 2 surfaces, 0 notifications, 0 clicks.</b>', r: () => S.win({ overlay: S.updatedToast() }) },
+      { t: 'Nothing lingers', k: 'auto', cap: 'The toast fades after 8 s. The chip is gone.', r: () => S.win() },
+    ] },
+    { id: 'background', label: 'Window closed (macOS)', note: 'macOS keeps SnagThis running without a window so Chrome can send videos, and most people never quit it. This path does most of the installs on a Mac.', frames: [
+      { t: 'Idle in the background', k: 'none', cap: 'Window closed, app running (dot in the Dock), nothing downloading. After <b>10 minutes</b> of that, and with no pairing request pending, SnagThis installs.', r: () => S.desk() },
+      { t: 'Silent restart, stays hidden', k: 'auto', cap: 'It restarts in the background and comes back <b>without a window</b>, the same as before. No notification: nobody was looking, and nothing needs them.', r: () => S.desk({ overlay: '<div class="gone">Restarted on 1.1.0 · still in the background</div>' }) },
+      { t: 'Next time you open it', k: 'auto', n: { s: 1 }, cap: 'When you next click the Dock icon, the toast confirms the update once. <b>0 clicks, 1 surface.</b>', r: () => S.win({ overlay: S.updatedToast() }) },
+    ] },
+    { id: 'busy', label: 'Downloads running', frames: [
+      { t: 'Chip while downloading', n: { s: 1 }, cap: 'Same neutral chip. The update will not install until you quit or the downloads finish and the app sits idle in the background.', r: () => S.win({ mode: 'busy', chip: quietChip(false) }) },
+      { t: 'Quit with downloads', k: 'auto', cap: 'Quitting with downloads shows <b>today’s</b> prompt with one extra line. Choosing Quit is your decision about downloads, not an update click. Keep downloading keeps everything.', r: () => S.win({ mode: 'busy', chip: quietChip(false), dim: true, overlay: S.native(`<b>2 downloads are still in progress.</b><p>Quitting pauses them. They continue the next time you open SnagThis.</p><p class="add">SnagThis ${V} installs as it quits.</p><div class="nb"><span class="hotspot" data-next="1">Quit</span><span class="def">Keep downloading</span></div>`) }) },
+      { t: 'Reopen: queue resumes', k: 'auto', n: { s: 1 }, cap: 'Reopened on 1.1.0: the two downloads pick up where they paused, with the same fading toast. <b>0 update clicks.</b>', r: () => S.win({ mode: 'resumed', overlay: S.updatedToast({ next: false }) }) },
+    ] },
+    { id: 'now', label: 'Restart now', frames: [
+      { t: 'Chip', n: { s: 1 }, cap: 'For people who want it now: click the chip.', r: () => S.win({ chip: quietChip() }) },
+      { t: 'Small popover', k: 'click', n: { s: 1, c: 1 }, cap: 'One sentence and one button, <b>Restart now</b>. What’s new is a link, not a section. With downloads running the button reads <b>Restart after downloads</b>.', r: () => S.win({ chip: quietChip(false), overlay: readyPop }) },
+      { t: 'Restarting', k: 'click', n: { c: 1 }, cap: 'The chip marches while SnagThis restarts.', r: () => S.win({ chip: S.chip('restarting', { next: false }) }) },
+      { t: 'Updated', k: 'auto', n: { s: 1 }, cap: 'The same toast. <b>2 clicks.</b>', r: () => S.win({ overlay: S.updatedToast({ next: false }) }) },
+    ] },
+    { id: 'fail', label: 'Failure · Applications', frames: [
+      { t: 'Install didn’t finish', n: { s: 1 }, cap: 'If the quit-time install didn’t finish, the next launch sees the leftover install state and shows the amber chip. Today that case sets an error only visible in Settings, because the chip needs a version that isn’t stored.', r: () => S.win({ chip: S.chip('failed', { text: `${V} didn’t install` }) }) },
+      { t: 'Friendly error', k: 'click', n: { s: 1, c: 1 }, cap: 'Same words as today, in a popover: what happened, nothing changed, Details, <b>Download installer ↗</b>, <b>Try again</b>.', r: () => S.win({ chip: S.chip('failed', { text: `${V} didn’t install`, next: false }), overlay: S.errorPop({ title: `Couldn’t install ${V}`, line: 'The installer didn’t finish.', right: 230 }) }) },
+      { t: 'Not in Applications', n: { s: 1 }, cap: 'Unsupported copies show no chip. Settings explains and offers <b>Move to Applications</b>.', r: () => S.win({ dim: true, overlay: S.settings(S.srow(`SnagThis ${S.CUR}`, 'Updates need SnagThis in your Applications folder.', 'warn', '<button class="btn">Move to Applications</button>')) }) },
+      { t: 'Settings when ready', n: { s: 0 }, cap: 'For comparison, the Settings row when an update is waiting: one hint, <b>Restart now</b>.', r: () => S.win({ dim: true, chip: quietChip(false), overlay: S.settings(S.srow(`SnagThis ${S.CUR}`, `${V} installs when you quit`, 'acc', '<button class="btn">Restart now</button>')) }) },
+    ] },
+  ],
+  preview: {
+    n: 'B', title: 'Install on quit or idle',
+    pitch: 'Silent download, neutral chip “installs when you quit”, installs on quit or after 10 min idle in the background. Fading toast after.',
+    frames: [['quit', 1, 'Ready: neutral chip, nothing to do'], ['busy', 1, 'Quitting with downloads: today’s prompt plus one line']],
+    flow: ['-Downloads silently', 'sChip “1.1.0 · installs when you quit”', '-You quit, or 10 min idle in background', '-Installs silently', 'sToast “Updated to 1.1.0”', '-Fades'],
+    note: '<b>Removed:</b> update sheet · Later/reminders · both notifications · Install-when-downloads-finish checkbox. <b>Risk:</b> macOS must have the update staged before quit (why <code>autoInstallOnAppQuit</code> is off today); silent background restarts.',
+    counts: [['clicks when idle', '0', 'today 2 (1 optional here)'], ['clicks with downloads', '0', 'today 2 + surprise restart'], ['notifications', '0', 'today 2 per launch'], ['surfaces (idle)', '2', 'today 6']],
+  },
+});
+</script>
+</body>
+</html>

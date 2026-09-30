@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Simpler updates · A Quiet chip, one click</title>
+<link rel="stylesheet" href="../../updates/shared.css">
+<link rel="stylesheet" href="../story.css">
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">← Simpler updates</a> · <span>A</span>Quiet chip, one click</div>
+    <h1>A · The chip is the whole update UI</h1>
+    <p>Downloads silently. When ready, one accent chip <b>1.1.0 · Restart</b> sits in the header; clicking it restarts straight away. If downloads are running, a one-line confirm offers <b>Install after 2 downloads finish</b>. The update sheet, Later, reminders and the “downloading” notification go away. After relaunch a toast says <b>Updated to 1.1.0 · What’s new</b> and fades.</p>
+  </div>
+  <div class="toolbar"><div class="seg" id="scen" role="group" aria-label="Path"></div><div class="swatches" id="acc" role="group" aria-label="Accent"></div></div>
+  <div class="sb"><div id="stage"></div><div class="cap-box" id="caption"></div></div>
+  <div class="strip" id="strip"></div>
+
+  <div class="impl">
+    <section><h3>Behaviour</h3><ul>
+      <li><b>Idle:</b> 1 click, no confirm. <b>Downloads running:</b> 2 clicks; the one-line confirm defaults to waiting, and <b>Restart now</b> pauses and resumes them.</li>
+      <li><b>Later / defer:</b> removed. Leaving the chip alone is “later”. It never reminds, blinks or notifies again.</li>
+      <li><b>Hidden window (macOS):</b> one notification per version, only when no SnagThis window is visible. Clicking it restarts if idle, otherwise opens the window with the confirm.</li>
+      <li><b>Failures:</b> amber chip → small popover with the same friendly sentence, <b>Download installer ↗</b>, <b>Try again</b> and raw text behind Details.</li>
+      <li><b>/Applications:</b> no chip ever for an unsupported copy; Settings says why and offers <b>Move to Applications</b> (<code>app.moveToApplicationsFolder()</code>).</li>
+    </ul></section>
+    <section><h3>Code changes</h3><ul>
+      <li><b>main.js:</b> drop the <code>update-available</code> notification; show the <code>update-downloaded</code> one only when <code>!mainWindow?.isVisible()</code>; its click calls <code>installDownloadedUpdate()</code> when idle. Delete <code>remind-later</code>, <code>cancel-reminder</code> and the reminder timers. Keep <code>installWhenIdle</code>, add a 5 s cancellable “Restarting in…” before it fires.</li>
+      <li><b>Just updated:</b> <code>writeUpdaterInstallState</code> also stores notes; <code>reconcileUpdaterInstallState</code> sends <code>updater:updated {version, notes}</code> on success instead of silently clearing.</li>
+      <li><b>Renderer:</b> <code>UpdateChip</code> gets <code>restart / waiting / restarting / failed</code>; new <code>UpdatePopover</code> (confirm + error); <code>UpdateSheet</code>, <code>WaitingDownloads</code>, hero, deferred view removed; <code>updateModel</code> loses <code>deferred</code>, <code>checking</code>, <code>uptodate</code> views.</li>
+      <li><b>Settings:</b> row keeps <b>Check now</b>, but its answer shows inline in the hint (<code>Up to date · checked just now</code>) instead of opening a sheet; <b>Restart</b> when ready.</li>
+    </ul></section>
+    <section><h3>Risks</h3><ul>
+      <li>If ignored, the update never installs; a person who never clicks stays on 1.0.0. Optional: install on quit after 7 days (borrowing B).</li>
+      <li>What’s new is only seen after updating; there is no preview before. Full notes stay one click away on GitHub.</li>
+      <li>One-click restart without confirmation: acceptable only because the click is explicit and idle is verified in main.</li>
+      <li>Spec §8.1 and <code>desktop-update-sheet.spec.js</code> would be rewritten.</li>
+    </ul></section>
+  </div>
+</main>
+<script src="../../updates/brand.js"></script>
+<script src="../../updates/shared.js"></script>
+<script src="../story.js"></script>
+<script>
+const S = window.Story, P = window.SnagProto, V = S.V;
+const tip = S.pop('<p>Restarts in a few seconds. Your queue is saved.</p>', { right: 262, arrow: 50, cls: 'line' });
+S.mount({
+  scenarios: [
+    { id: 'idle', label: 'Update while idle', frames: [
+      { t: 'Downloads quietly', k: 'none', cap: 'SnagThis finds 1.1.0 at launch or on the 6-hour check and downloads it in the background. <b>No notification, no meter, no chip.</b> Downloading the app is not news.', r: () => S.win() },
+      { t: 'Ready: one chip', n: { s: 1 }, cap: 'The accent chip <b>1.1.0 · Restart</b> appears beside the tabs. Hovering explains it. This is the only thing that appears before the restart.', r: () => S.win({ chip: S.chip('restart'), overlay: tip }) },
+      { t: 'Click = restart', k: 'click', n: { c: 1 }, cap: 'Nothing is downloading, so the click <b>is</b> the confirmation. The chip marches while SnagThis closes and reopens (about 5 s). No sheet, no second button.', r: () => S.win({ chip: S.chip('restarting', { next: false }) }) },
+      { t: 'Updated toast', k: 'auto', n: { s: 1 }, cap: 'Back on 1.1.0: one toast, <b>Updated to 1.1.0 · What’s new</b>, fading after 8 s. It replaces the sheet’s notes and proves the update worked (today nothing is shown).', r: () => S.win({ overlay: S.updatedToast() }) },
+      { t: 'What’s new (optional)', k: 'click', cap: 'Optional: What’s new opens a small popover with the first three tagged notes and the GitHub link. Not counted: the path is complete without it.', r: () => S.win({ overlay: S.whatsNew() + S.updatedToast({ next: false, life: .35 }) }) },
+      { t: 'Nothing lingers', k: 'auto', cap: 'The toast is gone and the header is back to normal. <b>Total: 2 surfaces, 0 notifications, 1 click.</b>', r: () => S.win() },
+    ] },
+    { id: 'busy', label: 'Downloads running', note: 'Main still checks <code>hasUpdateBlockingDownloads()</code> before any restart; the renderer never decides alone.', frames: [
+      { t: 'Ready while downloading', n: { s: 1 }, cap: 'Same chip. Nothing interrupts the two downloads.', r: () => S.win({ mode: 'busy', chip: S.chip('restart') }) },
+      { t: 'One-line confirm', k: 'click', n: { s: 1, c: 1 }, cap: 'Clicking the chip shows one line instead of the sheet: <b>Install after 2 downloads finish</b> (primary) or <b>Restart now</b>, which pauses them and resumes after the restart.', r: () => S.win({ mode: 'busy', chip: S.chip('restart', { next: false }), overlay: S.pop(`<p>2 downloads are running.</p><button class="btn primary hotspot" data-next="1">${P.icon('check')}Install after they finish</button><button class="btn quiet">Restart now</button>`, { right: 238, arrow: 64, cls: 'line' }) }) },
+      { t: 'Waiting', k: 'click', n: { c: 1 }, cap: 'The chip turns neutral: <b>1.1.0 · after 2 downloads</b>. The popover closes itself. Clicking the chip again offers <b>Don’t wait</b>.', r: () => S.win({ mode: 'busy', chip: S.chip('waiting', { next: false }) }) },
+      { t: 'Downloads finish', k: 'auto', cap: 'When the last download finishes the chip counts down <b>Restarting in 5 s</b> (click to cancel), so a restart never lands mid-paste without warning. Today it restarts with no warning.', r: () => S.win({ mode: 'done', chip: S.chip('restarting', { text: 'Restarting in 5 s · Cancel', next: 1 }) }) },
+      { t: 'Updated toast', k: 'auto', n: { s: 1 }, cap: 'The same fading toast. <b>Total: 3 surfaces, 0 notifications, 2 clicks.</b>', r: () => S.win({ mode: 'done', overlay: S.updatedToast({ next: false }) }) },
+    ] },
+    { id: 'hidden', label: 'Window closed (macOS)', note: 'On Windows closing the window quits, so this path is macOS only.', frames: [
+      { t: 'One notification', k: 'notif', n: { n: 1 }, cap: 'SnagThis keeps running with its window closed so Chrome can send videos. That is the only time a notification is worth it: <b>once per version</b>, never for “downloading”.', r: () => S.desk({ notif: S.notif({ title: `SnagThis ${V} is ready`, body: 'Click to restart and update. Your queue is saved.' }) }) },
+      { t: 'Click → updated', k: 'click', n: { c: 1, s: 1 }, cap: 'Nothing downloading, so it restarts and opens the window on 1.1.0 with the toast. With downloads running it opens the window with the one-line confirm instead.', r: () => S.win({ overlay: S.updatedToast({ next: false }) }) },
+    ] },
+    { id: 'ignore', label: 'Ignored', frames: [
+      { t: 'Chip waits', n: { s: 1 }, cap: 'No Later button, no reminder times, no blinking pip. The chip simply stays until clicked.', r: () => S.win({ mode: 'busy', chip: S.chip('restart', { next: false }) }) },
+      { t: 'Next launch', k: 'auto', cap: 'Quit and reopen: the cached update is found again <b>silently</b> and the same chip comes back. Today this re-sends both notifications on every launch.', r: () => S.win({ chip: S.chip('restart', { next: false }) }) },
+    ] },
+    { id: 'fail', label: 'Failure · Applications', frames: [
+      { t: 'Amber chip', n: { s: 1 }, cap: 'A found update that fails to download or install turns the chip amber. A failed background <b>check</b> stays silent, as today.', r: () => S.win({ chip: S.chip('failed') }) },
+      { t: 'Friendly error', k: 'click', n: { s: 1, c: 1 }, cap: 'A small popover keeps today’s words: what happened, <b>You’re still on 1.0.0; nothing changed.</b>, raw error behind Details, <b>Download installer ↗</b> and <b>Try again</b>.', r: () => S.win({ chip: S.chip('failed', { next: false }), overlay: S.errorPop() }) },
+      { t: 'Try again', k: 'click', n: { c: 1 }, cap: 'Retrying downloads quietly again; the chip disappears until the update is ready.', r: () => S.win() },
+      { t: 'Not in Applications', n: { s: 1 }, cap: 'A copy outside /Applications (or translocated) never shows a chip. Settings ▸ Updates says why and offers <b>Move to Applications</b>, which moves and relaunches the app.', r: () => S.win({ dim: true, overlay: S.settings(S.srow(`SnagThis ${S.CUR}`, 'Updates need SnagThis in your Applications folder.', 'warn', '<button class="btn">Move to Applications</button>')) }) },
+    ] },
+  ],
+  preview: {
+    n: 'A', title: 'Quiet chip, one click',
+    pitch: 'The chip is the only surface. Click = restart. Downloads running → one line: Install after they finish. Fading “Updated” toast after.',
+    frames: [['busy', 1, 'Ready: chip; with downloads, a one-line confirm'], ['idle', 3, 'After relaunch: a fading “Updated to 1.1.0 · What’s new”']],
+    flow: ['-Found at launch / 6 h', '-Downloads silently', 'sChip “1.1.0 · Restart”', 'cClick chip', '-Restarts ~5 s', 'sToast “Updated to 1.1.0”', '-Fades after 8 s'],
+    note: '<b>Removed:</b> update sheet · Later + 30-min reminders · “downloading” notification · deferred chip. <b>Kept:</b> friendly error + Download installer (popover). <b>Risk:</b> an ignored chip never installs.',
+    counts: [['clicks when idle', '1', 'today 2'], ['clicks with downloads', '2', 'today 2 + surprise restart'], ['notifications', '0', 'today 2 per launch'], ['surfaces (idle)', '2', 'today 6']],
+  },
+});
+</script>
+</body>
+</html>

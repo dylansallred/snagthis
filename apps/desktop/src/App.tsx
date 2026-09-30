@@ -1,6 +1,6 @@
 import { recordSpeeds } from '@/lib/speedHistory';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Clock, FolderOpen, MoreHorizontal, Settings, ListX, Trash2 } from 'lucide-react';
+import { FolderOpen, MoreHorizontal, Settings, ListX, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { classifyProblem, formatSize, mergeRows, toRowModel, type RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { compareSaved, countLabel, DEFAULT_VIEW, failureReason, groupSaved, libraryStrings, libraryText, normalizeView, parentFolder, viewKey } from '@m3u8/contracts/src/library.mjs';
@@ -40,15 +40,15 @@ import { PairingApproval } from '@/components/settings/PairingApproval';
 import { defaultSettingsSection, isSettingsSection, type SettingsSectionId } from '@/components/settings/settingsSections';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { UpdateChip, UpdateSheet, declineInstallWhenIdle, type UpdateActions } from '@/components/updates/UpdateSheet';
-import { blocksUpdate, installerUrl, nextVersion, releaseNotesUrl, shortTime, updateChipKind, updateView } from '@/components/updates/updateModel';
-import type { UpdaterState } from '@/types/updater';
+import { UpdateChip, UpdatedNotice, type UpdateActions } from '@/components/updates/UpdateChip';
+import { blocksUpdate, installerUrl, releaseNotesUrl, updateChipKind } from '@/components/updates/updateModel';
 import { galleryRows, galleryQueue, loadGalleryVideo, galleryUpdater } from '@/dev/gallery';
 
 const params = new URLSearchParams(window.location.search);
 const gallery = import.meta.env.DEV && params.has('gallery');
 const emptyGallery = gallery && params.get('gallery') === 'empty';
-// ?gallery&update=<state> previews the update chip and sheet; &updateSheet=0 leaves the sheet closed.
+// ?gallery&update=<state> previews the update chip, its popover (&updatePopover=1) and the
+// "Updated to" toast (update=updated; &updateNotes=1 opens its notes).
 const galleryUpdate = gallery ? params.get('update') : null;
 const galleryUpdateState = gallery ? galleryUpdater(galleryUpdate) : null;
 // ?gallery&organize[=state] previews Saved's folders with the Pixel worlds sample library:
@@ -113,7 +113,7 @@ function App() {
   const setSavedView = (view: SavedView) => { if (view === savedView) return; setViewFade(true); setSavedViewState(view); };
   useEffect(() => { if (!viewFade) return; const timer = setTimeout(() => setViewFade(false), 200); return () => clearTimeout(timer); }, [viewFade]);
   const [paletteOpen, setPaletteOpen] = useState(gallery && params.has('palette'));
-  const [updateOpen, setUpdateOpen] = useState(!!galleryUpdateState && galleryUpdate !== 'later' && params.get('updateSheet') !== '0');
+  const [updatePopoverOpen, setUpdatePopoverOpen] = useState(!!galleryUpdateState && params.get('updatePopover') === '1');
   const pasteRef = useRef<HTMLTextAreaElement>(null);
   const brandRef = useRef<SVGSVGElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -210,10 +210,7 @@ function App() {
   const totalSpeed = active.reduce((total, job) => total + (job.speedBps || 0), 0);
   // Downloads a restart would interrupt. The gallery shows them only in its blocked preview.
   const updateBlocking = gallery && galleryUpdate !== 'blocked' ? [] : allQueue.filter(blocksUpdate);
-  const updateState = updateView(updater, updateBlocking.length);
-  const chipKind = updateChipKind(updater, updateState);
-  const updaterRef = useRef<UpdaterState>(updater);
-  updaterRef.current = updater;
+  const chipKind = updateChipKind(updater);
   const updateActions = useMemo<UpdateActions>(() => {
     const preview = previewUpdater;
     const call = async (action: () => Promise<{ ok: boolean; error?: string }>) => {
@@ -224,35 +221,20 @@ function App() {
     return {
       check: () => {
         if (!preview) { void call(() => window.desktop.checkForUpdates()); return; }
-        preview((current) => ({ ...current, phase: 'checking', error: null, errorKind: null }));
+        preview((current) => ({ ...current, phase: 'checking', error: null, errorKind: null, failedInstall: false }));
         window.setTimeout(() => preview((current) => ({ ...current, phase: 'idle', progress: 0, lastCheckedAt: Date.now(), updateInfo: { version: current.currentVersion || '1.0.0' }, releaseNotes: [] })), 1200);
       },
-      install: () => {
-        if (preview) preview((current) => ({ ...current, phase: 'installing', installWhenIdle: false }));
+      restart: () => {
+        if (preview) preview((current) => ({ ...current, phase: 'installing' }));
         else void call(() => window.desktop.installUpdateNow());
       },
-      setInstallWhenIdle: (enabled) => {
-        if (preview) preview((current) => ({ ...current, installWhenIdle: enabled, ...(enabled ? { deferredUntil: null } : {}) }));
-        else void call(() => window.desktop.installUpdateWhenIdle(enabled));
+      moveToApplications: () => {
+        if (preview) toast(ui.moveToApplications);
+        else void call(() => window.desktop.moveToApplications());
       },
-      later: async () => {
-        declineInstallWhenIdle(nextVersion(updaterRef.current));
-        let until: number | undefined;
-        if (preview) { until = Date.now() + 30 * 60_000; preview((current) => ({ ...current, deferredUntil: until, installWhenIdle: false })); }
-        else {
-          const result = await window.desktop.remindLater(30).catch((err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : ui.downloadingError, deferredUntil: undefined }));
-          if (!result.ok) { toast.error(result.error || ui.downloadingError); return; }
-          until = result.deferredUntil;
-        }
-        setUpdateOpen(false);
-        toast(ui.updateRemindingToast.replace('{time}', shortTime(until || Date.now() + 30 * 60_000)), {
-          id: 'update-later', icon: <Clock aria-hidden="true" />, duration: 6000,
-          action: { label: ui.undo, onClick: () => {
-            if (preview) preview((current) => ({ ...current, deferredUntil: null, nextReminderAt: null }));
-            else void call(() => window.desktop.cancelUpdateReminder());
-            setUpdateOpen(true);
-          } },
-        });
+      markUpdatedSeen: () => {
+        if (preview) preview((current) => ({ ...current, updatedTo: null }));
+        else void window.desktop.markUpdatedSeen().catch(() => {});
       },
       openInstaller: () => open(installerUrl),
       openReleaseNotes: (version) => open(releaseNotesUrl(version)),
@@ -293,14 +275,14 @@ function App() {
     // the app menu's Settings… reopens the last section used.
     return window.desktop.onOpenSettings(({ section }) => openSettings(section));
   }, [openSettings]);
-  // Clicking an update notification opens the update sheet.
+  // Clicking the update notification opens the chip's popover.
   useEffect(() => {
     if (gallery || !window.desktop?.onOpenUpdate) return;
-    return window.desktop.onOpenUpdate(() => setUpdateOpen(true));
+    return window.desktop.onOpenUpdate(() => setUpdatePopoverOpen(true));
   }, []);
   // Any open dialog owns the keyboard: app shortcuts never open something behind or on top of it.
   const [pairingOpen, setPairingOpen] = useState(false);
-  const modalOpen = settingsOpen || updateOpen || pairingOpen || !!confirm || !!renameVideoRow || !!chromeSessionRow || !!galleryVideo || !!organize.deleteRequest || !!organize.nameDialog;
+  const modalOpen = settingsOpen || pairingOpen || !!confirm || !!renameVideoRow || !!chromeSessionRow || !!galleryVideo || !!organize.deleteRequest || !!organize.nameDialog;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -601,7 +583,7 @@ function App() {
       <h1 className="sr-only">SnagThis</h1>
       <TopBar brandRef={brandRef} pasteRef={pasteRef} searchRef={searchRef} value={paste} onValue={setPaste} onSubmit={() => { void submitPaste(); }} filter={filter} onFilter={setFilter} showNavigation={!emptyLibrary || filter !== 'all'} searchOpen={searchOpen} onSearchOpen={setSearchOpen} search={search} onSearch={setSearch} checking={checking} error={pasteError} firstLaunch={firstLaunch} gallery={gallery} savedDot={savedDot}
         viewToggle={filter === 'saved' && !emptyLibrary ? <SavedViewToggle view={savedView} onView={setSavedView} /> : undefined}
-        updateChip={chipKind ? <UpdateChip updater={updater} kind={chipKind} onOpen={() => setUpdateOpen(true)} /> : undefined} />
+        updateChip={chipKind ? <UpdateChip updater={updater} kind={chipKind} blocking={updateBlocking.length} currentVersion={appInfo?.version || 'development'} actions={updateActions} open={updatePopoverOpen} onOpenChange={setUpdatePopoverOpen} /> : undefined} />
       <StartupLogo targetRef={brandRef} />
       <SnagMoment rows={baseRows} onQuietCompletion={() => { if (filter !== 'saved') setSavedDot(true); }} />
       <DropOverlay disabled={modalOpen || paletteOpen}onDropLinks={(text) => { setPaste(text); return submitPaste(text); }} />
@@ -633,9 +615,8 @@ function App() {
         <button className="row-action" aria-label={ui.settings} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}><Settings /></button>
       </footer>
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} settings={settings} onSave={save} updater={updater} appInfo={appInfo} api={api} gallery={gallery}
-        updateView={updateState} updateBlocking={updateBlocking.length} onOpenUpdate={(check) => { if (check) updateActions.check(); setUpdateOpen(true); }} />
-      <UpdateSheet open={updateOpen} onOpenChange={setUpdateOpen} updater={updater} view={updateState} blocking={updateBlocking} autoCheck={settings.checkUpdatesOnStartup}
-        currentVersion={appInfo?.version || 'development'} actions={updateActions} initialExpanded={galleryUpdate === 'notes'} />
+        updateBlocking={updateBlocking.length} updateActions={updateActions} />
+      <UpdatedNotice updater={updater} actions={updateActions} initialNotesOpen={gallery && params.get('updateNotes') === '1'} />
       <PairingApproval onOpenChange={setPairingOpen} />
       <MoveToMenu key={moveTarget?.key} request={moveTarget} folders={organize.folders} rootName={organize.rootName} rootDisplayPath={organize.rootDisplayPath}
         onMove={(to) => { if (moveTarget) void organize.move(moveTarget.ids, to); }}

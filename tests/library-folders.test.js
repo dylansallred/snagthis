@@ -228,7 +228,8 @@ test('moving across volumes copies, verifies and only then removes the original 
     assert.equal(fs.existsSync(source), false);
     const after = fs.statSync(path.join(target, 'Ember Tide.mp4'));
     assert.equal(after.size, before.size);
-    assert.equal(Math.round(after.mtimeMs / 1000), Math.round(before.mtimeMs / 1000), 'the saved date survives the copy');
+    // Copies keep the time to the millisecond, and volumes store it at different precision.
+    assert.ok(Math.abs(after.mtimeMs - before.mtimeMs) < 1000, 'the saved date survives the copy');
     assert.deepEqual(fs.readdirSync(target).sort(), ['.snagthis-job.json', 'Ember Tide.en.srt', 'Ember Tide.mp4', `${JOB_ID}-thumb.jpg`]);
   } finally {
     fs.renameSync = rename;
