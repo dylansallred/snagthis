@@ -21,7 +21,7 @@ let updaterCheckPromise = null;
 let updaterInstallRequested = false;
 // Install when idle polls while a ready update waits (updates spec §8.1, B · Install on quit or idle).
 let updaterIdleTimer = null;
-// When SnagThis went into the background (window closed, hidden, minimised or unfocused) with nothing downloading.
+// When SnagThis went out of sight (window closed, hidden or minimised) with nothing downloading.
 let updaterAwaySince = null;
 // macOS installs through Squirrel.Mac, which must stage (fetch and verify) the downloaded update first.
 let updaterStaged = false;
@@ -590,16 +590,18 @@ function windowOnScreen() {
   return !!window && !window.isDestroyed() && window.isVisible() && !window.isMinimized();
 }
 
-/** SnagThis is in the background: its window is closed, hidden, minimised or not focused. */
+/**
+ * SnagThis is out of sight: its window is closed, hidden or minimised. A visible window counts as
+ * in use even when unfocused (it may be on another screen), so a relaunch never flashes in front.
+ */
 function windowAway() {
-  return !windowOnScreen() || !mainWindow.isFocused();
+  return !windowOnScreen();
 }
 
 /** How the window looked before an idle install, so the relaunch restores it without popping up. */
 function windowVisibility() {
   const window = mainWindow;
-  if (!window || window.isDestroyed() || !window.isVisible()) return 'hidden';
-  return window.isMinimized() ? 'minimized' : 'background';
+  return window && !window.isDestroyed() && window.isVisible() && window.isMinimized() ? 'minimized' : 'hidden';
 }
 
 /**
@@ -620,7 +622,7 @@ function reconcileUpdaterInstallState() {
   updaterState.currentVersion = currentVersion;
   if (!state || !state.targetVersion) return { reopen: null };
   clearUpdaterInstallState();
-  const reopen = ['hidden', 'minimized', 'background'].includes(state.reopen) ? state.reopen : null;
+  const reopen = ['hidden', 'minimized'].includes(state.reopen) ? state.reopen : null;
 
   if (state.targetVersion === currentVersion) {
     console.info('[desktop] Updated', { fromVersion: state.fromVersion, currentVersion });
@@ -1260,7 +1262,7 @@ function installApplicationMenu() {
   ]));
 }
 
-/** `reveal`: 'show' (normal), 'inactive' (shown without taking focus) or 'minimized'. */
+/** `reveal`: 'show' (normal) or 'minimized' (after an idle install, so nothing pops up). */
 function createWindow({ reveal: revealAs = 'show' } = {}) {
   settingsListenerReady = false;
   updateListenerReady = false;
@@ -1287,15 +1289,14 @@ function createWindow({ reveal: revealAs = 'show' } = {}) {
   const reveal = () => {
     if (window.isDestroyed() || window.isVisible() || window.isMinimized()) return;
     if (revealAs === 'minimized') window.minimize();
-    else if (revealAs === 'inactive') window.showInactive();
     else window.show();
   };
   window.once('ready-to-show', reveal);
   // Without GPU compositing (some Linux desktops, virtual displays) a hidden window can
   // skip its first paint, so ready-to-show never fires. Never leave the app invisible.
   const revealFallback = setTimeout(reveal, 3000);
-  // Being away from the window (closed, hidden, minimised, unfocused) moves the idle-install clock.
-  for (const name of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) window.on(name, noteWindowPresence);
+  // Closing, hiding or minimising the window moves the idle-install clock; a visible window stops it.
+  for (const name of ['show', 'hide', 'minimize', 'restore']) window.on(name, noteWindowPresence);
   window.on('closed', () => {
     clearTimeout(revealFallback);
     if (mainWindow !== window) return;
@@ -1616,10 +1617,10 @@ async function bootstrap() {
   registerIpc();
   installApplicationMenu();
   // After an idle install SnagThis comes back as it was: without a window on macOS if it had
-  // none (the Dock icon opens it), otherwise minimised or behind other apps, never in front.
+  // none (the Dock icon opens it), otherwise minimised, never in front.
   const launchHidden = reopen === 'hidden' && process.platform === 'darwin' && !pairingDialogRequested && !requestedView;
   if (!launchHidden) {
-    createWindow({ reveal: reopen === 'hidden' || reopen === 'minimized' ? 'minimized' : reopen === 'background' ? 'inactive' : 'show' });
+    createWindow({ reveal: reopen ? 'minimized' : 'show' });
     // Paint the usable window before synchronous binary discovery and API startup.
     const firstWindow = mainWindow;
     await new Promise((resolve) => firstWindow.webContents.once('did-finish-load', resolve));

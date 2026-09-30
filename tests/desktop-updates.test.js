@@ -181,14 +181,20 @@ test('quitting before macOS has staged the update waits a bounded time, then qui
   assert.equal(f.state.phase, 'downloaded', 'the update is still there for the next quit or idle moment');
 });
 
-test('idle install waits until SnagThis has been in the background for 10 minutes with nothing downloading or finishing', async () => {
+test('idle install waits until the window has been out of sight for 10 minutes with nothing downloading or finishing', async () => {
   const f = fixture({ window: 'focused' });
   await f.ready();
   await f.advance(60 * MINUTE);
   assert.equal(f.installs.length, 0, 'never while the person is using the window');
 
-  // The window loses focus: the clock starts.
+  // Visible but unfocused (say, on another monitor) still counts as in use: a relaunch would flash in front.
   f.win.focused = false;
+  f.sandbox.noteWindowPresence();
+  await f.advance(20 * MINUTE);
+  assert.equal(f.installs.length, 0, 'a visible, unfocused window never installs');
+
+  // Minimised: the clock starts.
+  f.win.minimized = true;
   f.sandbox.noteWindowPresence();
   await f.advance(9 * MINUTE);
   assert.equal(f.installs.length, 0);
@@ -208,23 +214,36 @@ test('idle install waits until SnagThis has been in the background for 10 minute
   f.queue([{ queueStatus: 'paused', status: 'paused' }, { queueStatus: 'queued', status: 'pending' }, { queueStatus: 'completed', status: 'completed' }]);
   await f.advance(9 * MINUTE);
   assert.equal(f.installs.length, 0, 'paused and waiting downloads do not hold it, but it still waits the full 10 minutes');
-  f.win.focused = true;
+  f.win.minimized = false;
   f.sandbox.noteWindowPresence();
   await f.advance(5 * MINUTE);
-  f.win.focused = false;
+  f.win.minimized = true;
   f.sandbox.noteWindowPresence();
   await f.advance(9 * MINUTE);
-  assert.equal(f.installs.length, 0, 'coming back to the window restarts the clock');
+  assert.equal(f.installs.length, 0, 'restoring the window restarts the clock');
   await f.advance(2 * MINUTE);
   assert.deepEqual(f.installs, [[true, true]], 'installs silently and relaunches');
   assert.equal(f.state.phase, 'installing');
-  assert.equal(f.writes.at(-1).reopen, 'background', 'the relaunch comes back behind other windows, as it was');
+  assert.equal(f.writes.at(-1).reopen, 'minimized', 'the relaunch comes back minimised, as it was');
+
+  const minimized = fixture({ window: 'minimized' });
+  await minimized.ready();
+  await minimized.advance(9 * MINUTE);
+  assert.equal(minimized.installs.length, 0);
+  await minimized.advance(2 * MINUTE);
+  assert.equal(minimized.installs.length, 1, 'minimised for 10 minutes installs');
 
   const closed = fixture({ window: 'closed' });
   await closed.ready();
   await closed.advance(11 * MINUTE);
   assert.equal(closed.installs.length, 1, 'a closed window counts as away');
   assert.equal(closed.writes.at(-1).reopen, 'hidden', 'and it reopens without a window');
+
+  const hidden = fixture({ window: 'background' });
+  hidden.win.visible = false;
+  await hidden.ready();
+  await hidden.advance(11 * MINUTE);
+  assert.equal(hidden.installs.length, 1, 'a hidden window counts as away');
 });
 
 test('the queue is checked again right before the installer takes over', async () => {
