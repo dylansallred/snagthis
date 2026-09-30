@@ -8,6 +8,26 @@
   const MAX_REQUESTS = 32;
   const DIRECT_BYTES = 8 * 1024 * 1024;
   const POSTER_BYTES = 2 * 1024 * 1024;
+  // hls.js (415 KB) loads only when a preview or sample first needs it, never with the popup.
+  const HLS_SCRIPT = 'vendor/hls.min.js';
+  let hlsLoading = null;
+  function loadHls() {
+    if (globalThis.Hls) return Promise.resolve(globalThis.Hls);
+    if (typeof document === 'undefined') return Promise.reject(new Error('HLS playback is unavailable'));
+    hlsLoading ||= new Promise((resolve, reject) => {
+      const script = document.createElement('script'); script.src = HLS_SCRIPT; script.async = true;
+      script.addEventListener('load', () => { if (globalThis.Hls) resolve(globalThis.Hls); else { hlsLoading = null; reject(new Error('HLS playback is unavailable')); } }, { once: true });
+      script.addEventListener('error', () => { hlsLoading = null; script.remove(); reject(new Error('HLS playback is unavailable')); }, { once: true });
+      document.head.append(script);
+    });
+    return hlsLoading;
+  }
+  // Runs `start(Hls)` now when hls.js is present, otherwise once it loads; `fail` when it can't play here.
+  function withHls(start, fail, isDisposed) {
+    const run = Hls => { if (isDisposed()) return; if (!Hls?.isSupported()) fail(); else start(Hls); };
+    if (globalThis.Hls) run(globalThis.Hls);
+    else loadHls().then(run, () => { if (!isDisposed()) fail(); });
+  }
   const blockedHeaders = /^(?:origin|referer|host|user-agent|cookie|content-length|connection|range|sec-|proxy-)/i;
   function sourceFor(item) {
     // DRM-protected media is never fetched or played for a preview.
@@ -272,20 +292,23 @@
     };
     observeFrame();
     if (source.hls) {
-      if (!globalThis.Hls?.isSupported()) { queueMicrotask(fail); return { destroy }; }
+      if (globalThis.Hls && !globalThis.Hls.isSupported()) { queueMicrotask(fail); return { destroy }; }
+      withHls(startHls, fail, () => disposed);
+    } else loadDirect(directLimit);
+    function startHls(Hls) {
       // An unknown-duration VOD playlist must choose its scene before
       // any opening fragment is fetched. LEVEL_LOADED restarts at 35%.
       const PreviewFetchLoader = boundedHlsLoader(fetchBytes, { isDisposed: () => disposed,
         skip: context => { if ((context.frag && !source.duration) || context.frag?.start >= end) { hls?.stopLoad(); return true; } return false; } });
-      hls = new globalThis.Hls({ loader: PreviewFetchLoader, enableWorker: false, autoStartLoad: false, startPosition: start, startLevel: 0, capLevelToPlayerSize: true,
+      hls = new Hls({ loader: PreviewFetchLoader, enableWorker: false, autoStartLoad: false, startPosition: start, startLevel: 0, capLevelToPlayerSize: true,
         maxBufferLength: 2, maxMaxBufferLength: 2, maxBufferSize: MAX_BYTES, backBufferLength: 10, lowLatencyMode: false,
         manifestLoadingMaxRetry: 0, levelLoadingMaxRetry: 0, fragLoadingMaxRetry: 0, enableWebVTT: false, enableIMSC1: false });
-      hls.on(globalThis.Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(source.url));
-      hls.on(globalThis.Hls.Events.MANIFEST_PARSED, () => {
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(source.url));
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
         let lowest = 0; hls.levels.forEach((level, index) => { if (level.bitrate < hls.levels[lowest].bitrate) lowest = index; });
         hls.loadLevel = lowest; hls.autoLevelCapping = lowest; hls.startLoad(start);
       });
-      hls.on(globalThis.Hls.Events.LEVEL_LOADED, (_event, data) => {
+      hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
         // This is the actual source's complete VOD playlist, even if page
         // discovery missed its body or the proxy regenerated its child URL.
         if (data.details?.live === false && data.details.totalduration > 0) onMetadata?.({ durationSeconds: data.details.totalduration });
@@ -294,10 +317,10 @@
           if (start > 0) hls.startLoad(start);
         }
       });
-      hls.on(globalThis.Hls.Events.FRAG_BUFFERED, () => { for (let index = 0; index < video.buffered.length; index++) if (video.buffered.start(index) <= start + .1 && video.buffered.end(index) >= end - .2) hls.stopLoad(); });
-      hls.on(globalThis.Hls.Events.ERROR, (_event, data) => { if (data.fatal) fail(); });
+      hls.on(Hls.Events.FRAG_BUFFERED, () => { for (let index = 0; index < video.buffered.length; index++) if (video.buffered.start(index) <= start + .1 && video.buffered.end(index) >= end - .2) hls.stopLoad(); });
+      hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) fail(); });
       hls.attachMedia(video);
-    } else loadDirect(directLimit);
+    }
     function loadDirect(limit) {
       directLimit = limit;
       fetchBytes(source.url, { Range: `bytes=0-${limit - 1}` }, new AbortController(), limit).then(({ response, data, complete, fullLength }) => {
@@ -333,7 +356,7 @@
   }
   function createAudioSample({ item, rendition, tabId, mediaId, audio = new Audio(), seconds = SAMPLE_SECONDS, volume = SAMPLE_VOLUME, onPlaying, onProgress, onEnded, onError }) {
     const source = audioSampleSource(item, rendition);
-    if (!source || !globalThis.Hls?.isSupported()) return null;
+    if (!source || (globalThis.Hls && !globalThis.Hls.isSupported())) return null;
     let disposed = false; let playing = false; let finishing = false; let hls = null; let fadeTimer = 0;
     // 25% in catches dialogue rather than an intro. A CDN can lack a segment
     // there, so a sample that cannot start moves a little later instead.
@@ -389,42 +412,44 @@
     });
     listen('ended', () => stop(true));
     listen('error', fail);
-    hls = new globalThis.Hls({ loader: Loader, enableWorker: false, autoStartLoad: false, startPosition: start,
-      maxBufferLength: seconds, maxMaxBufferLength: seconds, maxBufferSize: SAMPLE_BYTES, backBufferLength: 0, lowLatencyMode: false,
-      // One retry absorbs a CDN's transient 5xx; the request bound still applies.
-      manifestLoadingMaxRetry: 1, levelLoadingMaxRetry: 1, fragLoadingMaxRetry: 1, enableWebVTT: false, enableIMSC1: false });
-    hls.on(globalThis.Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(source.url));
-    hls.on(globalThis.Hls.Events.MANIFEST_PARSED, () => hls.startLoad(start));
-    hls.on(globalThis.Hls.Events.LEVEL_LOADED, (_event, data) => {
-      const total = data.details?.totalduration;
-      if (data.details?.live !== false || !(total > 0) || end < Infinity && Math.abs(total - source.duration) < 1) return;
-      // The rendition's own playlist is authoritative for where 25% falls.
-      source.duration = total; start = total * fractions[attempt]; end = Math.min(start + seconds, total - .05);
-      hls.startLoad(start); audio.currentTime = start;
-    });
-    hls.on(globalThis.Hls.Events.FRAG_BUFFERED, () => {
-      for (let index = 0; index < audio.buffered.length; index++) if (audio.buffered.start(index) <= start + .1 && audio.buffered.end(index) >= end - .2) hls.stopLoad();
-    });
-    hls.on(globalThis.Hls.Events.ERROR, (_event, data) => {
-      if (!data.fatal || disposed) return;
-      const missingPiece = data.type === globalThis.Hls.ErrorTypes.NETWORK_ERROR && data.frag;
-      // Already audible: a missing later piece ends the sample where its buffer ends.
-      if (missingPiece && playing) {
-        let buffered = audio.currentTime;
-        for (let index = 0; index < audio.buffered.length; index++) if (audio.buffered.start(index) <= audio.currentTime + .1) buffered = Math.max(buffered, audio.buffered.end(index));
-        end = Math.min(end, buffered);
-        if (audio.currentTime >= end - .1) stop(true);
-        return;
-      }
-      if (missingPiece && source.duration > 0 && attempt + 1 < fractions.length && !fetcher.exhausted()) {
-        attempt += 1; start = source.duration * fractions[attempt]; end = Math.min(start + seconds, source.duration - .05);
-        audio.currentTime = start; hls.startLoad(start);
-        return;
-      }
-      fail();
-    });
-    hls.attachMedia(audio);
+    withHls(Hls => {
+      hls = new Hls({ loader: Loader, enableWorker: false, autoStartLoad: false, startPosition: start,
+        maxBufferLength: seconds, maxMaxBufferLength: seconds, maxBufferSize: SAMPLE_BYTES, backBufferLength: 0, lowLatencyMode: false,
+        // One retry absorbs a CDN's transient 5xx; the request bound still applies.
+        manifestLoadingMaxRetry: 1, levelLoadingMaxRetry: 1, fragLoadingMaxRetry: 1, enableWebVTT: false, enableIMSC1: false });
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(source.url));
+      hls.on(Hls.Events.MANIFEST_PARSED, () => hls.startLoad(start));
+      hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+        const total = data.details?.totalduration;
+        if (data.details?.live !== false || !(total > 0) || end < Infinity && Math.abs(total - source.duration) < 1) return;
+        // The rendition's own playlist is authoritative for where 25% falls.
+        source.duration = total; start = total * fractions[attempt]; end = Math.min(start + seconds, total - .05);
+        hls.startLoad(start); audio.currentTime = start;
+      });
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        for (let index = 0; index < audio.buffered.length; index++) if (audio.buffered.start(index) <= start + .1 && audio.buffered.end(index) >= end - .2) hls.stopLoad();
+      });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal || disposed) return;
+        const missingPiece = data.type === Hls.ErrorTypes.NETWORK_ERROR && data.frag;
+        // Already audible: a missing later piece ends the sample where its buffer ends.
+        if (missingPiece && playing) {
+          let buffered = audio.currentTime;
+          for (let index = 0; index < audio.buffered.length; index++) if (audio.buffered.start(index) <= audio.currentTime + .1) buffered = Math.max(buffered, audio.buffered.end(index));
+          end = Math.min(end, buffered);
+          if (audio.currentTime >= end - .1) stop(true);
+          return;
+        }
+        if (missingPiece && source.duration > 0 && attempt + 1 < fractions.length && !fetcher.exhausted()) {
+          attempt += 1; start = source.duration * fractions[attempt]; end = Math.min(start + seconds, source.duration - .05);
+          audio.currentTime = start; hls.startLoad(start);
+          return;
+        }
+        fail();
+      });
+      hls.attachMedia(audio);
+    }, fail, () => disposed);
     return { destroy, stop: () => stop(false) };
   }
-  return { create, createAudioSample, audioSampleSource, sourceFor, fetchOptions, nonblack, sceneStart, sceneCandidates, MAX_BYTES, MAX_REQUESTS, DIRECT_BYTES, POSTER_BYTES, SAMPLE_SECONDS };
+  return { create, createAudioSample, loadHls, audioSampleSource, sourceFor, fetchOptions, nonblack, sceneStart, sceneCandidates, MAX_BYTES, MAX_REQUESTS, DIRECT_BYTES, POSTER_BYTES, SAMPLE_SECONDS };
 });

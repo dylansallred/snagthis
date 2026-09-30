@@ -497,6 +497,9 @@ test('offline popup previews direct and HLS sources before any desktop job exist
       await expect(video).toHaveJSProperty('muted', true);
       await expect.poll(() => video.evaluate(element => element.currentTime)).toBeGreaterThan(.2);
       await expect(row.locator('.thumb-poster')).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
+      // hls.js loads once, and only for a stream preview; a direct file never pulls it in.
+      expect(await popup.evaluate(() => ({ loaded: typeof window.Hls === 'function', scripts: document.querySelectorAll('script[src="vendor/hls.min.js"]').length })))
+        .toEqual(kind === 'direct' ? { loaded: false, scripts: 0 } : { loaded: true, scripts: 1 });
       if (kind === 'black-preview') expect(await video.evaluate(element => element.currentTime)).toBeGreaterThanOrEqual(25);
       await expect(row.locator('.thumb')).toHaveText('');
       const scene = await video.evaluate(element => { const start = element.closest('.video-row').sourceSceneStart; return { start, end: Math.min(element.duration, start + 10) }; });
