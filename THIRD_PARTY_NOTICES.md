@@ -11,7 +11,7 @@ SnagThis is licensed GPL-3.0-only. Dependencies retain their own licenses; the p
 | React | [MIT](https://github.com/facebook/react/blob/main/LICENSE) | Retain installed dependency notice. |
 | Radix UI | [MIT](https://github.com/radix-ui/primitives/blob/main/LICENSE) | Retain installed dependency notice. |
 | Inter | [SIL Open Font License 1.1](https://github.com/rsms/inter/blob/master/LICENSE.txt) | License is copied alongside the extension font. |
-| Jersey 15 | [SIL Open Font License 1.1](https://github.com/google/fonts/tree/main/ofl/jersey15) | The logo lettering is artwork drawn from this face by `scripts/render-brand-assets.cjs`. The desktop update chip and notes ship a Latin subset (`apps/desktop/src/assets/fonts/jersey15-latin.woff2`) with its license alongside; the website ships the same subset. |
+| Jersey 15 | [SIL Open Font License 1.1](https://github.com/google/fonts/tree/main/ofl/jersey15) | The logo lettering is artwork drawn from this face by `scripts/render-brand-assets.cjs`. The desktop update chip and notes ship a Latin subset (`apps/desktop/src/assets/fonts/jersey15-latin.woff2`) with its license alongside; the website and the Chrome extension's preview player (`apps/extension/fonts/jersey15-latin.woff2`) ship the same subset. |
 | Lucide | [ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE) | Desktop library and extension settings icon; the extension includes `vendor/lucide.LICENSE.txt`. |
 
 Installed package license files are authoritative for their exact installed versions. The release pipeline must retain dependency notices and identify bundled multimedia tool sources before public binary distribution.

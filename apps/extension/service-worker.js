@@ -2,6 +2,8 @@
 importScripts('js/build-config.js', 'shared/hls.js', 'js/detection.js', 'js/preview-origin.js', 'js/browser-downloads.js');
 // The toolbar icon and badge follow the shared accent colour.
 importScripts('shared/accents.js', 'js/accent-icon.js');
+// Snag it in the preview player makes the popup row's own download decision.
+importScripts('shared/selection.js', 'shared/audioTracks.js', 'popup/titles.js', 'popup/model.js');
 const D = SnagThisDetection;
 const browserDownloads = SnagThisBrowserDownloads.createManager({ chrome });
 const API_BASE = 'http://127.0.0.1:49732';
@@ -14,6 +16,8 @@ const TRIMMED_SEGMENT_LIST = 200;
 // storage.session is shared by every tab, so these copies are bounded.
 const MAX_MANIFEST_SNAPSHOT = 2 * 1024 * 1024;
 const MAX_PAGE_SNAPSHOTS = 4 * 1024 * 1024;
+// A preview tab's session lives 10 minutes.
+const PREVIEW_SESSION_MS = 600000;
 const NETWORK_URLS = ['http://*/*', 'https://*/*'];
 // Detection needs media elements, fetch/XHR playlists and plugin-style loads.
 // Pages, scripts, styles, images and fonts never need their headers read.
@@ -66,7 +70,7 @@ async function freeSessionSpace(key, page) {
   const others = Object.entries(all).filter(([name]) => name !== key && name.startsWith(PREFIX))
     .sort((first, second) => (first[1]?.updatedAt || 0) - (second[1]?.updatedAt || 0));
   const evicted = others.slice(0, Math.ceil(others.length / 2)).map(([name]) => name);
-  const expired = Object.entries(all).filter(([name, value]) => name.startsWith('snagthis:preview:') && !(Date.now() - value?.createdAt <= 600000)).map(([name]) => name);
+  const expired = Object.entries(all).filter(([name, value]) => name.startsWith('snagthis:preview:') && !(Date.now() - value?.createdAt <= PREVIEW_SESSION_MS)).map(([name]) => name);
   if (evicted.length || expired.length) await chrome.storage.session.remove([...evicted, ...expired]);
   for (const name of evicted) {
     const tabId = Number(/^snagthis:tab:(\d+)$/.exec(name)?.[1]);
@@ -624,6 +628,65 @@ async function downloadMedia(message) {
 function youtubeBlocked(item, payload) {
   return SnagThisBuild.storeBuild && (item?.mediaKind === 'youtube-page' || [item?.url, payload?.mediaUrl].some(url => Boolean(D.youtubeId(url)) || D.isYoutubeMediaHost(url)));
 }
+/* ── Preview player (docs/design/prototypes/preview-player, A · Cinema) ──
+ * The player only knows its session. Details and Snag it are looked up here from the popup row the
+ * preview was opened from, with the popup's own choice (quality preference, Chrome for supported
+ * files, SnagThis for streams) and the same DRM and store-build rules as DOWNLOAD_MEDIA. */
+async function streamSession(sessionId) {
+  const key = `snagthis:preview:${String(sessionId)}`; const session = (await chrome.storage.session.get(key))[key];
+  if (!session || Date.now() - session.createdAt > PREVIEW_SESSION_MS) { await chrome.storage.session.remove(key); return null; }
+  return session;
+}
+async function previewRow({ tabId, mediaId, sourceUrl, visit }) {
+  if (!Number.isInteger(tabId) || tabId < 0 || typeof mediaId !== 'string' || !mediaId || mediaId.length > 80) return null;
+  const page = await readPage(tabId);
+  if (visit && page.visit !== visit) return null;
+  const row = listedItems(page).find(value => value.id === mediaId && value.url === sourceUrl);
+  return row ? { page, row } : null;
+}
+function youtubePage(url) { return Boolean(D.youtubeId(url)) || /^https?:\/\/([^/]+\.)?youtube\.com\//i.test(String(url || '')); }
+function snagAllowed(page, row) {
+  if (row.drm || youtubeBlocked(row, { mediaUrl: row.url })) return false;
+  // Chrome Web Store policy: the store build never offers a download from a YouTube page.
+  return !(SnagThisBuild.storeBuild && (youtubePage(row.sourcePageUrl) || youtubePage(page.url)));
+}
+function previewChoice(row, preferences, variantUrl) {
+  const choice = SnagThisPopupModel.selectMedia(row, preferences, variantUrl ? { variantUrl } : {});
+  return { choice, backend: SnagThisBrowserDownloads.isSupported(choice) ? 'browser' : 'desktop' };
+}
+async function previewPreferences() { return (await chrome.storage.local.get('preferences')).preferences || {}; }
+async function previewOffer(session) {
+  const found = await previewRow(session);
+  if (!found || !snagAllowed(found.page, found.row)) return null;
+  const { row } = found; const preferences = await previewPreferences();
+  const describe = ({ choice, backend }) => ({ variantUrl: choice.selection?.variantUrl || '', height: choice.height || null,
+    sizeBytes: Number(choice.sizeBytes) > 0 ? Number(choice.sizeBytes) : null, sizeEstimated: Boolean(choice.sizeEstimated), backend });
+  const poster = [row.sourcePreviewPoster, row.thumbnailUrl, row.poster].find(value => /^(?:https?:|data:image\/jpeg;base64,)/.test(String(value || ''))) || '';
+  return { ...describe(previewChoice(row, preferences)), durationSeconds: Number(row.durationSeconds) > 0 ? Number(row.durationSeconds) : null, poster,
+    variants: (row.variants || []).filter(variant => variant.url).slice(0, 24).map(variant => describe(previewChoice(row, preferences, variant.url))) };
+}
+async function snagPreview(message) {
+  const session = await streamSession(message.sessionId);
+  if (!session) return { ok: false, error: 'This preview expired. Choose Preview in SnagThis again.' };
+  const found = await previewRow(session);
+  if (!found) return { ok: false, error: 'This video is no longer on the page. Open the page and choose Preview again.' };
+  const { page, row } = found;
+  if (!snagAllowed(page, row)) return { ok: false, error: row.drm ? DRM_MESSAGE : YOUTUBE_STORE_MESSAGE };
+  const variantUrl = (row.variants || []).some(variant => variant.url === message.variantUrl) ? message.variantUrl : '';
+  const { choice, backend } = previewChoice(row, await previewPreferences(), variantUrl);
+  const payload = SnagThisPopupModel.buildDownloadPayload(choice, page.titles?.[row.id] || '');
+  try { return await downloadMedia({ tabId: session.tabId, mediaId: row.id, payload, apiBase: session.apiBase, backend }); }
+  catch (error) { return { ok: false, error: error.message, backend }; }
+}
+/** What the popup's connection banner would say: ready, unpaired, offline, update-app or update-extension. */
+async function desktopState(apiBase = API_BASE) {
+  let health = null;
+  try { const response = await fetch(`${apiBase}/v1/health`, { headers: bridgeHeaders(), signal: AbortSignal.timeout(4000) }); if (response.ok) health = await response.json(); } catch { /* SnagThis is closed. */ }
+  if (!health) return 'offline';
+  const issue = SnagThisPopupModel.compatibilityIssue(health, chrome.runtime.getManifest().version);
+  if (issue) return issue === 'extension' ? 'update-extension' : 'update-app';
+  return (await chrome.storage.local.get('appToken')).appToken ? 'ready' : 'unpaired';
+}
 async function injectContentScripts(tabId) {
   // Tabs opened before install/update have no (or an orphaned) content script.
   // Both files guard against running twice in one document.
@@ -779,13 +842,22 @@ async function handleMessage(message, sender) {
   if (message.cmd === 'CREATE_STREAM_SESSION') {
     const id = crypto.randomUUID(); const value = message.session || {};
     const sourceUrl = D.httpUrl(value.sourceUrl); if (!sourceUrl) return { ok: false, error: 'Invalid video URL.' };
-    await chrome.storage.session.set({ [`snagthis:preview:${id}`]: { sourceUrl, title: String(value.title || '').slice(0, 255), declaredType: value.declaredType, sourcePageUrl: D.httpUrl(value.sourcePageUrl), requestHeaders: value.credentialed === true ? D.sanitizeHeaders(value.requestHeaders) : {}, credentialed: value.credentialed === true, createdAt: Date.now() } });
+    // The popup row the preview came from, pinned to this page visit, so Snag it can reuse it.
+    const found = await previewRow({ tabId: value.tabId, mediaId: value.mediaId, sourceUrl });
+    const origin = found ? { tabId: value.tabId, mediaId: value.mediaId, visit: found.page.visit } : {};
+    const apiBase = !chrome.runtime.getManifest().update_url ? localApiBase(value.apiBase) : API_BASE;
+    await chrome.storage.session.set({ [`snagthis:preview:${id}`]: { sourceUrl, title: String(value.title || '').slice(0, 255), declaredType: value.declaredType, sourcePageUrl: D.httpUrl(value.sourcePageUrl), requestHeaders: value.credentialed === true ? D.sanitizeHeaders(value.requestHeaders) : {}, credentialed: value.credentialed === true, ...origin, apiBase, createdAt: Date.now() } });
     return { ok: true, sessionId: id };
   }
   if (message.cmd === 'GET_STREAM_SESSION') {
-    const key = `snagthis:preview:${String(message.sessionId)}`; const result = await chrome.storage.session.get(key); const session = result[key];
-    if (!session || Date.now() - session.createdAt > 600000) { await chrome.storage.session.remove(key); return { ok: false }; }
-    return { ok: true, session };
+    const session = await streamSession(message.sessionId);
+    if (!session) return { ok: false };
+    return { ok: true, session, snag: await previewOffer(session).catch(() => null) };
+  }
+  if (message.cmd === 'SNAG_STREAM_SESSION') return snagPreview(message);
+  if (message.cmd === 'PREVIEW_DESKTOP_STATE') {
+    const session = await streamSession(message.sessionId);
+    return { ok: true, state: session ? await desktopState(session.apiBase) : 'offline' };
   }
   return { ok: false };
 }

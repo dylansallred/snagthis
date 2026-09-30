@@ -829,7 +829,7 @@
     if (item.mediaKind === 'youtube-page') { external(item.sourcePageUrl || item.url); return; }
     if (isDemo) { showDemoVideo(item); return; }
     const credentialed = item.networkObserved === true;
-    const result = await message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: item.url, sourcePageUrl: item.sourcePageUrl, title: customTitles[item.id] || titles.getDisplayTitle(item), declaredType: item.type, credentialed, requestHeaders: credentialed ? item.requestHeaders : {} } });
+    const result = await message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: item.url, sourcePageUrl: item.sourcePageUrl, title: customTitles[item.id] || titles.getDisplayTitle(item), declaredType: item.type, credentialed, requestHeaders: credentialed ? item.requestHeaders : {}, tabId: activeTab?.id, mediaId: item.id, apiBase } });
     if (result.ok) external(chrome.runtime.getURL(`player.html?session=${encodeURIComponent(result.sessionId)}`)); else notice(result.error || 'Preview is unavailable.');
   }
   function showDemoVideo(item) {

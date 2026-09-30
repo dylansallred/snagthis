@@ -13,7 +13,7 @@ const RUNTIME_FILES = Object.freeze([
   'popup/titles.js', 'popup/model.js', 'popup/source-preview.js', 'popup/page-preview.js', 'popup/accent.js', 'popup/pixel.js', 'popup/speed-trace.js',
   'shared/strings.js', 'shared/rows.js', 'shared/hls.js', 'shared/selection.js', 'shared/audioTracks.js', 'shared/accents.js',
   'vendor/hls.min.js', 'vendor/hls.LICENSE.txt', 'vendor/lucide.LICENSE.txt',
-  'fonts/inter-latin.woff2', 'fonts/LICENSE',
+  'fonts/inter-latin.woff2', 'fonts/LICENSE', 'fonts/jersey15-latin.woff2', 'fonts/OFL-Jersey15.txt',
   'img/icon-16.png', 'img/icon-48.png', 'img/icon-128.png', 'img/snagthis-logo-title.svg',
 ]);
 const SHARED_FILES = ['strings.js', 'rows.js', 'hls.js', 'selection.js', 'audioTracks.js', 'accents.js'];
