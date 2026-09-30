@@ -7,6 +7,8 @@ import './DropOverlay.css';
 export type DropResult = 'added' | 'picker' | 'error' | 'busy';
 
 const REORDER_TYPE = 'application/x-snagthis-job';
+// Saved videos dragged onto a folder (components/library/savedDrag.ts).
+const SAVED_TYPE = 'application/x-snagthis-saved';
 const NEAR_PX = 150;
 const PRESS_MS = 520;
 // Dragover repeats while a drag is over the window; silence means it left or was cancelled with Esc.
@@ -15,7 +17,7 @@ const IDLE_MS = 400;
 /** A link drag from a browser or another app: never files, never the list's own row reordering. */
 function acceptsDrag(event: DragEvent) {
   const types = Array.from(event.dataTransfer?.types || []);
-  if (types.includes('Files') || types.includes(REORDER_TYPE)) return false;
+  if (types.includes('Files') || types.includes(REORDER_TYPE) || types.includes(SAVED_TYPE)) return false;
   return types.includes('text/uri-list') || types.includes('text/plain');
 }
 

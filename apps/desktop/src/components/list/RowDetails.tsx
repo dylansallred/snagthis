@@ -8,7 +8,7 @@ import { ui } from '@/lib/strings';
 import { SpeedChart } from './SpeedChart';
 import { QualityLabel } from './QualityLabel';
 
-export type RowCommand = 'copy-link-inline' | 'pause' | 'resume' | 'retry' | 'play' | 'open-page' | 'choose-folder' | 'locate' | 'details' | 'rename' | 'copy-link' | 'show-folder' | 'cancel' | 'remove' | 'start' | 'move-up' | 'move-down' | 'use-chrome-session';
+export type RowCommand = 'move-to' | 'retry-move' | 'copy-link-inline' | 'copy-page' | 'pause' | 'resume' | 'retry' | 'play' | 'open-page' | 'choose-folder' | 'locate' | 'details' | 'rename' | 'copy-link' | 'show-folder' | 'cancel' | 'remove' | 'start' | 'move-up' | 'move-down' | 'use-chrome-session';
 export function RowDetails({ row, folder, onCommand, onRefreshLink }: {
   row: RowModel; folder: string; onCommand: (command: RowCommand) => void;
   onRefreshLink: (url: string) => Promise<void>;

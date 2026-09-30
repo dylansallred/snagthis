@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Path bar · 4 options</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+.bars { display: grid; grid-template-columns: 130px 1fr; gap: 10px 16px; align-items: center; margin-top: 12px; }
+.bars .h { color: var(--color-foreground-subtle); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.bars .lab { font-size: 13px; font-weight: 600; }
+.bars .lab span { font: 400 20px/1 var(--font-pixel); color: var(--color-primary-hover); margin-right: 8px; }
+.bars img { display: block; max-width: 100%; border-radius: 6px; border: 1px solid var(--color-border-subtle); }
+.bars .pair { display: grid; gap: 6px; }
+.bars .pair img { width: 100%; } .bars .pair img:last-child { width: 80%; }
+.baseline { display: grid; grid-template-columns: minmax(0, 560px) 1fr; gap: 24px; align-items: start; margin-top: 8px; }
+.baseline img { width: 100%; border-radius: 8px; border: 1px solid var(--color-border-subtle); display: block; }
+.baseline ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.baseline ul li + li { margin-top: 4px; }
+.baseline b { color: var(--color-foreground); }
+.section-sub { color: var(--color-foreground-muted); max-width: 980px; }
+.section-sub b { color: var(--color-foreground); }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Organise the library</a> · <span>Path bar</span>4 options for the bar above Saved</div>
+    <h1>Make the path bar look like SnagThis</h1>
+    <p>Owner: <i>“I also want to improve how this looks. Can you show me some designs on how we could do this, and I'll pick.”</i> Today the bar is a back chevron, “VidSnag › Test › <b>tetst</b>”, then the same path again in grey mono. Each option below uses the <b>same nested Saved folder</b> with folder rows in the chosen <b>Sections</b> style, and shows: <b>at the root</b>, <b>one level</b>, <b>three levels</b>, <b>very long names at a 960px window</b> (with the collapsed <b>…</b> menu open), <b>hover</b>, <b>keyboard focus</b>, <b>dragging a video onto a segment</b>, and <b>how the full disk path is exposed</b>. Open one to click through (keys 1–9), navigate live, drag a real video onto a segment, switch the window width, and try other accents.</p>
+    <p><b>Owner choice (2026-09-29): D · Minimal</b>, now in the app (ui-design-spec §6.2).</p>
+  </div>
+  <div class="dirs">
+    <section class="dir"><header><span class="n">A</span><h2>Pixel tabs</h2><a class="btn primary" href="a-pixel-tabs/index.html">Open →</a></header>
+      <p>Each folder is a <b>bevelled chip with notched pixel corners</b> in <b>Jersey 15</b>; the <b>current folder is the accent key</b>. Pixel ▸ between chips, a bevelled back key. Path in a <b>hover card</b> with Copy path.</p>
+      <a class="shot" href="a-pixel-tabs/index.html#state=three"><img src="a-pixel-tabs/preview.png" alt="Path bar as bevelled pixel chips: SnagThis, Road trips, Coast, and an accent 2026 Summer chip"></a>
+      <ul><li><b>Best for</b> the most on-brand bar and the loudest “you are here”.</li><li><b>Cost</b>: pixel font for long folder names; a row of chips is busier.</li></ul>
+      <p class="more">States: <a href="a-pixel-tabs/state-root.png">root</a> · <a href="a-pixel-tabs/state-one.png">one level</a> · <a href="a-pixel-tabs/state-long.png">long</a> · <a href="a-pixel-tabs/state-long-menu.png">… menu</a> · <a href="a-pixel-tabs/state-hover.png">hover</a> · <a href="a-pixel-tabs/state-focus.png">focus</a> · <a href="a-pixel-tabs/state-drop.png">drag-over</a> · <a href="a-pixel-tabs/state-path.png">disk path</a></p></section>
+    <section class="dir"><header><span class="n">B</span><h2>Title + trail</h2><a class="btn primary" href="b-title-trail/index.html">Open →</a></header>
+      <p>The current folder is a <b>heading</b>: pixel folder, <b>name in Jersey 15</b>, <b>“1 folder · 4 videos · 4.1 GB”</b>. A <b>quiet trail of parents</b> above it; bevelled back key. The title opens a menu with the <b>path, Copy path</b>, Rename, Delete.</p>
+      <a class="shot" href="b-title-trail/index.html#state=three"><img src="b-title-trail/preview.png" alt="Two-line path bar: a small SnagThis / Road trips / Coast trail above a large 2026 Summer title with its count and size"></a>
+      <ul><li><b>Best for</b> the clearest “where am I”, with folder facts and actions in one place.</li><li><b>Cost</b>: 68px instead of 42px; parent targets are small for drag and drop.</li></ul>
+      <p class="more">States: <a href="b-title-trail/state-root.png">root</a> · <a href="b-title-trail/state-one.png">one level</a> · <a href="b-title-trail/state-long.png">long</a> · <a href="b-title-trail/state-long-menu.png">… menu</a> · <a href="b-title-trail/state-hover.png">hover</a> · <a href="b-title-trail/state-focus.png">focus</a> · <a href="b-title-trail/state-drop.png">drag-over</a> · <a href="b-title-trail/state-path.png">disk path</a></p></section>
+    <section class="dir"><header><span class="n">C</span><h2>Address field</h2><a class="btn primary" href="c-address-field/index.html">Open →</a></header>
+      <p>A <b>sunken field</b> like the header's paste box holds the trail, file-manager style. <b>Click its empty end</b> (or <kbd>⌘L</kbd>) to <b>edit or copy the path</b>; a copy icon sits at the end. A bevelled <b>Up</b> key in front.</p>
+      <a class="shot" href="c-address-field/index.html#state=three"><img src="c-address-field/preview.png" alt="An address-bar field containing SnagThis › Road trips › Coast › 2026 Summer with an Up key before it"></a>
+      <ul><li><b>Best for</b> familiarity and getting at the path in one click.</li><li><b>Cost</b>: the least pixel of the four; an editable path is a power feature to build.</li></ul>
+      <p class="more">States: <a href="c-address-field/state-root.png">root</a> · <a href="c-address-field/state-one.png">one level</a> · <a href="c-address-field/state-long.png">long</a> · <a href="c-address-field/state-long-menu.png">… menu</a> · <a href="c-address-field/state-hover.png">hover</a> · <a href="c-address-field/state-focus.png">focus</a> · <a href="c-address-field/state-drop.png">drag-over</a> · <a href="c-address-field/state-path.png">disk path</a></p></section>
+    <section class="dir"><header><span class="n">D</span><h2>Minimal · chosen</h2><a class="btn primary" href="d-minimal/index.html">Open →</a></header>
+      <p><b>Plain segments</b>, <b>pixel “/”</b> separators, <b>current in the accent</b>, a dotted pixel underline on hover. <b>No back button, no path text</b>: the path is in <b>⋯ ▸ Copy path</b>. Middle folders collapse to <b>…</b>.</p>
+      <a class="shot" href="d-minimal/index.html#state=three"><img src="d-minimal/preview.png" alt="A one-line path bar: SnagThis / Road trips / Coast / 2026 Summer with the last in orange"></a>
+      <ul><li><b>Best for</b> the least visual weight; today's bar, fixed rather than restyled.</li><li><b>Cost</b>: going up relies on the trail (or ⌘↑); the path is two clicks away.</li></ul>
+      <p class="more">States: <a href="d-minimal/state-root.png">root</a> · <a href="d-minimal/state-one.png">one level</a> · <a href="d-minimal/state-long.png">long</a> · <a href="d-minimal/state-long-menu.png">… menu</a> · <a href="d-minimal/state-hover.png">hover</a> · <a href="d-minimal/state-focus.png">focus</a> · <a href="d-minimal/state-drop.png">drag-over</a> · <a href="d-minimal/state-path.png">disk path</a></p></section>
+  </div>
+
+  <h2 class="section-title">The bars side by side</h2>
+  <p class="section-sub">Three levels deep at 1200px, then five levels of long names at 960px. The current bar is included for reference.</p>
+  <div class="bars">
+    <span></span><span class="h">Three levels · 1200px, then long names · 960px</span>
+    <span class="lab"><span>0</span>Current</span><div class="pair"><img src="baseline/bar-three.png" alt="Current bar, three levels"><img src="baseline/bar-long.png" alt="Current bar, long names clipped at 960px"></div>
+    <span class="lab"><span>A</span>Pixel tabs</span><div class="pair"><img src="a-pixel-tabs/bar-three.png" alt="A, three levels"><img src="a-pixel-tabs/bar-long.png" alt="A, long names at 960px"></div>
+    <span class="lab"><span>B</span>Title + trail</span><div class="pair"><img src="b-title-trail/bar-three.png" alt="B, three levels"><img src="b-title-trail/bar-long.png" alt="B, long names at 960px"></div>
+    <span class="lab"><span>C</span>Address field</span><div class="pair"><img src="c-address-field/bar-three.png" alt="C, three levels"><img src="c-address-field/bar-long.png" alt="C, long names at 960px"></div>
+    <span class="lab"><span>D</span>Minimal</span><div class="pair"><img src="d-minimal/bar-three.png" alt="D, three levels"><img src="d-minimal/bar-long.png" alt="D, long names at 960px"></div>
+  </div>
+
+  <h2 class="section-title">Compared</h2>
+  <table class="cmp">
+    <tr><th></th><th>A · Pixel tabs</th><th>B · Title + trail</th><th>C · Address field</th><th>D · Minimal</th></tr>
+    <tr><td>Height (today 42px)</td><td>46px</td><td>68px</td><td>48px</td><td>42px</td></tr>
+    <tr><td>Segments</td><td>Bevelled pixel chips, Jersey 15</td><td>Small muted trail of parents, Inter 11.5px</td><td>Soft segments inside a sunken field</td><td>Plain Inter text</td></tr>
+    <tr><td>Current folder</td><td>Accent bevel key, white text</td><td>Large Jersey 15 title + pixel folder + count · size</td><td>Bold, last in the field</td><td>Accent-coloured text</td></tr>
+    <tr><td>Separators</td><td>Pixel ▸</td><td>Pixel /</td><td>Small ›</td><td>Pixel /</td></tr>
+    <tr><td>Going up</td><td>Bevelled back key</td><td>Bevelled back key</td><td>Bevelled Up key (dimmed at root)</td><td>Click a parent, ⌘↑ / Backspace</td></tr>
+    <tr><td>Hover</td><td>Chip lifts 1px, brightens</td><td>Soft chip behind the name</td><td>Soft chip; empty end shows an I-beam</td><td>Brighter + dotted pixel underline</td></tr>
+    <tr><td>Keyboard focus</td><td colspan="4">2px accent ring on the segment (square on A's chips)</td></tr>
+    <tr><td>Drag-over</td><td>Chip lifts, muted-accent fill, 2px accent border</td><td>Solid accent pill, folder opens</td><td>Solid accent segment, field border turns accent</td><td>Muted-accent fill, solid underline</td></tr>
+    <tr><td>Long paths</td><td colspan="4">Each segment caps with an ellipsis (220–230px, current 360–380px); if it still doesn't fit, folders nearest the save folder fold into one <b>…</b> whose menu is an indented tree. Every item opens its folder and takes drops; hovering … while dragging opens it.</td></tr>
+    <tr><td>Full disk path</td><td>Hover card on the current chip + Copy path; right-click a chip</td><td>Title menu: “On disk” path, Copy path, Show in Finder, Rename, Delete</td><td>Click the empty end / ⌘L: editable, selected path + Copy; copy icon at rest</td><td>⋯ ▸ Copy path (path shown under it); right-click a segment</td></tr>
+    <tr><td>Folder ⋯ (Rename, Delete)</td><td>Kept</td><td>Moves into the title menu</td><td>Kept</td><td>Kept, also at the root (for Copy path)</td></tr>
+  </table>
+
+  <h2 class="section-title">Shared across all four</h2>
+  <p class="section-sub">The grey mono path is gone from the bar in every option. Sort &amp; group (<i>Newest saved</i>), New folder and Show in Finder stay on the right. Every earlier segment opens its folder and takes dropped videos; the drag chip always says <i>Move to {folder}</i>. The pixel folder, bevel keys and accent follow the Settings accent (try the swatches). Folder rows below use folder-rows option C, <i>Sections</i>. All tokens are the app's (<code>globals.css</code>), with Jersey 15 and Inter.</p>
+
+  <h2 class="section-title">Questions for the owner</h2>
+  <ol class="questions">
+    <li><b>How loud?</b> A and B bring the pixel font and accent into the bar; C and D stay quiet like today.</li>
+    <li><b>Back button:</b> keep one (A, B, C) or rely on the trail and ⌘↑ (D)?</li>
+    <li><b>The path:</b> is a hover card (A), a title menu (B), an editable field (C) or a Copy path menu item (D) enough, or do you want it visible somewhere by default?</li>
+    <li><b>Mix and match:</b> the path treatments are independent, e.g. D's look with C's click-to-edit, or A's chips with B's title menu.</li>
+  </ol>
+
+  <h2 class="section-title">0 · Current baseline</h2>
+  <div class="baseline">
+    <a href="baseline/index.html#state=three"><img src="baseline/preview.png" alt="Today's bar: back chevron, SnagThis › Road trips › Coast › 2026 Summer, then the full path in grey mono"></a>
+    <ul>
+      <li><code>PathBar.tsx</code> + <code>organize.css</code>: lucide chevrons, flat 13px text, current bold, then <code>.path-text</code> in grey mono repeating the same path.</li>
+      <li>No collapse: at 960px with long names the crumbs and the path simply clip (<a href="baseline/state-long.png">screenshot</a>).</li>
+      <li>Drop target is a faint tint (<a href="baseline/state-drop.png">screenshot</a>).</li>
+    </ul>
+  </div>
+  <p class="hub-footer">Prototype only; nothing here changes the app. Screenshots: <code>node docs/design/prototypes/organize/path-bar/capture.cjs</code> from the repository root (1200×800 and 960×800 windows, 1x, reduced motion; any PNG over 240 KB is palette-reduced).</p>
+</main>
+</body>
+</html>

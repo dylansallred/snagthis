@@ -1,0 +1,156 @@
+/* Storyboard pieces for the simpler update studies. Tokens, fonts and the window mock come from
+   ../updates/shared.css; this file adds the chip, popover, toast, OS notification and desktop frames. */
+
+/* ── Header chip (same bevel as apps/desktop/src/components/updates/updates.css) ── */
+.tchip { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 6px; margin-right: 8px; font-size: 12px; font-weight: 500; color: var(--color-foreground-muted); background: var(--color-background-active); box-shadow: inset 1px 1px 0 hsl(215 14% 24%), inset -1px -1px 0 hsl(215 22% 6%); white-space: nowrap; }
+.tchip .pixel { font-size: 15px; line-height: 1; }
+.tchip.hot { color: #0c0e11; background: var(--accent-bevel-face); box-shadow: inset 1px 1px 0 var(--accent-bevel-light), inset -1px -1px 0 var(--accent-bevel-dark); font-weight: 650; }
+.tchip.hot .pbtn .pb-glyph { fill: var(--accent-bevel-face); }
+.tchip.hot .pbtn .pb-face, .tchip.hot .pbtn .pb-light, .tchip.hot .pbtn .pb-dark { fill: #0c0e11; }
+.tchip.warn { color: var(--color-status-paused); background: color-mix(in srgb, var(--color-status-paused) 12%, var(--color-background-active)); }
+.tchip.ok { color: var(--color-status-completed); }
+.tchip .upbar { width: 36px; }
+.tchip svg.i { width: 13px; height: 13px; }
+.tchip .sep { opacity: .55; }
+.tchip .num { font-variant-numeric: tabular-nums; }
+
+/* Hotspot: where the person clicks in this frame. */
+.hotspot { position: relative; cursor: pointer; }
+.hotspot::before { content: ""; position: absolute; inset: -5px; border: 2px dashed var(--color-primary-hover); border-radius: 6px; pointer-events: none; animation: hot 1.2s steps(2) infinite; }
+@keyframes hot { 50% { opacity: .35; } }
+.cursor { position: absolute; z-index: 40; width: 18px; height: 22px; pointer-events: none; filter: drop-shadow(0 1px 1px #000); }
+
+/* ── Popover under the chip ── */
+.pop { position: absolute; z-index: 22; top: 50px; width: 330px; padding: 12px 14px; border-radius: 9px; background: var(--color-popover); box-shadow: 0 16px 40px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .06); font-size: 12.5px; }
+.pop::before { content: ""; position: absolute; top: -5px; right: var(--arrow, 60px); width: 10px; height: 10px; background: var(--color-popover); transform: rotate(45deg); box-shadow: -1px -1px 0 rgb(255 255 255 / .06); }
+.pop h4 { margin: 0 0 3px; font-size: 13px; font-weight: 620; }
+.pop p { margin: 0; color: var(--color-foreground-muted); }
+.pop .row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.pop .row .sp { flex: 1; }
+.pop.warn h4 { color: var(--color-status-paused); }
+.pop .details { margin-top: 8px; }
+.pop.line { width: auto; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; white-space: nowrap; }
+.pop.line p { color: var(--color-foreground); }
+
+/* ── Toasts (bottom-right, like the app's sonner toasts) ── */
+.stoast { position: absolute; z-index: 25; right: 14px; bottom: 56px; display: flex; align-items: center; gap: 10px; min-width: 300px; padding: 10px 10px 10px 13px; border-radius: 9px; background: var(--color-background-active); border: 1px solid var(--color-border); font-size: 12.5px; box-shadow: 0 10px 30px rgb(0 0 0 / .45); }
+.stoast .pbtn { width: 18px; height: 18px; }
+.stoast b { font-weight: 620; }
+.stoast .sp { flex: 1; }
+.stoast .life { position: absolute; left: 8px; right: 8px; bottom: 3px; height: 2px; background: color-mix(in srgb, var(--color-primary-hover) 70%, transparent); transform-origin: left; transform: scaleX(var(--life, .6)); }
+.stoast.count { flex-wrap: wrap; row-gap: 8px; min-width: 340px; }
+.pips { display: flex; gap: 3px; flex-basis: 100%; }
+.pips i { flex: 1; height: 6px; background: hsl(215 16% 16%); box-shadow: inset 0 0 0 1px hsl(215 14% 21%); }
+.pips i.on { background: var(--accent-bevel-face); box-shadow: inset 1px 1px 0 var(--accent-bevel-light), inset -1px -1px 0 var(--accent-bevel-dark); }
+.pips i.blink { animation: cell-blink 1s steps(2) infinite; }
+.newpop { position: absolute; z-index: 24; right: 14px; bottom: 112px; width: 380px; padding: 14px; border-radius: 9px; background: var(--color-popover); box-shadow: 0 16px 40px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .06); }
+.newpop h4 { margin: 0 0 10px; font-size: 13px; font-weight: 620; display: flex; align-items: center; gap: 8px; }
+.newpop h4 .pixel { font-size: 17px; color: var(--color-primary-hover); }
+.newpop .foot2 { display: flex; justify-content: space-between; margin-top: 12px; font-size: 12px; }
+
+/* ── Macro frames: desktop with the window hidden, macOS notification, native dialog ── */
+.desk { position: relative; width: 960px; height: 640px; border-radius: 10px; overflow: hidden; background: radial-gradient(120% 90% at 20% 110%, #3a1f4d 0%, #1b2440 45%, #0c1322 100%); box-shadow: 0 30px 80px rgb(0 0 0 / .55), 0 0 0 1px rgb(255 255 255 / .06); font-size: 13px; }
+.desk .menubar { height: 24px; display: flex; align-items: center; gap: 16px; padding: 0 12px; background: rgb(20 22 28 / .55); backdrop-filter: blur(10px); font-size: 12.5px; color: #e8e8ea; }
+.desk .menubar b { font-weight: 650; }
+.desk .menubar .sp { flex: 1; }
+.desk .dock { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; gap: 10px; padding: 7px 12px; border-radius: 18px; background: rgb(255 255 255 / .12); backdrop-filter: blur(16px); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .15); }
+.desk .dock span { position: relative; width: 44px; height: 44px; border-radius: 11px; background: #2b3140; display: grid; place-items: center; }
+.desk .dock span.snag { background: #0e1116; }
+.desk .dock span.snag .pbtn { width: 30px; height: 30px; }
+.desk .dock span.run::after { content: ""; position: absolute; bottom: -6px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #e8e8ea; }
+.desk .other { position: absolute; left: 70px; top: 60px; width: 620px; height: 440px; border-radius: 10px; background: #f3f3f5; box-shadow: 0 20px 60px rgb(0 0 0 / .45); overflow: hidden; }
+.desk .other .bar { height: 34px; background: #e1e1e5; display: flex; align-items: center; gap: 7px; padding: 0 12px; }
+.desk .other .bar i { width: 11px; height: 11px; border-radius: 50%; background: #c7c7cc; }
+.desk .other .page { padding: 18px 22px; display: grid; gap: 10px; }
+.desk .other .page div { height: 10px; border-radius: 3px; background: #d7d7dc; }
+.desk .other .page .vid { height: 250px; border-radius: 6px; background: #111 url("../sample-media/1-pixel/neon-rain.jpg") center / cover; }
+.notif { position: absolute; right: 12px; top: 34px; width: 344px; display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; padding: 11px 12px; border-radius: 16px; background: rgb(40 42 50 / .78); backdrop-filter: blur(24px); box-shadow: 0 10px 30px rgb(0 0 0 / .35), inset 0 0 0 1px rgb(255 255 255 / .12); color: #f2f2f4; font-size: 12.5px; line-height: 1.35; }
+.notif .ico { width: 38px; height: 38px; border-radius: 9px; background: #0e1116; display: grid; place-items: center; }
+.notif .ico .pbtn { width: 26px; height: 26px; }
+.notif b { display: block; font-weight: 650; }
+.notif span { color: #d4d4d8; }
+.notif time { font-size: 11px; color: #b8b8be; }
+.notif.second { top: 118px; opacity: .9; }
+.notif .acts { grid-column: 2 / -1; display: flex; gap: 6px; margin-top: 4px; }
+.notif .acts em { font-style: normal; padding: 3px 10px; border-radius: 7px; background: rgb(255 255 255 / .14); font-size: 12px; }
+.native { position: absolute; z-index: 30; left: 50%; top: 150px; transform: translateX(-50%); width: 280px; padding: 18px 16px 14px; border-radius: 12px; background: #2a2d34; box-shadow: 0 24px 60px rgb(0 0 0 / .6), inset 0 0 0 1px rgb(255 255 255 / .12); text-align: center; font-size: 12px; color: #e8e8ea; }
+.native .pbtn { width: 48px; height: 48px; margin: 0 auto 10px; }
+.native b { display: block; font-size: 13px; margin-bottom: 6px; }
+.native p { margin: 0 0 6px; color: #c9c9ce; }
+.native p.add { color: #fff; font-weight: 600; }
+.native .nb { display: grid; gap: 6px; margin-top: 12px; }
+.native .nb span { padding: 5px; border-radius: 6px; background: #4a4d55; }
+.native .nb span.def { background: #2f6fea; }
+.win.blur-away { filter: saturate(.7) brightness(.8); }
+.focus-note { position: absolute; z-index: 30; left: 14px; bottom: 56px; padding: 5px 9px; border-radius: 6px; background: rgb(0 0 0 / .6); color: #ddd; font-size: 11.5px; }
+.gone { position: absolute; z-index: 5; left: 50%; bottom: 84px; transform: translateX(-50%); padding: 7px 14px; border-radius: 8px; background: rgb(10 12 16 / .82); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .12); color: #e8e8ea; font-size: 12.5px; white-space: nowrap; }
+
+/* Settings sheet mock: only the Updates card matters here. */
+.ssheet { position: absolute; z-index: 21; top: 0; right: 0; bottom: 0; width: 520px; background: var(--color-background-raised); border-left: 1px solid var(--color-primary-hover); padding: 18px 20px; box-shadow: -20px 0 50px rgb(0 0 0 / .4); }
+.ssheet h3 { margin: 0 0 4px; font-size: 15px; font-weight: 650; }
+.ssheet .d { color: var(--color-foreground-muted); font-size: 12.5px; margin-bottom: 18px; }
+.ssheet .cap { font-size: 12px; font-weight: 600; color: var(--color-foreground-muted); margin: 0 0 6px 2px; }
+.scard { border-radius: 10px; background: var(--color-background); box-shadow: 0 0 0 1px var(--color-border-subtle); }
+.scard > div { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.scard > div + div { border-top: 1px solid var(--color-border-subtle); margin-left: 12px; padding-left: 0; }
+.scard .lbl { flex: 1; } .scard .lbl b { display: block; font-size: 13px; font-weight: 500; } .scard .lbl small { font-size: 12px; color: var(--color-foreground-subtle); }
+.scard .lbl small.acc { color: var(--color-primary-hover); } .scard .lbl small.warn { color: var(--color-status-paused); } .scard .lbl small.ok { color: var(--color-status-completed); }
+.switch { width: 34px; height: 20px; border-radius: 10px; background: var(--color-primary); position: relative; } .switch::after { content: ""; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+
+/* ── Storyboard page chrome ── */
+.sb { display: grid; grid-template-columns: 960px minmax(260px, 1fr); gap: 26px; align-items: start; margin-top: 14px; }
+.sb .cap-box { font-size: 13px; color: var(--color-foreground-muted); }
+.sb .cap-box .fnum { font: 400 30px/1 var(--font-pixel); color: var(--color-primary-hover); }
+.sb .cap-box h2 { margin: 4px 0 8px; font-size: 18px; color: var(--color-foreground); font-weight: 620; }
+.sb .cap-box p { margin: 0 0 10px; }
+.sb .cap-box b { color: var(--color-foreground); font-weight: 600; }
+.tally { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+.tally div { padding: 8px 10px; border-radius: 8px; background: var(--color-background-raised); box-shadow: inset 0 0 0 1px var(--color-border-subtle); }
+.tally b { display: block; font: 400 26px/1 var(--font-pixel); color: var(--color-foreground); }
+.tally small { font-size: 11px; color: var(--color-foreground-subtle); text-transform: uppercase; letter-spacing: .06em; }
+.nav { display: flex; gap: 8px; margin-top: 10px; }
+.strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.strip button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; font-size: 12px; color: var(--color-foreground-muted); background: var(--color-background-raised); box-shadow: inset 0 0 0 1px var(--color-border-subtle); }
+.strip button em { font: normal 400 15px/1 var(--font-pixel); color: var(--color-foreground-subtle); }
+.strip button[aria-current="true"] { color: var(--color-foreground); box-shadow: inset 0 0 0 1px var(--color-primary-hover); }
+.strip button[aria-current="true"] em { color: var(--color-primary-hover); }
+.strip button .k { font-size: 10.5px; padding: 1px 5px; border-radius: 4px; background: var(--color-background-active); }
+.kind { display: inline-block; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; margin-right: 6px; background: var(--color-background-active); color: var(--color-foreground-muted); }
+.kind.click { background: var(--color-primary); color: #fff; }
+.kind.notif { background: #3d4a66; color: #dfe6f5; }
+.kind.auto { background: #1f3a2e; color: #9ee0bd; }
+.impl { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.impl section { padding: 14px 16px; border-radius: 10px; background: var(--color-background-raised); box-shadow: inset 0 0 0 1px var(--color-border-subtle); font-size: 12.5px; color: var(--color-foreground-muted); }
+.impl h3 { margin: 0 0 8px; font-size: 13px; color: var(--color-foreground); }
+.impl ul { margin: 0; padding-left: 18px; } .impl li + li { margin-top: 4px; }
+.impl code { font-family: var(--font-mono); font-size: 11px; color: var(--color-foreground); }
+.impl b { color: var(--color-foreground); font-weight: 600; }
+
+/* Preview (1200×800) layout used by capture.cjs. */
+body.preview { width: 1200px; height: 800px; overflow: hidden; background: #07080a; }
+.pv { padding: 36px 30px; }
+.pv header { display: flex; align-items: baseline; gap: 14px; }
+.pv header .n { font: 400 40px/1 var(--font-pixel); color: var(--color-primary-hover); }
+.pv header h1 { margin: 0; font-size: 24px; font-weight: 640; }
+.pv header p { margin: 0 0 0 auto; color: var(--color-foreground-muted); font-size: 13px; max-width: 470px; text-align: right; }
+.pv .frames { display: grid; grid-template-columns: 700px 422px; grid-template-rows: auto 1fr; gap: 14px 18px; margin-top: 26px; }
+.pv .fr.f0 { grid-row: 1 / 3; }
+.pv .fr .scale { width: 700px; height: 467px; overflow: hidden; border-radius: 8px; }
+.pv .fr .scale > * { transform: scale(.72917); transform-origin: 0 0; }
+.pv .fr.f1 .scale { width: 422px; height: 281px; }
+.pv .fr.f1 .scale > * { transform: scale(.43958); }
+.pv .fr p { margin: 7px 2px 0; font-size: 12.5px; color: var(--color-foreground-muted); }
+.pv .fr p em { font: normal 400 16px/1 var(--font-pixel); color: var(--color-primary-hover); margin-right: 6px; }
+.pv .counts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; }
+.pv .counts div { flex: 1; padding: 9px 12px; border-radius: 8px; background: var(--color-background-raised); box-shadow: inset 0 0 0 1px var(--color-border-subtle); font-size: 12px; color: var(--color-foreground-muted); }
+.pv .counts b { font: 400 22px/1 var(--font-pixel); color: var(--color-foreground); margin-right: 6px; }
+.pv .counts .today { color: var(--color-foreground-subtle); font-size: 11.5px; display: block; margin-top: 3px; }
+.pv .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 24px; font-size: 12.5px; }
+.pv .flow span { padding: 5px 10px; border-radius: 6px; background: var(--color-background-raised); box-shadow: inset 0 0 0 1px var(--color-border-subtle); color: var(--color-foreground-muted); }
+.pv .flow span.c { background: var(--color-primary); color: #fff; box-shadow: none; font-weight: 600; }
+.pv .flow span.s { color: var(--color-foreground); box-shadow: inset 0 0 0 1px var(--color-primary-hover); }
+.pv .flow span.n { background: #3d4a66; color: #dfe6f5; box-shadow: none; }
+.pv .flow i { font-style: normal; color: var(--color-foreground-subtle); }
+.pv .legend { margin-top: 8px; font-size: 11.5px; color: var(--color-foreground-subtle); }
+.pv .pvnote { margin-top: 14px; padding: 9px 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--color-primary-hover) 45%, transparent); background: color-mix(in srgb, var(--color-primary-muted) 30%, transparent); font-size: 12.5px; color: var(--color-foreground); }
+.pv .pvnote b { font-weight: 650; }

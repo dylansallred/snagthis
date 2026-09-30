@@ -215,7 +215,7 @@ jobs:
           cat >> "$GITHUB_STEP_SUMMARY" <<'CHECKLIST'
           ## Before publishing this draft
 
-          - Replace the "What's new" placeholders. Users see these notes in the app's update sheet. Start each line with New:, Better: or Fixed: and a short title ending in a full stop (for example "Fixed: Big files. Downloads over 4 GB no longer stall at 99%."); the app shows the tag as a badge and the title in bold, and lists the first three with a "See all" link.
+          - Replace the "What's new" placeholders. Users see these notes in the update chip's popover and behind the "Updated to" toast's What's new. Start each line with New:, Better: or Fixed: and a short title ending in a full stop (for example "Fixed: Big files. Downloads over 4 GB no longer stall at 99%."); the app shows the tag as a badge and the title in bold, and the popover lists the first three.
           - Confirm the corresponding-source archive is complete for every bundled build.
           - Review the signed installer and update verification reports and the checksums.
           - Keep the release a draft during private testing. Make the repository public before launch so downloads and automatic updates work without credentials.

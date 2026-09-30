@@ -25,9 +25,8 @@ contextBridge.exposeInMainWorld('desktop', {
   getUpdaterState: () => ipcRenderer.invoke('updater:get-state'),
   checkForUpdates: () => ipcRenderer.invoke('updater:check-now'),
   installUpdateNow: () => ipcRenderer.invoke('updater:install-now'),
-  remindLater: (minutes) => ipcRenderer.invoke('updater:remind-later', minutes),
-  cancelUpdateReminder: () => ipcRenderer.invoke('updater:cancel-reminder'),
-  installUpdateWhenIdle: (enabled) => ipcRenderer.invoke('updater:install-when-idle', enabled === true),
+  markUpdatedSeen: () => ipcRenderer.invoke('updater:updated-seen'),
+  moveToApplications: () => ipcRenderer.invoke('app:move-to-applications'),
   saveDiagnosticsFile: (payload) => ipcRenderer.invoke('app:save-diagnostics-file', payload),
   openDiagnosticsFolder: () => ipcRenderer.invoke('app:open-diagnostics-folder'),
   exportSupportBundle: (payload) => ipcRenderer.invoke('app:export-support-bundle', payload),
@@ -59,6 +58,7 @@ contextBridge.exposeInMainWorld('desktop', {
     return () => ipcRenderer.removeListener('pairing:extensions', handler);
   },
   openSaveFolder: () => ipcRenderer.invoke('app:open-save-folder'),
+  openLibraryFolder: (folderPath) => ipcRenderer.invoke('library:open-folder', folderPath),
   openSettings: () => ipcRenderer.invoke('app:open-settings'),
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
   onAppInfoUpdate: (cb) => {
@@ -77,7 +77,7 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.on('updater:event', handler);
     return () => ipcRenderer.removeListener('updater:event', handler);
   },
-  // An update notification's click opens the update sheet; queued in main until this listens.
+  // The update notification's click opens the chip's popover; queued in main until this listens.
   onOpenUpdate: (cb) => {
     const handler = () => cb();
     ipcRenderer.on('updater:open', handler);

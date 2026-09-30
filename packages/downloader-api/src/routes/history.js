@@ -29,8 +29,8 @@ function registerHistoryRoutes(app, historyIndex, fsPromises, downloadDir, optio
 
   app.get('/api/history', async (req, res) => {
     try {
-      const result = await historyIndex.list({ limit: req.query.limit, cursor: req.query.cursor, q: req.query.q || req.query.search });
-      res.json({ items: result.items, nextCursor: result.nextCursor, total: result.total });
+      const result = await historyIndex.list({ limit: req.query.limit, cursor: req.query.cursor, q: req.query.q || req.query.search, folder: typeof req.query.folder === 'string' ? req.query.folder : undefined, sort: req.query.sort });
+      res.json({ items: result.items, nextCursor: result.nextCursor, total: result.total, savedJobIds: result.savedJobIds });
     } catch { res.status(500).json({ error: 'The saved list could not be loaded' }); }
   });
 
@@ -71,6 +71,21 @@ function registerHistoryRoutes(app, historyIndex, fsPromises, downloadDir, optio
       if (typeof error === 'string' && error) throw new Error(error);
       return res.json({ ok: true });
     } catch { return res.status(500).json({ error: 'The file could not be opened' }); }
+  });
+
+  // What is inside the saved file (probed once per file version) and the subtitle files beside it.
+  app.get('/api/history/:fileName/media-info', async (req, res) => {
+    const item = find(req);
+    if (!item) return res.status(404).json({ error: 'Saved item not found' });
+    const filePath = historyIndex.resolveFilePath(item.id);
+    if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: 'File moved or deleted', code: 'FILE_MISSING' });
+    if (typeof options.mediaInfo !== 'function') return res.status(501).json({ error: 'Video details are available in the desktop app' });
+    try {
+      return res.json(await options.mediaInfo(filePath, { jobId: item.jobId || null }));
+    } catch (error) {
+      if (error && error.code === 'NO_PROBE') return res.status(503).json({ error: 'Video details need the bundled media tools', code: 'NO_PROBE' });
+      return res.status(422).json({ error: 'This file’s details could not be read', code: 'PROBE_FAILED' });
+    }
   });
 
   app.post('/api/history/:fileName/locate', async (req, res) => {

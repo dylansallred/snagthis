@@ -132,38 +132,27 @@ test('approved Workbench component gallery: clean thumbnails, motion previews, a
     const savedRow = page.locator('[data-row-key="saved"]');
     await savedRow.press('Enter');
     const savedDetails = page.locator('#details-saved');
-    await expect(savedDetails).toHaveCSS('transform', 'none'); // the drawer has finished sliding open
-    const folderAction = savedDetails.getByRole('button', { name: /^Saved in/ });
-    await expect(folderAction).toHaveClass('detail-location');
-    await expect(folderAction).toHaveAttribute('title', 'Open folder: ~/Downloads/SnagThis');
-    await expect(folderAction).toContainText('Saved in');
-    await expect(folderAction.locator('.detail-folder-name')).toHaveText('~/Downloads/SnagThis');
-    // Closed/open folder layers plus the chevron form Open + settle.
-    await expect(folderAction.locator('svg')).toHaveCount(3);
-    await expect(savedDetails.locator('.detail-links .lucide-folder-open')).toHaveCount(0);
-    await expect(savedDetails.locator('.detail-links > button')).toHaveCount(3);
-    await expect(savedDetails.locator('.technical-details')).toHaveCount(0);
-    await expect(savedDetails.getByText('Technical details', { exact: true })).toHaveCount(0);
-    await expect(savedDetails.getByText('Full path', { exact: true })).toHaveCount(0);
+    // Saved videos use the spec sheet (§7.1): poster and Play, the title, pixel-labelled facts, one action bar with Remove set apart.
+    await expect(savedDetails).toHaveClass(/saved-spec/);
+    await expect(savedDetails.locator('.spec-title')).toHaveText('Ember Tide — director’s cut');
+    await expect(savedDetails.locator('.spec-play')).toHaveText('Play');
+    await expect(savedDetails.locator('.spec-row[data-fact="folder"] .spec-crumb.current')).toHaveText('SnagThis');
     await expect(savedDetails.locator('.speed-chart')).toHaveCount(0);
-    // Inspector card: folder header, then facts, then one footer row of labelled actions with Remove set apart.
+    await expect(savedDetails.getByText('Full path', { exact: true })).toHaveCount(0);
     const cardLayout = await savedDetails.evaluate(element => {
-      const card = element.querySelector('.detail-card').getBoundingClientRect();
-      const folder = element.querySelector('.detail-location').getBoundingClientRect();
-      const facts = element.querySelector('.row-facts').getBoundingClientRect();
-      const actions = element.querySelector('.detail-links').getBoundingClientRect();
-      return folder.top - card.top < 2 && facts.top >= folder.bottom && actions.top >= facts.bottom && Math.abs(actions.bottom - card.bottom) < 2;
+      const card = element.querySelector('.spec-card').getBoundingClientRect();
+      const poster = element.querySelector('.spec-poster').getBoundingClientRect();
+      const facts = element.querySelector('.spec-grid').getBoundingClientRect();
+      const actions = element.querySelector('.spec-bar').getBoundingClientRect();
+      return poster.right < facts.left && actions.top >= Math.max(poster.bottom, facts.bottom) && Math.abs(actions.bottom - card.bottom) < 2;
     });
     expect(cardLayout).toBe(true);
     const removeAction = savedDetails.getByRole('button', { name: 'Remove…', exact: true });
-    await expect(removeAction).toHaveAttribute('title', 'Remove…');
     await expect(removeAction).toHaveText('Remove…');
     await expect(removeAction.locator('svg')).toHaveCount(1);
-    // Read both positions in one browser task: another drawer may still be
-    // collapsing above this one, moving both buttons between separate calls.
     const actionSpacing = await savedDetails.evaluate(element => {
-      const copy = element.querySelector('.detail-links .copy-action').getBoundingClientRect();
-      const remove = element.querySelector('.detail-links .destructive-text').getBoundingClientRect();
+      const copy = element.querySelector('.spec-bar .copy-action').getBoundingClientRect();
+      const remove = element.querySelector('.spec-bar .danger').getBoundingClientRect();
       return { vertical: remove.y - copy.y, horizontal: remove.x - copy.x };
     });
     expect(actionSpacing.vertical).toBe(0);

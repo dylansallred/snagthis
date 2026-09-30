@@ -1,0 +1,146 @@
+/* Saved-video details studies: shared window adjustments, drawer mechanics, action/tile/chip primitives,
+   the three hover styles (H1 Bevel lift, H2 Sweep, H3 Pixel shine) and reduced motion.
+   Token values come from ../organize/shared.css (copied from apps/desktop/src/globals.css). */
+.sdwin { width: var(--ww, 1200px); height: 800px; --k: 1; --ease-out: cubic-bezier(.2, .8, .2, 1); --ease-in: cubic-bezier(.4, 0, .6, 1); }
+.sdwin .list { overflow-x: hidden; }
+.pxf { display: block; flex: none; shape-rendering: crispEdges; }
+.pxf .b { fill: var(--accent-bevel-dark); } .pxf .f { fill: var(--accent-bevel-face); } .pxf .l { fill: var(--accent-bevel-light); } .pxf .p { fill: #ece7df; }
+.pxm { display: block; flex: none; fill: currentColor; shape-rendering: crispEdges; }
+
+/* Row thumbnails: a silent loop on hover/focus, over the poster, nothing drawn on top. */
+.pv { position: relative; overflow: hidden; background: var(--color-background) center / cover; }
+.pv video.loop { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 150ms ease-out; }
+.pv.playing video.loop { opacity: 1; }
+.item { position: relative; }
+.item.open > .vrow, .item.open > .vrow:hover { background: var(--color-background-hover); border-bottom-color: transparent; }
+/* One edge per item: grey while open, orange while its row is active (§3). */
+.item.open::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: hsl(215 10% 34%); z-index: 2; pointer-events: none; }
+.item.open:has(> .vrow:is(:hover, .hot, :focus-visible))::after { background: var(--color-primary-hover); }
+.list:has(.vrow:is(:hover, .hot)) .item:not(:has(.vrow:is(:hover, .hot))) .drawer { opacity: .72; }
+
+/* Drawer: grid rows 0fr → 1fr; each option supplies --open-ms/--close-ms and its own child choreography. */
+.drawer { display: grid; grid-template-rows: 0fr; transition: grid-template-rows calc(var(--close-ms, 220ms) * var(--k)) var(--ease-in) var(--close-delay, 0ms), opacity 200ms; }
+.item.open .drawer { grid-template-rows: 1fr; transition: grid-template-rows calc(var(--open-ms, 260ms) * var(--k)) var(--ease-out), opacity 200ms; }
+.item.open.closing .drawer { grid-template-rows: 0fr; transition: grid-template-rows calc(var(--close-ms, 220ms) * var(--k)) var(--ease-in) calc(var(--close-delay, 0ms) * var(--k)); }
+.drawer .clip { min-height: 0; overflow: hidden; }
+.pw { padding: 12px 14px 16px 17px; background: hsl(215 22% 6.5%); border-top: 1px solid #ffffff08; border-bottom: 1px solid var(--color-border-subtle); }
+
+/* Pixel-font labels (Jersey 15), like the FOLDERS / VIDEOS section labels. */
+.px-label { font: 400 15px/1 var(--font-pixel); letter-spacing: .06em; text-transform: uppercase; color: #8a94a2; }
+
+/* ── Saved actions (.sa) ── base looks; each option picks one. */
+.sa { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border-radius: 6px; color: #c4cad3; font-size: 12.5px; font-weight: 560; white-space: nowrap; overflow: hidden; isolation: isolate; transition: color 160ms, background-color 160ms, transform 160ms var(--ease-out), box-shadow 160ms; }
+.sa > svg.i { width: 14px; height: 14px; transition: transform 240ms var(--ease-out); }
+.sa.text { padding: 0 9px; height: 28px; }
+.sa.bevel { border-radius: 2px; background: hsl(215 18% 14.5%); color: var(--color-foreground); box-shadow: inset 2px 2px 0 rgb(255 255 255 / .07), inset -2px -2px 0 rgb(0 0 0 / .45); }
+.sa.bevel.primary { background: var(--accent-bevel-face); color: #fff; text-shadow: 0 1px 0 rgb(0 0 0 / .35); box-shadow: inset 2px 2px 0 var(--accent-bevel-light), inset -2px -2px 0 var(--accent-bevel-dark); }
+.sa.bevel.primary > svg.i { fill: currentColor; }
+.sa.danger { color: hsl(0 60% 72%); }
+.sa.bevel.danger { background: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-destructive) 45%, transparent); }
+.sa.solid { background: var(--color-primary); color: #fff; }
+.sa.warnbtn { background: none; color: var(--color-status-paused); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-status-paused) 55%, transparent); }
+.sa:focus-visible, .sdwin[data-force="focus"] .sa[data-focus-demo] { outline: none; box-shadow: 0 0 0 2px var(--color-primary-hover); color: var(--color-foreground); }
+.sa.copy.copied, .sa.copy.copied:hover { color: hsl(145 50% 66%); }
+.sa.copy.copied > svg.i { animation: copy-snap 430ms cubic-bezier(.2, .9, .3, 1.25); }
+@keyframes copy-snap { from { opacity: 0; transform: translate(-4px, -4px); } }
+.sa .kbd { margin-left: 2px; padding: 0 4px; border-radius: 3px; background: rgb(255 255 255 / .07); color: var(--color-foreground-subtle); font-size: 10.5px; line-height: 15px; font-weight: 500; }
+
+/* Tiles and chips (options use them differently). */
+.tile { position: relative; border-radius: 3px; background: hsl(215 22% 11%); box-shadow: inset 2px 2px 0 rgb(255 255 255 / .045), inset -2px -2px 0 rgb(0 0 0 / .4); overflow: hidden; isolation: isolate; transition: transform 160ms var(--ease-out), box-shadow 160ms, background-color 160ms; }
+.chip { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 9px 0 4px; border-radius: 2px; background: hsl(215 20% 13%); color: #dce0e5; font-size: 12px; white-space: nowrap; box-shadow: inset 1px 1px 0 rgb(255 255 255 / .06), inset -1px -1px 0 rgb(0 0 0 / .45); overflow: hidden; isolation: isolate; transition: transform 160ms var(--ease-out), box-shadow 160ms, background-color 160ms; }
+.chip .code { display: inline-grid; place-items: center; min-width: 22px; height: 18px; padding: 0 3px; background: #2a313b; color: #e9edf2; font: 400 14px/1 var(--font-pixel); letter-spacing: .04em; }
+.chip.picked .code { background: var(--accent-bevel-face); color: #fff; box-shadow: inset 1px 1px 0 var(--accent-bevel-light), inset -1px -1px 0 var(--accent-bevel-dark); }
+.chip small { color: var(--color-foreground-muted); font-size: 11px; }
+.sitemark { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none; background: var(--c, #555); color: #fff; font: 400 15px/1 var(--font-pixel); box-shadow: inset 1px 1px 0 rgb(255 255 255 / .35), inset -1px -1px 0 rgb(0 0 0 / .35); }
+
+/* Crumbs: the owner's path-bar choice (D · Minimal) at panel size. */
+.crumbs { display: flex; align-items: center; gap: 3px; min-width: 0; flex-wrap: wrap; }
+.crumb { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 4px; color: var(--color-foreground-muted); font-size: 12.5px; font-weight: 520; max-width: 220px; }
+.crumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumb .pxf.k-open { display: none; }
+.crumb.cur { color: var(--color-primary-hover); font-weight: 650; }
+.crumb::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: 1px; height: 2px; background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 4px); opacity: 0; transition: opacity 120ms; }
+.crumb:hover { color: var(--color-foreground); }
+.crumb.cur:hover { color: var(--color-primary-hover); }
+.crumb:hover::after { opacity: .9; }
+.crumb:hover .pxf.k-closed { display: none; } .crumb:hover .pxf.k-open { display: block; }
+.crumbs .slash { color: var(--color-foreground-subtle); opacity: .7; }
+
+/* Data ▸ Mark new: facts that need new plumbing get a dotted accent outline and a tag. */
+[data-new] { outline: 1px dashed color-mix(in srgb, #6cb8ff 80%, transparent); outline-offset: 1px; }
+[data-new]::before { content: "probe"; position: absolute; z-index: 5; top: -7px; right: 4px; padding: 0 4px; background: #6cb8ff; color: #07121f; font: 400 12px/13px var(--font-pixel); letter-spacing: .05em; text-transform: uppercase; pointer-events: none; }
+[data-new="new"] { outline-color: #c792ea; }
+[data-new="new"]::before { content: "new api"; background: #c792ea; }
+[data-new] { position: relative; }
+
+/* Missing-file banner (amber sentence + Locate), shared wording. */
+.miss { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 3px; background: color-mix(in srgb, var(--color-status-paused) 9%, transparent); box-shadow: inset 2px 0 0 var(--color-status-paused); color: var(--color-status-paused); font-size: 12.5px; }
+.miss svg.i { width: 15px; height: 15px; }
+.miss .was { color: var(--color-foreground-muted); font-size: 11.5px; }
+.miss .sp { flex: 1; }
+
+/* ───────────── Hover styles ─────────────
+   Selector pattern: :is(:hover, .is-hover) so the Hover state can force them for screenshots. */
+
+/* H1 · Bevel lift — buttons, tiles and chips rise 1–2px on a hard pixel shadow and press in on click; icons nudge;
+   the panel preview starts its loop (no zoom). */
+[data-hover="h1"] .sa:is(:hover, .is-hover) { color: var(--color-foreground); background: hsl(215 18% 17%); transform: translateY(-1px); box-shadow: inset 2px 2px 0 rgb(255 255 255 / .09), inset -2px -2px 0 rgb(0 0 0 / .45), 0 2px 0 rgb(0 0 0 / .55); }
+[data-hover="h1"] .sa.text:is(:hover, .is-hover) { background: hsl(215 18% 14.5%); }
+[data-hover="h1"] .sa.bevel.primary:is(:hover, .is-hover) { background: var(--accent-bevel-face); filter: brightness(1.08); box-shadow: inset 2px 2px 0 var(--accent-bevel-light), inset -2px -2px 0 var(--accent-bevel-dark), 0 2px 0 rgb(0 0 0 / .55); }
+[data-hover="h1"] .sa.danger:is(:hover, .is-hover) { color: hsl(0 72% 76%); background: color-mix(in srgb, var(--color-destructive) 12%, transparent); }
+[data-hover="h1"] .sa:active { transform: translateY(1px); box-shadow: inset -2px -2px 0 rgb(255 255 255 / .06), inset 2px 2px 0 rgb(0 0 0 / .5); transition-duration: 60ms; }
+[data-hover="h1"] .sa.bevel.primary:active { box-shadow: inset -2px -2px 0 var(--accent-bevel-light), inset 2px 2px 0 var(--accent-bevel-dark); }
+[data-hover="h1"] .sa:is(:hover, .is-hover) > svg.i { transform: translateX(1px); }
+[data-hover="h1"] .sa.open-page:is(:hover, .is-hover) > svg.i { transform: translate(2px, -2px); }
+[data-hover="h1"] :is(.tile, .chip):is(:hover, .is-hover) { transform: translateY(-2px); background: hsl(215 22% 13.5%); box-shadow: inset 2px 2px 0 rgb(255 255 255 / .07), inset -2px -2px 0 rgb(0 0 0 / .4), 0 2px 0 rgb(0 0 0 / .6); }
+[data-hover="h1"] .chip:is(:hover, .is-hover) { transform: translateY(-1px); }
+[data-hover="h1"] .pw .pv:is(:hover, .is-hover) { box-shadow: 0 0 0 2px var(--color-border), 0 3px 0 rgb(0 0 0 / .6); }
+
+/* H2 · Sweep — an accent underline sweeps in from the left (the Details footer's current behaviour, now in the
+   accent), tiles grow the row's 3px accent edge, and the preview eases into a 4% zoom as the loop starts. */
+[data-hover="h2"] .sa::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 3px; height: 2px; background: var(--color-primary-hover); transform: scaleX(0); transform-origin: left; transition: transform 260ms var(--ease-out); }
+[data-hover="h2"] .sa:is(:hover, .is-hover) { color: var(--color-foreground); }
+[data-hover="h2"] .sa:is(:hover, .is-hover)::after { transform: scaleX(1); }
+[data-hover="h2"] .sa.danger::after { background: var(--color-destructive); }
+[data-hover="h2"] .sa.bevel.primary::after { background: #fff; opacity: .85; }
+[data-hover="h2"] .sa:is(:hover, .is-hover) > svg.i { transform: translateX(2px); }
+[data-hover="h2"] .sa.open-page:is(:hover, .is-hover) > svg.i { transform: translate(2px, -2px); }
+[data-hover="h2"] :is(.tile, .chip)::after { content: ""; position: absolute; z-index: 3; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); transform: scaleY(0); transition: transform 300ms var(--ease-out); }
+[data-hover="h2"] .chip::after { width: 2px; }
+[data-hover="h2"] :is(.tile, .chip):is(:hover, .is-hover) { background: hsl(215 22% 13.5%); }
+[data-hover="h2"] :is(.tile, .chip):is(:hover, .is-hover)::after { transform: none; }
+[data-hover="h2"] .pv { background-size: 100%; }
+[data-hover="h2"] .pv > video.loop, [data-hover="h2"] .pv > .frame { transition: opacity 150ms ease-out, transform 900ms var(--ease-out); }
+[data-hover="h2"] .pv:is(:hover, .is-hover) > video.loop, [data-hover="h2"] .vrow:hover .pv > video.loop { transform: scale(1.04); }
+
+/* H3 · Pixel shine — the logo's cream shine, one pass in pixel steps (0.6s), across buttons, tiles, chips and the
+   preview; hover also lights a 1px accent outline. Never loops. */
+@keyframes px-shine { from { transform: translateX(-120%) skewX(-18deg); } to { transform: translateX(420%) skewX(-18deg); } }
+[data-hover="h3"] :is(.sa, .tile, .chip, .pw .pv)::before { content: ""; position: absolute; z-index: 4; top: -2px; bottom: -2px; left: 0; width: 30%; background: linear-gradient(90deg, transparent, rgb(255 244 222 / .22) 30% 70%, transparent); transform: translateX(-120%) skewX(-18deg); pointer-events: none; }
+[data-hover="h3"] :is(.sa, .tile, .chip, .pw .pv):is(:hover, .is-hover)::before { animation: px-shine calc(600ms * var(--k)) steps(9, end) 1 both; }
+[data-hover="h3"] .sa:is(:hover, .is-hover) { color: var(--color-foreground); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 70%, transparent); }
+[data-hover="h3"] .sa.bevel:is(:hover, .is-hover) { box-shadow: inset 2px 2px 0 rgb(255 255 255 / .07), inset -2px -2px 0 rgb(0 0 0 / .45), 0 0 0 1px var(--color-primary-hover); }
+[data-hover="h3"] .sa.bevel.primary:is(:hover, .is-hover) { box-shadow: inset 2px 2px 0 var(--accent-bevel-light), inset -2px -2px 0 var(--accent-bevel-dark), 0 0 0 1px color-mix(in srgb, var(--accent-bevel-light) 80%, transparent), 0 0 14px -2px var(--color-primary-hover); }
+[data-hover="h3"] .sa.danger:is(:hover, .is-hover) { color: hsl(0 72% 76%); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-destructive) 70%, transparent); }
+[data-hover="h3"] :is(.tile, .chip):is(:hover, .is-hover) { box-shadow: inset 2px 2px 0 rgb(255 255 255 / .06), inset -2px -2px 0 rgb(0 0 0 / .4), 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 75%, transparent); }
+[data-hover="h3"] .sa:is(:hover, .is-hover) > svg.i { transform: scale(1.1); }
+
+/* Reduced motion (switch or system): the drawer opens and closes instantly with a 120ms opacity fade only;
+   hover keeps colour/outline feedback but no lift, sweep, shine, zoom or loop. */
+.sdwin.rm *, .sdwin.rm *::before, .sdwin.rm *::after { animation: none !important; transition-property: opacity, color, background-color, box-shadow !important; transition-duration: 120ms !important; transition-delay: 0ms !important; }
+.sdwin.rm .drawer { transition: none !important; }
+.sdwin.rm .item.anim-in .pw { animation: rm-fade 120ms ease-out both !important; }
+.sdwin.rm .item.closing .drawer { grid-template-rows: 0fr; }
+.sdwin.rm :is(.sa, .tile, .chip):is(:hover, .is-hover) { transform: none !important; }
+.sdwin.rm :is(.sa, .tile, .chip)::after { transform: none !important; opacity: 0; }
+.sdwin.rm :is(.sa, .tile, .chip):is(:hover, .is-hover)::after { opacity: 1; }
+.sdwin.rm .pv video.loop { display: none; }
+@keyframes rm-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .drawer { transition: none !important; } }
+
+/* Hub notes */
+.notes .cost { margin-top: 12px; padding: 10px 12px; border-radius: 9px; border: 1px dashed var(--color-border); }
+.notes .cost h3 { margin-top: 0; }
+.stage { flex-wrap: nowrap; }
+.hub { max-width: 1640px; }
+.sdwin .vrow .thumb { background-size: cover; background-position: center; }

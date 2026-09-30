@@ -16,6 +16,9 @@ const pageMetadataScript = `(() => {
     title: navigator.mediaSession?.metadata?.title || document.querySelector('h1')?.textContent
       || meta('meta[property="og:title"]') || document.title || '',
     thumbnailUrl: video?.poster || '',
+    pageTitle: document.title || '',
+    siteName: meta('meta[property="og:site_name"]'),
+    uploader: meta('meta[name="author"]') || document.querySelector('[itemprop="author"] [itemprop="name"]')?.content || '',
     currentSrc: video?.currentSrc || '',
     duration: Number.isFinite(video?.duration) ? video.duration : 0,
     videoCount: videos.length
@@ -204,6 +207,10 @@ async function resolveWithSession(pageSession, { url, timeoutMs = 25_000, onStag
     finish(null, {
       mediaUrl: chosen.mediaUrl, mediaType: chosen.mediaType, sourcePageUrl,
       title: String(metadata.title || '').trim().slice(0, 255),
+      // Kept with the saved video to name where it came from; plain text only.
+      pageTitle: String(metadata.pageTitle || '').trim().slice(0, 255) || undefined,
+      siteName: String(metadata.siteName || '').trim().slice(0, 80) || undefined,
+      uploader: String(metadata.uploader || '').trim().slice(0, 180) || undefined,
       thumbnailUrl: publicHttpUrl(metadata.thumbnailUrl) || undefined,
       headers: mediaHeaders(requestHeaders.get(chosen.mediaUrl) || chosen.headers),
       ...(chosen.manifestText ? { manifestText: chosen.manifestText } : {}),

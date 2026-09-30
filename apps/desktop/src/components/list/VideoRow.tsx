@@ -4,19 +4,34 @@ import type { RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { FillThumb, type RequestThumbnailPreview } from './FillThumb';
 import { RowDetails, type RowCommand } from './RowDetails';
+import { SavedDetails, type SavedDetailsContext } from './SavedDetails';
 import { QualityLabel } from './QualityLabel';
 import { SpeedTrace, type SpeedTraceState } from './SpeedTrace';
 import { ui } from '@/lib/strings';
+import { libraryStrings } from '@m3u8/contracts/src/library.mjs';
+import { startSavedDrag, endSavedDrag } from '@/components/library/savedDrag';
+import { resolveThumbnailUrl } from '@/lib/utils';
+
+export type SelectMode = 'toggle' | 'range';
 
 // The row being dragged, so drop targets can show where it will land (dataTransfer is unreadable during dragover).
 let draggingRowId: string | null = null;
 
-export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, busy, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview }: {
+export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, busy, selected = false, location = '', savedContext, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview, onSelect, dragIds }: {
   row: RowModel; inputMode: 'pointer' | 'keyboard'; apiBase: string; folder: string; expanded: boolean; renaming: boolean; busy: boolean;
+  /** Part of a multi-selection (⌘/Ctrl-click, Shift-click). */
+  selected?: boolean;
+  /** The folder of Saved it is in, shown in All and in search results. */
+  location?: string;
+  /** Saved's folder names, folder navigation and the file probe, for a saved video's details. */
+  savedContext?: SavedDetailsContext;
   onToggle: () => void; onCommand: (command: RowCommand) => void;
   onRename: (title: string | null) => Promise<void>; onRefreshLink: (url: string) => Promise<void>;
   onMoveTo: (sourceId: string, targetId: string) => void;
   onRequestPreview: RequestThumbnailPreview;
+  onSelect?: (mode: SelectMode) => void;
+  /** The saved videos a drag from this row carries (the selection, when this row is in it). */
+  dragIds?: () => string[];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [title, setTitle] = useState(row.title);
@@ -38,6 +53,9 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
   const [dragging, setDragging] = useState(false);
   const pointerMenu = useRef(false);
   const saved = row.state === 'saved' || row.state === 'missing';
+  // A saved video that couldn't move keeps its file where it was; its row says so instead of the saved facts.
+  const moveFailed = row.state === 'saved' && row.tone === 'attention';
+
   // Collapsed-row speed trace: live while downloading, frozen when paused or finishing, mint as it saves.
   const traceState: SpeedTraceState | null = ['downloading', 'paused', 'finishing'].includes(row.state) ? row.state as SpeedTraceState : row.state === 'saved' && justSaved ? 'saved' : null;
   const progress = Math.max(0, Math.min(100, Number(row.progress) || 0));
@@ -50,7 +68,10 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
   const previewKey = `${previewKind}:${previewId}`;
   const suppliedPreview = typeof row.source.previewClipUrl === 'string' ? row.source.previewClipUrl : null;
   const previewUrl = suppliedPreview || (requestedPreview?.key === previewKey ? requestedPreview.url : null);
+  // The details poster loops the same excerpt as the row thumbnail.
+  const [posterActive, setPosterActive] = useState(false);
   const previewActive = (inputMode === 'pointer' ? hovered : focused) && !reducedMotion && visible && row.state !== 'missing';
+  const wantPreview = previewActive || (posterActive && !reducedMotion && visible && row.state !== 'missing');
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const onPreference = () => setReducedMotion(preference.matches);
@@ -60,13 +81,13 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
     return () => { preference.removeEventListener('change', onPreference); document.removeEventListener('visibilitychange', onVisibility); };
   }, []);
   useEffect(() => {
-    if (!previewActive || previewUrl) return;
+    if (!wantPreview || previewUrl) return;
     let stopped = false;
     onRequestPreview(previewId, previewKind, row.thumbnailUrl).then((url) => {
       if (!stopped && url) setRequestedPreview({ key: previewKey, url });
     }).catch(() => { /* An unavailable preview keeps the existing poster. */ });
     return () => { stopped = true; };
-  }, [previewActive, previewUrl, previewId, previewKind, previewKey, row.thumbnailUrl, onRequestPreview]);
+  }, [wantPreview, previewUrl, previewId, previewKind, previewKey, row.thumbnailUrl, onRequestPreview]);
   useEffect(() => {
     // Spark only cells finished while this row was on screen; mounting never replays the whole lane.
     // At most one spark every 250ms, on the newest finished cell.
@@ -100,21 +121,27 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
       return () => cancelAnimationFrame(frame);
     }
     setDetailsOpen(false);
-    const timer = setTimeout(() => setDetailsMounted(false), reducedMotion ? 0 : 360);
+    // The saved spec sheet folds faster than the drawer (see globals.css).
+    const timer = setTimeout(() => setDetailsMounted(false), reducedMotion ? 0 : saved ? 300 : 360);
     return () => clearTimeout(timer);
-  }, [expanded, reducedMotion, detailsMounted]);
+  }, [expanded, reducedMotion, detailsMounted, saved]);
   useEffect(() => { if (renaming) { setTitle(row.title); input.current?.focus(); input.current?.select(); } }, [renaming, row.title]);
   const command = (action: RowCommand) => { setMenuOpen(false); onCommand(action); };
   // Resume keeps its own glyph and name so it never reads as Play on a saved file.
   const actionLabel = row.action?.id === 'resume' ? ui.resumeDownload : row.action?.label;
   return (
-    <div role="listitem" data-item-key={row.id} className={`video-item${expanded ? ' expanded' : ''}${drop ? ` drop-${drop}` : ''}${dragging ? ' dragging' : ''}`}>
-      <div className={`video-row${justSaved ? ' just-saved' : ''}`} data-row-key={row.id} data-state={row.state} role="group" tabIndex={0}
+    <div role="listitem" data-item-key={row.id} className={`video-item${expanded ? ' expanded' : ''}${drop ? ` drop-${drop}` : ''}${dragging ? ' dragging' : ''}${selected ? ' selected' : ''}`}>
+      <div className={`video-row${justSaved ? ' just-saved' : ''}`} data-row-key={row.id} data-state={row.state} data-selected={selected || undefined} role="group" tabIndex={0}
         data-progress={progress} data-progress-active={progressMotion}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         onFocusCapture={() => setFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}
-        aria-label={`${row.title}. ${row.statusLine}`} aria-controls={expanded ? `details-${row.id}` : undefined}
-        onClick={(event) => { if (!(event.target as HTMLElement).closest('button,input,a,[role="menuitem"]')) onToggle(); }}
+        aria-label={`${row.title}. ${row.statusLine}${selected ? `. ${libraryStrings.selected}` : ''}`} aria-controls={expanded ? `details-${row.id}` : undefined}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('button,input,a,[role="menuitem"]')) return;
+          if (onSelect && row.state === 'saved' && (event.metaKey || event.ctrlKey || event.shiftKey)) { event.preventDefault(); onSelect(event.shiftKey ? 'range' : 'toggle'); return; }
+          onToggle();
+        }}
+        onMouseDown={(event) => { if (event.shiftKey && row.state === 'saved') event.preventDefault(); }}
         onPointerDownCapture={() => { pointerMenu.current = true; }}
         onContextMenu={(event) => { event.preventDefault(); setMenuOpen(true); }}
         onKeyDown={(event) => {
@@ -123,12 +150,16 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggle(); }
           if (event.key.toLowerCase() === 'p' && (row.state === 'downloading' || row.state === 'paused')) { event.preventDefault(); command(row.state === 'paused' ? 'resume' : 'pause'); }
           if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); command(saved ? 'remove' : 'cancel'); }
+          if (event.key.toLowerCase() === 'm' && !event.metaKey && !event.ctrlKey && !event.altKey && row.state === 'saved') { event.preventDefault(); command('move-to'); }
         }}
-        draggable={row.state === 'waiting' && !renaming}
-        onDragStart={(event) => { draggingRowId = row.id; setDragging(true); event.dataTransfer.setData('application/x-snagthis-job', row.id); event.dataTransfer.effectAllowed = 'move'; }}
-        onDragEnd={() => { draggingRowId = null; setDragging(false); }}
+        draggable={(row.state === 'waiting' || row.state === 'saved') && !renaming}
+        onDragStart={(event) => {
+          if (row.state === 'saved') { setDragging(true); startSavedDrag(event, dragIds ? dragIds() : [String(row.source.id)], { title: row.title, thumbnailUrl: resolveThumbnailUrl(row.thumbnailUrl, apiBase) }); return; }
+          draggingRowId = row.id; setDragging(true); event.dataTransfer.setData('application/x-snagthis-job', row.id); event.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragEnd={() => { draggingRowId = null; setDragging(false); endSavedDrag(); }}
         onDragOver={(event) => {
-          if (row.state !== 'waiting') return;
+          if (row.state !== 'waiting' || !event.dataTransfer.types.includes('application/x-snagthis-job')) return;
           event.preventDefault(); event.dataTransfer.dropEffect = 'move';
           if (!draggingRowId || draggingRowId === row.id) return;
           // The job takes this row's queue position, so the line shows on the side it will land.
@@ -144,14 +175,15 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
         <FillThumb row={row} apiBase={apiBase} previewUrl={previewUrl} previewActive={previewActive} />
         <div className={`row-text${traceState && !renaming ? ' has-trace' : ''}`}>
           {renaming ? <form onSubmit={(event) => { event.preventDefault(); onRename(title); }}><input className="inline-rename" ref={input} value={title} aria-label={ui.rename} disabled={busy} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); onRename(null); } }} onBlur={() => { if (!busy) onRename(title); }} /></form> : <div className="row-heading"><div className="row-title" title={row.title}>{row.title}</div>{row.durationLabel && <span className="row-duration">{row.durationLabel}</span>}</div>}
-          <div className={`row-status tone-${row.tone}${row.state === 'saved' ? ' saved-meta' : ''}`} title={row.statusLine}
+          <div className={`row-status tone-${row.tone}${row.state === 'saved' && !moveFailed ? ' saved-meta' : ''}`} title={row.statusLine}
             role={['downloading', 'finishing', 'paused'].includes(row.state) ? 'progressbar' : undefined}
             aria-label={['downloading', 'finishing', 'paused'].includes(row.state) ? `${row.title} download` : undefined}
             aria-valuemin={['downloading', 'finishing', 'paused'].includes(row.state) ? 0 : undefined} aria-valuemax={['downloading', 'finishing', 'paused'].includes(row.state) ? 100 : undefined} aria-valuenow={['downloading', 'finishing', 'paused'].includes(row.state) ? row.percent : undefined}
-            aria-valuetext={['downloading', 'finishing', 'paused'].includes(row.state) ? row.statusLine : undefined}>{row.state === 'saved' ? <>
+            aria-valuetext={['downloading', 'finishing', 'paused'].includes(row.state) ? row.statusLine : undefined}>{row.state === 'saved' && !moveFailed ? <>
               {row.qualityLabel && <><QualityLabel label={row.qualityLabel} /><span className="meta-dot" aria-hidden="true">·</span></>}
               {row.sizeLabel && <><span className="file-size">{row.sizeLabel}</span><span className="meta-dot" aria-hidden="true">·</span></>}
               <span className="saved-badge"><Check aria-hidden="true" />{row.statusLine.split(' · ')[0]}</span>
+              {location && <><span className="meta-dot" aria-hidden="true">·</span><span className="row-location" title={location}><Folder aria-hidden="true" />{location.split('/').pop()}</span></>}
             </> : row.statusLine}</div>
           {traceState && <SpeedTrace jobId={String(row.jobId || row.id)} state={traceState} speedBps={row.source.speedBps} hidden={expanded || renaming} />}
         </div>
@@ -165,7 +197,9 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
               onKeyDownCapture={() => { pointerMenu.current = false; }}
               onCloseAutoFocus={(event) => { if (pointerMenu.current) event.preventDefault(); }}>
               <DropdownMenuItem onSelect={() => command('details')}>{ui.details}</DropdownMenuItem>
+              {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('move-to')}>{libraryStrings.moveTo}<span className="menu-hint" aria-hidden="true">M</span></DropdownMenuItem>}
               {['waiting', 'paused'].includes(row.state) && <DropdownMenuItem onSelect={() => command('rename')}>{ui.rename}</DropdownMenuItem>}
+              {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('rename')}>{libraryStrings.detailRename}</DropdownMenuItem>}
               {row.state === 'waiting' && <><DropdownMenuItem onSelect={() => command('start')}>{ui.startNow}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('move-up')}>{ui.moveUp}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('move-down')}>{ui.moveDown}</DropdownMenuItem></>}
               {(row.source.url || row.source.sourcePageUrl) && <><DropdownMenuItem onSelect={() => command('copy-link')}>{ui.copyLink}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('open-page')}>{ui.openPage}</DropdownMenuItem></>}
               {saved && row.state !== 'missing' && <DropdownMenuItem onSelect={() => command('show-folder')}>{ui.showFolder}</DropdownMenuItem>}
@@ -179,7 +213,11 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
           </button>}
         </div>
       </div>
-      {detailsMounted && <div className={`details-drawer${detailsOpen ? ' open' : ''}`}><div className="details-drawer-clip"><RowDetails row={row} folder={folder} onCommand={command} onRefreshLink={onRefreshLink} /></div></div>}
+      {detailsMounted && <div className={`details-drawer${saved && savedContext ? ' spec' : ''}${detailsOpen ? ' open' : ''}`}><div className="details-drawer-clip">
+        {saved && savedContext
+          ? <SavedDetails row={row} apiBase={apiBase} context={savedContext} previewUrl={previewUrl} onPosterActive={setPosterActive} onCommand={command} />
+          : <RowDetails row={row} folder={folder} onCommand={command} onRefreshLink={onRefreshLink} />}
+      </div></div>}
     </div>
   );
 }

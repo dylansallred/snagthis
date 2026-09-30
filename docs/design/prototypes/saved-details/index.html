@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Saved-video details · 3 directions</title>
+<link rel="stylesheet" href="../organize/shared.css">
+<style>
+.hub { max-width: 1480px; }
+.dirs { grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); }
+.dir .motion { display: grid; gap: 6px; }
+.dir .motion img { width: 100%; border-radius: 6px; border: 1px solid var(--color-border-subtle); display: block; }
+.dir .states { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
+.dir .states a { color: var(--color-foreground-muted); }
+.hovers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.hovers figure { margin: 0; display: grid; gap: 8px; align-content: start; background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); border-radius: 12px; padding: 12px; }
+.hovers img { width: 100%; border-radius: 6px; display: block; border: 1px solid var(--color-border-subtle); }
+.hovers figcaption { font-size: 12.5px; color: var(--color-foreground-muted); }
+.hovers figcaption b { color: var(--color-foreground); }
+.hovers .n { font: 400 22px/1 var(--font-pixel); color: var(--color-primary-hover); margin-right: 6px; }
+.base { display: grid; grid-template-columns: minmax(0, 560px) 1fr; gap: 24px; align-items: start; }
+.base img { width: 100%; border-radius: 8px; border: 1px solid var(--color-border-subtle); display: block; }
+.base ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.base li + li { margin-top: 4px; } .base b { color: var(--color-foreground); }
+td .y { color: hsl(145 50% 62%); font-weight: 600; } td .p { color: #6cb8ff; font-weight: 600; } td .nw { color: #c792ea; font-weight: 600; } td .x { color: var(--color-status-paused); font-weight: 600; }
+table.cmp td:first-child { white-space: normal; min-width: 150px; }
+code { font: 11.5px var(--font-mono); color: #c8ced6; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><span>Saved details</span>What an expanded saved video shows · 3 directions + hover and motion · owner chose A + H3</div>
+    <h1>Show more when a saved video is opened</h1>
+    <p>Today an expanded saved row shows only <b>Saved in {path}</b>, often a single <b>Size</b> tile, and <b>Remove…</b>. These studies show a richer panel three ways. Each direction is a clickable page in the real window, with the same seven states: a <b>rich item</b> (4K, 2 audio tracks, 2 subtitle tracks, a long title, a source site, in a folder), a <b>minimal item</b> (pasted file link, length and quality unknown), a <b>missing file</b> (<i>File was moved or deleted · Locate…</i>), <b>hover</b>, <b>keyboard focus</b>, the <b>Remove…</b> popover (Remove from list / Move file to Trash) and the <b>820px</b> window. Every page also has a <b>Hover</b> switcher (three styles), <b>Motion</b> controls (Replay open / close, Slow ×4, Reduced motion), a <b>Data</b> switcher (<b>Today</b> shows only facts SnagThis already has; <b>Mark new</b> tags facts that need new plumbing) and an OS switch (Show in Finder / Explorer).</p>
+    <p><b>Owner choice (2026-09-29): A · Spec sheet with H3 · Pixel shine</b>, now in the app (ui-design-spec §7.1): the probe facts come from <code>GET /api/history/:id/media-info</code>, Rename… renames the video on disk, and finished downloads keep their source page, site, channel and finish time. B and C are prototypes only.</p>
+  </div>
+
+  <h2 class="section-title">0 · Current baseline</h2>
+  <div class="base">
+    <a href="baseline/index.html"><img src="baseline/preview.png" alt="Current details panel for a saved video"></a>
+    <ul>
+      <li>Saved rows come from the history index, which carries <b>no length, no actual resolution and no track list</b>; quality and audio appear only when the person picked them in the popup's quality menu.</li>
+      <li>A <b>pasted direct link</b> keeps no source page, so <b>Copy link</b> and <b>Open page</b> vanish (the owner's screenshot).</li>
+      <li>Rename exists only for waiting/paused downloads; Move to… is only in ⋯ and the <kbd>M</kbd> key.</li>
+    </ul>
+  </div>
+
+  <h2 class="section-title">Three directions</h2>
+  <p class="section-sub">Numbered and independently selectable: the panel layout (A/B/C), the hover style (H1–H3) and the data plumbing can be chosen separately. Each preview is the rich item open at 1200 × 800. The animation under each is the real open → hold → close choreography, stepped from the page's own CSS.</p>
+  <div class="dirs">
+    <section class="dir">
+      <header><span class="n">A</span><h2>Spec sheet · chosen</h2><a class="btn primary" href="a-spec-sheet/index.html">Open</a></header>
+      <p><b>Everything in one readable grid.</b> Poster with its hover loop and a bevel <b>Play</b> on the left; the full title and a two-column list of pixel-labelled facts (Quality, Length, Size, Format, Video, Frame rate, Audio, Subtitles, Source, Saved, Folder, File) on the right; one quiet action bar.</p>
+      <a class="shot" href="a-spec-sheet/index.html"><img src="a-spec-sheet/preview.png" alt="A · Spec sheet"></a>
+      <div class="motion"><img src="a-spec-sheet/motion.webp" alt="A · open and close motion"><span class="more">Motion: height eases (260ms); poster pops from .94; the title and each fact drop 5px on a 22ms stagger; close fades the card up, then folds (200ms).</span></div>
+      <div class="states"><a href="a-spec-sheet/state-minimal.png">Minimal</a><a href="a-spec-sheet/state-missing.png">Missing</a><a href="a-spec-sheet/state-hover.png">Hover</a><a href="a-spec-sheet/state-focus.png">Focus</a><a href="a-spec-sheet/state-remove.png">Remove…</a><a href="a-spec-sheet/state-narrow.png">820px</a><a href="a-spec-sheet/motion-strip.png">Frame strip</a></div>
+      <ul><li><b>For:</b> most information per pixel; unknown facts just drop out; cheapest to build.</li><li><b>Against:</b> the least playful; it reads like a file-properties dialog.</li></ul>
+    </section>
+    <section class="dir">
+      <header><span class="n">B</span><h2>Cards</h2><a class="btn" href="b-cards/index.html">Open</a></header>
+      <p><b>The numbers you scan, big and pixel.</b> Four bevel stat tiles (Quality, Length, Size, Saved) in the pixel font; a <b>Tracks</b> card of audio/subtitle chips with pixel language codes (your picks lit in the accent); a <b>Source</b> card with a lettered pixel site chip, channel, Copy page link and Open original page; the file line; and a row of bevel buttons.</p>
+      <a class="shot" href="b-cards/index.html"><img src="b-cards/preview.png" alt="B · Cards"></a>
+      <div class="motion"><img src="b-cards/motion.webp" alt="B · open and close motion"><span class="more">Motion: tiles <b>press in</b> (rise with the bevel inverted, overshoot, flip the bevel back, settle) 40ms apart; chips pop 25ms apart; close sinks the tiles, then folds.</span></div>
+      <div class="states"><a href="b-cards/state-minimal.png">Minimal</a><a href="b-cards/state-missing.png">Missing</a><a href="b-cards/state-hover.png">Hover</a><a href="b-cards/state-focus.png">Focus</a><a href="b-cards/state-remove.png">Remove…</a><a href="b-cards/state-narrow.png">820px</a><a href="b-cards/motion-strip.png">Frame strip</a></div>
+      <ul><li><b>For:</b> most on-brand (same bevel as the logo button and folder chips); tracks are obvious at a glance.</li><li><b>Against:</b> tallest panel; with few facts the tiles feel sparse; no preview in the panel (the row thumbnail is right above).</li></ul>
+    </section>
+    <section class="dir">
+      <header><span class="n">C</span><h2>Media inspector</h2><a class="btn" href="c-inspector/index.html">Open</a></header>
+      <p><b>See inside the video.</b> A 400px preview that loops on hover with <b>ten scrub frames</b> beneath (hover one to peek at that moment); tabs <b>Overview · Tracks · File</b>, where File uses the path-bar crumbs (D · Minimal) with codec, resolution, frame rate and bitrate tiles; one action bar.</p>
+      <a class="shot" href="c-inspector/index.html"><img src="c-inspector/preview.png" alt="C · Media inspector"></a>
+      <div class="motion"><img src="c-inspector/motion.webp" alt="C · open and close motion"><span class="more">Motion: the card slides out from under the row (today's Drawer); the preview <b>wipes in left-to-right in 10 pixel steps</b>; scrub frames flick on in order; the tab underline draws.</span></div>
+      <div class="states"><a href="c-inspector/state-tracks.png">Tracks tab</a><a href="c-inspector/state-file.png">File tab</a><a href="c-inspector/state-scrub.png">Scrubbing</a><a href="c-inspector/state-minimal.png">Minimal</a><a href="c-inspector/state-missing.png">Missing</a><a href="c-inspector/state-hover.png">Hover</a><a href="c-inspector/state-focus.png">Focus</a><a href="c-inspector/state-remove.png">Remove…</a><a href="c-inspector/state-narrow.png">820px</a><a href="c-inspector/motion-strip.png">Frame strip</a></div>
+      <ul><li><b>For:</b> the richest; the scrub strip answers "which one was this?" without opening a player.</li><li><b>Against:</b> tabs hide facts behind a click; needs the most new plumbing (probe + scrub frames).</li></ul>
+    </section>
+  </div>
+
+  <h2 class="section-title">Hover styles (pick one, works with any direction)</h2>
+  <p class="section-sub">The Hover switcher on every page applies one style to the panel's buttons, tiles and chips and its preview. Rows keep today's <b>Soft focus</b> (3px edge grows, other rows dim to 72%) and every thumbnail still starts its silent loop on hover/focus. Stills below are option B with the style forced on Play, the Quality tile, the first chips and the preview.</p>
+  <div class="hovers">
+    <figure><img src="b-cards/hover-h1.png" alt="H1 Bevel lift"><figcaption><span class="n">H1</span><b>Bevel lift.</b> Buttons, tiles and chips rise 1–2px onto a hard 2px pixel shadow and <b>press in</b> on click (the bevel flips, 60ms), icons nudge 1px (Open page nudges up-right). Preview gains a 2px frame. <b>Cost:</b> CSS only (transform + box-shadow, 160ms).</figcaption></figure>
+    <figure><img src="b-cards/hover-h2.png" alt="H2 Sweep"><figcaption><span class="n">H2</span><b>Sweep.</b> Today's Details-footer underline, now in the accent, <b>sweeps in from the left</b> (260ms); tiles and chips grow the row's 3px accent edge (the Grow motion); the preview eases into a 4% zoom as its loop starts (900ms). <b>Cost:</b> CSS only; closest to shipped behaviour.</figcaption></figure>
+    <figure><img src="b-cards/hover-h3.png" alt="H3 Pixel shine"><figcaption><span class="n">H3</span><b>Pixel shine · chosen.</b> The logo's cream shine makes <b>one pass in 9 pixel steps</b> (600ms) across the hovered button, tile, chip or preview, and a 1px accent outline lights (Play also glows). Never loops. <b>Cost:</b> CSS only (one keyframe + pseudo-element); needs a 1s re-trigger guard like the logo.</figcaption></figure>
+  </div>
+
+  <h2 class="section-title">Motion compared</h2>
+  <table class="cmp">
+    <tr><th></th><th>Open</th><th>Close</th><th>Reduced motion</th><th>Cost to build</th></tr>
+    <tr><td>Today</td><td>Drawer: rows 0fr → 1fr 340ms, card slides from −38px</td><td>Same, reversed</td><td>Instant</td><td>—</td></tr>
+    <tr><td>A · Spec sheet</td><td>Height 260ms ease-out; poster pops (280ms); title + facts fade/drop 5px, 22ms stagger; bar last. ~520ms total</td><td>Card fades up 4px (130ms), height folds 200ms after 70ms</td><td>Instant height, 120ms fade</td><td>Low: keyframes + a <code>--i</code> index per fact row</td></tr>
+    <tr><td>B · Cards</td><td>Height 220ms; tiles press in (300ms each, 40ms apart); chips pop (25ms apart); file line + buttons fade. ~650ms total</td><td>Tiles sink 4px (140ms, 15ms apart), then fold 180ms</td><td>Instant height, 120ms fade</td><td>Medium: bevel keyframe, <code>--i</code>/<code>--c</code> indices, must end before hover lift applies</td></tr>
+    <tr><td>C · Inspector</td><td>Drawer slide (340ms) + height 300ms; preview wipes in 10 steps (280ms); frames flick on 22ms apart; tab underline draws. ~620ms total</td><td>Card lifts 26px and fades (220ms) while height folds (240ms)</td><td>Instant height, 120ms fade; no wipe</td><td>Low–medium: one clip-path keyframe; tab switches add a 180ms pane slide</td></tr>
+  </table>
+  <p class="section-sub" style="margin-top:8px">All three keep the existing single-open rule (opening another row closes this one with its close motion) and the grey/orange one-edge-per-item rule. Motion never delays input: the panel is interactive from the first frame.</p>
+
+  <h2 class="section-title">What data exists vs. what needs new plumbing</h2>
+  <p class="section-sub">Saved rows are built from history items (<code>packages/downloader-api/src/services/historyIndex.js</code> → <code>toRowModel</code> in <code>packages/contracts/src/rows.js</code>). The engine runs <b>ffprobe</b> after downloads only to validate segments and to find the duration for the preview clip (<code>PreviewClip.js inspectLocalVideo</code>: <code>format=duration</code> and whether a video stream exists); nothing is stored. <span class="y">Have</span> = in the history item today · <span class="p">Probe</span> = one bounded ffprobe on expand · <span class="nw">New</span> = other new plumbing.</p>
+  <table class="cmp">
+    <tr><th>Fact</th><th>Status</th><th>Where it comes from / what to add</th></tr>
+    <tr><td>Title, file name, full path, folder</td><td><span class="y">Have</span></td><td><code>title</code>, <code>fileName</code>, <code>absolutePath</code>, <code>folder</code></td></tr>
+    <tr><td>Size</td><td><span class="y">Have</span></td><td><code>sizeBytes</code> (stat)</td></tr>
+    <tr><td>Saved date</td><td><span class="y">Have</span> (approx.)</td><td><code>modifiedAt</code> is the file's mtime and changes if the file is touched; the job's <code>completedAt</code> is better and cheap to copy into the history item</td></tr>
+    <tr><td>Poster + hover loop</td><td><span class="y">Have</span></td><td><code>thumbnailUrl</code>, <code>previewClipUrl</code> (generated on demand for completed files)</td></tr>
+    <tr><td>Container</td><td><span class="y">Have</span></td><td><code>ext</code></td></tr>
+    <tr><td>Source page / site</td><td><span class="y">Have</span> when captured</td><td><code>sourcePageUrl</code> (from the popup). <span class="nw">New (small):</span> pasted links keep only <code>job.url</code>, which isn't copied to the history item — copy it as <code>mediaUrl</code> so “Copy video link” and a host can show</td></tr>
+    <tr><td>Chosen quality / audio / subtitles</td><td><span class="y">Have</span> when picked</td><td><code>selection.height / audioLang / audioTrack / subtitleLang</code>; <code>subtitleMissing</code> is on the job but not the history item</td></tr>
+    <tr><td>Channel, upload date, description</td><td><span class="y">YouTube</span> / TMDB only</td><td><code>youtubeMetadata</code>, <code>tmdbMetadata</code>; other sites would need page metadata captured at download (<span class="nw">New</span>)</td></tr>
+    <tr><td>Length</td><td><span class="p">Probe</span></td><td>Only YouTube/TMDB today. <code>format.duration</code> (PreviewClip already reads it and discards it)</td></tr>
+    <tr><td>Actual resolution, HDR</td><td><span class="p">Probe</span></td><td><code>streams[v].width/height</code>, <code>color_transfer</code> (smpte2084/arib-std-b67 → HDR)</td></tr>
+    <tr><td>Video codec, profile, frame rate, bitrate</td><td><span class="p">Probe</span></td><td><code>codec_name</code>, <code>profile</code>, <code>avg_frame_rate</code>, <code>format.bit_rate</code></td></tr>
+    <tr><td>Every audio track (language, channels, codec, default)</td><td><span class="p">Probe</span></td><td><code>streams[a].tags.language</code>, <code>channel_layout</code>, <code>disposition.default</code>; labels via <code>languageName</code>/<code>channelsLabel</code> in contracts</td></tr>
+    <tr><td>Subtitles in the file and beside it</td><td><span class="p">Probe</span> + dir scan</td><td>Embedded <code>mov_text</code> streams from ffprobe; side files (<code>{name}.srt/.vtt</code>, <code>{id}-subtitles.srt</code>) by listing the video's folder (the move code already finds them)</td></tr>
+    <tr><td>Scrub frames (C)</td><td><span class="nw">New</span></td><td>ffmpeg: 10 stills at 192×108 (≈50 KB total) or one sprite, generated on first expand and cached beside the preview clip</td></tr>
+    <tr><td>Rename a saved video</td><td><span class="nw">New</span></td><td>An API that renames the file with its side files (reuse the move logic in <code>libraryFolders.js</code>), plus F2 on saved rows</td></tr>
+    <tr><td>Missing file: last folder</td><td><span class="y">Have</span></td><td>Persisted path; Locate is <code>POST /api/history/:fileName/locate</code></td></tr>
+  </table>
+  <p class="section-sub" style="margin-top:10px"><b>Proposed probe API:</b> <code>GET /api/history/:id/media-info</code> runs <code>ffprobe -v error -show_format -show_streams -of json</code> (8s timeout, like PreviewClip) on the saved file, maps it to plain words in <code>packages/contracts</code>, and caches the result in the history index keyed by path + size + mtime, so each file is probed once (tens of ms for a local MP4). The panel renders from today's data immediately and fills the probe facts in without moving the layout (fixed rows/tiles, no shimmer for &lt;150ms). Probing at download completion instead would cover new files for free but not the existing library.</p>
+
+  <h2 class="section-title">Questions for the owner</h2>
+  <ol class="questions">
+    <li>Which layout: <b>A</b> Spec sheet, <b>B</b> Cards or <b>C</b> Media inspector (or A's grid with B's bevel Play/tiles)?</li>
+    <li>Which hover style: <b>H1</b> Bevel lift, <b>H2</b> Sweep or <b>H3</b> Pixel shine?</li>
+    <li>Should the panel repeat the <b>full title</b> only when the row truncates it, or always?</li>
+    <li>OK to add <b>ffprobe on expand</b> (and scrub frames, if C)? Should <b>Rename…</b> for saved videos ship with this?</li>
+  </ol>
+  <p class="hub-footer">Pages: <a href="baseline/index.html">0 · Baseline</a> · <a href="a-spec-sheet/index.html">A · Spec sheet</a> · <a href="b-cards/index.html">B · Cards</a> · <a href="c-inspector/index.html">C · Media inspector</a>. Regenerate every PNG and animation with <code>node docs/design/prototypes/saved-details/capture.cjs</code>. Sample media: Pixel worlds (<code>docs/design/prototypes/sample-media/1-pixel</code>); scrub stills in <code>media/</code> were extracted from it with ffmpeg.</p>
+</main>
+</body>
+</html>

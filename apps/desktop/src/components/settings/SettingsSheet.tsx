@@ -13,8 +13,8 @@ import { NumberSetting, SavedMark, SettingRow, SettingsFormContext, SettingsGrou
 import { AccentPicker } from './AccentPicker';
 import { ChromeConnectCard, PairingDigits, countdown, reviewPairing, shortExtensionId } from './PairingApproval';
 import { settingsSections, type SettingsSectionId } from './settingsSections';
-import { UpdateMeter } from '@/components/updates/UpdateSheet';
-import { updateSummary, type UpdateView } from '@/components/updates/updateModel';
+import { UpdateErrorBody, type UpdateActions } from '@/components/updates/UpdateChip';
+import { afterDownloads, updateSummary } from '@/components/updates/updateModel';
 import './settings.css';
 
 const languages = [['none', 'None'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']];
@@ -38,12 +38,10 @@ const galleryExtensions: ConnectedExtension[] = [{ id: 'gallery', extensionId: '
  * Desktop Settings as a 640px sheet with a section rail (settings-refresh option 2). The owner of
  * `section` keeps it for the app session and points deep links, such as Connect Chrome, at a section.
  */
-export function SettingsSheet({ open, onOpenChange, section, onSectionChange, settings, onSave, updater, updateView, updateBlocking, onOpenUpdate, appInfo, api, gallery }: {
+export function SettingsSheet({ open, onOpenChange, section, onSectionChange, settings, onSave, updater, updateBlocking, updateActions, appInfo, api, gallery }: {
   open: boolean; onOpenChange: (open: boolean) => void; section: SettingsSectionId; onSectionChange: (section: SettingsSectionId) => void;
   settings: DesktopSettings; onSave: (next: Partial<DesktopSettings>) => Promise<void>;
-  updater: UpdaterState; updateView: UpdateView; updateBlocking: number;
-  /** Opens the update sheet; `check` starts a check first (Check now). */
-  onOpenUpdate: (check: boolean) => void;
+  updater: UpdaterState; updateBlocking: number; updateActions: UpdateActions;
   appInfo: AppInfo | null; api: ApiClient | null; gallery: boolean;
 }) {
   const [busy, setBusy] = useState('');
@@ -175,8 +173,10 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     onSectionChange(id);
     tabs.current.get(id)?.focus();
   };
-  // Settings keeps a one-row summary; the update sheet has the details and the install controls.
-  const summary = updateSummary(updater, updateView, updateBlocking, !updatesAvailable ? ui.updatesInstalledOnly : updater.message || ui.updatesNotChecked);
+  // One summary row: Up to date · Check now, 1.1.0 ready · Restart now, Couldn't update · Details.
+  const summary = updateSummary(updater, updateBlocking, updatesAvailable);
+  const [updateDetails, setUpdateDetails] = useState(false);
+  const showUpdateDetails = updateDetails && summary.action === 'details';
   const button = (label: React.ReactNode, onClick: () => void, extra: { className?: string; disabled?: boolean; label?: string; describedBy?: string } = {}) =>
     <button type="button" className={`settings-button ${extra.className || ''}`.trim()} disabled={extra.disabled} aria-label={extra.label} aria-describedby={extra.describedBy} onClick={onClick}>{label}</button>;
   const panes: Record<SettingsSectionId, () => React.ReactNode> = {
@@ -271,10 +271,14 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
       <SettingsGroup id="about-updates" title={ui.updates}>
         <SettingRow id="update-status" label={ui.appVersion.replace('{version}', appInfo?.version || updater.currentVersion || 'development')} hintRole="status"
           hint={<span className={`update-summary-hint tone-${summary.tone}`}>{summary.hint}</span>}
-          control={summary.action === 'see'
-            ? button(ui.updateSeeUpdate, () => onOpenUpdate(false))
-            : button(ui.checkUpdates, () => onOpenUpdate(true), { disabled: !updatesAvailable || ['checking', 'installing'].includes(updater.phase) })}
-          below={summary.meter != null && <UpdateMeter percent={summary.meter} cells={20} height={5} className="update-summary-meter" />} />
+          control={summary.action === 'restart'
+            ? button(ui.restartNow, updateActions.restart, { className: 'primary', disabled: summary.disabled, label: summary.disabled ? `${ui.restartNow}. ${afterDownloads(updateBlocking)}` : undefined })
+            : summary.action === 'details'
+              ? <button type="button" className="settings-button" aria-expanded={showUpdateDetails} aria-controls="update-summary-details" onClick={() => setUpdateDetails((shown) => !shown)}>{showUpdateDetails ? ui.updateHideDetails : ui.updateDetails}</button>
+              : summary.action === 'move'
+                ? button(ui.moveToApplications, updateActions.moveToApplications, { className: 'primary' })
+                : button(ui.checkUpdates, updateActions.check, { disabled: summary.disabled })}
+          below={showUpdateDetails && <div id="update-summary-details" className="update-summary-details"><UpdateErrorBody updater={updater} currentVersion={appInfo?.version || 'development'} actions={updateActions} rawLabel={ui.updateTechnical} /></div>} />
         <SwitchRow id="update-startup" label={ui.checkStartup} hint={ui.checkStartupHint} checked={settings.checkUpdatesOnStartup} onChange={(value) => save({ checkUpdatesOnStartup: value }, 'update-startup', ui.checkStartup)} />
       </SettingsGroup>
       <SettingsGroup id="about-support" title={ui.diagnostics}>

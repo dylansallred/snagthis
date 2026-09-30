@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Organise the library · 3 directions</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+.baseline { display: grid; grid-template-columns: minmax(0, 560px) 1fr; gap: 24px; align-items: start; margin-top: 8px; }
+.baseline img { width: 100%; border-radius: 8px; border: 1px solid var(--color-border-subtle); display: block; }
+.baseline ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.baseline ul li + li { margin-top: 4px; }
+.baseline b { color: var(--color-foreground); }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><span>Organise</span>Sort, folders and moving videos · 3 directions · owner chose B, with C's sort &amp; group-by</div>
+    <h1>Sort the library, and put videos into folders</h1>
+    <p>Owner request: <i>“I'd like to add ability to sort the videos better, and group them in folder or move them and organize them.”</i> Today Saved is always newest first, with no folders and no multi-select. Each direction below covers the <b>six sort orders</b> (newest, oldest, name, size, length, site) remembered per tab, <b>creating, filling, renaming and deleting folders</b> (drag a row onto a folder <i>and</i> a Move to… menu for one or many videos), and the <b>empty and busy (30-video) states</b>. Open one to click through its states (keys 1–9), try live drag and drop, and switch accents.</p>
+  </div>
+  <div class="dirs">
+    <section class="dir"><header><span class="n">A</span><h2>Collections</h2><a class="btn primary" href="a-collections/index.html">Open →</a></header>
+      <p>A slim <b>Collections sidebar</b> and a <b>list header</b> with the sort. Collections are <b>virtual and many-to-many</b>: a video can be in Road trips <i>and</i> Watch later. Dragging adds; nothing moves on disk.</p>
+      <a class="shot" href="a-collections/index.html"><img src="a-collections/preview.png" alt="Collections sidebar with Add to collection menu for three selected videos"></a>
+      <ul><li><b>Best for</b> people who file one video several ways.</li><li><b>Cost</b>: the most new UI (sidebar, header, colour pips). Finder never sees collections.</li></ul>
+      <p class="more">States: <a href="a-collections/state-sorted.png">sorted</a> · <a href="a-collections/state-sortmenu.png">sort menu</a> · <a href="a-collections/state-create.png">new</a> · <a href="a-collections/state-drag.png">drag</a> · <a href="a-collections/state-moveto.png">add to…</a> · <a href="a-collections/state-folder.png">collection</a> · <a href="a-collections/state-delete.png">delete</a> · <a href="a-collections/state-empty.png">empty</a></p></section>
+    <section class="dir"><header><span class="n">B</span><h2>Real folders · chosen</h2><a class="btn primary" href="b-folders/index.html">Open →</a></header>
+      <p>Saved <b>is</b> ~/Downloads/SnagThis: <b>folder rows first</b> (with a poster mosaic), then loose videos, under a <b>path bar</b> holding the sort. Moving a video <b>moves its file</b>; folders made in Finder show up.</p>
+      <a class="shot" href="b-folders/index.html"><img src="b-folders/preview.png" alt="Folder rows with a video being dragged onto Road trips"></a>
+      <ul><li><b>Best for</b> people who also browse the files in Finder, Plex or backups.</li><li><b>Cost</b>: real file operations: failures, progress, a Trash choice on delete, one folder per video.</li></ul>
+      <p class="more">States: <a href="b-folders/state-sorted.png">folders + sorted</a> · <a href="b-folders/state-sortmenu.png">sort menu</a> · <a href="b-folders/state-create.png">new</a> · <a href="b-folders/state-moveto.png">move to…</a> · <a href="b-folders/state-folder.png">folder</a> · <a href="b-folders/state-delete.png">delete</a> · <a href="b-folders/state-empty.png">empty</a> · <a href="b-folders/state-failed.png">move failed</a></p></section>
+    <section class="dir"><header><span class="n">C</span><h2>Smart groups + pins · Sort &amp; group chosen</h2><a class="btn primary" href="c-groups/index.html">Open →</a></header>
+      <p>One <b>Sort &amp; group</b> button (<i>Site · Newest</i>) and <b>collapsible group headers</b> by site, date, quality or folder. Folders are <b>one-per-video labels</b>; pinned ones are chips you drop rows on.</p>
+      <a class="shot" href="c-groups/index.html"><img src="c-groups/preview.png" alt="Saved grouped by site with collapsible headers and pinned folder chips"></a>
+      <ul><li><b>Best for</b> “help me find things” with no filing: grouping does most of the work.</li><li><b>Cost</b>: pins are shortcuts, not a tree. Virtual, so Finder never sees them.</li></ul>
+      <p class="more">States: <a href="c-groups/state-sorted.png">grouped</a> · <a href="c-groups/state-sortmenu.png">sort &amp; group menu</a> · <a href="c-groups/state-create.png">new</a> · <a href="c-groups/state-drag.png">drag</a> · <a href="c-groups/state-moveto.png">move to…</a> · <a href="c-groups/state-folder.png">folder</a> · <a href="c-groups/state-delete.png">delete</a> · <a href="c-groups/state-empty.png">empty</a></p></section>
+  </div>
+
+  <h2 class="section-title">Side by side</h2>
+  <table class="cmp">
+    <tr><th></th><th>A · Collections</th><th>B · Real folders</th><th>C · Smart groups + pins</th></tr>
+    <tr><td>Where folders live</td><td>SnagThis library index (virtual)</td><td>Subfolders of the save folder (on disk)</td><td>SnagThis library index (virtual)</td></tr>
+    <tr><td>Videos per folder</td><td>Many-to-many</td><td>One folder per file</td><td>One folder per video</td></tr>
+    <tr><td>Sort control</td><td>List header, right</td><td>Path bar, right</td><td>Strip under the header, names sort <i>and</i> group</td></tr>
+    <tr><td>Drag target</td><td>Sidebar collection (adds)</td><td>Folder row / “SnagThis” crumb (moves the file)</td><td>Pinned chip (moves the label)</td></tr>
+    <tr><td>Delete a folder</td><td>Safe: videos stay</td><td>Choice: keep videos (default) or move folder to Trash</td><td>Safe: videos stay</td></tr>
+    <tr><td>Changed in Finder</td><td>Moved file → “File was moved or deleted” → Locate keeps collections</td><td>Rescan picks up new, renamed and filled folders</td><td>As A</td></tr>
+    <tr><td>Failure handling</td><td>None needed</td><td>Per-row amber sentence + Try again; nothing half-moved</td><td>None needed</td></tr>
+    <tr><td>New UI</td><td>Most</td><td>Medium</td><td>Least</td></tr>
+  </table>
+
+  <h2 class="section-title">Shared across all three</h2>
+  <p class="section-sub">Same six orders; the sorted-by value brightens in each row (size, duration, date, or the site prepended). Each place remembers its own order. In <b>All</b>, sorting applies to saved videos while in-progress downloads stay on top (§6 ordering). <b>Downloading</b> keeps queue order, since waiting rows already drag to reorder. Multi-select is ⌘/Ctrl-click, Shift-click or Shift+↑/↓, and turns the footer into a selection bar; <kbd>M</kbd> opens Move/Add to…; Shift+F10 opens row menus; menus use ↑/↓, Home/End and Esc. Only saved rows drag to folders. Every file move or delete keeps the §9 rule: removing from a folder is never removing the file, and Trash uses <code>shell.trashItem</code>. Nothing is drawn over thumbnails.</p>
+
+  <h2 class="section-title">Questions for the owner</h2>
+  <ol class="questions">
+    <li><b>On disk or in the app?</b> Should moving a video move its file (B), or only change how SnagThis shows it (A, C)? This decides almost everything else.</li>
+    <li><b>One folder or many?</b> Can a video be in two places (A), or just one (B, C)?</li>
+    <li><b>Scope change:</b> the spec lists folders/collections and multi-select as out of scope for v1 (§13). Is this for 1.0 or after?</li>
+    <li><b>New downloads:</b> should a folder be choosable before a download (paste field, popup, “Save new downloads here”), or only for sorting afterwards?</li>
+    <li><b>Grouping:</b> worth having on its own (C's site/date/quality) even if you pick A or B?</li>
+    <li><b>Chrome:</b> the extension has no Saved library. Should folders ever appear in the popup?</li>
+    <li>For B: what about <b>nested folders</b> and folders created in Finder outside SnagThis's own per-download folders?</li>
+  </ol>
+
+  <h2 class="section-title">0 · Current baseline</h2>
+  <div class="baseline">
+    <a href="baseline/index.html"><img src="baseline/baseline.png" alt="Today's Saved tab, newest first, no sort control"></a>
+    <ul>
+      <li>Saved is always <b>newest first</b> (<code>mergeRows</code>, <code>historyIndex.js</code>). No sort, folders or multi-select.</li>
+      <li>Saved has a <b>list ⇄ shelf</b> toggle beside search; search is server-side across the whole library.</li>
+      <li>Each saved item knows its title, file name and path, size, file time, quality (selection height), duration (when known), source page URL (→ site) and thumbnail.</li>
+      <li>Files live in <span class="mono">~/Downloads/SnagThis/{title}/</span>, one folder per download. The index rescans that folder recursively.</li>
+      <li>Saved row ⋯ today: Details, Copy link, Open page, Show in folder, Remove… (Remove from list / Move file to Trash).</li>
+    </ul>
+  </div>
+  <p class="hub-footer">Prototype only; nothing here changes the app. Sample posters are the Pixel worlds set (<code>docs/design/prototypes/sample-media/1-pixel</code>). Screenshots: <code>node docs/design/prototypes/organize/capture.cjs</code> (1x, reduced motion).</p>
+</main>
+</body>
+</html>

@@ -592,6 +592,7 @@ class QueueManager {
           youtubeMetadata: job.youtubeMetadata || null,
           // Request credentials exist only in memory. Reopening a source refreshes them.
           sourcePageUrl: job.sourcePageUrl,
+          sourceInfo: job.sourceInfo || null,
           mediaType: job.mediaType,
           selection: job.selection,
           errorCode: job.errorCode,

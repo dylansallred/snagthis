@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Folder rows C · Sections</title>
+<link rel="stylesheet" href="../../shared.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* C · Sections: like a file manager. Folders are compact one-line rows under a FOLDERS label, with no posters;
+   videos follow under VIDEOS. Nothing about a folder row resembles a video row. */
+.sec { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; background: hsl(215 22% 5.5%); border-bottom: 1px solid var(--color-border-subtle); color: var(--color-foreground-subtle); font: 400 16px/1 var(--font-pixel); letter-spacing: .08em; text-transform: uppercase; }
+.sec b { font-weight: 400; color: var(--color-primary-hover); }
+.sec .r { margin-left: auto; font: 11.5px/1 var(--font-sans); letter-spacing: 0; text-transform: none; }
+.fblock + .sec { border-top: 1px solid var(--color-border-subtle); }
+
+/* List row: 44px, one line — pixel folder, name, "6 videos · 9.2 GB", chevron. */
+.frow { position: relative; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 14px 0 18px; border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent); background: hsl(215 22% 6.5%); transition: background 140ms; }
+.frow::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); transform: scaleY(0); transition: transform 300ms; }
+.frow .ico { position: relative; width: 32px; height: 26px; flex: none; }
+.frow .ico .pxf { position: absolute; inset: 0; }
+.frow .ico .k-open { visibility: hidden; }
+.frow .nm { min-width: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frow .fm { flex: none; font-size: 12px; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.frow .fm::before { content: "·"; margin-right: 8px; color: var(--color-foreground-subtle); }
+.frow .fm.fhint::before { content: ""; margin: 0; }
+.frow .sp { flex: 1; }
+.frow .fact .iconbtn { width: 28px; height: 28px; }
+.frow.is-empty .nm { color: var(--color-foreground-muted); font-weight: 520; }
+.frow:is(:hover, .is-hover, :focus-visible, .is-focus) { background: var(--color-surface-row-hover); }
+.frow:is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot)::before { transform: none; }
+.frow:not(.is-empty):is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot) .ico .k-closed { visibility: hidden; }
+.frow:not(.is-empty):is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot) .ico .k-open { visibility: visible; }
+.frow:is(:focus-visible, .is-focus) { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.frow.drop-hot { box-shadow: inset 0 0 0 2px var(--color-primary-hover) !important; }
+.frow.drop-hot.is-empty .pxf .o { fill: var(--color-primary-hover); }
+
+/* Shelf: the same two sections; folders are compact bevelled chips in a grid above the posters. */
+.shelf .sec { margin: 0 -16px; }
+.shelf .sec:first-child { margin-top: -16px; }
+.shelf .fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); gap: 10px; padding: 14px 0 18px; }
+.shelf .sgrid { padding-top: 16px; }
+.ftile { position: relative; display: flex; align-items: center; gap: 11px; height: 54px; padding: 0 8px 0 12px; background: hsl(215 20% 9.5%); box-shadow: inset 1px 1px 0 #ffffff12, inset -1px -1px 0 #0008, 0 0 0 1px var(--color-border-subtle); transition: background 140ms; }
+.ftile .ico { position: relative; width: 32px; height: 26px; flex: none; }
+.ftile .ico .pxf { position: absolute; inset: 0; }
+.ftile .ico .k-open { visibility: hidden; }
+.ftile .tx { flex: 1; min-width: 0; }
+.ftile .nm { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ftile .fm { margin-top: 2px; font-size: 11.5px; color: var(--color-foreground-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ftile.is-empty .nm { color: var(--color-foreground-muted); font-weight: 520; }
+.ftile .fact .hx .iconbtn:first-child { display: none; }
+.ftile .fact .chevr { width: 20px; }
+.ftile:is(:hover, .is-hover, :focus-visible, .is-focus) { background: hsl(215 20% 12.5%); }
+.ftile:not(.is-empty):is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot) .ico .k-closed { visibility: hidden; }
+.ftile:not(.is-empty):is(:hover, .is-hover, :focus-visible, .is-focus, .drop-hot) .ico .k-open { visibility: visible; }
+.ftile:is(:focus-visible, .is-focus) { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.ftile.drop-hot { box-shadow: inset 0 0 0 2px var(--color-primary-hover) !important; }
+.ftile.drop-hot.is-empty .pxf .o { fill: var(--color-primary-hover); }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Folder rows</a> · <span>C</span>Sections</div>
+    <h1>C · Sections</h1>
+    <p>Like a file manager: folders are <b>compact one-line rows</b> (44px, about half a video row) grouped under a <b>FOLDERS</b> label, each with a <b>pixel folder icon, name and “6 videos · 9.2 GB”</b>. <b>No posters at all</b>, so there is nothing to look odd at 0–3 videos. Videos follow under <b>VIDEOS</b>. On the shelf, folders are bevelled chips above the posters.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../brand.js"></script>
+<script src="../../shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org, R = window.FR;
+  const icon = (f) => f.vids.length ? `<span class="ico">${R.glyph(32, 'closed')}${R.glyph(32, 'open')}</span>` : `<span class="ico">${R.glyph(32, 'empty')}</span>`;
+  const hot = (m, f) => m.drop === f.id;
+  const label = (name, n, right = '') => `<div class="sec" role="presentation">${name}<b>${n}</b>${right ? `<span class="r">${right}</span>` : ''}</div>`;
+  R.mount({
+    states: R.STATES,
+    row: (m, f) => { const d = R.info(f); return `<div ${R.attrs(m, f, 'frow')}>${icon(f)}<span class="nm">${P.esc(f.name)}</span>
+      <span class="fm${hot(m, f) ? ' fhint' : ''}">${hot(m, f) ? d.hint : d.meta}</span><span class="sp"></span>${R.actions(f)}</div>`; },
+    tile: (m, f) => { const d = R.info(f); return `<div ${R.attrs(m, f, 'ftile')}>${icon(f)}<div class="tx"><div class="nm" title="${P.esc(f.name)}">${P.esc(f.name)}</div><div class="fm${hot(m, f) ? ' fhint' : ''}">${hot(m, f) ? 'Move here' : d.meta}</div></div>${R.actions(f)}</div>`; },
+    list: (m, rows, vids) => `${label('Folders', m.folders.length)}<div class="fblock">${rows}</div>${label('Videos', m.loose.length, P.size(P.sumMb(m.loose)))}${vids}`,
+    shelf: (m, tiles, vids) => `<div class="shelf">${label('Folders', m.folders.length)}<div class="fgrid">${tiles}</div>${label('Videos', m.loose.length, P.size(P.sumMb(m.loose)))}<div class="sgrid">${vids}</div></div>`,
+    notes: (s) => `<h2>How it handles every count</h2><ul>
+      <li><b>0</b>: a dotted outline folder and a muted name; the line says <i>Empty</i>.</li>
+      <li><b>1, 2, 3, 6…</b>: identical rows; only “N videos · size” changes. With no posters there is nothing to fill.</li></ul>
+      <h3>States</h3><ul><li><b>Hover / focus</b>: the row lightens, the accent edge grows and the pixel folder <b>opens</b> (a sheet shows); focus adds a 2px accent ring.</li><li><b>Drag-over</b>: accent ring, open folder, and the line becomes <i>Move here · path</i>. Empty folders light their outline in the accent.</li><li><b>Shelf</b>: FOLDERS chips in a grid, then VIDEOS posters. The section labels stay pinned while scrolling.</li></ul>
+      <div class="trade"><h3>Trade-off</h3>The clearest separation and the most compact: 5 folders take the height of about 3 videos. You lose any preview of what's inside, so folders are recognised by name only. Adds two section labels to Saved.</div>`,
+  });
+})();
+</script>
+</body>
+</html>

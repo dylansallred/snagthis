@@ -26,6 +26,10 @@ const registerHistoryRoutes = require('./routes/history');
 const registerQueueRoutes = require('./routes/queue');
 const registerJobRoutes = require('./routes/jobs');
 const { HistoryIndexService } = require('./services/historyIndex');
+const { createLibraryFolders } = require('./services/libraryFolders');
+const registerLibraryRoutes = require('./routes/library');
+const { createMediaInfoService } = require('./services/mediaInfo');
+const { sourceInfoOf } = require('./utils/sourceInfo');
 const logger = require('./utils/logger');
 const { inferMediaMetadata } = require('./utils/mediaMetadata');
 const { inspectMedia } = require('./services/mediaInspection');
@@ -468,6 +472,7 @@ function createApiServer(options = {}) {
     indexDir: dataDir,
     fsPromises,
     jobs,
+    getLibraryRoot: () => (typeof getCompletedOutputDir === 'function' ? getCompletedOutputDir() : '') || resolvedDownloadDir,
     onChange: (payload) => notifyHistoryChange(payload),
   });
 
@@ -687,6 +692,7 @@ function createApiServer(options = {}) {
       mediaType: job.mediaType || null,
       selection: job.selection || null,
       sourcePageUrl: job.sourcePageUrl || null,
+      sourceInfo: job.sourceInfo || null,
     };
   }
 
@@ -846,6 +852,7 @@ function createApiServer(options = {}) {
       ...(validManifestText(queue.manifestText) ? { manifestText: queue.manifestText } : {}),
       mediaType: queue.mediaType || (isHls ? 'hls' : 'file'),
       sourcePageUrl: queue.sourcePageUrl || '',
+      sourceInfo: sourceInfoOf(queue),
       totalSegments: 0,
       completedSegments: 0,
       bytesDownloaded: 0,
@@ -1560,6 +1567,7 @@ function createApiServer(options = {}) {
       name: body.resourceName || body.title || 'media',
       headers: body.headers || {},
       sourcePageUrl: body.sourcePageUrl || '',
+      sourcePageTitle: body.sourcePageTitle || '',
       titleHints: body.titleHints || null,
       youtubeMetadata: body.youtubeMetadata || null,
       thumbnailUrl: body.thumbnailUrl || '',
@@ -1817,6 +1825,7 @@ function createApiServer(options = {}) {
       manualTitleOverride: sourceJob.manualTitleOverride === true,
       headers: sourceJob.headers || {},
       sourcePageUrl: sourceJob.sourcePageUrl || '',
+      sourceInfo: sourceJob.sourceInfo || null,
       youtubeMetadata: sourceJob.youtubeMetadata || null,
       thumbnailUrl: Array.isArray(sourceJob.thumbnailUrls) ? String(sourceJob.thumbnailUrls[0] || '') : '',
     };
@@ -1876,6 +1885,7 @@ function createApiServer(options = {}) {
       manualTitleOverride: sourceJob.manualTitleOverride === true,
       headers: sourceJob.headers || {},
       sourcePageUrl: sourceJob.sourcePageUrl || '',
+      sourceInfo: sourceJob.sourceInfo || null,
       youtubeMetadata: sourceJob.youtubeMetadata || null,
       thumbnailUrl: Array.isArray(sourceJob.thumbnailUrls) ? String(sourceJob.thumbnailUrls[0] || '') : '',
     };
@@ -1901,8 +1911,9 @@ function createApiServer(options = {}) {
     });
   });
 
+  const mediaInfoService = createMediaInfoService({ dataDir, getFfprobePath: () => FFPROBE_PATH, signal: previewAbort.signal });
   registerHistoryRoutes(app, historyIndex, fsPromises, resolvedDownloadDir, {
-    onTrashFile, onOpenFile, onLocateFile,
+    onTrashFile, onOpenFile, onLocateFile, mediaInfo: mediaInfoService.mediaInfo,
     onRemoveItem: async (item) => {
       const job = item.jobId && jobs.get(item.jobId);
       if (job && ['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)) {
@@ -1911,6 +1922,18 @@ function createApiServer(options = {}) {
       }
     },
   });
+  registerLibraryRoutes(app, historyIndex, createLibraryFolders({
+    historyIndex, jobs, downloadDir: resolvedDownloadDir, onTrashFile,
+    saveQueue: () => queueManager.saveQueue(),
+    // A trashed folder's finished downloads leave the queue too, as a trashed video's do.
+    onRemoveItem: async (item) => {
+      const job = item.jobId && jobs.get(item.jobId);
+      if (job && ['completed', 'completed-with-errors', 'failed', 'cancelled'].includes(job.queueStatus || job.status)) {
+        queueManager.removeJob(item.jobId, false);
+        await queueManager.waitForJobIdle(item.jobId);
+      }
+    },
+  }));
   registerQueueRoutes(app, queueManager, {
     onRenameJob: async (jobId, title) => {
       const job = jobs.get(jobId);

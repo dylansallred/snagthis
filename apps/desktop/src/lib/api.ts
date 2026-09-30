@@ -1,8 +1,9 @@
 import type { QueueData, QueueSettings, QueueJob } from '@/types/queue';
-import type { HistoryItem } from '@/types/history';
+import type { HistoryItem, MediaInfo } from '@/types/history';
+import type { DeleteMode, LibraryInfo, MoveResult } from '@/types/library';
 import { normalizeLocalApiBase } from '@/lib/network';
 
-export interface LibraryPage { items: HistoryItem[]; total: number; nextCursor: string | null }
+export interface LibraryPage { items: HistoryItem[]; total: number; nextCursor: string | null; savedJobIds?: string[] }
 export interface ThumbnailPreview { status: 'pending' | 'ready' | 'unavailable'; previewClipUrl?: string | null; previewClipDurationSeconds?: number }
 export interface MediaSelection { variantUrl?: string; height?: number; audioLang?: string; audioTrack?: string; subtitleLang?: string; audioOnly?: boolean }
 export interface AudioRendition { language?: string | null; name?: string | null; url?: string | null; groupId?: string | null; default?: boolean; channels?: string | null; characteristics?: string | null; role?: string | null; streamIndex?: number }
@@ -12,6 +13,10 @@ export interface MediaInspection {
   mediaType?: 'hls' | 'file';
   title?: string;
   sourcePageUrl?: string;
+  /** From a resolved page: its own title, the site's name and the channel or author. */
+  pageTitle?: string;
+  siteName?: string;
+  uploader?: string;
   thumbnailUrl?: string;
   headers?: Record<string, string>;
   isDrm?: boolean;
@@ -22,6 +27,13 @@ export interface MediaInspection {
   durationSeconds?: number;
 }
 export class MediaInspectionError extends Error {}
+/** A refused bridge request; `code` names the reason (such as `nameDuplicate` or `folder-missing`). */
+export class ApiRequestError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) { super(message); this.code = code; }
+}
+/** Which saved videos to list: one folder of Saved ('' is the save folder), in a sort order. */
+export interface HistoryScope { folder?: string; sort?: string }
 
 export function createApiClient(baseUrl: string, authToken = '') {
   const base = normalizeLocalApiBase(baseUrl);
@@ -34,7 +46,7 @@ export function createApiClient(baseUrl: string, authToken = '') {
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       const message = typeof data?.error === 'string' ? data.error : data?.error?.message || data?.message;
-      throw new Error(message || `Request failed (${response.status})`);
+      throw new ApiRequestError(message || `Request failed (${response.status})`, typeof data?.code === 'string' ? data.code : undefined);
     }
     return data as T;
   }
@@ -46,14 +58,24 @@ export function createApiClient(baseUrl: string, authToken = '') {
     getJob: (jobId: string) => request<QueueJob>(`/api/jobs/${id(jobId)}?full=1`),
     ensureJobPreview: (jobId: string) => post<ThumbnailPreview>(`/api/jobs/${id(jobId)}/preview`),
     ensureHistoryPreview: (historyId: string) => post<ThumbnailPreview>(`/api/history/${id(historyId)}/preview`),
-    getHistory: (query = '', cursor?: string | null) => {
+    getHistory: (query = '', cursor?: string | null, scope: HistoryScope = {}) => {
       const params = new URLSearchParams({ limit: '100', q: query });
       if (cursor) params.set('cursor', cursor);
+      if (typeof scope.folder === 'string') params.set('folder', scope.folder);
+      if (scope.sort) params.set('sort', scope.sort);
       return request<LibraryPage>(`/api/history?${params}`);
     },
+    getLibrary: () => request<LibraryInfo>('/api/library'),
+    createFolder: (parent: string, name: string) => post<{ path: string }>('/api/library/folders', { parent, name }),
+    renameFolder: (path: string, name: string) => post<{ path: string }>('/api/library/folders/rename', { path, name }),
+    deleteFolder: (path: string, mode?: DeleteMode) => post<{ deleted: 'empty' | 'keep' | 'trash'; moved: number }>('/api/library/folders/delete', { path, mode }),
+    moveVideos: (ids: string[], to: string) => post<{ results: MoveResult[] }>('/api/library/move', { ids, to }),
+    renameVideo: (id: string, name: string) => post<{ item: HistoryItem }>('/api/library/rename-video', { id, name }),
+    getMediaInfo: (historyId: string) => request<MediaInfo>(`/api/history/${id(historyId)}/media-info`),
     createJob: (url: string, selection: MediaSelection, inspection?: MediaInspection) => post('/api/jobs', { queue: {
       url: inspection?.mediaUrl || url, selection, mediaType: inspection?.mediaType,
       title: inspection?.title, sourcePageUrl: inspection?.sourcePageUrl || url,
+      sourcePageTitle: inspection?.pageTitle, siteName: inspection?.siteName, uploader: inspection?.uploader,
       thumbnailUrl: inspection?.thumbnailUrl, headers: inspection?.headers,
     } }),
     inspectMedia: async (url: string) => {

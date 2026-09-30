@@ -1,0 +1,34 @@
+export type SortId = 'newest' | 'oldest' | 'name' | 'size' | 'length' | 'site';
+export type GroupId = 'none' | 'site' | 'date' | 'quality';
+export interface LibraryView { sort: SortId; group: GroupId }
+export type FailureCode = 'in-use' | 'permission' | 'space' | 'missing' | 'folder-missing' | 'unknown';
+export interface SavedGroup<T> { key: string; label: string; items: T[]; sizeBytes: number; count: number }
+export const libraryStrings: Readonly<Record<string, string>> & { months: readonly string[] };
+export function libraryText(key: string, values?: Record<string, string | number>): string;
+export const SORTS: ReadonlyArray<{ id: SortId; label: string; short: string }>;
+export const GROUPS: ReadonlyArray<{ id: GroupId; label: string }>;
+export const DEFAULT_VIEW: Readonly<LibraryView>;
+export function isSort(value: unknown): value is SortId;
+export function isGroup(value: unknown): value is GroupId;
+export function viewKey(tab: 'all' | 'saved', folder?: string): string;
+export function normalizeView(value: unknown): LibraryView;
+export function viewLabel(view: Partial<LibraryView> | null | undefined): string;
+export function countLabel(n: number): string;
+export function fileCountLabel(n: number): string;
+export function siteOf(item: object): string;
+export function durationOf(item: object): number | null;
+export function titleOf(item: object): string;
+export function compareSaved(sort: SortId | string): (a: any, b: any) => number;
+export function sortSaved<T extends object>(items: T[], sort: SortId | string): T[];
+export function groupSaved<T>(items: T[], group: GroupId | string, options?: { sort?: SortId | string; now?: number | Date; read?: (item: T) => any }): SavedGroup<T>[];
+export function folderNameProblem(name: unknown, options?: { siblings?: string[]; caseInsensitive?: boolean; current?: string; kind?: 'folder' | 'video' }): { code: string; message: string } | null;
+export function isInternalName(name: string): boolean;
+export function failureReason(code: FailureCode | string | undefined): string;
+export function failureCode(error: unknown): FailureCode;
+export function folderName(folderPath: string, rootName: string): string;
+export function parentFolder(folderPath: string): string;
+export function videoNameProblem(name: unknown): { code: string; message: string } | null;
+export function codecLabel(name?: string | null): string;
+export function containerLabel(ext?: string | null): string;
+export function formatBitrate(bitsPerSecond?: number | null): string;
+export function formatFrameRate(fps?: number | null): string;
