@@ -76,7 +76,7 @@ Each statement above can be checked in the build:
 | Pause, resume, cancel, show in folder | `js/browser-downloads.js` `action()` |
 | Five accents on popup and toolbar icon | `shared/accents.js`, `js/accent-icon.js` |
 | Streams, tracks and subtitles need the desktop app | `processingRequested()` and the manifest check route these to the desktop; see also the table on snagthisvid.com/help |
-| One-click pairing with four digits | `service-worker.js` pairing flow; popup "Match in SnagThis" |
+| One-click pairing with four digits | `service-worker.js` pairing flow; popup banner "Connecting to SnagThis on this computer" |
 | No remote server | The only non-page network destination in the code is `http://127.0.0.1:49732` (the local desktop app) |
 | DRM refused | `content.js` only observes that encryption is in use; `DRM_MESSAGE` in `service-worker.js` |
 

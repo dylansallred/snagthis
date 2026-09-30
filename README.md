@@ -149,8 +149,8 @@ npm run dev
 
 You only need to do this once, and only for downloads that use the desktop app.
 
-1. With the desktop app running, open **Extensions → SnagThis** in Chrome and choose **Connect**.
-2. SnagThis comes forward with four digits. If Chrome shows the same four, choose **Allow**. The connection is saved on your computer.
+1. Open the desktop app. Until a browser connects, it shows **Waiting for Chrome…**.
+2. In Chrome, click **SnagThis** in the toolbar. It asks by itself (or choose **Connect** in its banner), and SnagThis shows four digits beside it. If Chrome shows the same four, choose **Allow** in SnagThis. Both close by themselves, and the connection is saved on your computer.
 
 <details>
 <summary>SnagThis didn't come forward, or you're connecting another browser?</summary>

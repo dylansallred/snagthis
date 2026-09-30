@@ -55,7 +55,7 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
   const [confirmDisconnect, setConfirmDisconnect] = useState('');
   const [disconnected, setDisconnected] = useState(false);
   // "Connect another browser" / "Connect Chrome" after a disconnect: show the waiting card on request.
-  const [listenAgain, setListenAgain] = useState(false);
+  const [listenAgain, setListenAgain] = useState(() => gallery && new URLSearchParams(window.location.search).has('pair'));
   const [saved, setSaved] = useState({ key: '', announcement: '' });
   const savedTimer = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
