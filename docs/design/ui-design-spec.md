@@ -210,7 +210,9 @@ Prepare a representative poster before popup opening when the source page has al
 
 ### 5.4 Popup states
 
-On opening, use one short content fade with a 4px settle; Chrome owns the outer popup window. Show cached detections immediately. Until the initial page scan has committed its detections, show three skeleton rows (128px block + two bars, 1.6s linear shimmer, static under reduced motion) with a screen-reader-only "Looking for videos…" and "Checking this page…" count instead of briefly showing an empty list. Discovery runs independently of desktop health checks. Reveal newly arriving rows once, without replaying entrance motion on progress updates. Empty and failed scans end the busy state and offer a retry. Reduced motion removes the entrance animations.
+On opening, the content is fully visible on its first frame, with no fade or settle; Chrome owns the outer popup window. Show cached detections immediately; nothing on first render waits for the page, the desktop app or a connection-key upgrade. The page scan answers from the page's own main thread, which a busy site can hold for seconds, so each frame gets at most 300 ms: until then, show three skeleton rows (128px block + two bars, 1.6s linear shimmer, static under reduced motion) with a screen-reader-only "Looking for videos…" and "Checking this page…" count instead of briefly showing an empty list. After that the popup shows what it has (rows, or the empty state), and a slower frame's detections arrive as new rows when they are stored. Discovery runs independently of desktop health checks. Reveal newly arriving rows once, without replaying entrance motion on progress updates. Empty and failed scans end the busy state and offer a retry. Reduced motion removes the entrance animations.
+
+While open, the popup refreshes every second only while a download is active or starting, and every 4 s otherwise (new detections on the page refresh it at once), and rechecks the desktop app every 2 s. A refresh only touches rows, cells and banners whose content changed. hls.js loads on first use by a preview, poster probe or audio sample, not with the popup.
 
 | State | Spec |
 |---|---|
