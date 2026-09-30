@@ -51,6 +51,12 @@
   };
   const lucide = new Set(['gear', 'palette', 'section', 'plug', 'info', 'app', 'alert', 'refresh', 'lifebuoy']);
   function icon(name) { const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); node.setAttribute('viewBox', lucide.has(name) ? '0 0 24 24' : '0 0 20 20'); node.setAttribute('aria-hidden', 'true'); node.classList.add('icon'); node.innerHTML = icons[name] || icons.play; return node; }
+  // The list re-renders every refresh; these skip writes that would not change anything.
+  function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+  function setAttr(node, name, value) { if (node.getAttribute(name) !== value) node.setAttribute(name, value); }
+  function setData(node, key, value) { if (node.dataset[key] !== value) node.dataset[key] = value; }
+  function setClass(node, value) { if (node.className !== value) node.className = value; }
+  function setHidden(node, hidden) { if (node.hidden !== hidden) node.hidden = hidden; }
   function el(tag, className = '', text = '') { const node = document.createElement(tag); if (className) node.className = className; if (text) node.textContent = text; return node; }
   function qualityMark(label) {
     const quality = rows.formatQualityBadge(label);
@@ -75,13 +81,13 @@
   function external(url) { if (isDemo) { notice('Preview only — no app or page was opened.'); return; } chrome.tabs.create({ url }).catch(() => notice('Open SnagThis from your Applications folder.')); }
   async function request(path, options = {}) {
     if (isDemo) throw new Error('Demo cannot access the desktop app.');
+    if (!options.public && tokenUpgrade) await tokenUpgrade;
     const headers = { 'X-Client': 'snagthis-extension', 'X-Protocol-Version': '1', 'X-Extension-Version': runtimeVersion, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.public ? {} : { Authorization: `Bearer ${appToken}` }) };
     let response;
     try { response = await fetch(`${apiBase}${path}`, { method: options.body ? 'POST' : 'GET', headers, ...(options.body ? { body: JSON.stringify(options.body) } : {}), signal: AbortSignal.timeout(5000) }); }
     catch (error) { throw new Error(friendly(error)); }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) { const error = new Error(data.error?.message || data.error || 'SnagThis could not finish that action.'); error.status = response.status; error.compatibility = data.compatibility; throw error; }
-    if (!options.public && tokenUpgrade) await tokenUpgrade;
     return data;
   }
   async function message(value) { return isDemo ? { ok: true } : chrome.runtime.sendMessage(value); }
@@ -109,10 +115,29 @@
         || Boolean(current?.jobId && current.row.source.backend !== 'browser' && unavailable && !['open-page', 'details'].includes(current.row.action?.id));
     }
     if (pairUi && (connectionChecked || isDemo)) renderPairBanner(banner);
-    else {
+    else renderPlainBanner(banner, unavailable);
+    setHidden($('help-button'), connectionChecked && !reachable);
+    const activeCount = queue.filter(job => job.backend !== 'browser' && ['downloading', 'queued'].includes(job.queueStatus)).length;
+    const openButton = $('open-app');
+    const openLabel = connectionChecked && !reachable ? "Don't have the app? Get it" : 'Open SnagThis';
+    const badgeCount = reachable && activeCount ? String(activeCount) : '';
+    if (openButton.dataset.key !== `${openLabel}|${badgeCount}`) {
+      openButton.dataset.key = `${openLabel}|${badgeCount}`;
+      openButton.replaceChildren(document.createTextNode(openLabel));
+      if (badgeCount) {
+        const badge = el('span', 'count-badge', badgeCount); badge.setAttribute('aria-hidden', 'true'); openButton.append(badge);
+        openButton.setAttribute('aria-label', `Open SnagThis, ${activeCount} active download${activeCount === 1 ? '' : 's'}`);
+      } else openButton.removeAttribute('aria-label');
+    }
+    syncSettings();
+  }
+  function renderPlainBanner(banner, unavailable) {
     document.querySelector('.popup-header .pair-devchip')?.remove();
-    banner.className = 'connection-banner'; delete banner.dataset.pair; delete banner.dataset.pairKey; banner.replaceChildren();
-    banner.hidden = !unavailable || !connectionChecked;
+    setHidden(banner, !unavailable || !connectionChecked);
+    // Rebuilt only when its message changes, so a focused button survives refreshes.
+    const key = [connectionChecked, reachable, compatible, compatibilityIssue, Boolean(appToken), disconnectedNotice, getAppFallback].join('|');
+    if (banner.dataset.plainKey === key) return;
+    banner.className = 'connection-banner'; delete banner.dataset.pair; delete banner.dataset.pairKey; banner.dataset.plainKey = key; banner.replaceChildren();
     if (!connectionChecked) {
       // A connection check in flight is not evidence that the app is offline.
     } else if (!reachable) {
@@ -126,16 +151,6 @@
       // Popup first (SnagThis isn't waiting for Chrome): one tap starts the request.
       banner.append(el('span', '', strings.pairOffer), action(strings.pairConnect, showPairing, 'primary'), moreButton());
     }
-    }
-    $('help-button').hidden = connectionChecked && !reachable;
-    const activeCount = queue.filter(job => job.backend !== 'browser' && ['downloading', 'queued'].includes(job.queueStatus)).length;
-    const openButton = $('open-app');
-    openButton.replaceChildren(document.createTextNode(connectionChecked && !reachable ? "Don't have the app? Get it" : 'Open SnagThis'));
-    if (reachable && activeCount) {
-      const badge = el('span', 'count-badge', String(activeCount)); badge.setAttribute('aria-hidden', 'true'); openButton.append(badge);
-      openButton.setAttribute('aria-label', `Open SnagThis, ${activeCount} active download${activeCount === 1 ? '' : 's'}`);
-    } else openButton.removeAttribute('aria-label');
-    syncSettings();
   }
   function updateThumb(thumb, row) {
     const localPoster = model.resolveThumbnailUrl(row.thumbnailUrl, apiBase);
@@ -307,7 +322,7 @@
   }
   function progressAttributes(status, row) {
     if (['downloading', 'finishing', 'paused', 'problem'].includes(row.state)) {
-      status.setAttribute('role', 'progressbar'); status.setAttribute('aria-valuemin', '0'); status.setAttribute('aria-valuemax', '100'); status.setAttribute('aria-valuenow', String(row.percent)); status.setAttribute('aria-valuetext', row.statusLine);
+      setAttr(status, 'role', 'progressbar'); setAttr(status, 'aria-valuemin', '0'); setAttr(status, 'aria-valuemax', '100'); setAttr(status, 'aria-valuenow', String(row.percent)); setAttr(status, 'aria-valuetext', row.statusLine);
     } else { for (const attribute of ['role', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext']) status.removeAttribute(attribute); }
   }
   function actionIcon(id) { return id === 'download' || id === 'continue' ? 'download' : { pause: 'pause', resume: 'resume', play: 'play' }[id] || ''; }
@@ -357,6 +372,8 @@
       for (const node of rowElements.values()) { stopThumbPreview(node); node.trace?.destroy(); node.trace = null; }
       rowElements.clear(); stopPosterPreparation();
       if (changed) list.replaceChildren(view === 'empty' ? emptyState() : discoveryState(view));
+      // Rows found after an empty or failed check arrive like any new row.
+      if (view !== 'loading') rowsPainted = true;
       renderConnection(); return;
     }
     list.querySelector('.empty-state,.discovery-state')?.remove();
@@ -370,42 +387,42 @@
       if (created) { node = createRow(item); rowElements.set(item.id, node); }
       const previousState = node.dataset.state;
       node.current = { item, row, choice, jobId };
-      node.querySelector('.row-more').setAttribute('aria-label', `More actions: ${row.title}`);
-      node.dataset.state = row.state;
-      // Rows found after an empty or failed check arrive like any new row.
-      if (view !== 'loading') rowsPainted = true;
+      setAttr(node.querySelector('.row-more'), 'aria-label', `More actions: ${row.title}`);
+      setData(node, 'state', row.state);
       const rowProgress = Math.max(0, Math.min(100, Number(row.progress) || 0));
-      node.dataset.progress = String(rowProgress);
+      setData(node, 'progress', String(rowProgress));
       const progressActive = ['downloading', 'finishing'].includes(row.state);
-      node.dataset.progressVisible = String(progressActive || (['paused', 'problem'].includes(row.state) && rowProgress > 0));
-      node.dataset.progressActive = String(progressActive);
+      setData(node, 'progressVisible', String(progressActive || (['paused', 'problem'].includes(row.state) && rowProgress > 0)));
+      setData(node, 'progressActive', String(progressActive));
       const pieces = node.querySelector('.progress-pieces');
       const completedCells = Math.floor(rowProgress / 100 * pieces.children.length);
       // Spark only cells finished while the popup watched; reopening never replays the whole lane.
       const previousCells = pieces.dataset.cells === undefined ? null : Number(pieces.dataset.cells);
       const sparkFrom = progressActive && previousCells !== null && completedCells - previousCells <= 3 ? previousCells : completedCells;
-      pieces.dataset.cells = String(completedCells);
-      for (const [index, cell] of Array.from(pieces.children).entries()) {
+      setData(pieces, 'cells', String(completedCells));
+      // Unchanged progress leaves the lane's cells alone.
+      if (pieces.drawnProgress !== rowProgress) for (const [index, cell] of Array.from(pieces.children).entries()) {
         cell.classList.toggle('done', index < completedCells);
         cell.classList.toggle('current', index === completedCells && rowProgress < 100);
         cell.style.setProperty('--piece-fill', index === completedCells ? String(rowProgress / 100 * pieces.children.length - completedCells) : '1');
         if (index >= sparkFrom && index < completedCells) { cell.classList.add('spark'); cell.addEventListener('animationend', () => cell.classList.remove('spark'), { once: true }); }
       }
+      pieces.drawnProgress = rowProgress;
       updateThumb(node.querySelector('.thumb'), row);
-      const title = node.querySelector('.row-title'); title.textContent = row.title; title.title = row.title;
+      const title = node.querySelector('.row-title'); setText(title, row.title); setAttr(title, 'title', row.title);
       const problem = ['problem', 'missing'].includes(row.state);
-      for (const duration of node.querySelectorAll('.row-duration, .row-title-duration')) duration.textContent = row.durationLabel;
-      node.querySelector('.row-title-duration').hidden = !row.durationLabel || !problem;
-      node.querySelector('.row-duration-meta').hidden = !row.durationLabel || problem;
-      const status = node.querySelector('.row-status'); status.className = `row-status tone-${row.tone}`; status.title = row.statusLine;
+      for (const duration of node.querySelectorAll('.row-duration, .row-title-duration')) setText(duration, row.durationLabel);
+      setHidden(node.querySelector('.row-title-duration'), !row.durationLabel || !problem);
+      setHidden(node.querySelector('.row-duration-meta'), !row.durationLabel || problem);
+      const status = node.querySelector('.row-status');
       if (row.state === 'detected') {
         status.removeAttribute('role'); status.removeAttribute('aria-valuenow'); status.removeAttribute('aria-valuetext');
         const variants = item.variants || [];
         const sizeLabel = mediaSizeLabel(choice);
         const audioLabel = choice.audioTrack && !choice.selection.audioOnly ? choice.audioTrack.shortLabel : '';
         const signature = `${choice.qualityLabel}|${audioLabel}|${sizeLabel}|${variants.length}`;
-        status.title = [choice.qualityLabel, sizeLabel].filter(Boolean).join(' · ');
-        status.classList.add('status-meta');
+        setAttr(status, 'title', [choice.qualityLabel, sizeLabel].filter(Boolean).join(' · '));
+        setClass(status, `row-status tone-${row.tone} status-meta`);
         if (status.dataset.signature !== signature) {
           status.dataset.signature = signature;
           // The quality button survives a size change so it keeps keyboard focus.
@@ -423,7 +440,7 @@
           appendMetadata(status, el('span', '', sizeLabel));
         }
       } else if (row.state === 'saved') {
-        progressAttributes(status, row); status.className = 'row-status status-meta tone-muted';
+        progressAttributes(status, row); setClass(status, 'row-status status-meta tone-muted'); setAttr(status, 'title', row.statusLine);
         const signature = `saved|${row.qualityLabel}|${row.sizeLabel}|${row.statusLine}`;
         if (status.dataset.signature !== signature) {
           status.dataset.signature = signature; status.replaceChildren();
@@ -435,11 +452,13 @@
         if (previousState && previousState !== 'saved') status.querySelector('.saved-copy')?.classList.add('just-saved');
         if (['downloading', 'finishing'].includes(previousState)) node.snagPending = true;
       } else {
-        delete status.dataset.signature; status.classList.add('meta-item'); status.textContent = row.statusLine;
+        delete status.dataset.signature; setClass(status, `row-status tone-${row.tone} meta-item`); setAttr(status, 'title', row.statusLine);
+        // A status that already holds just this text keeps its node.
+        if (status.childElementCount || status.textContent !== row.statusLine) status.textContent = row.statusLine;
         progressAttributes(status, row);
       }
       // Screen readers hear the same status line sighted users see.
-      node.setAttribute('aria-label', [row.title, status.title].filter(Boolean).join('. '));
+      setAttr(node, 'aria-label', [row.title, status.title].filter(Boolean).join('. '));
       const busy = pending.has(item.id) && !pending.get(item.id).optimistic;
       const actionKey = busy ? 'sending' : row.action ? `${row.action.id}:${row.action.style}` : '';
       if (node.dataset.actionKey !== actionKey) {
@@ -514,6 +533,10 @@
     if (!thumb || thumb.querySelector('.pixel-button')) return;
     const holder = el('span', 'skeleton-mascot'); holder.setAttribute('aria-hidden', 'true'); holder.append(pixel.button(32)); thumb.append(holder);
   }
+  // A page answers a scan from its own main thread, which a busy site can hold for
+  // seconds. Each frame gets this long before the popup shows what it has; a later
+  // answer stores its detections, and the storage change refreshes the list.
+  const SCAN_WAIT_MS = 300;
   async function checkAgain() {
     if (isDemo) return;
     discoveryPending = true; discoveryError = false; renderRows();
@@ -536,12 +559,9 @@
       let reached = await scan();
       if (!reached && /^https?:/.test(activeTab.url || '') && (await message({ cmd: 'PREPARE_PAGE', tabId }).catch(() => null))?.ok) reached = await scan();
       pageNeedsRefresh = !reached && /^https?:/.test(activeTab.url || '');
+      if (late.length) Promise.all(late).then(() => { if (!popupClosed) refresh(); });
     }
     // A scan acknowledges its writes; read after any earlier snapshot finishes.
-  // A page answers a scan from its own main thread, which a busy site can hold for
-  // seconds. Each frame gets this long before the popup shows what it has; a later
-  // answer stores its detections, and the storage change refreshes the list.
-  const SCAN_WAIT_MS = 300;
     if (refreshBusy) await refreshBusy;
     discoveryPending = false; await refresh();
   }
@@ -559,7 +579,6 @@
     if (row.action.id === 'continue') { await continueDownload(item, jobId); return; }
     if (row.action.id === 'open-page') { external(item.sourcePageUrl || activeTab?.url); return; }
     if (['choose-folder', 'locate', 'details'].includes(row.action.id)) {
-      if (late.length) Promise.all(late).then(() => { if (!popupClosed) refresh(); });
       if (row.action.id === 'details') showProblem(row); else openDesktop(row.action.id === 'choose-folder' ? 'settings' : undefined); return;
     }
     if (row.action.id === 'retry') {
@@ -935,7 +954,7 @@
     const state = pairUi; const status = state.status;
     const key = `${status}:${state.requestId || ''}:${state.matchCode || ''}`;
     banner.className = `connection-banner pair-banner ${status === 'connected' ? 'ok' : ['starting', 'waiting'].includes(status) ? 'pairing' : 'outcome'}`;
-    banner.hidden = false; banner.dataset.pair = status;
+    banner.hidden = false; banner.dataset.pair = status; delete banner.dataset.plainKey;
     // While asking, an unpacked copy says so beside the logo (SnagThis tags it Not Web Store).
     document.querySelector('.popup-header .pair-devchip')?.remove();
     if (['starting', 'waiting'].includes(status) && devBuild()) document.querySelector('.popup-header .logo-finish').after(pairingDevChip());
@@ -1219,6 +1238,14 @@
     })().finally(() => { refreshBusy = false; scheduleRefresh(); });
     return refreshBusy;
   }
+  // Downloads in progress refresh every second; an idle list only checks now and then,
+  // because new detections on this page already refresh it through storage changes.
+  function scheduleRefresh() {
+    clearTimeout(queueTimer);
+    if (popupClosed) return;
+    const active = pending.size > 0 || queue.some(job => ['downloading', 'queued'].includes(job.queueStatus));
+    queueTimer = setTimeout(refresh, active ? 1000 : 4000);
+  }
   async function initialize() {
     $('sheet').addEventListener('close', () => { delete $('sheet').dataset.view; syncPopupHeight(); syncThumbPreviews(); });
     reducedMotion.addEventListener('change', syncThumbPreviews);
@@ -1238,14 +1265,6 @@
       const data = SnagThisDemo.init(params.get('demo')); discoveryPending = params.get('demo') === 'loading'; discoveryError = params.get('demo') === 'error'; activeTab = data.tab; mediaItems = model.sortMediaByDuration(data.items); mappings = data.mappings; queue = data.queue; preferences = { ...preferences, ...data.preferences }; reachable = data.reachable; appToken = params.get('demo') === 'pairing' ? '' : 'demo-only'; compatible = data.compatible; titles.setActiveTab(activeTab);
       SnagThisSpeedTrace.record(speedJobs(queue)); renderRows();
       // Sample speeds keep moving so the gallery shows live traces; 'snag' also finishes a download.
-  // Downloads in progress refresh every second; an idle list only checks now and then,
-  // because new detections on this page already refresh it through storage changes.
-  function scheduleRefresh() {
-    clearTimeout(queueTimer);
-    if (popupClosed) return;
-    const active = pending.size > 0 || queue.some(job => ['downloading', 'queued'].includes(job.queueStatus));
-    queueTimer = setTimeout(refresh, active ? 1000 : 4000);
-  }
       SnagThisDemo.live?.(() => { queue = SnagThisDemo.state.queue; SnagThisSpeedTrace.record(speedJobs(queue)); renderRows(); });
       // ?demo=pairing shows the Connect banner; &pair=starting|waiting|connected|denied|blocked|expired|conflict|limited|offline|failed|code shows that state.
       if (params.get('demo') === 'pairing') { const pair = params.get('pair'); if (pair === 'code') showCodePairing(); else if (pair === 'connected') { pairUi = { status: 'connected' }; renderConnection(); } else if (pair) { pairUi = { status: pair, requestId: 'demo', matchCode: pair === 'starting' ? '' : '4719', expiresAt: Date.now() + 112000 }; renderConnection(); } else renderConnection(); } if (params.get('demo') === 'settings') { if (params.get('conn') === 'offline') reachable = false; if (params.get('conn') === 'unpaired') appToken = ''; renderConnection(); showSettings(params.get('tab')); } if (['quality', 'audio'].includes(params.get('demo'))) showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
@@ -1268,6 +1287,10 @@
       if (area === 'session' && activeTab?.id && changes[`snagthis:tab:${activeTab.id}`]) refresh();
       if (area === 'session' && changes[PAIRING_KEY]) onPairingChange(changes[PAIRING_KEY].newValue);
     });
+    // Cached detections paint immediately; neither desktop health nor the page scan gates the list.
+    await refresh();
+    checkHealth();
+    checkAgain().catch(discoveryFailed);
     // A request still waiting, or an outcome this browser hasn't seen: one inline line, once, never a sheet.
     const pairing = (await message({ cmd: 'PAIR_STATE' }).catch(() => null))?.state;
     if (pairing) setPairUi(pairing);
@@ -1282,7 +1305,3 @@
   window.addEventListener('pagehide', () => { stopSample('hidden'); popupClosed = true; stopPosterPreparation(); clearTimeout(queueTimer); clearTimeout(healthTimer); clearTimeout(openTimer); clearInterval(pairingTick); clearTimeout(pairClear); for (const node of rowElements.values()) stopThumbPreview(node); });
   initialize().catch(discoveryFailed);
 })();
-    // Cached detections paint immediately; neither desktop health nor the page scan gates the list.
-    await refresh();
-    checkHealth();
-    checkAgain().catch(discoveryFailed);

@@ -142,6 +142,23 @@ test('native transfer ownership survives manager restart without persisting sour
   await assert.rejects(restarted.action(retry.jobId, 'show'), /saved file is unavailable/);
 });
 
+test('snapshots read only download records when Chrome can list storage keys', async () => {
+  const f = fixture(); const reads = [];
+  const chrome = { runtime: { id: 'snagthis-test' }, downloads: { download: async () => 1, search: async ({ id }) => f.downloads.has(id) ? [f.downloads.get(id)] : [] },
+    storage: { local: {
+      getKeys: async () => Object.keys(f.values),
+      get: async keys => { reads.push(keys); return Object.fromEntries((Array.isArray(keys) ? keys : Object.keys(f.values)).filter(key => key in f.values).map(key => [key, structuredClone(f.values[key])])); },
+    } } };
+  const manager = B.createManager({ chrome, crypto: webcrypto });
+  Object.assign(f.values, { appToken: 'private', preferences: { theme: 'dark' }, 'snagthis:accent': { accent: 'mint' } });
+  assert.deepEqual(await manager.snapshot([media()]), { queue: [], mappings: {} });
+  assert.deepEqual(reads, [], 'no records means no storage read at all');
+  await f.manager().start({ source: media(), pageUrl: 'https://cinema.example/watch', title: 'Film' });
+  const snapshot = await manager.snapshot([media()]);
+  assert.equal(snapshot.queue[0].id, 'browser:1');
+  assert.deepEqual(reads, [[`${B.RECORD_PREFIX}1`]]);
+});
+
 test('wrong response types and Chrome danger states are never reported as saved video', async () => {
   const f = fixture(); const manager = f.manager();
   const result = await manager.start({ source: media(), title: 'Expected film' });
