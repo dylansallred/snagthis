@@ -516,7 +516,8 @@ function normalizeReleaseNotes(updateInfo) {
 // animates normally) but fully transparent, never takes focus and stays out of the Dock and
 // taskbar, so test runs don't flash windows over whatever the developer is doing.
 // E2E_BACKGROUND=0 shows it normally for watching a test.
-const backgroundTestWindow = Boolean(process.env?.E2E_USER_DATA_DIR) && process.env?.E2E_BACKGROUND !== '0';
+// CI has no screen to disturb, and an inactive window there can miss keyboard focus, so CI shows it normally.
+const backgroundTestWindow = Boolean(process.env?.E2E_USER_DATA_DIR) && !process.env?.CI && process.env?.E2E_BACKGROUND !== '0';
 function showWindow(window) {
   if (!backgroundTestWindow) { window.show(); return; }
   window.setOpacity(0);
