@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { moveFileSync, moveDirectorySync } = require('@m3u8/downloader-engine/src/utils/moveFile');
+const { moveFile, moveDirectory } = require('@m3u8/downloader-engine/src/utils/moveFile');
 const { failureCode, folderNameProblem, parentFolder, videoNameProblem } = require('@m3u8/contracts/src/library');
 const logger = require('../utils/logger');
 const {
@@ -113,9 +113,10 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
   /**
    * Moves one saved video into `destination` with everything that belongs to it. Its own folder
    * moves whole; a loose file moves with its side files, all renamed with the same ` (2)` suffix
-   * if a name is taken. Returns the path map, or null when it is already there.
+   * if a name is taken. Returns the path map, or null when it is already there. Across volumes
+   * this copies, so it runs asynchronously.
    */
-  function moveVideo(item, destination) {
+  async function moveVideo(item, destination) {
     const source = historyIndex.resolveFilePath(item.id);
     if (!source || !fs.existsSync(source)) throw Object.assign(new Error('Saved file not found'), { code: 'ENOENT' });
     const parent = path.dirname(path.resolve(source));
@@ -128,7 +129,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       if (destination === parent || isInside(parent, destination)) throw new LibraryError(400, 'invalid-path');
       const [name] = freeSuffix(destination, [path.basename(parent)], suffixed);
       const target = path.join(destination, name);
-      moveDirectorySync(parent, target);
+      await moveDirectory(parent, target);
       return prefixMap(parent, target);
     }
     const fileName = path.basename(source);
@@ -141,16 +142,16 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
     const targets = freeSuffix(destination, names, rename);
     const moved = [];
     try {
-      names.forEach((name, index) => {
+      for (const [index, name] of names.entries()) {
         const from = path.join(parent, name);
         const to = path.join(destination, targets[index]);
-        moveFileSync(from, to);
+        await moveFile(from, to);
         moved.push([from, to]);
-      });
+      }
     } catch (error) {
       // Put back whatever already moved, so the video is never split between folders.
       for (const [from, to] of moved.reverse()) {
-        try { moveFileSync(to, from); } catch (undoError) { logger.warn('Could not undo a partial move', { code: undoError && undoError.code }); }
+        try { await moveFile(to, from); } catch (undoError) { logger.warn('Could not undo a partial move', { code: undoError && undoError.code }); }
       }
       throw error;
     }
@@ -179,9 +180,11 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
         const item = historyIndex.findById(id);
         if (!item) { outcome.push({ id, ok: false, code: 'missing' }); continue; }
         try {
-          const map = moveVideo(item, destination);
+          const map = await moveVideo(item, destination);
           if (map) jobsChanged = follow(map) || jobsChanged;
           item.folder = to;
+          // A folder videos were moved into stays in Saved after they leave it again.
+          if (to) historyIndex.keepFolder(destination);
           outcome.push({ id, ok: true, item: { ...item } });
         } catch (error) {
           const code = error instanceof LibraryError ? error.code : failureCode(error);
@@ -207,6 +210,9 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       const parentAbs = resolveFolder(parent);
       checkName(parentAbs, name);
       try { fs.mkdirSync(path.join(parentAbs, name)); } catch (error) { throw new LibraryError(409, failureCode(error)); }
+      // Saved shows a folder that holds no video only when it was made (or filled) here.
+      historyIndex.keepFolder(path.join(parentAbs, name));
+      await historyIndex.persistIndex();
       return { path: joinFolder(parent, name.normalize('NFC')) };
     });
     await rescan();
@@ -224,6 +230,8 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       if (to === from) return { path: nextPath };
       try { fs.renameSync(from, to); } catch (error) { throw new LibraryError(409, failureCode(error)); }
       const jobsChanged = follow(prefixMap(from, to));
+      historyIndex.moveKeptFolders(from, to);
+      historyIndex.keepFolder(to);
       for (const item of historyIndex.items) {
         if (item.folder === folderPath) item.folder = nextPath;
         else if (typeof item.folder === 'string' && item.folder.startsWith(`${folderPath}/`)) item.folder = nextPath + item.folder.slice(folderPath.length);
@@ -253,6 +261,8 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       };
       if (!contents.length) {
         try { removeEmpty(); } catch (error) { throw new LibraryError(409, failureCode(error)); }
+        historyIndex.forgetKeptFolders(folder);
+        await historyIndex.persistIndex();
         return { deleted: 'empty', moved: 0 };
       }
       if (mode === 'trash') {
@@ -260,6 +270,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
         const trashed = historyIndex.items.filter(inside);
         try { await onTrashFile(folder); } catch (error) { throw new LibraryError(409, failureCode(error)); }
         historyIndex.items = historyIndex.items.filter((item) => !inside(item));
+        historyIndex.forgetKeptFolders(folder);
         for (const item of trashed) {
           historyIndex.removedPaths.set(path.resolve(item.absolutePath || path.join(downloadDir, item.relativePath)), Date.now());
           if (typeof onRemoveItem === 'function') await onRemoveItem(item).catch(() => {});
@@ -274,7 +285,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
         // Videos first, so each keeps its subtitles and poster beside it.
         for (const item of historyIndex.items.filter((entry) => entry.folder === folderPath)) {
           if (item.missing) { item.folder = parentPath; continue; }
-          const map = moveVideo(item, parentAbs);
+          const map = await moveVideo(item, parentAbs);
           if (map) jobsChanged = follow(map) || jobsChanged;
           item.folder = parentPath;
           moved += 1;
@@ -286,8 +297,9 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
           const [free] = freeSuffix(parentAbs, [name], suffixed);
           const to = path.join(parentAbs, free);
           if (fs.lstatSync(from).isDirectory()) {
-            moveDirectorySync(from, to);
+            await moveDirectory(from, to);
             jobsChanged = follow(prefixMap(from, to)) || jobsChanged;
+            historyIndex.moveKeptFolders(from, to);
             const oldPath = joinFolder(folderPath, name);
             const newPath = joinFolder(parentPath, free);
             for (const item of historyIndex.items) {
@@ -295,10 +307,11 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
               else if (typeof item.folder === 'string' && item.folder.startsWith(`${oldPath}/`)) item.folder = newPath + item.folder.slice(oldPath.length);
             }
           } else {
-            moveFileSync(from, to);
+            await moveFile(from, to);
           }
         }
         removeEmpty();
+        historyIndex.forgetKeptFolders(folder);
       } catch (error) {
         await finish('folders', jobsChanged);
         const code = error instanceof LibraryError ? error.code : failureCode(error);

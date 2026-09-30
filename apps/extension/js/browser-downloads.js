@@ -105,7 +105,10 @@
     const sourceKey = async value => [...new Uint8Array(await cryptoApi.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(byte => byte.toString(16).padStart(2, '0')).join('');
     const pageKey = async value => { const url = httpUrl(value); return sourceKey(url ? `${new URL(url).origin}${new URL(url).pathname}` : ''); };
     async function records() {
-      const values = await chromeApi.storage.local.get(null);
+      // The popup asks every second: read only download records where Chrome can list keys (130+).
+      const keys = chromeApi.storage.local.getKeys ? (await chromeApi.storage.local.getKeys()).filter(key => key.startsWith(RECORD_PREFIX)) : null;
+      if (keys && !keys.length) return [];
+      const values = await chromeApi.storage.local.get(keys);
       return Object.entries(values).filter(([key, value]) => key === recordKey(value?.downloadId) && Number.isInteger(value.downloadId)
         && /^[a-f0-9]{64}$/.test(value.sourceKey)).map(([, value]) => value).sort((a, b) => b.downloadId - a.downloadId);
     }

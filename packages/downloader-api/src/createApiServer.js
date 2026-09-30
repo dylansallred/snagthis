@@ -2403,6 +2403,7 @@ function createApiServer(options = {}) {
     // A scan can still enqueue an index write after the current persistence
     // promise settles. Finish that scan before draining its final write.
     await historyIndex.refreshInFlight;
+    await historyIndex.refreshFollowUp;
     await historyIndex.persistence;
 
     return new Promise((resolve, reject) => {

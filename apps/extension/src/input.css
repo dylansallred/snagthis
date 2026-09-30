@@ -186,10 +186,8 @@
 .row-more .icon{fill:currentColor;stroke:none}
 @media(prefers-reduced-motion:reduce){.video-row>.row-more{transition:none}}
 
-/* Content enters once; Chrome owns the outer popup window's animation. */
-.popup{animation:popup-enter 180ms cubic-bezier(.2,.8,.2,1)}
+/* Content is fully visible on the first frame; Chrome owns the outer popup window's animation. */
 .video-list{min-height:96px}
-.video-list[data-view="rows"]{animation:popup-list-reveal 180ms ease-out}
 .discovery-state{min-height:96px;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--color-foreground-muted);font-size:12px}
 .discovery-state p{margin:0}
 /* Loading: three skeleton rows in the real row geometry with a slow shimmer. */
@@ -203,9 +201,6 @@
 @keyframes skeleton-shimmer{from{background-position:100% 0}to{background-position:0 0}}
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 @media(prefers-reduced-motion:reduce){.skeleton-thumb,.skeleton-bar{animation:none}}
-@keyframes popup-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-@keyframes popup-list-reveal{from{opacity:.25}to{opacity:1}}
-@media(prefers-reduced-motion:reduce){.popup,.video-list[data-view="rows"]{animation:none}}
 
 .logo-finish { display: block; width: 120px; height: 22px; flex: none; }
 
