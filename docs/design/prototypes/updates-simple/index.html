@@ -30,6 +30,7 @@ table.t .good { color: var(--color-status-completed); }
 .step .th { display: block; width: 212px; height: 139px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border-subtle); background: #000; }
 .step .th img { width: 100%; height: 100%; object-fit: cover; object-position: top right; display: block; }
 .step .th.zoom img { width: 250%; height: auto; margin-left: -150%; }
+.step .th.missing { display: grid; place-content: center; text-align: center; padding: 8px; font-size: 11px; color: var(--color-foreground-subtle); background: var(--color-background-raised); }
 .step .th.live > * { transform: scale(.22083); transform-origin: 0 0; }
 .step p { margin: 6px 0 0; line-height: 1.4; }
 .step p em { font: normal 400 15px/1 var(--font-pixel); color: var(--color-primary-hover); margin-right: 5px; }
@@ -65,7 +66,7 @@ table.t .good { color: var(--color-status-completed); }
   </div>
 
   <h2 class="h"><span class="pixel">0</span>Today, step by step</h2>
-  <p class="sub">Captured from the real renderer’s design gallery (<code>?gallery&amp;update=&lt;state&gt;</code>, script <code>capture-today.cjs</code>); OS notifications are drawn from the strings in <code>main.js</code>. Click a thumbnail for the full-size PNG. Counts: <b>notifications</b> · <b>in-app surfaces</b> (each distinct chip/sheet/toast state) · <b>clicks</b>.</p>
+  <p class="sub">Captured from the real renderer’s design gallery (<code>?gallery&amp;update=&lt;state&gt;</code>, script <code>capture-today.cjs</code>); OS notifications are drawn from the strings in <code>main.js</code>. Click a thumbnail for the full-size PNG; only a few key captures are kept, and <code>capture-today.cjs</code> regenerates the rest. Counts: <b>notifications</b> · <b>in-app surfaces</b> (each distinct chip/sheet/toast state) · <b>clicks</b>.</p>
   <div id="today"></div>
 
   <div class="findings" style="margin-top:18px">
@@ -86,7 +87,7 @@ table.t .good { color: var(--color-status-completed); }
   </div>
 
   <h2 class="h"><span class="pixel">A–C</span>Three simpler experiences</h2>
-  <p class="sub">Each is a clickable storyboard (scenario tabs, dashed hotspots, ← →) in the app’s pixel/bevel style, with frames for idle, downloads running, window closed, ignored/cancel and failure/Applications, plus the code changes and risks. Frame PNGs are in each folder’s <code>frames/</code>.</p>
+  <p class="sub">Each is a clickable storyboard (scenario tabs, dashed hotspots, ← →) in the app’s pixel/bevel style, with frames for idle, downloads running, window closed, ignored/cancel and failure/Applications, plus the code changes and risks. The storyboards render live; <code>capture.cjs</code> regenerates their frame PNGs into each folder’s <code>frames/</code> (not kept in the repository).</p>
   <div class="opts">
     <section class="opt"><header><span class="n">A</span><h3>Quiet chip, one click</h3><a class="btn primary" href="a-quiet-chip/index.html">Open →</a></header>
       <p>The chip is the only surface. <b>1.1.0 · Restart</b>: one click restarts. With downloads running, one line: <b>Install after they finish ✓</b>. No sheet, no Later, no notifications unless the window is closed.</p>
@@ -133,7 +134,9 @@ P.setAccent('orange');
 const notifDownloading = () => S.desk({ notif: S.notif({ title: `SnagThis ${V} is downloading`, body: `Current version: ${S.CUR}. Downloading in the background. New: Accent colours. Pick Orange, Cobalt…`, next: false }) });
 const notifReady = () => S.desk({ notif: S.notif({ title: `SnagThis ${V} is ready`, body: 'Restart SnagThis to install. New: Accent colours. Pick Orange, Cobalt…', next: false }) });
 const notifBoth = () => S.desk({ notif: S.notif({ title: `SnagThis ${V} is downloading`, body: `Current version: ${S.CUR}. Downloading in the background. New: Accent colours…`, next: false }) + S.notif({ title: `SnagThis ${V} is ready`, body: 'Restart SnagThis to install. New: Accent colours…', next: false, cls: 'second' }) });
-const img = (f) => ({ img: `today/${f}.png`, zoom: /chip/.test(f) });
+// Only a few key captures are kept in the repository; capture-today.cjs regenerates the rest.
+const KEPT = new Set(['01-chip-downloading', '03-chip-ready', '04-sheet-ready', '06-sheet-blocked', '09-chip-failed', '10-sheet-error']);
+const img = (f) => KEPT.has(f) ? { img: `today/${f}.png`, zoom: /chip/.test(f) } : { missing: f };
 const PATHS = [
   { t: '(a) Update while idle', counts: [2, 4, 2], steps: [
     [{ live: notifDownloading, png: '00-notif-downloading' }, 'Notification: “1.1.0 is downloading” (even if the window is focused)'],
@@ -171,7 +174,7 @@ const PATHS = [
   ] },
 ];
 document.getElementById('today').innerHTML = PATHS.map((p) => `<div class="path"><h3>${p.t}${p.counts ? `<small>notifications<b>${p.counts[0]}</b> in-app surfaces<b>${p.counts[1]}</b> clicks<b>${p.counts[2]}</b></small>` : ''}</h3>
-  <div class="steps">${p.steps.map(([s, cap], i) => `<div class="step">${s.img ? `<a class="th${s.zoom ? ' zoom' : ''}" href="${s.img}"><img src="${s.img}" alt="" loading="lazy"></a>` : `<a class="th live" href="today/${s.png}.png">${s.live()}</a>`}<p><em>${i + 1}</em>${cap}</p></div>`).join('')}</div></div>`).join('');
+  <div class="steps">${p.steps.map(([s, cap], i) => `<div class="step">${s.img ? `<a class="th${s.zoom ? ' zoom' : ''}" href="${s.img}"><img src="${s.img}" alt="" loading="lazy"></a>` : s.missing ? `<span class="th missing"><code>today/${s.missing}.png</code><br>not kept · run capture-today.cjs</span>` : `<span class="th live">${s.live()}</span>`}<p><em>${i + 1}</em>${cap}</p></div>`).join('')}</div></div>`).join('');
 // Full-size notification frames for capture.cjs.
 document.getElementById('today-notifs').innerHTML = `<div id="n-downloading">${notifDownloading()}</div><div id="n-ready">${notifReady()}</div><div id="n-both">${notifBoth()}</div>`;
 </script>
