@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Saved details C · Media inspector</title>
+<link rel="stylesheet" href="../../organize/shared.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* C · Media inspector: a larger preview with a strip of scrub frames beneath it, and Overview · Tracks · File tabs.
+   Motion: the drawer slides out from under the row; the preview wipes in left-to-right in pixel steps. */
+.opt-c { --open-ms: 300ms; --close-ms: 240ms; --close-delay: 40ms; --open-total: 640; --close-total: 340; }
+.c-card { border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface-row); overflow: hidden; }
+.c-top { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 18px; padding: 14px 16px 12px 14px; }
+.c-player { display: grid; gap: 6px; align-content: start; }
+.c-screen { width: 400px; aspect-ratio: 16 / 9; border-radius: 2px; box-shadow: 0 0 0 1px var(--color-border); background-size: cover; }
+.c-scrub { position: relative; display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; height: 26px; }
+.c-scrub button { position: relative; background: center / cover; opacity: .72; transition: opacity 120ms, transform 120ms var(--ease-out); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .4); }
+.c-scrub button:hover, .c-scrub button.on { opacity: 1; }
+.c-scrub button.on { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.c-scrub .scrub-head { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--color-primary-hover); box-shadow: 0 0 6px var(--color-primary-hover); pointer-events: none; transition: left 160ms var(--ease-out); }
+.c-time { display: flex; justify-content: space-between; color: var(--color-foreground-subtle); font: 400 14px/1 var(--font-pixel); letter-spacing: .05em; }
+.c-time [data-tc] { color: var(--color-primary-hover); }
+.c-noscrub { color: var(--color-foreground-subtle); font-size: 11.5px; }
+.c-side { min-width: 0; display: grid; align-content: start; gap: 12px; }
+.c-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--color-border-subtle); }
+.c-tab { position: relative; height: 30px; padding: 0 10px; color: var(--color-foreground-muted); font: 400 17px/30px var(--font-pixel); letter-spacing: .06em; text-transform: uppercase; }
+.c-tab .n { color: var(--color-primary-hover); margin-left: 4px; }
+.c-tab:hover { color: var(--color-foreground); }
+.c-tab[aria-selected="true"] { color: var(--color-foreground); }
+.c-tab::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--color-primary-hover); transform: scaleX(0); transition: transform 220ms var(--ease-out); }
+.c-tab[aria-selected="true"]::after { transform: none; }
+.c-pane { animation: c-pane 180ms var(--ease-out) both; }
+@keyframes c-pane { from { opacity: 0; transform: translateX(6px); } }
+.c-title { margin: 0 0 8px; font-size: 15px; line-height: 1.35; font-weight: 620; text-wrap: pretty; }
+.c-src { display: flex; align-items: center; gap: 8px; color: var(--color-foreground-muted); font-size: 12.5px; margin-bottom: 12px; }
+.c-src b { color: var(--color-foreground); font-weight: 560; }
+.c-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.c-stats .chip { padding: 0 10px 0 8px; height: 28px; }
+.c-stats .chip > svg.i { width: 13px; height: 13px; color: var(--color-foreground-muted); }
+.c-where { display: grid; gap: 4px; }
+.c-where .crumbs { margin-left: -4px; }
+.c-list { display: grid; gap: 2px; margin-bottom: 10px; }
+.c-list .px-label { margin: 2px 0 6px; display: flex; gap: 8px; align-items: center; }
+.c-list .px-label svg.i { width: 13px; height: 13px; }
+.c-trk { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 32px; padding: 3px 8px 3px 4px; border-radius: 2px; }
+.c-trk:nth-child(odd) { background: hsl(215 22% 9.5%); }
+.c-trk .code { display: inline-grid; place-items: center; height: 20px; background: #2a313b; color: #e9edf2; font: 400 15px/1 var(--font-pixel); }
+.c-trk.picked .code { background: var(--accent-bevel-face); color: #fff; box-shadow: inset 1px 1px 0 var(--accent-bevel-light), inset -1px -1px 0 var(--accent-bevel-dark); }
+.c-trk b { font-weight: 560; font-size: 12.5px; } .c-trk .sub { color: var(--color-foreground-muted); font-size: 12px; }
+.c-trk .tag { font: 400 14px/1 var(--font-pixel); letter-spacing: .05em; text-transform: uppercase; color: var(--color-primary-hover); }
+.c-file { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.c-file .tile { padding: 8px 10px; display: grid; gap: 3px; }
+.c-file .tile .v { font-size: 12.5px; color: #dce0e5; font-variant-numeric: tabular-nums; }
+.c-fname { color: #b9c0ca; font: 11.5px/1.5 var(--font-mono); word-break: break-all; margin-top: 4px; }
+.c-fline { display: flex; gap: 4px; margin: 8px 0 0 -9px; }
+.c-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--color-border-subtle); background: hsl(215 22% 6%); }
+.c-bar .sp { flex: 1; }
+.c-bar .sep { width: 1px; height: 16px; margin: 0 4px; background: var(--color-border); }
+.c-bar .sa.primary { margin-right: 6px; padding: 0 14px; }
+.c-card .miss { margin: 0; }
+.sdwin[style*="820"] .c-top { grid-template-columns: 280px minmax(0, 1fr); }
+.sdwin[style*="820"] .c-screen { width: 280px; }
+.sdwin[style*="820"] .c-file { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Motion: drawer slide (as today) + stepped pixel wipe of the preview + scrub frames flicking on in order. */
+@keyframes c-drawer { from { transform: translateY(-40px); opacity: .15; } }
+@keyframes c-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes c-frame { from { opacity: 0; } }
+@keyframes c-up { to { transform: translateY(-26px); opacity: 0; } }
+.item.anim-in .c-card { animation: c-drawer calc(340ms * var(--k)) var(--ease-out) both; }
+.item.anim-in .c-screen { animation: c-wipe calc(280ms * var(--k)) steps(10, end) calc(90ms * var(--k)) both; }
+.item.anim-in .c-scrub button { animation: c-frame calc(90ms * var(--k)) steps(2, end) calc((170ms + var(--f) * 22ms) * var(--k)) both; }
+.item.anim-in .c-tab[aria-selected="true"]::after { animation: c-under calc(240ms * var(--k)) var(--ease-out) calc(200ms * var(--k)) both; }
+@keyframes c-under { from { transform: scaleX(0); } }
+.item.anim-in .c-pane { animation: c-pane calc(220ms * var(--k)) var(--ease-out) calc(160ms * var(--k)) both; }
+.item.closing .c-card { animation: c-up calc(220ms * var(--k)) var(--ease-in) both; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Saved-video details</a> · <span>C</span>Media inspector</div>
+    <h1>C · Media inspector</h1>
+    <p>A <b>400px preview</b> that loops on hover, with a <b>strip of ten scrub frames</b> beneath (hover a frame to peek at that moment), and three tabs: <b>Overview</b> (title, source, stat chips, folder), <b>Tracks</b> (every audio and subtitle track) and <b>File</b> (path-bar crumbs, file name, container, codec, resolution, frame rate, bitrate). One action bar at the bottom. Click the sample rows, switch tabs, or replay the motion.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../organize/brand.js"></script>
+<script src="../../organize/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const S = window.SD, i = S.i, esc = S.esc;
+  const secs = (d) => d.split(':').reduce((a, b) => a * 60 + Number(b), 0);
+  const tc = (s) => { s = Math.round(s); const h = Math.floor(s / 3600), mm = Math.floor(s % 3600 / 60), ss = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(mm).padStart(2, '0')}:${ss}` : `${mm}:${ss}`; };
+
+  function overview(it, m) {
+    const Saved = it.saved[0].toUpperCase() + it.saved.slice(1);
+    const stat = (icon, html, kind = 'today', demo = false) => html && S.has(m, kind) ? `<span class="chip"${S.nw(m, kind)}${demo ? ' data-hover-demo' : ''}>${icon ? i(icon) : ''}${html}</span>` : '';
+    return `<div class="c-pane">
+      <h3 class="c-title">${esc(it.title)}</h3>
+      <div class="c-src">${it.site ? `<span class="sitemark" style="--c:${it.siteColor}">${it.siteMark}</span><b>${it.site}</b>${it.channel && m.data !== 'today' ? `<span>· ${esc(it.channel)}</span>` : ''}` : S.has(m, 'new') && it.mediaHost ? `${i('link')}<span>Pasted link · <b>${it.mediaHost}</b></span>` : ''}</div>
+      <div class="c-stats">
+        ${it.h ? `<span class="chip" data-hover-demo>${S.quality(it)}${it.fps && m.data !== 'today' ? `<small>${it.fps}</small>` : ''}</span>` : ''}
+        ${stat('clock', it.dur, it.id === 'missing' ? 'today' : 'probe')}
+        ${stat('file', it.size + (it.missing ? ' <small>last seen</small>' : ''))}
+        ${stat('check', `Saved ${it.saved} <small>${it.savedFull.split(', ').pop()}</small>`)}
+        ${it.audio.length > 1 && m.data !== 'today' ? stat('audio', `${it.audio.length} audio · ${it.subs.length} subtitles`, 'probe') : ''}
+      </div>
+      <div class="c-where"><span class="px-label">${it.missing ? 'Last folder' : 'Folder'}</span>${S.crumbs(it)}</div>
+    </div>`;
+  }
+  function tracks(it, m) {
+    const row = (t, extra) => `<div class="c-trk${t.picked ? ' picked' : ''}"><span class="code">${t.code}</span><span><b>${t.lang}</b> <span class="sub">${[t.ch || t.kind, t.codec].filter(Boolean).join(' · ')}</span></span>${t.picked ? `<span class="tag">${extra}</span>` : '<span></span>'}</div>`;
+    return `<div class="c-pane"${S.nw(m, 'probe')}>
+      <div class="c-list"><span class="px-label">${i('audio')}Audio · ${it.audio.length}</span>${it.audio.map((t) => row(t, 'Default')).join('')}</div>
+      <div class="c-list"><span class="px-label">${i('captions')}Subtitles · ${it.subs.length}</span>${it.subs.length ? it.subs.map((t) => row(t, 'On')).join('') : '<span class="muted" style="font-size:12px">None in the file or beside it</span>'}</div>
+    </div>`;
+  }
+  function file(it, m) {
+    const cell = (label, v, kind = 'probe') => v && S.has(m, kind) ? `<div class="tile"${S.nw(m, kind)}><span class="px-label">${label}</span><span class="v">${v}</span></div>` : '';
+    return `<div class="c-pane">
+      ${S.crumbs(it)}
+      <div class="c-fname">${esc(it.file)}</div>
+      <div class="c-file">
+        ${cell('Container', it.container, 'today')}
+        ${cell('Video', it.vcodec && `${it.vcodec} · ${it.vprofile}`)}
+        ${cell('Resolution', it.res)}
+        ${cell('Frame rate', it.fps)}
+        ${cell('Bitrate', it.bitrate)}
+        ${cell('Size', it.size + (it.id === 'rich' ? ' <span class="muted">· 8,601 MB</span>' : ''), 'today')}
+      </div>
+      ${it.missing ? '' : `<div class="c-fline"><button class="sa text" data-act="noop">${i('copy')}Copy path</button><button class="sa text" data-act="noop">${i('folderInput')}Move to…<span class="kbd">M</span></button>${S.has(m, 'new') ? `<button class="sa text" data-act="noop"${S.nw(m, 'new')}>${i('pencil')}Rename…</button>` : ''}</div>`}
+    </div>`;
+  }
+
+  function panel(it, m) {
+    const tabs = [['overview', 'Overview']];
+    if (it.audio.length || it.subs.length) tabs.push(['tracks', 'Tracks', it.audio.length + it.subs.length]);
+    tabs.push(['file', 'File']);
+    const tab = tabs.some((t) => t[0] === m.tab) ? m.tab : 'overview';
+    const frames = it.frames && !it.missing && S.has(m, 'new');
+    const total = it.dur ? secs(it.dur) : 0;
+    const sel = m.scrub != null && it.id === 'rich' ? m.scrub : -1;
+    const strip = frames ? `<div class="c-scrub"${S.nw(m, 'new')}>${Array.from({ length: 10 }, (_, f) => { const src = `../media/${it.frames}-${f}.jpg`, t = tc(total * (f + .5) / 10); return `<button data-act="scrub" style="--f:${f};background-image:url(${src})" class="${f === sel ? 'on' : ''}" data-src="${src}" data-tc="${t}" data-pct="${(f + .5) * 10}" aria-label="Peek at ${t}" title="${t}"></button>`; }).join('')}<span class="scrub-head" style="left:${sel >= 0 ? (sel + .5) * 10 : 0}%"></span></div>
+      <div class="c-time"><span data-tc>${sel >= 0 ? tc(total * (sel + .5) / 10) : '0:00'}</span><span>${it.dur}</span></div>` : it.missing ? '' : `<div class="c-noscrub">${it.dur ? '' : 'Length unknown · '}Hover the preview to play its loop</div>`;
+    const screenBg = sel >= 0 ? `../media/${it.frames}-${sel}.jpg` : `${S.MEDIA}${it.img}.jpg`;
+    const hasPage = !!it.page;
+    const bar = it.missing
+      ? [hasPage ? `<button class="sa text open-page" data-act="noop">${i('external')}Open original page</button>` : '', hasPage ? S.copyBtn('text', 'Copy page link', ' data-focus-demo') : '', '<span class="sp"></span>', `<button class="sa text danger" data-act="noop">${i('trash')}Remove from list</button>`]
+      : [`<button class="sa bevel primary" data-act="noop" data-hover-demo>${i('playTri')}Play</button>`,
+        `<button class="sa text" data-act="noop">${i('folder')}${S.finder(m)}</button>`,
+        hasPage ? `<button class="sa text open-page" data-act="noop" data-hover-demo>${i('external')}Open original page</button>` : '',
+        hasPage ? S.copyBtn('text', 'Copy page link', ' data-focus-demo') : it.mediaHost && S.has(m, 'new') ? S.copyBtn('text', 'Copy video link', ' data-focus-demo') : '',
+        '<span class="sp"></span>',
+        `<button class="sa text danger" data-act="remove">${i('trash')}Remove…</button>`];
+    const pane = tab === 'tracks' ? tracks(it, m) : tab === 'file' ? file(it, m) : overview(it, m);
+    return `<div class="c-card">
+      <div class="c-top">
+        <div class="c-player">
+          <div class="pv c-screen" data-hover-demo style="background-image:url(${screenBg})">${it.missing || sel >= 0 ? '' : S.clip(it)}</div>
+          ${strip}
+        </div>
+        <div class="c-side">
+          ${it.missing ? `<div class="miss">${i('alert')}<span>File was moved or deleted<br><span class="was">Last seen in ${esc(it.dir)}</span></span><span class="sp"></span><button class="sa bevel primary" data-act="noop">${i('folderOpen')}Locate…</button></div>` : ''}
+          <div class="c-tabs" role="tablist" aria-label="Details">${tabs.map(([id, label, n]) => `<button class="c-tab" role="tab" aria-selected="${id === tab}" data-act="tab" data-arg="${id}">${label}${n && m.data !== 'today' ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>
+          ${pane}
+        </div>
+      </div>
+      <div class="c-bar">${bar.join('')}</div>
+    </div>`;
+  }
+
+  const notes = (m) => `<h2>C · Media inspector</h2>
+    <p>Treats a saved video like media, not a file: <b>see inside it</b> before opening a player.</p>
+    <ul>
+      <li><b>Preview</b> 400px, loops on hover/focus like the row; <b>scrub frames</b> (ten stills across the video) swap into the preview on hover with the time in pixel type. Nothing is drawn over the image.</li>
+      <li><b>Overview</b>: full title, site chip · channel, stat chips (quality, length, size, saved, track count), folder crumbs.</li>
+      <li><b>Tracks</b>: every audio and subtitle track in the file (and side .srt files), the ones you picked lit in the accent. Hidden when nothing is known.</li>
+      <li><b>File</b>: path-bar crumbs (D · Minimal), the file name, container/codec/resolution/frame rate/bitrate/size tiles, Copy path, Move to…, Rename….</li>
+      <li><b>Action bar</b>: Play, ${S.finder(m)}, Open original page, Copy page link; Remove… on the right. Missing: Locate… beside the amber sentence; Remove from list only.</li>
+    </ul>
+    <h3>Motion — open 300ms · close 240ms</h3>
+    <ul><li>The card slides out from under the row (today's Drawer, 340ms) while the height grows.</li><li>The preview <b>wipes in left-to-right in 10 pixel steps</b> (280ms); scrub frames flick on in order (22ms apart); the tab underline draws; the pane fades in from 6px.</li><li>Switching tabs: underline grows, pane slides 6px (180ms).</li><li>Close: the card lifts 26px and fades (220ms) as the height folds.</li><li>Reduced motion: instant height, 120ms opacity fade; no wipe.</li></ul>
+    <div class="cost"><h3>Cost to build</h3>Highest. Tabs, keyboard handling (arrow keys between tabs), and a new <b>scrub-frame sprite</b> (ffmpeg, 10 stills at 192×108, cached next to the preview clip) plus <b>ffprobe on expand</b>. Motion is CSS; the stepped wipe is one clip-path keyframe.</div>`;
+
+  S.mount({ id: 'c', name: 'Media inspector', panel, notes, states: [
+    ['tracks', 'Tracks tab', (m) => { m.tab = 'tracks'; }],
+    ['file', 'File tab', (m) => { m.tab = 'file'; }],
+    ['scrub', 'Scrubbing', (m) => { m.scrub = 6; }],
+  ] });
+})();
+</script>
+</body>
+</html>
