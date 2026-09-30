@@ -99,6 +99,8 @@ async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = f
       const resolvedUrl = httpUrl(resolved.mediaUrl).href;
       const inspection = await inspectSource(resolvedUrl, resolved.headers || {}, {
         title: typeof resolved.title === 'string' ? resolved.title.trim().slice(0, 255) : undefined,
+        // The page's own title, site name and channel, for the saved video's Source.
+        ...Object.fromEntries(['pageTitle', 'siteName', 'uploader'].flatMap((key) => (typeof resolved[key] === 'string' && resolved[key].trim() ? [[key, resolved[key].trim().slice(0, 255)]] : []))),
         sourcePageUrl: original.href, thumbnailUrl: resolved.thumbnailUrl,
         headers: resolved.headers || {},
       }, false, resolved.manifestText);

@@ -7,6 +7,7 @@ const logger = require('../utils/logger');
 const { compareSaved, isSort } = require('@m3u8/contracts/src/library');
 const { isJunkName, isMediaName, isSkippedDirName, isVideoFolder, looksLikeJobId, stemOf } = require('./libraryLayout');
 const { youtubeVideoIdOf, youtubeArtwork } = require('../utils/youtubeArtwork');
+const { sourceInfoOf } = require('../utils/sourceInfo');
 const {
   buildDownloadAssetUrl,
   decodeExternalDownloadPath,
@@ -377,17 +378,12 @@ class HistoryIndexService {
 
     for (const job of this.jobs.values()) {
       if (!job) continue;
-      if (job.filePath) {
-        const rel = this.toRelativePath(job.filePath);
-        if (rel) {
-          byFile.set(rel, job);
-        }
-      }
-      if (job.mp4Path) {
-        const rel = this.toRelativePath(job.mp4Path);
-        if (rel) {
-          byFile.set(rel, job);
-        }
+      for (const file of [job.filePath, job.mp4Path]) {
+        if (typeof file !== 'string' || !file) continue;
+        const rel = this.toRelativePath(file);
+        if (rel) byFile.set(rel, job);
+        // Finished downloads in a chosen save folder are found by their full path.
+        byFile.set(path.resolve(file), job);
       }
     }
     return byFile;
@@ -692,6 +688,7 @@ class HistoryIndexService {
       || null;
     const job = mediaFile.job
       || jobLookup.get(relativePath)
+      || jobLookup.get(path.resolve(mediaFile.fullPath))
       || (validJobId ? this.jobs.get(validJobId) : null)
       || null;
     const resolvedJobId = (job && job.id) || validJobId || null;
@@ -734,6 +731,10 @@ class HistoryIndexService {
       previewClipDurationSeconds: (job && job.previewClipDurationSeconds) || (persistedItem && persistedItem.previewClipDurationSeconds) || null,
       missing: false,
       sourcePageUrl: (job && job.sourcePageUrl) || (persistedItem && persistedItem.sourcePageUrl) || null,
+      // Page title, site and channel; never request headers or cookies.
+      sourceInfo: sourceInfoOf(job) || sourceInfoOf(persistedItem),
+      // When the download finished; the file's modification time changes if it is touched later.
+      completedAt: Number((job && job.completedAt) || (persistedItem && persistedItem.completedAt)) || null,
       selection: (job && job.selection) || (persistedItem && persistedItem.selection) || null,
       tmdbReleaseDate: (job && job.tmdbReleaseDate) || (persistedItem && persistedItem.tmdbReleaseDate) || null,
       tmdbMetadata: (job && job.tmdbMetadata) || (persistedItem && persistedItem.tmdbMetadata) || null,

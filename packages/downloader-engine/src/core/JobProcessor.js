@@ -458,6 +458,8 @@ function createJobProcessor({
       '--print',
       'before_dl:snagthis_title=%(title)j',
       '--print',
+      'before_dl:snagthis_source=%(.{uploader,channel,extractor_key})j',
+      '--print',
       'after_move:filepath=%(filepath)s',
       '-o',
       outputTemplate,
@@ -626,6 +628,20 @@ function createJobProcessor({
               job.updatedAt = Date.now();
             }
           } catch { /* Missing or malformed metadata must retain the existing name. */ }
+          return;
+        }
+
+        if (!fromStderr && text.startsWith('snagthis_source=')) {
+          // The channel or uploader, kept with the saved video (plain text only).
+          try {
+            const value = JSON.parse(text.slice('snagthis_source='.length));
+            const clean = (entry, max) => (typeof entry === 'string' ? entry.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+            const uploader = clean(value && (value.channel || value.uploader), 180);
+            if (uploader && !(job.sourceInfo && job.sourceInfo.uploader)) {
+              job.sourceInfo = { ...(job.sourceInfo || {}), uploader };
+              job.updatedAt = Date.now();
+            }
+          } catch { /* Missing metadata leaves the source as it was. */ }
           return;
         }
 

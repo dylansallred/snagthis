@@ -68,6 +68,23 @@
     nameTrailing: 'Folder names can’t end with a dot or a space', nameLeadingDot: 'Folder names can’t start with a dot',
     nameInternal: 'SnagThis uses that name. Choose another.', nameTooLong: 'That name is too long',
     nameDuplicate: 'There’s already a folder called “{name}” here',
+    // Saved-video details (owner choice A · Spec sheet with H3 · Pixel shine).
+    detailQuality: 'Quality', detailLength: 'Length', detailSize: 'Size', detailFormat: 'Format', detailVideo: 'Video',
+    detailFrameRate: 'Frame rate', detailAudio: 'Audio', detailAudioCount: 'Audio · {n}', detailSubtitles: 'Subtitles',
+    detailSource: 'Source', detailSaved: 'Saved', detailFolder: 'Folder', detailLastFolder: 'Last folder', detailFile: 'File',
+    detailLastSeen: 'last seen', detailInFile: 'In the file', detailSideFile: 'Side file · .{ext}', detailDefault: 'Default',
+    detailTrack: 'Track {n}', detailFps: '{fps} fps', detailMbps: '{n} Mb/s', detailKbps: '{n} kb/s', detailDimensions: '{width} × {height}',
+    detailReading: 'Reading the file…', detailMissingWhere: 'Last seen in {path}', detailLocate: 'Locate…', detailPlay: 'Play',
+    detailOpenPage: 'Open original page', detailCopyPage: 'Copy page link', detailCopied: 'Copied', detailRename: 'Rename…',
+    detailRemove: 'Remove…', detailRemoveFromList: 'Remove from list', detailActions: 'Actions for {title}', detailRegion: 'Details of {title}',
+    detailFolderOpen: 'Open {name} in Saved', detailPoster: 'Preview of {title}',
+    // Renaming a saved video (its file, own folder and side files together).
+    renameVideoTitle: 'Rename video', renameVideoBody: 'Renames the video’s file, its subtitles and poster on disk.',
+    videoNamePlaceholder: 'Video name', renamedVideo: 'Renamed to “{name}”', renameFailed: 'Couldn’t rename it: {reason}',
+    videoNameEmpty: 'Type a name for the video', videoNameSeparator: 'Video names can’t contain / or \\',
+    videoNameCharacters: 'Video names can’t contain < > : " | ? * or control characters',
+    videoNameTrailing: 'Video names can’t end with a dot or a space', videoNameLeadingDot: 'Video names can’t start with a dot',
+    videoNameInternal: 'SnagThis uses that name. Choose another.', videoNameTooLong: 'That name is too long',
     months: Object.freeze(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
   });
 
@@ -226,7 +243,12 @@
   function folderNameProblem(value, options) {
     const opts = options || {};
     const name = typeof value === 'string' ? value.normalize('NFC') : '';
-    const fail = function (code, extra) { return { code: code, message: t(code, Object.assign({ name: name }, extra || {})) }; };
+    // Video names share the rules and codes; only the words say "video".
+    const fail = function (code, extra) {
+      const videoKey = 'video' + code.charAt(0).toUpperCase() + code.slice(1);
+      const key = opts.kind === 'video' && strings[videoKey] ? videoKey : code;
+      return { code: code, message: t(key, Object.assign({ name: name }, extra || {})) };
+    };
     if (!name.trim()) return fail('nameEmpty');
     if (/[/\\]/.test(name)) return fail('nameSeparator');
     if (/[<>:"|?*\u0000-\u001f\u007f]/.test(name)) return fail('nameCharacters');
@@ -248,6 +270,42 @@
       bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
     }
     return bytes;
+  }
+
+  /** Why a saved video can't take a name, or null: the folder rules (a name already in use gets ` (2)` instead). */
+  function videoNameProblem(value) { return folderNameProblem(value, { kind: 'video' }); }
+
+  // Plain words for what ffprobe reports about a saved file.
+  const CODECS = {
+    h264: 'H.264', hevc: 'HEVC', h265: 'HEVC', av1: 'AV1', vp9: 'VP9', vp8: 'VP8', mpeg4: 'MPEG-4', mpeg2video: 'MPEG-2', mpeg1video: 'MPEG-1',
+    prores: 'ProRes', theora: 'Theora', mjpeg: 'Motion JPEG',
+    aac: 'AAC', mp3: 'MP3', mp2: 'MP2', opus: 'Opus', vorbis: 'Vorbis', ac3: 'AC-3', eac3: 'E-AC-3', truehd: 'TrueHD', dts: 'DTS',
+    flac: 'FLAC', alac: 'ALAC',
+    mov_text: 'Timed text', subrip: 'SRT', srt: 'SRT', webvtt: 'WebVTT', ass: 'ASS', ssa: 'SSA', hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub', dvb_subtitle: 'DVB',
+  };
+  function codecLabel(name) {
+    const value = String(name || '').toLowerCase();
+    if (!value) return '';
+    if (/^pcm_/.test(value)) return 'PCM';
+    return CODECS[value] || value.toUpperCase();
+  }
+  const CONTAINERS = { '.mp4': 'MP4', '.m4v': 'M4V', '.mkv': 'MKV', '.webm': 'WebM', '.mov': 'MOV', '.ts': 'TS', '.avi': 'AVI' };
+  function containerLabel(ext) {
+    const value = String(ext || '').toLowerCase();
+    return CONTAINERS[value.charAt(0) === '.' ? value : '.' + value] || value.replace(/^[.]/, '').toUpperCase();
+  }
+  /** `15.8 Mb/s` or `256 kb/s`; '' when unknown. */
+  function formatBitrate(bitsPerSecond) {
+    const value = Number(bitsPerSecond);
+    if (!finite(value) || value <= 0) return '';
+    if (value >= 1e6) return t('detailMbps', { n: (value / 1e6).toFixed(value >= 1e8 ? 0 : 1) });
+    return t('detailKbps', { n: Math.max(1, Math.round(value / 1000)) });
+  }
+  /** `60 fps`, `29.97 fps`, `23.976 fps`; '' when unknown. */
+  function formatFrameRate(fps) {
+    const value = Number(fps);
+    if (!finite(value) || value <= 0 || value > 1000) return '';
+    return t('detailFps', { fps: String(Math.round(value * 1000) / 1000) });
   }
 
   const REASONS = { 'in-use': 'reasonInUse', permission: 'reasonPermission', space: 'reasonSpace', missing: 'reasonMissing', 'folder-missing': 'reasonFolderMissing' };
@@ -282,5 +340,6 @@
     compareSaved: compareSaved, sortSaved: sortSaved, groupSaved: groupSaved,
     folderNameProblem: folderNameProblem, isInternalName: isInternalName, failureReason: failureReason, failureCode: failureCode,
     folderName: folderName, parentFolder: parentFolder,
+    videoNameProblem: videoNameProblem, codecLabel: codecLabel, containerLabel: containerLabel, formatBitrate: formatBitrate, formatFrameRate: formatFrameRate,
   };
 });

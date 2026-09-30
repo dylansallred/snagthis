@@ -9,7 +9,7 @@ const INTERIM_PREVIEW_CLIP_SUFFIX = '.opening-v2.mp4';
 const isCurrentPreviewClipPath = (candidate, { allowInterim = false } = {}) => typeof candidate === 'string'
   && (allowInterim ? /^[a-f0-9]{32}\.(?:cover|opening)-v2\.mp4$/i : /^[a-f0-9]{32}\.cover-v2\.mp4$/i).test(path.basename(candidate));
 
-function runTool(executable, args, timeoutMs, signal, binary = false) {
+function runTool(executable, args, timeoutMs, signal, binary = false, maxChars = 65536) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('Preview generation stopped'));
     const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
@@ -22,7 +22,7 @@ function runTool(executable, args, timeoutMs, signal, binary = false) {
     signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', (chunk) => {
       if (binary) { if (bytes + chunk.length <= 65536) { chunks.push(chunk); bytes += chunk.length; } }
-      else if (output.length < 65536) output += chunk.toString();
+      else if (output.length < maxChars) output += chunk.toString();
     });
     child.once('error', (error) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(error); });
     child.once('close', (code) => {
@@ -61,6 +61,20 @@ async function inspectLocalVideo(inputPath, outputPath, { FFMPEG_PATH, FFPROBE_P
   if (!probe.streams?.some((stream) => stream.codec_type === 'video')) throw new Error('This file has no video preview');
   const duration = Number(probe.format?.duration);
   return { source, duration };
+}
+
+/**
+ * Every stream and the container of a local media file, as ffprobe reports them (bounded like
+ * the preview probe: 8 seconds, local files only). Saved videos' details are built from this.
+ */
+async function probeMediaFile(inputPath, { FFPROBE_PATH, signal, timeoutMs = 8000 } = {}) {
+  if (!FFPROBE_PATH || !path.isAbsolute(inputPath || '')) throw new Error('Probing requires a local file and ffprobe');
+  const source = await fs.realpath(inputPath);
+  if (!(await fs.stat(source)).isFile()) throw new Error('Not a file');
+  const raw = await runTool(FFPROBE_PATH, [
+    '-v', 'error', '-protocol_whitelist', 'file,pipe', '-show_format', '-show_streams', '-of', 'json', source,
+  ], timeoutMs, signal, false, 4 * 1024 * 1024);
+  return JSON.parse(raw);
 }
 
 /** Generate a bounded, silent browser preview from usable local media. */
@@ -149,4 +163,4 @@ async function generatePreviewAssets(inputPath, clipPath, posterPath, options = 
   return { poster, clip };
 }
 
-module.exports = { generatePreviewClip, generateRepresentativePoster, generatePreviewAssets, PREVIEW_CLIP_SUFFIX, INTERIM_PREVIEW_CLIP_SUFFIX, isCurrentPreviewClipPath };
+module.exports = { probeMediaFile, generatePreviewClip, generateRepresentativePoster, generatePreviewAssets, PREVIEW_CLIP_SUFFIX, INTERIM_PREVIEW_CLIP_SUFFIX, isCurrentPreviewClipPath };
