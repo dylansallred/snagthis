@@ -392,7 +392,7 @@ The unified list makes "remove" ambiguous, so it is explicit:
 | `TopBar` | `Navbar`, `QueueToolbar`, `HistoryToolbar` | paste field, tabs, search |
 | `PathBar`, `FolderRow`, `MoveToMenu`, `DeleteFolderPopover`, `SelectionBar` (`components/library/`) | — | §6.2; state in `useOrganize`, shared copy, sort orders, groups and folder-name rules in `packages/contracts/src/library.js` |
 | `SettingsSheet` | `SettingsView`, `QueueSettingsBar`, `DesktopSettingsCard` | Sidebar sections; Updates & support keeps a one-row update summary |
-| `UpdateChip`, `UpdatedNotice` (`components/updates/`) | the update sheet and the Settings Updates row's install controls | §8.1; states derived in `updateModel.ts` |
+| `UpdateChip`, `UpdatedNotice` (`components/updates/`) | `UpdateSheet` and the Settings Updates row's install controls | §8.1; states derived in `updateModel.ts` |
 | popup `renderRow()` | the ~400-line body of `renderMedia()` in `popup.js` | title inference helpers stay untouched |
 
 ```ts
