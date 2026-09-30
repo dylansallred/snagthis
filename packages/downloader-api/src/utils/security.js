@@ -151,6 +151,8 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     if (!extensions.some((entry) => entry.legacy)) legacyToken = null;
     // Connecting deliberately (for example with a code after a Deny) lifts that extension's block.
     blockedUntil.delete(origin);
+    // Connected: nothing else starts a request on its own until the desktop waits again.
+    listening = null;
     save();
     notify();
     if (existing) revoked();
@@ -301,8 +303,6 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
       return { ok: true, status: 'denied' };
     }
     request.issuedToken = issueExtensionToken(request.origin);
-    // Connected: nothing else should start a request on its own until the desktop asks again.
-    listening = null;
     finish(request, 'approved');
     // An uncollected token is dropped with the request after the retention window.
     setTimeout(() => { request.issuedToken = null; }, FINISHED_RETENTION_MS).unref?.();

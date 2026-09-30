@@ -6,7 +6,7 @@ const { root, startRenderer, launchDesktop } = require('./helpers');
 const { startFixtureServer } = require('../fixtures/server');
 const { probeFile } = require('../fixtures/engine');
 
-test('full loop: actual one-click Chrome pairing and 480p selection → Electron → playable saved video', async () => {
+test('full loop: actual Chrome pairing (desktop waits, Chrome asks, Allow in SnagThis) and 480p selection → Electron → playable saved video', async () => {
   test.setTimeout(150_000);
   const fixture = await startFixtureServer();
   const renderer = await startRenderer();
@@ -33,23 +33,21 @@ test('full loop: actual one-click Chrome pairing and 480p selection → Electron
     const tabId = await worker.evaluate(async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url)?.id, source.url());
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${new URL(worker.url()).host}/popup.html?tab=${tabId}&apiBase=${encodeURIComponent(native.baseUrl)}`);
-    // Use the actual one-click pairing flow; no test bearer token or fake API. Connect asks
-    // the real bridge, then snagthis://open/pair (delivered to Electron as Chrome would)
-    // brings up the Approve dialog, where the digits must match before Allow.
-    await popup.locator('#connection-banner').getByRole('button', { name: 'Connect', exact: true }).click();
-    const code = await popup.locator('#sheet .pair-digits').getAttribute('data-code');
+    // Use the actual pairing flow; no test bearer token or fake API. SnagThis's first run is
+    // "Waiting for Chrome…", so opening the popup asks the real bridge by itself, and SnagThis's
+    // card shows the same four digits in place; nothing is connected until Allow there.
+    const code = await popup.locator('#connection-banner .pair-digits').getAttribute('data-code');
     expect(code).toMatch(/^\d{4}$/);
-    await native.app.evaluate(({ app }) => { app.emit('open-url', { preventDefault() {} }, 'snagthis://open/pair'); });
-    const approve = desktop.getByRole('dialog', { name: 'Connect Chrome?' });
-    await expect(approve.getByRole('img', { name: /^Match code/ })).toHaveAttribute('data-code', code);
+    const card = desktop.getByRole('region', { name: 'Connect Chrome', exact: true });
+    await expect(card.getByRole('img', { name: /^Match code/ })).toHaveAttribute('data-code', code);
     // A reloaded window gets the same request back; it is still the only pending one.
     await desktop.reload();
-    await expect(approve.getByRole('img', { name: /^Match code/ })).toHaveAttribute('data-code', code);
-    await approve.getByRole('button', { name: 'Allow', exact: true }).click();
-    await desktop.getByRole('dialog', { name: 'Chrome connected' }).getByRole('button', { name: 'Done', exact: true }).click();
-    await expect(popup.locator('#sheet .pair-yay-title')).toHaveText('Connected');
-    await popup.getByRole('button', { name: 'Done', exact: true }).click();
-    await expect(popup.locator('#connection-banner')).toBeHidden();
+    await expect(desktop.getByRole('img', { name: /^Match code/ })).toHaveAttribute('data-code', code);
+    await desktop.getByRole('button', { name: 'Allow', exact: true }).click();
+    // Both sides finish by themselves: no Done on either side.
+    await expect(popup.locator('#connection-banner')).toContainText('Connected to SnagThis');
+    await expect(popup.locator('#connection-banner')).toBeHidden({ timeout: 5000 });
+    await expect(popup.locator('#sheet')).not.toBeVisible();
     await expect.poll(() => desktop.evaluate(async () => (await window.desktop.getConnectionState()).extensionConnected)).toBe(true);
 
     await expect(popup.locator('.video-row')).toHaveCount(1);
