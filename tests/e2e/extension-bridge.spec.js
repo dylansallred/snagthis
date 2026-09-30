@@ -100,7 +100,9 @@ async function downloadWithDesktop(popup, row) {
   // the desktop queue through the same contextual action offered to users.
   await expect(popup.locator('#video-list')).not.toHaveClass(/unavailable/);
   await row.click({ button: 'right' });
-  await popup.getByRole('menuitem', { name: 'Download with desktop', exact: true }).click();
+  await popup.getByRole('toolbar').getByRole('button', { name: 'Download with desktop', exact: true }).click();
+  // The actions drawer slides shut before the row's geometry is checked.
+  await expect(row.locator('.row-drawer')).toHaveCount(0);
 }
 
 test('trailer and movie stay separate, sizes stay truthful, and wider metadata fits one line', async () => {
@@ -176,10 +178,10 @@ test('trailer and movie stay separate, sizes stay truthful, and wider metadata f
     await expect(quality).toHaveCount(1);
     await expect(popup.locator('.row-status', { has: quality })).toContainText('about');
     await quality.click();
-    await expect(popup.getByRole('menuitemradio')).toHaveCount(2);
-    await expect(popup.getByRole('menuitemradio').first()).toContainText('1080p');
-    await expect(popup.getByRole('menuitemradio').first()).toContainText('about');
-    await expect(popup.getByRole('menuitemradio').last()).toContainText('720p');
+    await expect(popup.getByRole('radio')).toHaveCount(2);
+    await expect(popup.getByRole('radio').first()).toContainText('1080p');
+    await expect(popup.getByRole('radio').first()).toContainText('about');
+    await expect(popup.getByRole('radio').last()).toContainText('720p');
     expect(errors).toEqual([]);
     await popup.screenshot({ path: 'test-results/extension-metadata-regression.png' });
   } finally { await popup?.close(); await page.close(); }
@@ -264,7 +266,7 @@ test('actual popup: clean looping preview, Download with desktop → Pause → r
     const row = () => popup.locator('.video-row').first();
     const download = row().getByRole('button', { name: 'Download', exact: true });
     await expect(download).toBeVisible();
-    await expect(download).toHaveAttribute('title', 'Download');
+    await expect(download).toHaveAttribute('data-tip', 'Download');
     await expect(download).toHaveText('');
     await expect(download.locator('svg')).toHaveCount(1);
     await expect(download).toHaveClass(/primary icon-only/);
@@ -440,10 +442,14 @@ test('popup prepares a verified poster without hover and keeps it across reopen'
     await quality.click();
     await expect(quality).toHaveAttribute('aria-expanded', 'true');
     expect(await quality.boundingBox()).toEqual(closedBounds);
-    await popup.screenshot({ path: test.info().outputPath('popup-quality-menu.png') });
-    await popup.getByRole('menuitemradio', { name: /720p/ }).click();
+    await popup.screenshot({ path: test.info().outputPath('popup-quality-drawer.png') });
+    await popup.getByRole('radio', { name: /720p/ }).click();
     await expect(quality).toContainText('720p');
+    // With more than one line of choices (here, subtitles too) the drawer stays open until Esc.
+    await expect(quality).toHaveAttribute('aria-expanded', 'true');
+    await popup.keyboard.press('Escape');
     await expect(quality).toHaveAttribute('aria-expanded', 'false');
+    await expect(quality).toBeFocused();
     await row().hover();
     await expect.poll(() => row().locator('video.thumb-preview').evaluate(video => video.currentTime)).toBeGreaterThan(sceneStart + .2);
     await popup.getByRole('button', { name: 'Settings', exact: true }).focus();
@@ -526,7 +532,7 @@ test('offline popup previews direct and HLS sources before any desktop job exist
   }
 });
 
-test('quality menu overlays the popup without shifting layout and selection applies', async () => {
+test('quality drawer opens inside the row without moving the row or header, grows the popup by itself only, and selection applies', async () => {
   const opened = await openFixture('variants');
   const { popup } = opened;
   try {
@@ -536,7 +542,7 @@ test('quality menu overlays the popup without shifting layout and selection appl
     await popup.evaluate(() => document.fonts.ready);
     await expect(popup.locator('#popup')).toHaveCSS('transform', 'none');
     const initialSize = await popup.locator('#popup').boundingBox();
-    // Match Chrome's compact popup viewport so overflowing menu content cannot hide in a full tab.
+    // Match Chrome's compact popup viewport so overflowing drawer content cannot hide in a full tab.
     await popup.setViewportSize({ width: 480, height: Math.ceil(initialSize.height) });
     const geometry = () => popup.evaluate(() => ({
       boxes: Object.fromEntries(['html', 'body', '#popup', '.popup-header', '.video-row', '.thumb', '.row-body', '.row-title', '.row-meta', '.popup-footer'].map(selector => {
@@ -545,26 +551,36 @@ test('quality menu overlays the popup without shifting layout and selection appl
       })),
       viewport: { width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight, x: scrollX, y: scrollY },
     }));
+    const settled = () => popup.waitForFunction(() => [...document.querySelectorAll('.row-drawer')].every(node => !node.getAnimations().length));
     const before = await geometry();
-    const fixed = value => ({ ...value, boxes: Object.fromEntries(['.popup-header', '.video-row', '.thumb', '.row-body', '.row-title', '.row-meta'].map(selector => [selector, value.boxes[selector]])) });
+    const fixed = value => Object.fromEntries(['.popup-header', '.thumb', '.row-body', '.row-title', '.row-meta'].map(selector => [selector, value.boxes[selector]]));
     await quality.click();
-    const menu = popup.getByRole('menu');
-    await expect(menu).toBeVisible();
-    // A short popup grows (Chrome resizes its window to fit) instead of clipping the menu; rows never move.
+    const drawer = popup.getByRole('group', { name: /^Quality for / });
+    await expect(drawer).toBeVisible();
+    await expect(popup.locator('#menu')).toBeHidden();
+    await settled();
+    // The popup grows by the drawer alone (Chrome resizes its window to fit): no 300px floor, nothing overlaid.
     const grown = await popup.locator('#popup').boundingBox();
-    expect(grown.height).toBeGreaterThanOrEqual(300);
+    const box = await popup.locator('.row-drawer').boundingBox();
+    expect(Math.abs(grown.height - initialSize.height - box.height)).toBeLessThanOrEqual(1);
     await popup.setViewportSize({ width: 480, height: Math.ceil(grown.height) });
-    expect(fixed(await geometry()).boxes).toEqual(fixed(before).boxes);
-    const menuBox = await menu.boundingBox();
-    const header = before.boxes['.popup-header'];
-    expect(menuBox.x).toBeGreaterThanOrEqual(0);
-    expect(menuBox.y).toBeGreaterThanOrEqual(header.y + header.height);
-    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(480);
-    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(grown.height);
-    expect(await menu.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(false);
-    await menu.getByRole('menuitemradio', { name: /^720p/ }).click();
-    await expect(menu).toBeHidden();
+    expect(fixed(await geometry())).toEqual(fixed(before));
+    const row = before.boxes['.video-row'];
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(row.y + row.height - 1);
+    expect(box.x + box.width).toBeLessThanOrEqual(480);
+    expect(box.y + box.height).toBeLessThanOrEqual((await popup.locator('.popup-footer').boundingBox()).y);
+    await popup.screenshot({ path: test.info().outputPath('popup-quality-drawer.png') });
+    await drawer.getByRole('radio', { name: /^720p/ }).click();
     await expect(quality.locator('.resolution')).toHaveText('720p');
+    await expect(drawer.getByRole('radio', { name: /^720p/ })).toHaveAttribute('aria-checked', 'true');
+    // This fixture also offers audio or subtitles, so the drawer stays open for them until Esc.
+    await popup.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(quality).toHaveAttribute('aria-expanded', 'false');
+    await expect(quality).toBeFocused();
+    await quality.blur();
+    await settled();
     await popup.setViewportSize({ width: 480, height: Math.ceil(initialSize.height) });
     expect(await geometry()).toEqual(before);
   } finally { await popup.close(); await opened.page.close(); }

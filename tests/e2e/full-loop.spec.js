@@ -52,7 +52,7 @@ test('full loop: actual Chrome pairing (desktop waits, Chrome asks, Allow in Sna
 
     await expect(popup.locator('.video-row')).toHaveCount(1);
     await popup.getByRole('button', { name: 'Choose quality', exact: true }).click();
-    await popup.getByRole('menuitemradio', { name: /^480p/ }).click();
+    await popup.getByRole('radio', { name: /^480p/ }).click();
     await expect(popup.locator('.row-status')).toContainText('480p');
     await popup.getByRole('button', { name: 'Download', exact: true }).click();
     await expect(desktop.locator('.video-row')).toHaveCount(1);
