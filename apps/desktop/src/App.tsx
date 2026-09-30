@@ -3,10 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { Clock, FolderOpen, MoreHorizontal, Settings, ListX, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { classifyProblem, formatSize, mergeRows, toRowModel, type RowModel } from '@m3u8/contracts/src/rows.mjs';
-import { compareSaved, countLabel, DEFAULT_VIEW, failureReason, groupSaved, libraryStrings, libraryText, normalizeView, viewKey } from '@m3u8/contracts/src/library.mjs';
+import { compareSaved, countLabel, DEFAULT_VIEW, failureReason, groupSaved, libraryStrings, libraryText, normalizeView, parentFolder, viewKey } from '@m3u8/contracts/src/library.mjs';
 import { useOrganize } from '@/hooks/useOrganize';
 import { createApiLibraryBackend } from '@/lib/libraryBackend';
-import { GalleryLibrary } from '@/dev/galleryLibrary';
+import { GALLERY_DEEP_FOLDERS, GalleryLibrary } from '@/dev/galleryLibrary';
 import { PathBar } from '@/components/library/PathBar';
 import { FolderRow, NewFolderRow, SectionLabel } from '@/components/library/FolderRow';
 import { MoveToMenu } from '@/components/library/MoveToMenu';
@@ -60,11 +60,11 @@ function App() {
   const { appInfo, settings, saveSettings, updater, previewUpdater, error: startupError, initialize } = useAppInit(gallery, galleryUpdateState);
   // Gallery downloads; its saved videos live in the gallery library below, with their folders.
   const [demoRows, setDemoRows] = useState(emptyGallery ? [] : galleryRows.filter((row) => !row.isHistory && (params.get('gallery') === 'states' || row.id !== 'paused')));
-  const [galleryLibrary] = useState(() => gallery ? new GalleryLibrary(organizePreview ? 'organize' : emptyGallery ? 'empty' : params.get('gallery') === 'states' ? 'states' : 'default') : null);
+  const [galleryLibrary] = useState(() => gallery ? new GalleryLibrary(organizePreview ? 'organize' : emptyGallery ? 'empty' : params.get('gallery') === 'states' ? 'states' : 'default', GALLERY_DEEP_FOLDERS[organizePreview || ''] || '') : null);
   const galleryVersion = useSyncExternalStore(galleryLibrary?.subscribe ?? noSubscribe, galleryLibrary?.getVersion ?? noVersion);
   const [filter, setFilter] = useState<ListFilter>(organizePreview ? 'saved' : 'all');
   // The folder of Saved being shown ('' is the save folder itself).
-  const [folder, setFolder] = useState(organizePreview === 'folder' ? 'Road trips' : '');
+  const [folder, setFolder] = useState(organizePreview === 'folder' ? 'Road trips' : GALLERY_DEEP_FOLDERS[organizePreview || ''] || '');
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -167,6 +167,15 @@ function App() {
     return places.size === 1 ? [...places][0] : null;
   };
   const navigate = (path: string) => { setFolder(path); setExpandedId(null); };
+  // ⌘↑ (Alt+↑ on Windows and Linux) goes up one folder in Saved, as in Finder and Explorer; the folder you left keeps focus.
+  const goUp = useRef<() => boolean>(() => false);
+  goUp.current = () => {
+    if (filter !== 'saved' || query || !folder) return false;
+    const left = folder;
+    navigate(parentFolder(folder));
+    requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-folder="${CSS.escape(left)}"]`)?.focus({ preventScroll: false })));
+    return true;
+  };
   const selectionSize = useRef(0);
   selectionSize.current = organize.selected.size;
   // The gallery footer follows the sample rows, so an empty or edited gallery never reports phantom downloads.
@@ -275,6 +284,10 @@ function App() {
       if (mod && event.key === ',') { event.preventDefault(); if (!modalOpen) setSettingsOpen(true); }
       // Escape that closes a dialog or menu (or that a panel already handled) closes only that.
       const layer = event.target instanceof Element && event.target.closest('[role="dialog"],[role="alertdialog"],[role="menu"]');
+      if (event.key === 'ArrowUp' && (event.metaKey || event.altKey) && !event.ctrlKey && !event.shiftKey && !event.defaultPrevented && !layer && !modalOpen && !editable(event.target)) {
+        if (goUp.current()) event.preventDefault();
+        return;
+      }
       if (event.key === 'Escape' && !event.defaultPrevented && !layer && !modalOpen && !editable(event.target)) {
         // Esc clears a selection first, then collapses details.
         if (selectionSize.current) { clearSelection(); return; }
@@ -553,7 +566,7 @@ function App() {
       {failure && <div className="connection-banner" role="alert"><span>{ui.unavailable}</span><button className="row-action labelled" onClick={() => { initialize(); library.refresh(); }}>{ui.tryAgain}</button><button className="row-action" onClick={() => openSettings('about')}>{ui.settings}</button></div>}
       {ready && !failure && !emptyLibrary && <PathBar tab={filter} searching={!!query} rootName={organize.rootName} rootDisplayPath={organize.rootDisplayPath} folder={folder} view={view}
         onView={(next) => { if (placeKey) organize.setView(placeKey, next); }} onNavigate={navigate}
-        onNewFolder={() => { organize.setRenaming(null); organize.setCreating(true); }} onReveal={(path) => { void organize.reveal(path); }}
+        onNewFolder={() => { organize.setRenaming(null); organize.setCreating(true); }} onReveal={(path) => { void organize.reveal(path); }} onCopyPath={(path) => { void organize.copyPath(path); }}
         onRenameCurrent={() => organize.setNameDialog({ kind: 'rename', path: folder })}
         onDeleteCurrent={(anchor) => { const entry = organize.folders.find((item) => item.path === folder); if (entry) void organize.requestDelete(entry, anchor); }}
         onDropVideos={(path, ids) => { void organize.move(ids, path); }} sortMenuOpen={organizePreview === 'sortmenu'} />}

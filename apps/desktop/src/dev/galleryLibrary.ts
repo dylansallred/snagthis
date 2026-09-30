@@ -52,6 +52,12 @@ function organizeSample(): { items: GalleryItem[]; folders: string[] } {
   };
 }
 
+/** The path-bar previews (`?gallery&organize=three|long`): a place deep inside Road trips, holding two of its videos. */
+export const GALLERY_DEEP_FOLDERS: Readonly<Record<string, string>> = {
+  three: 'Road trips/Coast/2026 Summer',
+  long: 'Road trips/Pacific Coast Highway — the whole trip/Day 14 · Big Sur to Monterey via Bixby Creek/Drone footage (unedited 4K originals)/Bixby Bridge — sunrise passes',
+};
+
 /** The gallery's classic saved rows (`?gallery`, `?gallery=states`). */
 function classicSample(withMissing: boolean): { items: GalleryItem[]; folders: string[] } {
   const items: GalleryItem[] = [{ id: 'saved', jobId: 'saved', fileName: 'Ember Tide.mp4', title: 'Ember Tide — director’s cut', folder: '', sourcePageUrl: 'https://videos.example/ember-tide/', height: 1080, sizeBytes: 182_000_000, modifiedAt: now, thumbnailUrl: emberTide, durationSeconds: 1334 }];
@@ -71,10 +77,16 @@ export class GalleryLibrary implements LibraryBackend {
   folders: string[];
   version = 0;
   private listeners = new Set<() => void>();
-  constructor(seed: 'organize' | 'states' | 'default' | 'empty') {
+  constructor(seed: 'organize' | 'states' | 'default' | 'empty', deep = '') {
     const sample = seed === 'organize' ? organizeSample() : seed === 'empty' ? { items: [], folders: [] } : classicSample(seed === 'states');
     this.items = sample.items;
     this.folders = sample.folders;
+    if (deep) {
+      const parts = deep.split('/');
+      const chain = parts.map((_, index) => parts.slice(0, index + 1).join('/'));
+      this.folders = [...this.folders, ...chain.filter((path) => !this.folders.includes(path))];
+      this.items = this.items.map((entry) => ['g-harbour', 'g-coast'].includes(entry.id) ? { ...entry, folder: deep } : entry);
+    }
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getVersion = () => this.version;
@@ -98,7 +110,7 @@ export class GalleryLibrary implements LibraryBackend {
   async info(): Promise<LibraryInfo> {
     const newest = [...this.items].filter((entry) => !entry.missing).sort((a, b) => b.modifiedAt - a.modifiedAt);
     return {
-      root: { name: 'SnagThis', path: '~/Downloads/SnagThis', displayPath: '~/Downloads/SnagThis' },
+      root: { name: 'SnagThis', path: '/Users/you/Downloads/SnagThis', displayPath: '~/Downloads/SnagThis' },
       folders: [...this.folders].sort((a, b) => a.localeCompare(b)).map((path) => {
         const videos = newest.filter((entry) => inside(entry.folder, path));
         return {

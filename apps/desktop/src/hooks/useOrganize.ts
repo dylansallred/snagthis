@@ -163,6 +163,20 @@ export function useOrganize({ backend, folder, setFolder, settings, saveSettings
     try { await backend.reveal(path); } catch (error) { toast.error(error instanceof Error ? error.message : failureReason('unknown')); }
   };
 
+  /** The absolute path of a folder of Saved, in the platform's own separators. */
+  const absolutePath = (path: string) => {
+    const root = info?.root.path || '';
+    const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/';
+    return path ? `${root.replace(/[\\/]+$/, '')}${separator}${path.split('/').join(separator)}` : root;
+  };
+  /** ⋯ ▸ Copy path: the folder's absolute path on the clipboard. */
+  const copyPath = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(absolutePath(path));
+      toast.success(libraryText('pathCopied', { path: path ? `${rootDisplayPath}/${path}` : rootDisplayPath }));
+    } catch { toast.error(copy.pathCopyFailed); }
+  };
+
   const toggleSection = (key: string) => setCollapsed((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
 
   return {
@@ -170,7 +184,7 @@ export function useOrganize({ backend, folder, setFolder, settings, saveSettings
     selected, setSelected, select, clearSelection, failed, setFailed,
     moveRequest, openMove, closeMove: () => setMoveRequest(null), move,
     deleteRequest, deleting, requestDelete, confirmDelete: (mode: DeleteMode) => deleteRequest && runDelete(deleteRequest.folder, mode), closeDelete: () => setDeleteRequest(null),
-    nameDialog, setNameDialog, creating, setCreating, renaming, setRenaming, createFolder, renameFolder, reveal,
+    nameDialog, setNameDialog, creating, setCreating, renaming, setRenaming, createFolder, renameFolder, reveal, absolutePath, copyPath,
     collapsed, toggleSection, nameOf, copy,
   };
 }

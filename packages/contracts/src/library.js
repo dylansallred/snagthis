@@ -26,9 +26,11 @@
     countAndSize: '{count} · {size}', emptyFolder: 'Empty',
     expandGroup: 'Show {label}', collapseGroup: 'Hide {label}',
     // Folders and the path bar.
-    pathBar: 'Folder', back: 'Back', backTo: 'Back to {name}', newFolder: 'New folder', newFolderMenu: 'New folder…',
+    pathBar: 'Folder', newFolder: 'New folder', newFolderMenu: 'New folder…',
     folderNamePlaceholder: 'Folder name', newFolderHint: 'Creates {path}', renameHint: 'Renames the folder on disk',
     revealMac: 'Show in Finder', revealWindows: 'Show in Explorer', revealOther: 'Open in file manager',
+    copyPath: 'Copy path', pathCopied: 'Copied {path}', pathCopyFailed: 'Couldn’t copy the path',
+    hiddenFolders: '{n} more folders', hiddenFoldersNote: 'Drop a video on a folder here to move it in.', saveFolderOptions: 'Save folder options',
     openFolder: 'Open', renameFolder: 'Rename', deleteFolderMenu: 'Delete folder…', folderOptions: 'Folder options: {name}',
     foldersSection: 'Folders', videosSection: 'Videos', sectionLabel: '{name}, {count}',
     folderLabel: 'Folder {name}, {count}', openFolderLabel: 'Open {name}', folderChevron: 'Open folder',

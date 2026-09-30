@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Path bar B · Title + trail</title>
+<link rel="stylesheet" href="../../shared.css">
+<link rel="stylesheet" href="../../folder-rows/common.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* B · Title + trail: the folder you're in is a heading (pixel folder, Jersey 15 title, count · size); a quiet
+   trail of its parents sits above it; Back is a bevelled key. The title opens a menu with the disk path. */
+.pt { height: 68px; gap: 12px; padding-left: 12px; align-items: center; }
+.pt .key { display: grid; place-items: center; width: 34px; height: 34px; flex: none; color: var(--color-foreground-muted);
+  clip-path: polygon(2px 0, calc(100% - 2px) 0, 100% 2px, 100% calc(100% - 2px), calc(100% - 2px) 100%, 2px 100%, 0 calc(100% - 2px), 0 2px);
+  background: hsl(215 20% 12%); box-shadow: inset 0 0 0 1px hsl(215 16% 20%), inset 2px 2px 0 #ffffff12, inset -3px -3px 0 #000a; }
+.pt .key:is(:hover, .is-hover) { color: var(--color-foreground); background: hsl(215 20% 15%); }
+.pt .key:active { box-shadow: inset 0 0 0 1px hsl(215 16% 20%), inset -2px -2px 0 #ffffff12, inset 3px 3px 0 #000a; }
+.pt .key:is(:focus-visible, .is-focus) { clip-path: none; outline: 2px solid var(--color-primary-hover); outline-offset: 1px; }
+.pt .col { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; flex: 1 1 auto; }
+/* Trail: parents only, small and muted, pixel "/" between. */
+.pt .trail { gap: 2px; margin: -4px -4px -4px -9px; }
+.pt .trail .t { display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 5px; border-radius: 4px; flex: 0 1 auto; min-width: 0; max-width: 200px; color: var(--color-foreground-subtle); font-size: 11.5px; font-weight: 520; transition: color 120ms, background 120ms; }
+.pt .trail .t .pxf { width: 13px; height: 11px; opacity: .85; }
+.pt .trail .t .pxf.k-open { display: none; }
+.pt .trail .t:is(:hover, .is-hover) { color: var(--color-foreground); background: var(--color-background-active); }
+.pt .trail .t:is(:focus-visible, .is-focus) { color: var(--color-foreground); box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.pt .trail .t.drop-hot { color: #fff !important; background: var(--color-primary) !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary-hover) 35%, transparent) !important; }
+.pt .trail .t.drop-hot .pxf.k-closed { display: none; } .pt .trail .t.drop-hot .pxf.k-open { display: block; }
+.pt .trail .slash { width: 4px; height: 10px; color: var(--color-foreground-subtle); opacity: .6; }
+.pt .trail .t.more { padding: 0 6px; }
+.pt .trail .t.more .pxm { width: 12px; height: 2px; }
+.pt .trail .t.more[aria-expanded="true"] { color: var(--color-foreground); background: var(--color-background-active); }
+.pt .trail .eyebrow-t { color: var(--color-foreground-subtle); font: 400 14px/18px var(--font-pixel); letter-spacing: .1em; text-transform: uppercase; }
+/* Title line. */
+.pt .title { display: flex; align-items: center; gap: 10px; min-width: 0; height: 28px; }
+.pt .title .tbtn { display: inline-flex; align-items: center; gap: 9px; min-width: 0; height: 28px; margin-left: -4px; padding: 0 6px 0 4px; border-radius: 6px; flex: 0 1 auto; }
+.pt .title .tbtn .pxf { width: 24px; height: 20px; }
+.pt .title .h { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 27px/1 var(--font-pixel); letter-spacing: .02em; color: var(--color-foreground); padding-bottom: 2px; }
+.pt .title .tbtn .chev { width: 13px; height: 13px; color: var(--color-foreground-subtle); transition: transform 160ms; }
+.pt .title .tbtn:hover, .pt .title .tbtn[aria-expanded="true"] { background: var(--color-background-active); }
+.pt .title .tbtn:hover .chev, .pt .title .tbtn[aria-expanded="true"] .chev { color: var(--color-primary-hover); }
+.pt .title .tbtn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.pt .title .tbtn:focus-visible { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.pt .title .meta { flex: none; color: var(--color-foreground-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.win.narrow .pt .title .meta { display: none; }
+.pt .pb-tools { align-self: center; }
+/* Title menu: the path first, then folder actions. */
+.pb-title { width: 380px; }
+.pb-title .pathhead { padding: 8px 9px 9px; }
+.pb-title .pathhead .lbl2 { margin-bottom: 5px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-foreground-subtle); }
+.pb-title .pathhead .mono { display: block; color: var(--color-foreground); line-height: 1.55; }
+.pb-title .mi .pxm { color: var(--color-foreground-muted); }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Path bar</a> · <span>B</span>Title + trail</div>
+    <h1>B · Title + trail</h1>
+    <p>The folder you are in becomes a <b>heading</b>: a <b>pixel folder</b>, its <b>name in Jersey 15</b> and <b>“1 folder · 4 videos · 4.1 GB”</b>. A <b>quiet trail of its parents</b> sits above in small text with pixel “/”. <b>Back is a bevelled key</b>. The disk path lives in the <b>title's menu</b> (click the name) with <b>Copy path</b>. The bar grows from 42 to 68px.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../brand.js"></script>
+<script src="../../shared.js"></script>
+<script src="../../folder-rows/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org, B = window.PB;
+  const t = (m, s) => s.more
+    ? `<button class="t more" data-more aria-haspopup="menu" aria-expanded="${m.menu === 'more'}" aria-label="${s.items.length} hidden folders">${B.px.dots()}</button>`
+    : `<button class="t${B.st(m, s.i)}" ${B.at(s)}>${s.root ? B.glyph(13, 'closed') + B.glyph(13, 'open') : ''}<span class="nm">${P.esc(s.name)}</span></button>`;
+  PB.mount({
+    bar: (m) => {
+      const segs = B.segs(m), cur = segs[segs.length - 1], parents = B.visible(m, segs.slice(0, -1));
+      const open = m.menu === 'title' || m.reveal;
+      return `<nav class="pbar pt" aria-label="Folder">${m.path.length ? `<button class="key${m.hover === 'back' ? ' is-hover' : ''}" data-seg="back" data-go="${P.esc(m.path.slice(0, -1).join('/'))}" aria-label="Back to ${P.esc(B.parentName(m))}" title="Back to ${P.esc(B.parentName(m))}">${B.px.left()}</button>` : ''}
+        <div class="col">
+          <span class="trail" data-fit>${parents.length ? parents.map((s, n) => `${n ? B.px.slash() : ''}${t(m, s)}`).join('') : '<span class="eyebrow-t">Save folder</span>'}</span>
+          <div class="title"><button class="tbtn" data-title-menu aria-haspopup="menu" aria-expanded="${open}" title="${P.esc(cur.disp)}">${B.glyph(24, 'open')}<span class="h">${P.esc(cur.name)}</span>${P.icon('chevron', 'chev')}</button><span class="meta">${B.summary(m, { size: true })}</span></div>
+        </div>${B.tools(m, { noMore: true })}</nav>`;
+    },
+    over: (m) => (m.menu === 'title' || m.reveal) ? `<div class="pop pb-title" role="menu" aria-label="${P.esc(B.segs(m).pop().name)}" data-anchor=".pt .tbtn" data-align="start">
+      <div class="pathhead"><div class="lbl2">On disk</div><span class="mono">${B.wrapPath(m.path)}</span></div>
+      <button class="mi" role="menuitem" data-copy>${B.px.copy()}<span>Copy path</span><span class="r">⌘⇧C</span></button>
+      <button class="mi" role="menuitem" data-act="noop">${P.icon('reveal')}<span>Show in Finder</span></button>
+      ${m.path.length ? `<div class="sep"></div><button class="mi" role="menuitem" data-act="noop">${P.icon('pencil')}<span>Rename folder</span><span class="r">F2</span></button><button class="mi danger" role="menuitem" data-act="noop">${P.icon('trash')}<span>Delete folder…</span></button>` : ''}</div>` : '',
+    notes: () => `<h2>How it behaves</h2><ul>
+      <li><b>Root</b>: the trail reads <i>SAVE FOLDER</i>, the title <i>SnagThis</i> with “5 folders · 11 videos · …”; no back key. <b>Inside</b>: the bevelled back key appears; the trail lists every parent, the title is the current folder.</li>
+      <li><b>Hover a parent</b>: it brightens on a soft chip. <b>Focus</b>: 2px accent ring. The title shows a ⌄ that turns accent on hover.</li>
+      <li><b>Drag onto a parent</b>: it fills with the accent, white text, and its folder opens; the drag chip says <i>Move to …</i>.</li>
+      <li><b>Long paths</b>: the title takes its own line and ellipsises; the trail folds folders nearest the root into <b>···</b> (menu as an indented tree, each a drop target). At 960px the count hides.</li>
+      <li><b>Disk path</b>: click the title for a menu: <i>On disk</i> path, Copy path (⌘⇧C), Show in Finder, Rename, Delete folder… (this replaces today's separate ⋯).</li></ul>
+      <div class="trade"><h3>Trade-off</h3>The clearest “where am I” and a natural home for folder actions. Costs 26px of height for the list, and the parents become small targets (18px) for drag and drop.</div>`,
+  });
+})();
+</script>
+</body>
+</html>

@@ -23,11 +23,11 @@ const GLYPHS: Record<GlyphKind, [string, number, number, number, number][]> = {
 };
 
 /** The 16×13 pixel folder in the accent bevel colours; a folder with videos opens on hover, focus and drag-over. */
-export function PixelFolder({ empty }: { empty: boolean }) {
+export function PixelFolder({ empty, small = false }: { empty: boolean; small?: boolean }) {
   const glyph = (kind: GlyphKind) => <svg className={`pixel-folder k-${kind}`} viewBox="0 0 16 13" aria-hidden="true">
     {GLYPHS[kind].map(([tone, x, y, width, height], index) => <rect key={index} className={tone} x={x} y={y} width={width} height={height} />)}
   </svg>;
-  return <span className="folder-glyph" aria-hidden="true">{empty ? glyph('empty') : <>{glyph('closed')}{glyph('open')}</>}</span>;
+  return <span className={`folder-glyph${small ? ' small' : ''}`} aria-hidden="true">{empty ? glyph('empty') : <>{glyph('closed')}{glyph('open')}</>}</span>;
 }
 
 /**

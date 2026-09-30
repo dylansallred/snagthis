@@ -140,7 +140,7 @@ function ShelfTile({ row, apiBase, busy, inputMode, onCommand, onRequestPreview 
 export function moveGridFocus(event: KeyboardEvent<HTMLElement>, selector: string) {
   const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
   const target = event.target as HTMLElement;
-  if (!keys.includes(event.key) || !target.matches(selector)) return;
+  if (!keys.includes(event.key) || event.metaKey || event.altKey || !target.matches(selector)) return;
   const tiles = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(selector));
   const index = tiles.indexOf(target);
   if (index < 0) return;

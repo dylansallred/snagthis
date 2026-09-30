@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Path bar C · Address field</title>
+<link rel="stylesheet" href="../../shared.css">
+<link rel="stylesheet" href="../../folder-rows/common.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* C · Address field: one sunken field like a file manager's address bar, drawn like the header's paste field.
+   Segments sit inside; clicking the empty end turns it into an editable, selectable path. A bevelled Up key. */
+.pc { height: 48px; gap: 8px; }
+.pc .key { display: grid; place-items: center; width: 32px; height: 32px; flex: none; color: var(--color-foreground-muted);
+  clip-path: polygon(2px 0, calc(100% - 2px) 0, 100% 2px, 100% calc(100% - 2px), calc(100% - 2px) 100%, 2px 100%, 0 calc(100% - 2px), 0 2px);
+  background: hsl(215 20% 12%); box-shadow: inset 0 0 0 1px hsl(215 16% 20%), inset 2px 2px 0 #ffffff12, inset -3px -3px 0 #000a; }
+.pc .key:is(:hover, .is-hover) { color: var(--color-foreground); background: hsl(215 20% 15%); }
+.pc .key:active { box-shadow: inset 0 0 0 1px hsl(215 16% 20%), inset -2px -2px 0 #ffffff12, inset 3px 3px 0 #000a; }
+.pc .key:disabled { opacity: .4; cursor: default; background: hsl(215 20% 10%); }
+.pc .key:is(:focus-visible, .is-focus) { clip-path: none; outline: 2px solid var(--color-primary-hover); outline-offset: 1px; }
+.pc .addr { position: relative; display: flex; align-items: center; gap: 0; flex: 1 1 auto; min-width: 0; max-width: 760px; height: 32px; padding: 0 4px 0 9px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-background); box-shadow: inset 0 1px 0 #0006; transition: border-color 140ms; }
+.pc .addr:hover { border-color: hsl(215 15% 24%); }
+.pc .addr > .pxf { margin-right: 4px; }
+.pc .addr > .pxf.k-open { display: none; }
+.pc [data-fit] { flex: 0 1 auto; gap: 1px; }
+.pc .s { display: inline-flex; align-items: center; height: 24px; padding: 0 7px; border-radius: 5px; flex: 0 1 auto; min-width: 0; max-width: 220px; color: var(--color-foreground-muted); font-size: 13px; font-weight: 500; transition: background 120ms, color 120ms; }
+.pc .s.cur { max-width: 360px; color: var(--color-foreground); font-weight: 620; }
+.pc .s:not(.cur):is(:hover, .is-hover) { color: var(--color-foreground); background: var(--color-background-active); }
+.pc .s:is(:focus-visible, .is-focus) { color: var(--color-foreground); box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.pc .s.drop-hot { color: #fff !important; background: var(--color-primary) !important; box-shadow: none !important; }
+.pc .addr:has(.drop-hot) { border-color: var(--color-primary-hover); }
+.pc .s.more { padding: 0 7px; }
+.pc .s.more[aria-expanded="true"] { color: var(--color-foreground); background: var(--color-background-active); }
+.pc .sep { width: 12px; height: 12px; color: var(--color-foreground-subtle); flex: none; }
+.pc .fill { align-self: stretch; flex: 1 1 0; min-width: 24px; cursor: text; }
+.pc .fill:hover::after { content: "Click to edit or copy the path"; display: flex; align-items: center; height: 100%; padding-left: 10px; color: var(--color-foreground-subtle); font-size: 11.5px; opacity: .8; }
+.win.narrow .pc .fill:hover::after { content: ""; }
+.pc .cp { display: grid; place-items: center; width: 26px; height: 24px; border-radius: 5px; color: var(--color-foreground-subtle); flex: none; }
+.pc .cp:hover { color: var(--color-foreground); background: var(--color-background-active); }
+/* Editing: the field is a text box with the whole path selected. */
+.pc .addr.edit { border-color: var(--color-primary-hover); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary-hover) 22%, transparent); padding-right: 5px; }
+.pc .pb-edit { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.pc .pb-edit input { flex: 1; min-width: 0; height: 26px; border: 0; outline: none; background: none; color: var(--color-foreground); font: 12.5px/1 var(--font-mono); }
+.pc .pb-edit input::selection { background: color-mix(in srgb, var(--color-primary-hover) 45%, transparent); }
+.pc .pb-edit .btn { height: 24px; gap: 7px; padding: 0 8px; font-size: 12px; }
+.pc .pb-edit .btn .pxm { color: var(--color-foreground-muted); }
+.pc .pb-edit kbd { padding: 0 5px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 500 10.5px/18px var(--font-sans); }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Path bar</a> · <span>C</span>Address field</div>
+    <h1>C · Address field</h1>
+    <p>One <b>sunken field</b>, drawn like the header's <i>Paste a video link</i> box, holds the trail like a file manager's <b>address bar</b>: pixel folder, segments with small “›”, current in bold. <b>Click the empty end</b> (or <kbd>⌘L</kbd>) and it becomes an <b>editable path, all selected</b>, with <b>Copy</b>; a small copy icon sits at the field's end at rest. A <b>bevelled Up key</b> sits in front.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../brand.js"></script>
+<script src="../../shared.js"></script>
+<script src="../../folder-rows/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org, B = window.PB;
+  const seg = (m, s) => s.more
+    ? `<button class="s more" data-more aria-haspopup="menu" aria-expanded="${m.menu === 'more'}" aria-label="${s.items.length} hidden folders">…</button>`
+    : `<button class="s${s.cur ? ' cur' : ''}${B.st(m, s.i)}" ${B.at(s)}><span class="nm">${P.esc(s.name)}</span></button>`;
+  PB.mount({
+    bar: (m) => {
+      const vis = B.visible(m), up = m.path.slice(0, -1).join('/');
+      const key = `<button class="key${m.hover === 'back' ? ' is-hover' : ''}" ${m.path.length ? `data-go="${P.esc(up)}"` : 'disabled'} data-seg="back" aria-label="${m.path.length ? `Up to ${P.esc(B.parentName(m))}` : 'Up'}" title="${m.path.length ? `Up to ${P.esc(B.parentName(m))} (⌘↑)` : 'Already at the save folder'}">${B.px.up()}</button>`;
+      const field = m.reveal
+        ? `<div class="addr edit"><span class="pb-edit"><input value="${P.esc(B.disp(m.path))}" aria-label="Folder path" spellcheck="false"><button class="btn" data-copy>${B.px.copy()}Copy</button><kbd>↵ Go</kbd></span></div>`
+        : `<div class="addr">${B.glyph(16, 'closed')}${B.glyph(16, 'open')}<span data-fit>${vis.map((s, n) => `${n ? P.icon('chevronRight', 'sep') : ''}${seg(m, s)}`).join('')}</span><span class="fill" data-edit title="Edit or copy the path (⌘L)"></span><button class="cp" data-copy aria-label="Copy path" title="Copy ${P.esc(B.disp(m.path))}">${B.px.copy()}</button></div>`;
+      return `<nav class="pbar pc" aria-label="Folder">${key}${field}${B.tools(m)}</nav>`;
+    },
+    notes: () => `<h2>How it behaves</h2><ul>
+      <li><b>Root</b>: the field holds just <i>SnagThis</i>; the Up key is there but dimmed, so nothing jumps when you go in. <b>Inside</b>: Up goes to the parent (⌘↑ too).</li>
+      <li><b>Hover a segment</b>: soft chip. <b>Hover the empty end</b>: an I-beam and <i>Click to edit or copy the path</i>. <b>Focus</b>: 2px accent ring inside the segment.</li>
+      <li><b>Drag onto a segment</b>: it fills with the accent, white text, and the whole field's border turns accent.</li>
+      <li><b>Long paths</b>: segments cap at 220px (current 360px) with ellipses; then folders nearest the root fold into <b>…</b> (indented-tree menu, each item a drop target).</li>
+      <li><b>Disk path</b>: hidden at rest. Click the empty end or press <kbd>⌘L</kbd>: the field becomes the path in mono, all selected, with <b>Copy</b> and <kbd>↵</kbd> to go to a typed folder inside the save folder; Esc returns. The copy icon at the end copies without editing.</li></ul>
+      <div class="trade"><h3>Trade-off</h3>Instantly familiar (Finder / Explorer / browsers), and the path is one click away without adding text. It is the least “pixel” of the four, and typing a path is a power feature to build and validate.</div>`,
+  });
+})();
+</script>
+</body>
+</html>

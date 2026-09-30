@@ -166,7 +166,8 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
     return () => observer.disconnect();
   }, [hasMore, loadingMore, onLoadMore]);
   return <div ref={list} role="list" aria-label="Videos" className="video-list" data-input-mode={inputMode} onKeyDown={(event) => {
-    if (!['ArrowUp', 'ArrowDown'].includes(event.key) || (event.target as HTMLElement).matches('input,select,textarea,[role="menuitem"]')) return;
+    // ⌘↑ / Alt+↑ is the app's "up one folder".
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key) || event.metaKey || event.altKey || (event.target as HTMLElement).matches('input,select,textarea,[role="menuitem"]')) return;
     const rowElements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-row-key]'));
     const active = (event.target as HTMLElement).closest('[data-row-key]');
     const current = rowElements.findIndex((element) => element === active);

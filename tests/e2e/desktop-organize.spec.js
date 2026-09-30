@@ -18,7 +18,8 @@ async function open(page, query = '') {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`${renderer.baseUrl}/?gallery&organize${query}`);
   await expect(page.locator('.path-bar')).toBeVisible();
-  await expect(page.locator('.saved-folder-row, .saved-folder-chip').first()).toBeVisible();
+  // The path-bar previews open deep in a folder with no subfolders.
+  await expect(page.locator(/^=(three|long)$/.test(query) ? '.video-row' : '.saved-folder-row, .saved-folder-chip').first()).toBeVisible();
 }
 const savedTitles = (page) => page.locator('.video-row[data-state="saved"] .row-title').allTextContents();
 const folderRow = (page, name) => page.locator(`.saved-folder-row[data-folder="${name}"]`);
@@ -175,21 +176,19 @@ test('the shelf shows folders as chips above the posters; they open, take drops 
   await expect(page.locator('.shelf-tile[data-row-key="g-market"]')).toBeVisible();
   await expect(page.locator('.saved-folder-chip')).toHaveCount(0);
   await expect(page.locator('.list-section')).toHaveCount(0);
-  await page.locator('.path-bar .path-back').click();
+  await page.locator('.path-bar .crumb.up', { hasText: 'SnagThis' }).click();
   await page.locator('.saved-folder-chip[data-folder="Tutorials"]').click();
   expect(await crumbs(page)).toEqual(['SnagThis', 'Tutorials']);
   await expect(page.locator('.saved-folder-chip[data-folder="Tutorials/Advanced"]')).toBeVisible();
 });
 
-test('folders open from their row or the keyboard, and the breadcrumb and Back return', async ({ page }) => {
+test('folders open from their row or the keyboard, and a parent segment or ⌘↑ goes back up', async ({ page }) => {
   await open(page);
   await expect(page.locator('.path-bar .crumb.current')).toHaveText('SnagThis');
-  await expect(page.locator('.path-bar .path-text')).toHaveText('~/Downloads/SnagThis');
   await expect(folderRow(page, 'Tutorials')).toContainText('3 videos · 870 MB');
   await folderRow(page, 'Tutorials').click();
   expect(await crumbs(page)).toEqual(['SnagThis', 'Tutorials']);
   await expect(page.locator('.path-bar [aria-current="page"]')).toHaveText('Tutorials');
-  await expect(page.locator('.path-bar .path-text')).toHaveText('~/Downloads/SnagThis/Tutorials');
   await expect(page.locator('.video-row .row-title')).toHaveText(['Drawing pixel rain in 20 minutes', 'Platformer physics, explained']);
   await folderRow(page, 'Tutorials/Advanced').focus();
   await page.keyboard.press('Enter');
@@ -197,9 +196,96 @@ test('folders open from their row or the keyboard, and the breadcrumb and Back r
   await expect(page.locator('.video-row .row-title')).toHaveText(['Palette cycling deep dive']);
   await page.locator('.path-bar .crumb.up', { hasText: 'Tutorials' }).click();
   expect(await crumbs(page)).toEqual(['SnagThis', 'Tutorials']);
-  await page.locator('.path-bar .path-back').click();
+  // ⌘↑ (Alt+↑ on Windows and Linux) goes up, and the folder just left keeps focus.
+  await folderRow(page, 'Tutorials/Advanced').focus();
+  await page.keyboard.press('Alt+ArrowUp');
+  expect(await crumbs(page)).toEqual(['SnagThis']);
+  await expect(folderRow(page, 'Tutorials')).toBeFocused();
+  await folderRow(page, 'Tutorials').press('Enter');
+  expect(await crumbs(page)).toEqual(['SnagThis', 'Tutorials']);
+  await page.keyboard.press('Meta+ArrowUp');
   expect(await crumbs(page)).toEqual(['SnagThis']);
   await expect(folderRow(page, 'Road trips')).toBeVisible();
+});
+
+test('the path bar is plain segments: no back button, no path text, the current folder in the accent', async ({ page }) => {
+  await open(page, '=three');
+  expect(await crumbs(page)).toEqual(['SnagThis', 'Road trips', 'Coast', '2026 Summer']);
+  await expect(page.locator('.path-bar .crumb-sep')).toHaveCount(3);
+  await expect(page.locator('.path-bar .crumb .pixel-folder').first()).toBeVisible();
+  await expect(page.locator('.path-bar .path-back, .path-bar .path-text')).toHaveCount(0);
+  // Nothing in the bar is set in mono at rest.
+  const mono = await page.locator('.path-bar').evaluate((bar) => Array.from(bar.querySelectorAll('*')).filter((element) => {
+    const style = getComputedStyle(element);
+    return element.getClientRects().length && style.visibility !== 'hidden' && /mono/i.test(style.fontFamily) && element.textContent.trim();
+  }).length);
+  expect(mono).toBe(0);
+  await expect(page.locator('.path-bar')).not.toContainText('~/Downloads');
+  const current = page.locator('.path-bar [aria-current="page"]');
+  await expect(current).toHaveText('2026 Summer');
+  const accent = await page.evaluate(() => { const probe = document.createElement('i'); probe.style.color = 'var(--color-primary-hover)'; document.body.append(probe); const color = getComputedStyle(probe).color; probe.remove(); return color; });
+  await expect(current).toHaveCSS('color', accent);
+
+  // Tab reaches the parents; each opens its folder.
+  await page.locator('.path-bar .crumb.up', { hasText: 'SnagThis' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.path-bar .crumb.up', { hasText: 'Road trips' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.path-bar .crumb.up', { hasText: 'Coast' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  expect(await crumbs(page)).toEqual(['SnagThis', 'Road trips', 'Coast']);
+  await expect(folderRow(page, 'Road trips/Coast/2026 Summer')).toBeVisible();
+  await page.locator('.path-bar .crumb.up', { hasText: 'Road trips' }).click();
+  expect(await crumbs(page)).toEqual(['SnagThis', 'Road trips']);
+});
+
+test('a long path folds its middle folders into “…”, whose menu opens them', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 800 });
+  await open(page, '=long');
+  const trail = await crumbs(page);
+  expect(trail[0]).toBe('SnagThis');
+  expect(trail[1]).toBe('…');
+  expect(trail[trail.length - 1]).toBe('Bixby Bridge — sunrise passes');
+  expect(trail.length).toBeLessThan(6);
+  // Nothing spills out of the bar.
+  expect(await page.locator('.path-bar .crumbs').evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await page.locator('.path-bar .crumb-more').click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitem').first()).toHaveText('Road trips');
+  await expect(menu).toContainText('Drop a video on a folder here to move it in.');
+  await expect(menu.getByRole('menuitem')).toHaveCount(6 - trail.length + 1);
+  await menu.getByRole('menuitem', { name: 'Pacific Coast Highway — the whole trip' }).click();
+  expect(await crumbs(page)).toEqual(['SnagThis', 'Road trips', 'Pacific Coast Highway — the whole trip']);
+
+  // A wide window shows the whole trail again.
+  await page.goBack().catch(() => {});
+  await page.setViewportSize({ width: 2200, height: 800 });
+  await open(page, '=long');
+  await expect(page.locator('.path-bar .crumb-more')).toHaveCount(0);
+  expect(await crumbs(page)).toHaveLength(6);
+  await page.setViewportSize({ width: 960, height: 800 });
+  await expect(page.locator('.path-bar .crumb-more')).toBeVisible();
+});
+
+test('⋯ ▸ Copy path copies the folder’s absolute path; ⋯ is there at the save folder too', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.copied = [];
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied.push(text); }, readText: async () => '' } });
+  });
+  await open(page, '=three');
+  await page.getByRole('button', { name: 'Folder options: 2026 Summer' }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toContainText('~/Downloads/SnagThis/Road trips/Coast/2026 Summer');
+  await expect(menu.getByRole('menuitem')).toHaveText(['Copy path', 'Show in Finder', 'Rename', 'Delete folder…'].map((name) => name === 'Show in Finder' ? /Show in (Finder|Explorer)|Open in file manager/ : name));
+  await menu.getByRole('menuitem', { name: 'Copy path' }).click();
+  await expect(page.getByText('Copied ~/Downloads/SnagThis/Road trips/Coast/2026 Summer')).toBeVisible();
+  expect(await page.evaluate(() => window.copied)).toEqual(['/Users/you/Downloads/SnagThis/Road trips/Coast/2026 Summer']);
+
+  await page.locator('.path-bar .crumb.up', { hasText: 'SnagThis' }).click();
+  await page.getByRole('button', { name: 'Save folder options' }).click();
+  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveCount(2);
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Copy path' }).click();
+  expect(await page.evaluate(() => window.copied)).toEqual(['/Users/you/Downloads/SnagThis/Road trips/Coast/2026 Summer', '/Users/you/Downloads/SnagThis']);
 });
 
 test('dragging a saved row onto a folder moves it there, and onto the breadcrumb moves it back', async ({ page }) => {
@@ -215,6 +301,36 @@ test('dragging a saved row onto a folder moves it there, and onto the breadcrumb
   await page.locator('.video-row[data-row-key="g-rooftop"]').dragTo(page.locator('.path-bar .crumb.up', { hasText: 'SnagThis' }));
   await expect(page.getByText('Moved “Neon Rain — rooftop chase” to SnagThis')).toBeVisible();
   await expect(page.locator('.video-row[data-row-key="g-rooftop"]')).toHaveCount(0);
+});
+
+test('dropping videos on a path segment, or on a folder in “…”, moves them there', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await open(page, '=three');
+  const harbour = page.locator('.video-row[data-row-key="g-harbour"]');
+  await harbour.dragTo(page.locator('.path-bar .crumb.up', { hasText: 'Coast' }));
+  await expect(page.getByText('Moved “Harbour lights timelapse” to Coast')).toBeVisible();
+  await expect(harbour).toHaveCount(0);
+  await page.locator('.path-bar .crumb.up', { hasText: 'Coast' }).click();
+  await expect(page.locator('.video-row[data-row-key="g-harbour"]')).toBeVisible();
+
+  // Narrow: over "…" the menu opens, and its folders take the drop.
+  await page.setViewportSize({ width: 960, height: 900 });
+  await page.goto(`${renderer.baseUrl}/?gallery&organize=long`);
+  await expect(page.locator('.path-bar .crumb-more')).toBeVisible();
+  const coast = page.locator('.video-row[data-row-key="g-coast"]');
+  const from = await coast.boundingBox();
+  const more = await page.locator('.path-bar .crumb-more').boundingBox();
+  await page.mouse.move(from.x + 300, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(more.x + more.width / 2, more.y + more.height / 2, { steps: 8 });
+  const target = page.getByRole('menu').getByRole('menuitem', { name: 'Road trips' });
+  await expect(target).toBeVisible();
+  const box = await target.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+  await expect(target).toHaveClass(/drop-hot/);
+  await page.mouse.up();
+  await expect(page.getByText('Moved “Coast road — drive at dusk” to Road trips')).toBeVisible();
+  await expect(coast).toHaveCount(0);
 });
 
 test('Move to… works from the keyboard, and Escape returns to the row', async ({ page }) => {
