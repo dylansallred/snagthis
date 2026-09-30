@@ -20,7 +20,7 @@ if (process.versions.electron) {
   let prompts = 0;
   const sandbox = {
     app, updaterInstallRequested: scenario === 'update', updaterTimer: null, clearInterval, setTimeout, clearTimeout,
-    Promise, mainWindow: null, skipQuitConfirmation: false,
+    Promise, mainWindow: null, skipQuitConfirmation: false, updaterState: { phase: 'idle', updateInfo: null },
     // The first prompt answers "Keep downloading", the second "Quit".
     dialog: { async showMessageBox(options) {
       prompts += 1;
@@ -28,8 +28,16 @@ if (process.versions.electron) {
       if (prompts === 1) setTimeout(() => app.quit(), 50);
       return { response: prompts === 1 ? 1 : 0 };
     } },
-    clearUpdaterInstallTimer() {}, clearUpdaterReminderTimer() {}, clearUpdaterCheckTimeout() {},
+    clearUpdaterInstallTimer() {}, clearIdleInstall() {}, clearUpdaterCheckTimeout() {},
     autoUpdater: { quitAndInstall() { record('unexpected-install'); } },
+    // Install on quit (updates spec §8.1) runs after the queue is saved; here it hands the quit to a fake installer.
+    async installUpdateOnQuit() {
+      if (scenario !== 'install-on-quit') return false;
+      record('install-on-quit');
+      sandbox.updaterInstallRequested = true;
+      setTimeout(() => app.quit(), 20);
+      return true;
+    },
     apiServer: { getState: () => ({ queue: scenario === 'confirm' ? [{ queueStatus: 'downloading' }] : [] }), async stop() {
       record('stop-started');
       if (scenario === 'hang') await new Promise(() => {});
@@ -65,7 +73,7 @@ if (process.versions.electron) {
   });
 
   test('Electron waits for normal shutdown once, tolerates stop failure, and preserves direct update quit', async () => {
-    for (const scenario of ['delayed', 'repeat', 'reject', 'update', 'confirm', 'hang']) {
+    for (const scenario of ['delayed', 'repeat', 'reject', 'update', 'confirm', 'hang', 'install-on-quit']) {
       const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-shutdown-test-'));
       try {
         const environment = { ...process.env, SNAGTHIS_SHUTDOWN_TEST_PROFILE: profile, SNAGTHIS_SHUTDOWN_TEST_SCENARIO: scenario };
@@ -91,6 +99,11 @@ if (process.versions.electron) {
           assert.equal(matching('before-quit').length, 1, 'update quit is not recursively restarted');
           assert.equal(matching('before-quit')[0].prevented, false, 'update quit remains direct');
           assert.equal(matching('stop-completed').length, 0, 'update quit is not held for the normal-quit guard');
+        } else if (scenario === 'install-on-quit') {
+          assert.equal(matching('stop-completed').length, 1, 'the queue is saved before the update installs');
+          assert.equal(matching('install-on-quit').length, 1, 'a normal quit hands a ready update to the installer once');
+          assert.ok(events.findIndex(entry => entry.event === 'install-on-quit') > events.findIndex(entry => entry.event === 'stop-completed'), 'install on quit runs after shutdown');
+          assert.equal(matching('before-quit').at(-1).prevented, false, 'the installer’s quit is direct');
         } else if (scenario === 'hang') {
           assert.equal(matching('stop-completed').length, 0, 'the stuck stop never finished');
           assert.equal(matching('before-quit').at(-1).prevented, false, 'a stuck shutdown still ends in a real quit');

@@ -40,21 +40,25 @@ const galleryReleaseNotes = [
   '• Mac with Apple Silicon (M1 or later): SnagThis-mac-arm64.dmg',
   '• Windows: SnagThis-1.1.0-win-x64.exe',
 ];
-export const galleryUpdateStates = ['checking', 'uptodate', 'downloading', 'ready', 'notes', 'blocked', 'later', 'installing', 'error'] as const;
+export const galleryUpdateStates = ['checking', 'uptodate', 'downloading', 'ready', 'blocked', 'installing', 'error', 'failed-install', 'updated', 'move'] as const;
 
-/** `?gallery&update=<state>` previews the update sheet and header chip without contacting an update service. */
+/** `?gallery&update=<state>` previews the update chip, popover, toast and Settings row without contacting an update service. */
 export function galleryUpdater(state: string | null): UpdaterState | null {
   if (!state || !(galleryUpdateStates as readonly string[]).includes(state)) return null;
-  const base: UpdaterState = { phase: 'downloaded', message: '', progress: 100, currentVersion: '1.0.0', updateInfo: { version: '1.1.0' }, releaseNotes: galleryReleaseNotes, lastCheckedAt: Date.now(), error: null, installWhenIdle: false };
+  const base: UpdaterState = { phase: 'downloaded', message: '', progress: 100, currentVersion: '1.0.0', updateInfo: { version: '1.1.0' }, releaseNotes: galleryReleaseNotes, lastCheckedAt: Date.now(), error: null };
   switch (state) {
     case 'checking': return { ...base, phase: 'checking', progress: 0, updateInfo: null, releaseNotes: [] };
     case 'uptodate': return { ...base, phase: 'idle', progress: 0, updateInfo: { version: '1.0.0' }, releaseNotes: [] };
     case 'downloading': return { ...base, phase: 'downloading', progress: 41, transferredBytes: 38_000_000, totalBytes: 92_000_000, bytesPerSecond: 2_700_000 };
-    case 'later': return { ...base, deferredUntil: Date.now() + 30 * 60_000, nextReminderAt: Date.now() + 30 * 60_000 };
-    case 'blocked': return { ...base, installWhenIdle: true };
     case 'installing': return { ...base, phase: 'installing' };
     case 'error': return { ...base, phase: 'error', progress: 41, errorKind: 'download', message: 'Update download failed', transferredBytes: 38_000_000, totalBytes: 92_000_000,
       error: 'Error: net::ERR_CONNECTION_RESET\n  GET https://github.com/dylansallred/snagthis/releases/download/v1.1.0/SnagThis-1.1.0-arm64-mac.zip\n  at ClientRequest.<anonymous> (electron-updater/out/httpExecutor.js:318)\n  received 38000000 of 92000000 bytes' };
+    // What main.js reports after relaunching on the old version: the install didn't finish.
+    case 'failed-install': return { ...base, phase: 'error', progress: 0, errorKind: 'install', failedInstall: true, message: 'Previous update install did not complete', releaseNotes: [],
+      error: 'Tried to install 1.1.0 on 29/09/2026, 15:42:10, but the app reopened on 1.0.0. Move the app to /Applications and retry.' };
+    // Relaunched into 1.1.0 after installing.
+    case 'updated': return { ...base, phase: 'idle', progress: 0, currentVersion: '1.1.0', updateInfo: { version: '1.1.0' }, releaseNotes: [], updatedTo: { version: '1.1.0', releaseNotes: galleryReleaseNotes } };
+    case 'move': return { ...base, phase: 'idle', progress: 0, updateInfo: null, releaseNotes: [], lastCheckedAt: null, needsMove: true, message: 'Move the app to /Applications to enable updates.' };
     default: return base;
   }
 }
