@@ -28,7 +28,7 @@
   let posterPreparation = null; let popupClosed = false; let pageNeedsRefresh = false;
   let rowsPainted = false; let breathed = false; let menuExit = null;
   let desktopAudioTracks = isDemo; let sample = null; let sampleDwell = 0; let dwellRow = null;
-  let accentPush = null;
+  let accentPush = null; let tokenUpgrade = null;
   const rowElements = new Map();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const icons = {
@@ -81,6 +81,7 @@
     catch (error) { throw new Error(friendly(error)); }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) { const error = new Error(data.error?.message || data.error || 'SnagThis could not finish that action.'); error.status = response.status; error.compatibility = data.compatibility; throw error; }
+    if (!options.public && tokenUpgrade) await tokenUpgrade;
     return data;
   }
   async function message(value) { return isDemo ? { ok: true } : chrome.runtime.sendMessage(value); }
@@ -371,6 +372,8 @@
       node.current = { item, row, choice, jobId };
       node.querySelector('.row-more').setAttribute('aria-label', `More actions: ${row.title}`);
       node.dataset.state = row.state;
+      // Rows found after an empty or failed check arrive like any new row.
+      if (view !== 'loading') rowsPainted = true;
       const rowProgress = Math.max(0, Math.min(100, Number(row.progress) || 0));
       node.dataset.progress = String(rowProgress);
       const progressActive = ['downloading', 'finishing'].includes(row.state);
@@ -515,21 +518,30 @@
     if (isDemo) return;
     discoveryPending = true; discoveryError = false; renderRows();
     if (activeTab?.id) {
-      const scanFrame = frameId => chrome.tabs.sendMessage(activeTab.id, { cmd: 'SCAN_PAGE' }, { frameId }).then(() => true, () => false);
+      const tabId = activeTab.id; const late = [];
+      const scanFrame = frameId => {
+        const answer = chrome.tabs.sendMessage(tabId, { cmd: 'SCAN_PAGE' }, { frameId }).then(() => true, () => false);
+        // Still answering means a content script is there: only a missing receiver fails at once.
+        return Promise.race([answer, new Promise(resolve => setTimeout(resolve, SCAN_WAIT_MS, 'late'))]).then(result => { if (result === 'late') late.push(answer); return result !== false; });
+      };
       // An untargeted message resolves with whichever frame answers first, so an
       // ad iframe could hide a top frame without SnagThis. Scan every frame, and
       // judge the page by its top frame.
       const scan = async () => {
-        const frames = await chrome.webNavigation?.getAllFrames({ tabId: activeTab.id }).catch(() => null) || [];
+        const frames = await chrome.webNavigation?.getAllFrames({ tabId }).catch(() => null) || [];
         const [top] = await Promise.all([scanFrame(0), ...frames.filter(frame => frame.frameId > 0).map(frame => scanFrame(frame.frameId))]);
         return top;
       };
       // No receiver means this tab predates the installed content script.
       let reached = await scan();
-      if (!reached && /^https?:/.test(activeTab.url || '') && (await message({ cmd: 'PREPARE_PAGE', tabId: activeTab.id }).catch(() => null))?.ok) reached = await scan();
+      if (!reached && /^https?:/.test(activeTab.url || '') && (await message({ cmd: 'PREPARE_PAGE', tabId }).catch(() => null))?.ok) reached = await scan();
       pageNeedsRefresh = !reached && /^https?:/.test(activeTab.url || '');
     }
     // A scan acknowledges its writes; read after any earlier snapshot finishes.
+  // A page answers a scan from its own main thread, which a busy site can hold for
+  // seconds. Each frame gets this long before the popup shows what it has; a later
+  // answer stores its detections, and the storage change refreshes the list.
+  const SCAN_WAIT_MS = 300;
     if (refreshBusy) await refreshBusy;
     discoveryPending = false; await refresh();
   }
@@ -547,6 +559,7 @@
     if (row.action.id === 'continue') { await continueDownload(item, jobId); return; }
     if (row.action.id === 'open-page') { external(item.sourcePageUrl || activeTab?.url); return; }
     if (['choose-folder', 'locate', 'details'].includes(row.action.id)) {
+      if (late.length) Promise.all(late).then(() => { if (!popupClosed) refresh(); });
       if (row.action.id === 'details') showProblem(row); else openDesktop(row.action.id === 'choose-folder' ? 'settings' : undefined); return;
     }
     if (row.action.id === 'retry') {
@@ -1150,7 +1163,8 @@
     if (paneFocused) $('settings-panel').focus({ preventScroll: true });
   }
   async function loadPreferences() {
-    if (!appToken || !reachable || isDemo) return;
+    // A key exchange in flight loads preferences itself when it finishes.
+    if (!appToken || !reachable || isDemo || tokenUpgrade) return;
     try {
       const data = await request('/v1/settings'); const { accent: remoteAccent, accentChangedAt, ...remote } = data.settings || data;
       preferences = { ...preferences, ...remote }; await chrome.storage.local.set({ preferences });
@@ -1175,14 +1189,20 @@
     try { health = await request('/v1/health', { public: true }); reachable = health.status === 'ok'; desktopAudioTracks = Array.isArray(health.features) && health.features.includes('audio-track'); compatibilityIssue = model.compatibilityIssue(health, runtimeVersion); compatible = !compatibilityIssue; if (reachable) getAppFallback = false; }
     catch { reachable = false; }
     finally { healthBusy = false; connectionChecked = true; renderRows(); }
-    if (reachable && !wasReachable) { await loadPreferences(); await refresh(); }
-    if (reachable) await autoConnect(health);
+    try {
+      if (reachable && !wasReachable) { await loadPreferences(); await refresh(); }
+      if (reachable) await autoConnect(health);
+    } finally { scheduleHealth(); }
+  }
+  function scheduleHealth() {
+    clearTimeout(healthTimer);
+    if (!popupClosed) healthTimer = setTimeout(checkHealth, 2000);
   }
   function refresh() {
     if (isDemo) return Promise.resolve();
     if (refreshBusy) return refreshBusy;
     refreshBusy = (async () => {
-      const tasks = [activeTab?.id ? message({ cmd: 'GET_TAB_MEDIA', tabId: activeTab.id }) : Promise.resolve(null), reachable && compatible && appToken ? request('/v1/queue') : Promise.resolve(null)];
+      const tasks = [activeTab?.id ? message({ cmd: 'GET_TAB_MEDIA', tabId: activeTab.id }) : Promise.resolve(null), reachable && compatible && appToken && !tokenUpgrade ? request('/v1/queue') : Promise.resolve(null)];
       const results = await Promise.allSettled(tasks);
       const media = results[0].status === 'fulfilled' ? results[0].value : null;
       if (media?.ok) {
@@ -1196,7 +1216,7 @@
       if (results[1].status === 'rejected' && results[1].reason?.status === 401) { appToken = ''; disconnectedNotice = true; await chrome.storage.local.remove(['appToken', 'appTokenVersion']); await chrome.storage.session?.set({ 'snagthis:disconnected': true }).catch(() => {}); }
       if (results[1].status === 'rejected' && results[1].reason?.status === 426) { compatible = false; compatibilityIssue = model.compatibilityIssue(results[1].reason.compatibility, runtimeVersion); }
       renderRows();
-    })().finally(() => { refreshBusy = false; });
+    })().finally(() => { refreshBusy = false; scheduleRefresh(); });
     return refreshBusy;
   }
   async function initialize() {
@@ -1218,25 +1238,32 @@
       const data = SnagThisDemo.init(params.get('demo')); discoveryPending = params.get('demo') === 'loading'; discoveryError = params.get('demo') === 'error'; activeTab = data.tab; mediaItems = model.sortMediaByDuration(data.items); mappings = data.mappings; queue = data.queue; preferences = { ...preferences, ...data.preferences }; reachable = data.reachable; appToken = params.get('demo') === 'pairing' ? '' : 'demo-only'; compatible = data.compatible; titles.setActiveTab(activeTab);
       SnagThisSpeedTrace.record(speedJobs(queue)); renderRows();
       // Sample speeds keep moving so the gallery shows live traces; 'snag' also finishes a download.
+  // Downloads in progress refresh every second; an idle list only checks now and then,
+  // because new detections on this page already refresh it through storage changes.
+  function scheduleRefresh() {
+    clearTimeout(queueTimer);
+    if (popupClosed) return;
+    const active = pending.size > 0 || queue.some(job => ['downloading', 'queued'].includes(job.queueStatus));
+    queueTimer = setTimeout(refresh, active ? 1000 : 4000);
+  }
       SnagThisDemo.live?.(() => { queue = SnagThisDemo.state.queue; SnagThisSpeedTrace.record(speedJobs(queue)); renderRows(); });
       // ?demo=pairing shows the Connect banner; &pair=starting|waiting|connected|denied|blocked|expired|conflict|limited|offline|failed|code shows that state.
       if (params.get('demo') === 'pairing') { const pair = params.get('pair'); if (pair === 'code') showCodePairing(); else if (pair === 'connected') { pairUi = { status: 'connected' }; renderConnection(); } else if (pair) { pairUi = { status: pair, requestId: 'demo', matchCode: pair === 'starting' ? '' : '4719', expiresAt: Date.now() + 112000 }; renderConnection(); } else renderConnection(); } if (params.get('demo') === 'settings') { if (params.get('conn') === 'offline') reachable = false; if (params.get('conn') === 'unpaired') appToken = ''; renderConnection(); showSettings(params.get('tab')); } if (['quality', 'audio'].includes(params.get('demo'))) showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
       return;
     }
-    const stored = await chrome.storage.local.get(['appToken', 'appTokenVersion', 'preferences']); appToken = stored.appToken || ''; preferences = { ...preferences, ...(stored.preferences || {}) };
-    disconnectedNotice = !appToken && Boolean((await chrome.storage.session?.get('snagthis:disconnected').catch(() => null))?.['snagthis:disconnected']);
-    // Connections made before per-browser keys trade the shared key for this browser's own.
-    if (appToken && stored.appTokenVersion !== 2) { await message({ cmd: 'PAIR_UPGRADE', apiBase }).catch(() => {}); appToken = (await chrome.storage.local.get('appToken')).appToken || ''; }
-    await accent.load();
     const tabId = Number(params.get('tab'));
-    activeTab = tabId > 0 ? await chrome.tabs.get(tabId).catch(() => null) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0] || null;
-    titles.setActiveTab(activeTab);
-    // Cached detections paint immediately; desktop health never gates the scan.
-    await refresh();
-    const health = checkHealth();
-    await checkAgain();
-    await health;
-    queueTimer = setInterval(refresh, 1000); healthTimer = setInterval(checkHealth, 2000);
+    const [stored, disconnected, tab] = await Promise.all([
+      chrome.storage.local.get(['appToken', 'appTokenVersion', 'preferences']),
+      chrome.storage.session?.get('snagthis:disconnected').catch(() => null),
+      tabId > 0 ? chrome.tabs.get(tabId).catch(() => null) : chrome.tabs.query({ active: true, currentWindow: true }).then(tabs => tabs[0] || null),
+      accent.load(),
+    ]);
+    appToken = stored.appToken || ''; preferences = { ...preferences, ...(stored.preferences || {}) };
+    disconnectedNotice = !appToken && Boolean(disconnected?.['snagthis:disconnected']);
+    activeTab = tab; titles.setActiveTab(activeTab);
+    // Connections made before per-browser keys trade the shared key for this browser's own.
+    // The worker's exchange can wait on SnagThis for seconds, so the list never waits for it.
+    if (appToken && stored.appTokenVersion !== 2) upgradeToken();
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'session' && activeTab?.id && changes[`snagthis:tab:${activeTab.id}`]) refresh();
       if (area === 'session' && changes[PAIRING_KEY]) onPairingChange(changes[PAIRING_KEY].newValue);
@@ -1245,6 +1272,17 @@
     const pairing = (await message({ cmd: 'PAIR_STATE' }).catch(() => null))?.state;
     if (pairing) setPairUi(pairing);
   }
-  window.addEventListener('pagehide', () => { stopSample('hidden'); popupClosed = true; stopPosterPreparation(); clearInterval(queueTimer); clearInterval(healthTimer); clearTimeout(openTimer); clearInterval(pairingTick); clearTimeout(pairClear); for (const node of rowElements.values()) stopThumbPreview(node); });
-  initialize().catch(error => { discoveryPending = false; discoveryError = true; renderRows(); notice(error.message); });
+  function upgradeToken() {
+    tokenUpgrade = message({ cmd: 'PAIR_UPGRADE', apiBase }).catch(() => {})
+      .then(() => chrome.storage.local.get('appToken')).then(result => { appToken = result.appToken || ''; }, () => {})
+      .finally(() => { tokenUpgrade = null; });
+    tokenUpgrade.then(async () => { renderConnection(); await loadPreferences(); await refresh(); });
+  }
+  function discoveryFailed(error) { discoveryPending = false; discoveryError = true; renderRows(); notice(error.message); }
+  window.addEventListener('pagehide', () => { stopSample('hidden'); popupClosed = true; stopPosterPreparation(); clearTimeout(queueTimer); clearTimeout(healthTimer); clearTimeout(openTimer); clearInterval(pairingTick); clearTimeout(pairClear); for (const node of rowElements.values()) stopThumbPreview(node); });
+  initialize().catch(discoveryFailed);
 })();
+    // Cached detections paint immediately; neither desktop health nor the page scan gates the list.
+    await refresh();
+    checkHealth();
+    checkAgain().catch(discoveryFailed);

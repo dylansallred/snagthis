@@ -42,7 +42,7 @@ async function loadPopup(page, flags = { storeBuild: false }) {
   }
   // Exercise the shipped renderer and menu handlers with explicit fixture state.
   // Replace only startup: no worker, desktop API, browser profile or download runs.
-  const startup = 'initialize().catch(error => { discoveryPending = false; discoveryError = true; renderRows(); notice(error.message); });';
+  const startup = 'initialize().catch(discoveryFailed);';
   const source = fs.readFileSync(path.join(extension, 'popup.js'), 'utf8');
   expect(source).toContain(startup);
   await page.addScriptTag({ content: source.replace(startup,
