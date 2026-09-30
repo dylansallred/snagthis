@@ -26,7 +26,7 @@
   let menuTrigger = null; let selected = new Map(); let customTitles = {}; let pending = new Map(); let failures = new Map();
   let noticeTimer; let openTimer; let queueTimer; let healthTimer;
   let posterPreparation = null; let popupClosed = false; let pageNeedsRefresh = false;
-  let rowsPainted = false; let breathed = false; let menuExit = null;
+  let rowsPainted = false; let breathed = false; let menuExit = null; let drawer = null;
   let desktopAudioTracks = isDemo; let sample = null; let sampleDwell = 0; let dwellRow = null;
   let accentPush = null; let tokenUpgrade = null;
   const rowElements = new Map();
@@ -71,13 +71,48 @@
     const button = el('button', `action ${style}`); button.type = 'button'; button.setAttribute('aria-label', label);
     const iconOnly = style.split(/\s+/).includes('icon-only') && iconName;
     if (iconName) button.append(icon(iconName)); if (!iconOnly) button.append(document.createTextNode(label));
-    if (iconOnly) button.title = label;
+    if (iconOnly) button.dataset.tip = label;
     button.addEventListener('click', handler); return button;
   }
   async function copyText(text, done) {
     try { await navigator.clipboard.writeText(text); notice(done); } catch { notice('Couldn’t copy. Try again.'); }
   }
   function notice(message) { $('notice').textContent = String(message); $('notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 5000); }
+  /* ── One in-popup tooltip instead of native `title`s: Chrome draws those as OS windows placed from the popup
+   * window's screen position, so after a resize they can land over the logo. Icon-only buttons (`data-tip`)
+   * show their name; a row title, problem sentence or drawer key shows its full text only when it is clamped.
+   * Each text is already in its element's accessible name, so the tooltip is not referenced by aria. ── */
+  const tip = { node: null, target: null, timer: 0 };
+  const TIP_CLAMPED = '.row-title, .row-status.meta-item, .key-label';
+  function clamped(node) { return node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1; }
+  function tipFor(target) {
+    if (target.dataset.tip) return [target.dataset.tip, target];
+    const text = target.matches('.video-row') ? target.querySelector('.row-title') : target;
+    return text?.matches(TIP_CLAMPED) && clamped(text) ? [text.textContent, text] : ['', null];
+  }
+  function showTip(target) {
+    const [text, anchor] = tipFor(target); if (!text || !anchor.isConnected) return;
+    if (!tip.node) { tip.node = el('div', 'tip'); tip.node.setAttribute('role', 'tooltip'); tip.node.hidden = true; document.body.append(tip.node); }
+    const node = tip.node; tip.target = target; setText(node, text); node.hidden = false; node.style.left = '0px'; node.style.top = '0px';
+    const box = anchor.getBoundingClientRect(); const width = node.offsetWidth; const height = node.offsetHeight;
+    const bottom = Math.min(innerHeight, $('popup').getBoundingClientRect().bottom) - 6;
+    const top = box.bottom + 4 + height <= bottom ? box.bottom + 4 : Math.max(6, box.top - 4 - height);
+    node.style.left = `${Math.round(Math.max(6, Math.min(innerWidth - width - 6, box.left - 4)))}px`; node.style.top = `${Math.round(top)}px`;
+    node.classList.remove('is-shown'); void node.offsetWidth; node.classList.add('is-shown');
+  }
+  function hideTip() { clearTimeout(tip.timer); tip.target = null; if (tip.node && !tip.node.hidden) tip.node.hidden = true; }
+  const tipTarget = node => node?.closest?.(`[data-tip], ${TIP_CLAMPED}`) || null;
+  // Pointer: after a 600ms rest. Keyboard: at once, on the focused button or row (for its title).
+  document.addEventListener('pointerover', event => {
+    const target = tipTarget(event.target); if (target === tip.target) return;
+    hideTip(); if (target) { tip.target = target; tip.timer = setTimeout(() => showTip(target), 600); }
+  });
+  document.addEventListener('pointerout', event => { if (!event.relatedTarget) hideTip(); });
+  document.addEventListener('focusin', event => { hideTip(); const target = event.target; if (target.matches?.(':focus-visible') && (target.dataset.tip || target.matches('.video-row, .key'))) showTip(target.matches('.key') ? target.querySelector('.key-label') : target); });
+  document.addEventListener('focusout', hideTip);
+  for (const type of ['pointerdown', 'wheel']) document.addEventListener(type, hideTip, { passive: true, capture: true });
+  document.addEventListener('scroll', hideTip, { passive: true, capture: true });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') hideTip(); }, true);
   function external(url) { if (isDemo) { notice('Preview only — no app or page was opened.'); return; } chrome.tabs.create({ url }).catch(() => notice('Open SnagThis from your Applications folder.')); }
   async function request(path, options = {}) {
     if (isDemo) throw new Error('Demo cannot access the desktop app.');
@@ -336,12 +371,16 @@
     titleLine.append(el('div', 'row-title'), el('span', 'row-title-duration'));
     const metadata = el('div', 'row-meta'); const durationMeta = el('span', 'meta-item row-duration-meta'); durationMeta.append(el('span', 'row-duration')); metadata.append(el('div', 'row-status'), durationMeta); body.append(titleLine, metadata);
     // Row extras stay hidden at rest and appear on hover or keyboard focus.
-    const more = el('button', 'row-more'); more.type = 'button'; more.title = 'More';
-    more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-expanded', 'false'); more.append(icon('more'));
-    more.addEventListener('click', () => { if (menuTrigger === more) closeMenu(); else showContext(node.current.item, null, more); });
-    node.append(thumb, body, more, pieces); node.addEventListener('contextmenu', event => { event.preventDefault(); showContext(node.current.item, event.button === 2 ? event : null, more); });
-    // Shift+F10 and the context-menu key open the same menu from the focused row.
-    node.addEventListener('keydown', event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); showContext(node.current.item, null, more); } });
+    // ⋯ discloses the row's actions drawer; its name is its tooltip too.
+    const more = el('button', 'row-more'); more.type = 'button'; more.dataset.tip = 'More';
+    more.setAttribute('aria-expanded', 'false'); more.append(icon('more'));
+    more.addEventListener('click', () => { if (drawer?.trigger === more && drawer.kind === 'actions') closeDrawer(); else showContext(node.current.item, more); });
+    node.append(thumb, body, more, pieces); node.addEventListener('contextmenu', event => { event.preventDefault(); showContext(node.current.item, more); });
+    // Shift+F10 and the context-menu key open the same drawer from the focused row; Esc closes it from anywhere in the row.
+    node.addEventListener('keydown', event => {
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); showContext(node.current.item, more); }
+      else if (event.key === 'Escape' && drawer?.node === node) { event.preventDefault(); if (!stopSample('escape')) closeDrawer(); }
+    });
     node.addEventListener('pointerenter', () => { node.previewHovered = true; node.previewRequestedFor = ''; node.previewFailedUrl = ''; node.sourcePreviewFailed = false; syncThumbPreview(node); });
     node.addEventListener('pointerleave', () => { node.previewHovered = false; syncThumbPreview(node); });
     node.addEventListener('focusin', () => { if (!node.previewFocused) { node.previewRequestedFor = ''; node.previewFailedUrl = ''; node.sourcePreviewFailed = false; } node.previewFocused = true; syncThumbPreview(node); });
@@ -369,6 +408,7 @@
     $('page-count').textContent = mediaItems.length ? `${mediaItems.length} video${mediaItems.length === 1 ? '' : 's'} on this page` : view === 'loading' ? 'Checking this page…' : view === 'error' ? 'Check this page' : 'No videos yet';
     titles.setPageItems(mediaItems);
     if (!mediaItems.length) {
+      closeDrawer(false);
       for (const node of rowElements.values()) { stopThumbPreview(node); node.trace?.destroy(); node.trace = null; }
       rowElements.clear(); stopPosterPreparation();
       if (changed) list.replaceChildren(view === 'empty' ? emptyState() : discoveryState(view));
@@ -409,19 +449,20 @@
       }
       pieces.drawnProgress = rowProgress;
       updateThumb(node.querySelector('.thumb'), row);
-      const title = node.querySelector('.row-title'); setText(title, row.title); setAttr(title, 'title', row.title);
+      // No native title: a clamped title shows the in-popup tooltip instead (showTip).
+      const title = node.querySelector('.row-title'); setText(title, row.title);
       const problem = ['problem', 'missing'].includes(row.state);
       for (const duration of node.querySelectorAll('.row-duration, .row-title-duration')) setText(duration, row.durationLabel);
       setHidden(node.querySelector('.row-title-duration'), !row.durationLabel || !problem);
       setHidden(node.querySelector('.row-duration-meta'), !row.durationLabel || problem);
-      const status = node.querySelector('.row-status');
+      const status = node.querySelector('.row-status'); let statusText = row.statusLine;
       if (row.state === 'detected') {
         status.removeAttribute('role'); status.removeAttribute('aria-valuenow'); status.removeAttribute('aria-valuetext');
         const variants = item.variants || [];
         const sizeLabel = mediaSizeLabel(choice);
         const audioLabel = choice.audioTrack && !choice.selection.audioOnly ? choice.audioTrack.shortLabel : '';
         const signature = `${choice.qualityLabel}|${audioLabel}|${sizeLabel}|${variants.length}`;
-        setAttr(status, 'title', [choice.qualityLabel, sizeLabel].filter(Boolean).join(' · '));
+        statusText = [choice.qualityLabel, sizeLabel].filter(Boolean).join(' · ');
         setClass(status, `row-status tone-${row.tone} status-meta`);
         if (status.dataset.signature !== signature) {
           status.dataset.signature = signature;
@@ -431,8 +472,8 @@
           else status.replaceChildren();
           if (variants.length > 1) {
             if (!quality) {
-              quality = el('button', 'quality-button'); quality.type = 'button'; quality.setAttribute('aria-haspopup', 'menu'); quality.setAttribute('aria-expanded', 'false'); quality.setAttribute('aria-label', 'Choose quality');
-              quality.addEventListener('click', () => showQuality(node.current.item, quality)); appendMetadata(status, quality);
+              quality = el('button', 'quality-button'); quality.type = 'button'; quality.setAttribute('aria-expanded', 'false'); quality.setAttribute('aria-label', 'Choose quality');
+              quality.addEventListener('click', () => { if (drawer?.trigger === quality) closeDrawer(); else showQuality(node.current.item, quality); }); appendMetadata(status, quality);
             }
             quality.replaceChildren(qualityMark(choice.qualityLabel || 'Quality'), ...(audioLabel ? [el('span', 'aud', `· ${audioLabel}`)] : []), icon('down'));
             quality.setAttribute('aria-label', audioLabel ? `Choose quality and audio, ${audioLabel}` : 'Choose quality');
@@ -440,7 +481,7 @@
           appendMetadata(status, el('span', '', sizeLabel));
         }
       } else if (row.state === 'saved') {
-        progressAttributes(status, row); setClass(status, 'row-status status-meta tone-muted'); setAttr(status, 'title', row.statusLine);
+        progressAttributes(status, row); setClass(status, 'row-status status-meta tone-muted');
         const signature = `saved|${row.qualityLabel}|${row.sizeLabel}|${row.statusLine}`;
         if (status.dataset.signature !== signature) {
           status.dataset.signature = signature; status.replaceChildren();
@@ -452,24 +493,26 @@
         if (previousState && previousState !== 'saved') status.querySelector('.saved-copy')?.classList.add('just-saved');
         if (['downloading', 'finishing'].includes(previousState)) node.snagPending = true;
       } else {
-        delete status.dataset.signature; setClass(status, `row-status tone-${row.tone} meta-item`); setAttr(status, 'title', row.statusLine);
+        delete status.dataset.signature; setClass(status, `row-status tone-${row.tone} meta-item`);
         // A status that already holds just this text keeps its node.
         if (status.childElementCount || status.textContent !== row.statusLine) status.textContent = row.statusLine;
         progressAttributes(status, row);
       }
       // Screen readers hear the same status line sighted users see.
-      setAttr(node, 'aria-label', [row.title, status.title].filter(Boolean).join('. '));
+      setAttr(node, 'aria-label', [row.title, statusText].filter(Boolean).join('. '));
       const busy = pending.has(item.id) && !pending.get(item.id).optimistic;
       const actionKey = busy ? 'sending' : row.action ? `${row.action.id}:${row.action.style}` : '';
       if (node.dataset.actionKey !== actionKey) {
         node.querySelector(':scope > .action')?.remove(); node.dataset.actionKey = actionKey;
-        if (busy) { const button = action('Starting download', () => {}, 'primary'); button.replaceChildren(el('span', 'spinner')); button.disabled = true; node.append(button); }
+        // The action stays before an open drawer, so Tab order follows the row.
+        const place = button => node.insertBefore(button, node.querySelector(':scope > .row-drawer'));
+        if (busy) { const button = action('Starting download', () => {}, 'primary'); button.replaceChildren(el('span', 'spinner')); button.disabled = true; place(button); }
         else if (row.action) {
           const primary = ['download', 'continue'].includes(row.action.id);
           const style = primary ? 'primary icon-only' : row.action.style === 'icon' ? 'icon-only' : row.action.style;
           // Resume carries its own icon and name so it never reads as Play.
           const label = row.action.id === 'resume' ? strings.resumeDownload : row.action.label;
-          node.append(action(label, () => handleAction(node.current), style, actionIcon(row.action.id)));
+          place(action(label, () => handleAction(node.current), style, actionIcon(row.action.id)));
         }
       }
       syncTrace(node, row, jobId, previousState);
@@ -478,7 +521,7 @@
       if (created && !firstPaint) enterRow(node);
       syncThumbPreview(node);
     }
-    for (const [key, node] of rowElements) if (!valid.has(key)) { rowElements.delete(key); exitRow(node); }
+    for (const [key, node] of rowElements) if (!valid.has(key)) { if (drawer?.node === node) closeDrawer(false); rowElements.delete(key); exitRow(node); }
     // Order live rows around any that are still collapsing away.
     let anchor = list.firstElementChild;
     for (const key of valid) {
@@ -631,11 +674,11 @@
     if (job.error) pad.append(el('p', '', typeof job.error === 'string' ? job.error : job.error.message || job.error.code || 'Check this download in Chrome.'));
     pad.append(action('Open Chrome downloads', () => external('chrome://downloads/'), 'primary')); content.append(pad);
   }
-  // A short popup grows while a menu or sheet is open so neither is clipped.
+  // A short popup grows while a sheet or the banner's menu is open, by only what they need, so neither is clipped.
+  // Row menus are drawers inside the row, so the popup grows with the row and needs no floor.
   // Settings keeps the height of its tallest tab so switching tabs never resizes Chrome's popup.
-  function syncPopupHeight(menuNeed = 0) { $('popup').style.minHeight = $('sheet').open ? `${$('sheet').dataset.view === 'settings' && settingsHeight ? settingsHeight : 430}px` : menuNeed ? `${Math.min(560, Math.max(300, menuNeed))}px` : ''; }
+  function syncPopupHeight(menuNeed = 0) { $('popup').style.minHeight = $('sheet').open ? `${$('sheet').dataset.view === 'settings' && settingsHeight ? settingsHeight : 430}px` : menuNeed ? `${Math.min(560, menuNeed)}px` : ''; }
   function closeMenu(restoreFocus = true) {
-    stopSample('close');
     const menu = $('menu');
     const finish = () => { menuExit = null; menu.hidden = true; menu.replaceChildren(); menu.style.pointerEvents = ''; syncPopupHeight(); };
     if (menuTrigger?.isConnected) { menuTrigger.setAttribute('aria-expanded', 'false'); if (restoreFocus) menuTrigger.focus({ preventScroll: true }); }
@@ -646,16 +689,14 @@
   }
   // Menu keyboard support is wired once, independent of startup succeeding.
   $('menu').addEventListener('keydown', event => {
-    if (event.key === 'Escape') { event.preventDefault(); if (!stopSample('escape')) closeMenu(); return; }
+    if (event.key === 'Escape') { event.preventDefault(); closeMenu(); return; }
     if (event.key === 'Tab') { event.preventDefault(); closeMenu(); return; }
-    const track = event.target.closest?.('.atrack');
-    if (track && event.key === ' ') { event.preventDefault(); if (sample?.row === track) stopSample('user'); else startSample(track); return; }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault(); const buttons = Array.from($('menu').querySelectorAll('button')); const index = buttons.indexOf(document.activeElement);
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length; buttons[next]?.focus();
   });
   function openMenu(trigger, point) {
-    const menu = $('menu');
+    const menu = $('menu'); closeDrawer(false);
     menu.getAnimations().forEach(animation => animation.cancel()); menuExit = null; menu.style.pointerEvents = '';
     menu.replaceChildren(); menu.hidden = false; menu.style.maxHeight = ''; menu.classList.remove('wide');
     menuTrigger?.setAttribute('aria-expanded', 'false'); menuTrigger = trigger?.focus ? trigger : null; menuTrigger?.setAttribute('aria-expanded', 'true');
@@ -688,29 +729,107 @@
     button.addEventListener('click', event => { closeMenu(event.detail === 0); handler(); }); menu.append(button); return button;
   }
   const speaker = '<svg class="px" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" shape-rendering="crispEdges"><path fill="currentColor" d="M2 6h3v4h-3zM5 5h1v6h-1zM6 4h1v8h-1zM7 3h1v10h-1z"/><path class="waves" fill="currentColor" d="M10 6h1v4h-1zM12 4h1v8h-1zM14 3h1v10h-1z"/></svg>';
-  function audioTrackItem(menu, item, track, checked, choose) {
-    const row = el('div', 'atrack'); row.dataset.track = track.key; row.sampleItem = item; row.sampleTrack = track;
-    const button = el('button', 'menu-item'); button.type = 'button'; button.setAttribute('role', 'menuitemradio');
-    button.setAttribute('aria-checked', String(checked)); button.setAttribute('aria-label', track.ariaLabel); button.setAttribute('aria-describedby', 'sample-hint');
-    const check = el('span', 'menu-check'); if (checked) check.append(icon('check'));
-    const label = el('span', 'alabel'); const name = el('b', '', track.title);
-    for (const tag of track.tags) { const chip = el('span', tag === 'AD' ? 'chip ad' : 'chip', tag); if (tag === 'AD') chip.title = 'Audio description'; name.append(chip); }
-    label.append(name, el('small', '', track.detail)); label.lastChild.hidden = !track.detail;
-    button.append(check, label);
+  /* ── Row drawers (owner pick: docs/design/prototypes/popup-menus, A · Inline drawer). The ⋯ actions and the
+   * quality choices open inside their row, under its text, with a pixel notch at the trigger. Nothing is
+   * overlaid: the popup grows by the drawer alone (the list scrolls at 560px) and the rows below move down.
+   * Esc closes and returns focus to the trigger; Tab away or a click outside the row closes. ── */
+  let drawerCount = 0;
+  function openDrawer(node, kind, trigger, fill) {
+    const sameRow = drawer?.node === node;
+    if (sameRow) { drawer.release(); drawer.trigger.setAttribute('aria-expanded', 'false'); drawer = null; } else closeDrawer(false);
+    stopSample('switch');
+    // A drawer still closing in this row is reused, so switching between ⋯ and quality never stacks two.
+    let element = node.querySelector(':scope > .row-drawer'); const fresh = !element;
+    if (fresh) { element = el('div', 'row-drawer'); element.id = `row-drawer-${++drawerCount}`; element.append(el('div', 'row-drawer-clip')); node.append(element); }
+    clearTimeout(element.removeTimer); element.inert = false; element.removeAttribute('aria-hidden'); element.dataset.kind = kind;
+    const inner = el('div', 'drawer-inner'); element.firstChild.replaceChildren(inner); fill(inner);
+    trigger.setAttribute('aria-controls', element.id); trigger.setAttribute('aria-expanded', 'true'); node.classList.add('has-drawer');
+    const at = trigger.getBoundingClientRect(); const box = inner.getBoundingClientRect();
+    inner.style.setProperty('--notch', `${Math.max(8, Math.round(at.left + at.width / 2 - box.left - 5))}px`);
+    // A new drawer starts closed for one frame so it can slide open; reduced motion opens it at once (CSS).
+    if (fresh && !reducedMotion.matches) void element.offsetHeight;
+    element.dataset.open = '';
+    (inner.querySelector('[role="radio"][aria-checked="true"]') || inner.querySelector('button'))?.focus({ preventScroll: true });
+    // Keep the row and its drawer in view once it has opened, when the popup is at its 560px cap.
+    setTimeout(() => {
+      if (drawer?.element !== element) return;
+      const list = $('video-list'); const row = node.getBoundingClientRect(); const bounds = list.getBoundingClientRect();
+      const delta = row.bottom > bounds.bottom ? Math.min(row.bottom - bounds.bottom, row.top - bounds.top) : row.top < bounds.top ? row.top - bounds.top : 0;
+      if (delta) list.scrollBy({ top: delta, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+    }, reducedMotion.matches ? 0 : 190);
+    const focusOut = event => { if (event.relatedTarget && !node.contains(event.relatedTarget)) closeDrawer(false); };
+    const pointer = event => { if (!node.contains(event.target)) closeDrawer(false); };
+    node.addEventListener('focusout', focusOut); document.addEventListener('pointerdown', pointer, true);
+    drawer = { node, kind, trigger, element, release() { node.removeEventListener('focusout', focusOut); document.removeEventListener('pointerdown', pointer, true); } };
+  }
+  function closeDrawer(restoreFocus = true) {
+    const current = drawer; if (!current) return;
+    drawer = null; current.release(); stopSample('close');
+    const { node, trigger, element } = current;
+    trigger.setAttribute('aria-expanded', 'false'); node.classList.remove('has-drawer');
+    if (restoreFocus && trigger.isConnected) trigger.focus({ preventScroll: true });
+    // While it slides shut it is already gone for keyboards and assistive tech.
+    element.inert = true; element.setAttribute('aria-hidden', 'true'); delete element.dataset.open;
+    const remove = () => { if (element.dataset.open === undefined) element.remove(); };
+    if (reducedMotion.matches || !element.isConnected) remove(); else element.removeTimer = setTimeout(remove, 220);
+  }
+  // Roving focus: one Tab stop per key set; arrows move within it (a grid of `columns`), clamped at the ends.
+  function roveKeys(event, keys, columns) {
+    const index = keys.indexOf(document.activeElement); if (index < 0) return;
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? keys.length - 1 : step ? Math.max(0, Math.min(keys.length - 1, index + step)) : null;
+    if (next === null) return;
+    event.preventDefault(); keys.forEach((key, position) => { key.tabIndex = position === next ? 0 : -1; }); keys[next].focus();
+  }
+  function drawerKey(label, glyph) {
+    const key = el('button', 'key'); key.type = 'button';
+    if (glyph) key.append(pixel.glyph(glyph));
+    key.append(el('span', 'key-label', label)); return key;
+  }
+  // One choice line (Quality, Audio, Subtitles): a pixel-caps name and a radio group of chips.
+  function choiceLine(inner, name, options, choose) {
+    const line = el('div', 'qline'); const title = el('span', 'qline-label', name); title.id = `qline-${++drawerCount}`;
+    const group = el('div', 'chips'); group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-labelledby', title.id);
+    const body = el('div', 'qline-body'); body.append(group); line.append(title, body); inner.append(line);
+    for (const option of options) {
+      const chip = drawerKey(option.label); chip.setAttribute('role', 'radio'); chip.setAttribute('aria-checked', String(Boolean(option.checked))); chip.dataset.choice = option.key; chip.tabIndex = -1;
+      if (option.size) {
+        // Chips show the size alone; an estimate still says "about" to screen readers.
+        const size = el('small'); const estimated = /^about /.test(option.size);
+        if (estimated) size.append(el('span', 'sr-only', 'about '));
+        size.append(estimated ? option.size.slice(6) : option.size); chip.append(size);
+      }
+      chip.addEventListener('click', event => choose(option, chip, event)); group.append(chip);
+    }
+    (group.querySelector('[aria-checked="true"]') || group.firstElementChild).tabIndex = 0;
+    return { group, body };
+  }
+  // Audio chips keep Sample 3 · Hover to hear: resting on one (pointer or focus) plays a sample; Space plays or stops it, Enter chooses.
+  function audioTrackChip(chip, note, item, track) {
+    chip.classList.add('atrack'); chip.dataset.track = track.key; chip.sampleItem = item; chip.sampleTrack = track; chip.sampleNote = note;
+    chip.setAttribute('aria-label', track.ariaLabel); chip.setAttribute('aria-describedby', 'sample-hint');
+    const name = chip.querySelector('.key-label'); name.classList.add('alabel');
+    for (const tag of track.tags) { const tagNode = el('span', tag === 'AD' ? 'chip ad' : 'chip', tag); if (tag === 'AD') tagNode.dataset.tip = 'Audio description'; name.append(tagNode); }
     const hear = el('span', 'hear'); hear.setAttribute('aria-hidden', 'true'); hear.innerHTML = speaker;
     const progress = el('span', 'aprog'); progress.append(el('i'));
-    row.append(button, hear, progress, el('span', 'hear-dwell'));
-    button.addEventListener('click', event => { stopSample('choose'); closeMenu(event.detail === 0); choose(); });
-    // Resting the pointer, or keyboard focus, on a track for half a second plays it.
-    row.addEventListener('pointerenter', () => armSample(row));
-    row.addEventListener('pointerleave', () => disarmSample(row));
-    button.addEventListener('focus', () => armSample(row));
-    button.addEventListener('blur', () => disarmSample(row));
-    menu.append(row);
+    chip.append(hear, progress, el('span', 'hear-dwell'));
+    chip.addEventListener('pointerenter', () => { armSample(chip); paintTrackNote(note); });
+    chip.addEventListener('pointerleave', () => { chip.sampleQuiet = false; disarmSample(chip); paintTrackNote(note); });
+    chip.addEventListener('focus', () => { armSample(chip); paintTrackNote(note); });
+    chip.addEventListener('blur', () => { chip.sampleQuiet = false; disarmSample(chip); paintTrackNote(note); });
+  }
+  // The line under the audio chips describes the track under the pointer or focus, else the chosen one.
+  function paintTrackNote(note) {
+    if (!note?.isConnected) return;
+    const chips = [...note.parentElement.querySelectorAll('.atrack')];
+    const chip = chips.find(node => node.matches(':hover')) || chips.find(node => node === document.activeElement) || chips.find(node => node === sample?.row) || chips.find(node => node.getAttribute('aria-checked') === 'true') || chips[0];
+    const failed = Boolean(chip?.classList.contains('is-failed'));
+    setText(note, failed ? 'Sample unavailable · you can still choose it' : chip?.sampleTrack.detail || '');
+    note.classList.toggle('is-failed', failed);
   }
   function announceSample(text) { $('sample-status').textContent = text; }
   function armSample(row) {
-    if (dwellRow === row || sample?.row === row) return;
+    if (row.sampleQuiet || dwellRow === row || sample?.row === row) return;
     clearTimeout(sampleDwell); dwellRow?.classList.remove('dwelling');
     dwellRow = row; row.classList.add('dwelling');
     sampleDwell = setTimeout(() => { row.classList.remove('dwelling'); if (dwellRow === row) dwellRow = null; if (row.isConnected && sample?.row !== row) startSample(row); }, 500);
@@ -740,13 +859,11 @@
     if (!item || !track) return;
     stopSample('switch');
     const current = { row }; sample = current;
-    row.classList.remove('is-failed'); paintSample(row, 'loading');
-    const detail = row.querySelector('.alabel small'); detail.textContent = track.detail; detail.hidden = !track.detail;
+    row.classList.remove('is-failed'); paintSample(row, 'loading'); paintTrackNote(row.sampleNote);
     announceSample(`Loading a sample of ${track.title}…`);
     const failed = () => {
       if (sample !== current) return;
-      sample = null; paintSample(row, 'idle'); row.classList.add('is-failed');
-      detail.textContent = 'Sample unavailable · you can still choose it'; detail.hidden = false;
+      sample = null; paintSample(row, 'idle'); row.classList.add('is-failed'); paintTrackNote(row.sampleNote);
       announceSample(`Sample unavailable for ${track.title}. You can still choose it.`);
     };
     const callbacks = {
@@ -770,60 +887,101 @@
     audio.addEventListener('error', () => { if (!stopped) { stop(); onError(); } });
     return { stop };
   }
+  // Quality, Audio and Subtitles each get one line of chips, all visible at once. With only a Quality line,
+  // choosing closes the drawer; with tracks it stays open so several choices can be made.
   function showQuality(item, trigger) {
-    const menu = openMenu(trigger); const choice = model.selectMedia(item, preferences, selected.get(item.id));
-    const choose = update => { selected.set(item.id, { ...(selected.get(item.id) || {}), ...update }); renderRows(); };
-    for (const [index, variant] of (item.variants || []).entries()) {
-      const variantChoice = model.selectMedia(item, preferences, { variantUrl: variant.url });
-      menuItem(menu, variant.height ? `${variant.height}p` : `Quality ${index + 1}`, () => choose({ variantUrl: variant.url, audioOnly: false }), { radio: true, checked: !choice.selection.audioOnly && choice.selection.variantUrl === variant.url, value: mediaSizeLabel(variantChoice) });
-    }
-    if ((item.audio || []).some(audio => audio.url)) menuItem(menu, 'Audio only', () => choose({ audioOnly: true }), { radio: true, checked: choice.selection.audioOnly });
-    const tracks = choice.audioTracks || [];
-    if (tracks.length > 1) {
-      // Labels 2 · Plain language, with Sample 3 · Hover to hear (docs/design/prototypes/audio-tracks).
-      menu.classList.add('wide');
-      menu.style.left = `${Math.max(6, Math.min($('popup').getBoundingClientRect().right - 292, Number.parseFloat(menu.style.left)))}px`;
-      menu.prepend(el('div', 'menu-title', 'Quality'));
-      const title = el('div', 'menu-title', 'Audio '); title.append(el('small', '', `${tracks.length} tracks`));
-      menu.append(el('hr'), title);
-      for (const track of tracks) audioTrackItem(menu, item, track, track === choice.audioTrack, () => choose({ audioTrack: track.key }));
-      if (tracks.some(track => track.unknown)) menu.append(el('p', 'menu-note', 'This site doesn’t name its tracks. Rest on one to check.'));
-    }
-    if ((item.subtitles || []).length) {
-      menu.append(el('hr'), el('div', 'menu-title', 'Subtitles'));
-      for (const subtitle of item.subtitles) { const language = subtitle.language || subtitle.name; menuItem(menu, subtitle.name || language, () => choose({ subtitleLang: language }), { radio: true, checked: choice.selection.subtitleLang === language }); }
-      menuItem(menu, 'None', () => choose({ subtitleLang: 'none' }), { radio: true, checked: choice.selection.subtitleLang === 'none' });
-    }
-    fitMenu(menu);
+    const node = rowElements.get(item.id); if (!node) return;
+    const fill = inner => {
+      const choice = model.selectMedia(item, preferences, selected.get(item.id));
+      inner.setAttribute('role', 'group'); inner.setAttribute('aria-label', `Quality for ${node.current.row.title}`);
+      const quality = (item.variants || []).map((variant, index) => ({
+        key: `variant:${variant.url}`, label: variant.height ? `${variant.height}p` : `Quality ${index + 1}`, size: mediaSizeLabel(model.selectMedia(item, preferences, { variantUrl: variant.url })),
+        checked: !choice.selection.audioOnly && choice.selection.variantUrl === variant.url, update: { variantUrl: variant.url, audioOnly: false },
+      }));
+      if ((item.audio || []).some(audio => audio.url)) quality.push({ key: 'audio-only', label: 'Audio only', checked: choice.selection.audioOnly, update: { audioOnly: true } });
+      const tracks = choice.audioTracks || [];
+      const subtitles = (item.subtitles || []).map(subtitle => { const language = subtitle.language || subtitle.name; return { key: `subtitle:${language}`, label: subtitle.name || language, checked: choice.selection.subtitleLang === language, update: { subtitleLang: language } }; });
+      const single = (quality.length ? 1 : 0) + (tracks.length > 1 ? 1 : 0) + (subtitles.length ? 1 : 0) <= 1;
+      const choose = (option, chip, event) => {
+        if (chip.classList.contains('atrack')) stopSample('choose');
+        selected.set(item.id, { ...(selected.get(item.id) || {}), ...option.update }); renderRows();
+        if (single || !drawer || drawer.node !== node) { closeDrawer(event.detail === 0); return; }
+        // Redraw the lines in place; keyboard focus stays on the chosen chip.
+        const focused = inner.contains(document.activeElement); inner.replaceChildren(); fill(inner);
+        // The chosen chip keeps focus without replaying its sample until the pointer or focus moves on.
+        const chosen = focused && inner.querySelector(`[data-choice="${CSS.escape(option.key)}"]`);
+        if (chosen) { chosen.sampleQuiet = true; chosen.focus({ preventScroll: true }); }
+      };
+      if (quality.length) choiceLine(inner, 'Quality', quality, choose);
+      if (tracks.length > 1) {
+        // Labels 2 · Plain language, with Sample 3 · Hover to hear (docs/design/prototypes/audio-tracks).
+        const options = tracks.map(track => ({ key: `track:${track.key}`, label: track.title, checked: track === choice.audioTrack, update: { audioTrack: track.key }, track }));
+        const { group, body } = choiceLine(inner, 'Audio', options, choose);
+        const note = el('p', 'track-note'); note.setAttribute('aria-hidden', 'true'); body.append(note);
+        [...group.children].forEach((chip, index) => audioTrackChip(chip, note, item, options[index].track));
+        if (tracks.some(track => track.unknown)) body.append(el('p', 'menu-note', 'This site doesn’t name its tracks. Rest on one to check.'));
+        paintTrackNote(note);
+      }
+      if (subtitles.length) choiceLine(inner, 'Subtitles', [{ key: 'subtitle:none', label: 'None', checked: choice.selection.subtitleLang === 'none', update: { subtitleLang: 'none' } }, ...subtitles], choose);
+      if (inner.dataset.keyed) return;
+      inner.dataset.keyed = 'true';
+      inner.addEventListener('keydown', event => {
+        const chip = event.target.closest?.('[role="radio"]'); if (!chip) return;
+        if (event.key === ' ' && chip.classList.contains('atrack')) { event.preventDefault(); if (sample?.row === chip) stopSample('user'); else startSample(chip); return; }
+        // ←/→ move within a line, ↑/↓ between lines; Enter or Space chooses.
+        if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+          const groups = [...inner.querySelectorAll('[role="radiogroup"]')]; const next = groups[groups.indexOf(chip.parentElement) + (event.key === 'ArrowDown' ? 1 : -1)];
+          event.preventDefault(); next?.querySelector('[tabindex="0"]')?.focus(); return;
+        }
+        roveKeys(event, [...chip.parentElement.children], Infinity);
+      });
+    };
+    openDrawer(node, 'quality', trigger, fill);
   }
-  function showContext(item, event, trigger) {
-    const menu = openMenu(trigger, event); const job = model.jobFor(item, mappings, queue); const jobId = job?.id || job?.jobId || null;
+  // The ⋯ drawer: a 3-column grid of pixel keys, with the same actions and availability as before.
+  function rowActions(item) {
+    const job = model.jobFor(item, mappings, queue); const jobId = job?.id || job?.jobId || null;
     const storeYoutube = storeBuild && youtubeItem(item);
-    if (!storeYoutube) menuItem(menu, 'Rename', () => showRename(item));
-    menuItem(menu, 'Hide', async () => { const ids = [...new Set([item.id, ...(item.detectedStreams || []).map(value => value.id)])]; if (isDemo) mediaItems = mediaItems.filter(value => value.id !== item.id); else await message({ cmd: 'HIDE_MEDIA', tabId: activeTab.id, mediaIds: ids }); renderRows(); await refresh(); });
-    if (item.drm || storeYoutube) { menu.append(el('hr')); menuItem(menu, 'Show all detected streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); }); fitMenu(menu); return; }
-    menuItem(menu, 'Preview', () => preview(item));
+    const actions = []; const add = (label, glyph, handler) => actions.push({ label, glyph, handler });
+    const rename = () => { if (!storeYoutube) add('Rename', 'pencil', () => showRename(item)); };
+    const hide = () => add('Hide', 'hide', async () => { const ids = [...new Set([item.id, ...(item.detectedStreams || []).map(value => value.id)])]; if (isDemo) mediaItems = mediaItems.filter(value => value.id !== item.id); else await message({ cmd: 'HIDE_MEDIA', tabId: activeTab.id, mediaIds: ids }); renderRows(); await refresh(); });
+    const showAll = () => add('Show all detected streams', 'streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); });
+    if (item.drm || storeYoutube) { rename(); hide(); showAll(); return actions; }
+    add('Preview', 'play', () => preview(item));
     // Copies for other tools or for pasting into SnagThis. The page address is the reliable one to paste:
     // the desktop app finds the video again with a fresh address, while a bare stream address can need
     // the page's cookies or expire. Service-worker and blob addresses only work inside the page, so they're left out.
-    if (!item.serviceWorkerServed && /^https?:\/\//i.test(item.url || '') && item.mediaKind !== 'youtube-page') menuItem(menu, 'Copy video address', () => copyText(item.url, 'Video address copied'));
+    if (!item.serviceWorkerServed && /^https?:\/\//i.test(item.url || '') && item.mediaKind !== 'youtube-page') add('Copy video address', 'video', () => copyText(item.url, 'Video address copied'));
     const pageAddress = item.sourcePageUrl || activeTab?.url || '';
     // Chrome Web Store policy: the store build never hands out a YouTube page to download elsewhere.
     const youtubePage = storeBuild && (Boolean(SnagThisDetection.youtubeId(pageAddress)) || /^https?:\/\/([^/]+\.)?youtube\.com\//i.test(pageAddress));
-    if (/^https?:\/\//i.test(pageAddress) && !youtubePage) menuItem(menu, 'Copy page address', () => copyText(pageAddress, 'Page address copied. Paste it into SnagThis to download this video.'));
-    if (!item.serviceWorkerServed && (!jobId || (job?.backend === 'browser' && ['failed', 'completed', 'cancelled'].includes(job.queueStatus))) && browserSupported(model.selectMedia(item, preferences, selected.get(item.id)))) menuItem(menu, 'Download with desktop', () => useDesktop(item));
+    if (/^https?:\/\//i.test(pageAddress) && !youtubePage) add('Copy page address', 'page', () => copyText(pageAddress, 'Page address copied. Paste it into SnagThis to download this video.'));
+    rename(); hide();
+    if (!item.serviceWorkerServed && (!jobId || (job?.backend === 'browser' && ['failed', 'completed', 'cancelled'].includes(job.queueStatus))) && browserSupported(model.selectMedia(item, preferences, selected.get(item.id)))) add('Download with desktop', 'desktop', () => useDesktop(item));
     if (!jobId && !storeYoutube) {
       const expired = queue.filter(job => job.queueStatus === 'failed' && job.sourcePageUrl === item.sourcePageUrl && rows.classifyProblem(job.error).code === 'expired');
-      if (expired.length === 1) menuItem(menu, 'Continue previous download', () => continueDownload(item, expired[0].id));
+      if (expired.length === 1) add('Continue previous download', 'continue', () => continueDownload(item, expired[0].id));
     }
-    if (!jobId && ((item.audio || []).length || (item.subtitles || []).length)) menuItem(menu, 'Quality and subtitles', () => showQuality(item, rowElements.get(item.id)?.querySelector('.row-status')));
-    menu.append(el('hr'));
-    menuItem(menu, 'Show all detected streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); });
+    if (!jobId && ((item.audio || []).length || (item.subtitles || []).length)) add('Quality and subtitles', 'captions', () => showQuality(item, rowElements.get(item.id)?.querySelector('.row-more')));
     if (job?.backend === 'browser') {
-      menuItem(menu, 'Download details', () => showBrowserDetails(rowElements.get(item.id).current));
-      if (['downloading', 'queued', 'paused'].includes(job.queueStatus)) menuItem(menu, 'Cancel download', () => browserAction(jobId, 'cancel'));
-    } else if (jobId) menuItem(menu, 'Open in SnagThis', () => openDesktop());
-    fitMenu(menu);
+      add('Download details', 'details', () => showBrowserDetails(rowElements.get(item.id).current));
+      if (['downloading', 'queued', 'paused'].includes(job.queueStatus)) add('Cancel download', 'close', () => browserAction(jobId, 'cancel'));
+    } else if (jobId) add('Open in SnagThis', 'open', () => openDesktop());
+    showAll();
+    return actions;
+  }
+  function showContext(item, trigger) {
+    const node = rowElements.get(item.id); if (!node) return;
+    const actions = rowActions(item);
+    openDrawer(node, 'actions', trigger, inner => {
+      const grid = el('div', 'drawer-keys'); grid.setAttribute('role', 'toolbar'); grid.setAttribute('aria-label', `Actions for ${node.current.row.title}`);
+      actions.forEach(({ label, glyph, handler }, index) => {
+        const key = drawerKey(label, glyph); key.tabIndex = index ? -1 : 0;
+        key.addEventListener('click', event => { closeDrawer(event.detail === 0); handler(); }); grid.append(key);
+      });
+      grid.addEventListener('keydown', event => roveKeys(event, [...grid.children], 3));
+      inner.append(grid);
+    });
   }
   async function preview(item) {
     if (item.mediaKind === 'youtube-page') { external(item.sourcePageUrl || item.url); return; }
@@ -849,7 +1007,7 @@
     $('sheet').addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); }, { once: true });
     video.play().catch(() => {});
   }
-  function openSheet(title) { closeMenu(); delete $('sheet').dataset.view; $('sheet-link').hidden = true; $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); if (!$('sheet').open) $('sheet').showModal(); syncPopupHeight(); syncThumbPreviews(); return $('sheet-content'); }
+  function openSheet(title) { closeMenu(); closeDrawer(false); delete $('sheet').dataset.view; $('sheet-link').hidden = true; $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); if (!$('sheet').open) $('sheet').showModal(); syncPopupHeight(); syncThumbPreviews(); return $('sheet-content'); }
   function showProblem(row) {
     const content = openSheet('Video details'); const pad = el('div', 'sheet-pad');
     const youtube = SnagThisDetection.youtubeId(row.source.sourcePageUrl) || SnagThisDetection.youtubeId(row.source.url || row.source.mediaUrl);
@@ -1268,6 +1426,8 @@
       SnagThisDemo.live?.(() => { queue = SnagThisDemo.state.queue; SnagThisSpeedTrace.record(speedJobs(queue)); renderRows(); });
       // ?demo=pairing shows the Connect banner; &pair=starting|waiting|connected|denied|blocked|expired|conflict|limited|offline|failed|code shows that state.
       if (params.get('demo') === 'pairing') { const pair = params.get('pair'); if (pair === 'code') showCodePairing(); else if (pair === 'connected') { pairUi = { status: 'connected' }; renderConnection(); } else if (pair) { pairUi = { status: pair, requestId: 'demo', matchCode: pair === 'starting' ? '' : '4719', expiresAt: Date.now() + 112000 }; renderConnection(); } else renderConnection(); } if (params.get('demo') === 'settings') { if (params.get('conn') === 'offline') reachable = false; if (params.get('conn') === 'unpaired') appToken = ''; renderConnection(); showSettings(params.get('tab')); } if (['quality', 'audio'].includes(params.get('demo'))) showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
+      // &drawer=<row id> opens that row's ⋯ drawer in the gallery.
+      const drawerRow = rowElements.get(params.get('drawer') || ''); if (drawerRow) showContext(drawerRow.current.item, drawerRow.querySelector('.row-more'));
       return;
     }
     const tabId = Number(params.get('tab'));

@@ -51,6 +51,9 @@ async function loadPopup(page, flags = { storeBuild: false }) {
   return errors;
 }
 
+// Row drawers slide open and shut (instantly under reduced motion); geometry is read once they settle.
+const drawersSettled = page => page.waitForFunction(() => [...document.querySelectorAll('.row-drawer')].every(node => !node.getAnimations().length));
+
 test('saved popup quality uses job metadata without inventing video quality for audio', async ({ page }) => {
   const errors = await loadPopup(page);
   for (const [label, job, quality] of [
@@ -77,7 +80,7 @@ test('quality selection retains keyboard focus without forcing pointer focus', a
   await page.evaluate(() => { window.originalQualityTrigger = document.querySelector('.quality-button'); });
   const trigger = page.getByRole('button', { name: 'Choose quality' });
   await trigger.click();
-  await page.getByRole('menuitemradio').filter({ hasText: '720p' }).focus();
+  await page.getByRole('radio').filter({ hasText: '720p' }).focus();
   await page.keyboard.press('Enter');
   await expect(trigger.locator('.resolution')).toHaveText('720p');
   await expect(trigger).toBeFocused();
@@ -85,7 +88,7 @@ test('quality selection retains keyboard focus without forcing pointer focus', a
   expect(await page.evaluate(() => window.originalQualityTrigger === document.querySelector('.quality-button'))).toBe(true);
 
   await trigger.click();
-  await page.getByRole('menuitemradio').filter({ hasText: '1080p' }).click();
+  await page.getByRole('radio').filter({ hasText: '1080p' }).click();
   await expect(trigger.locator('.resolution')).toHaveText('1080p');
   await expect(trigger).not.toBeFocused();
   expect(errors).toEqual([]);
@@ -117,11 +120,14 @@ test('grouped popup jobs prefer unfinished mapped copies and preserve variant is
   expect(errors).toEqual([]);
 });
 
-test('row extras open from a keyboard-accessible More button and return focus', async ({ page }) => {
+test('row extras open an inline drawer from a keyboard-accessible More button and return focus', async ({ page }) => {
   const errors = await loadPopup(page);
   await page.evaluate(item => window.popupFixture.load([item], [], {}), item);
   const more = page.getByRole('button', { name: /^More actions: / });
-  await expect(more).toHaveAttribute('aria-haspopup', 'menu');
+  // A disclosure, not a popup menu: no native title either.
+  await expect(more).not.toHaveAttribute('aria-haspopup');
+  await expect(more).not.toHaveAttribute('title');
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
   await expect(more).toHaveCSS('opacity', '0');
   // Keyboard users reach it from the preceding row control.
   await page.getByRole('button', { name: 'Choose quality' }).focus();
@@ -129,27 +135,42 @@ test('row extras open from a keyboard-accessible More button and return focus', 
   await expect(more).toBeFocused();
   await expect(more).toHaveCSS('opacity', '1');
   await page.keyboard.press('Enter');
-  const menu = page.getByRole('menu');
-  await expect(menu).toBeVisible();
+  const keys = page.getByRole('toolbar', { name: 'Actions for Quality fixture' });
+  await expect(keys).toBeVisible();
+  // The drawer opens inside the row it belongs to, and nothing is drawn as a floating menu.
+  await expect(page.locator('.video-row').locator('.row-drawer')).toHaveCount(1);
+  await expect(page.locator('#menu')).toBeHidden();
   await expect(more).toHaveAttribute('aria-expanded', 'true');
-  await expect(menu.getByRole('menuitem', { name: 'Rename', exact: true })).toBeFocused();
+  await expect(more).toHaveAttribute('aria-controls', await page.locator('.row-drawer').getAttribute('id'));
+  await expect(keys.getByRole('button')).toHaveText(['Preview', 'Copy video address', 'Copy page address', 'Rename', 'Hide', 'Show all detected streams']);
+  await expect(keys.getByRole('button', { name: 'Preview', exact: true })).toBeFocused();
+  // One Tab stop; arrows move through the 3-column grid.
+  await expect(keys.locator('[tabindex="0"]')).toHaveCount(1);
+  await page.keyboard.press('ArrowRight');
+  await expect(keys.getByRole('button', { name: 'Copy video address', exact: true })).toBeFocused();
   await page.keyboard.press('ArrowDown');
-  await expect(menu.getByRole('menuitem', { name: 'Hide', exact: true })).toBeFocused();
+  await expect(keys.getByRole('button', { name: 'Hide', exact: true })).toBeFocused();
   await page.keyboard.press('End');
-  await expect(menu.getByRole('menuitem').last()).toBeFocused();
+  await expect(keys.getByRole('button').last()).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(keys.getByRole('button').first()).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
+  await expect(keys).toBeHidden();
   await expect(more).toBeFocused();
   await expect(more).toHaveAttribute('aria-expanded', 'false');
-  // Right-click opens the same menu.
+  // Right-click opens the same drawer; a click outside the row closes it.
   await page.locator('.video-row').click({ button: 'right' });
-  await expect(menu.getByRole('menuitem', { name: 'Rename', exact: true })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
+  await expect(keys.getByRole('button', { name: 'Rename', exact: true })).toBeVisible();
+  await page.locator('.popup-header').click();
+  await expect(keys).toBeHidden();
+  // Tab past the drawer closes it too.
+  await page.locator('.video-row').click({ button: 'right' });
+  await page.keyboard.press('Tab');
+  await expect(keys).toBeHidden();
   expect(errors).toEqual([]);
 });
 
-test('the row menu copies the video and page addresses, and the store build never offers a YouTube page', async ({ page }) => {
+test('the row drawer copies the video and page addresses, and the store build never offers a YouTube page', async ({ page }) => {
   const errors = await loadPopup(page);
   await page.evaluate(() => {
     window.copied = [];
@@ -158,18 +179,18 @@ test('the row menu copies the video and page addresses, and the store build neve
   await page.evaluate(value => window.popupFixture.load([value], [], {}), item);
   const row = page.locator('.video-row');
   await row.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Copy video address', exact: true }).click();
+  await page.getByRole('toolbar').getByRole('button', { name: 'Copy video address', exact: true }).click();
   await expect(page.locator('#notice')).toHaveText('Video address copied');
   await row.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Copy page address', exact: true }).click();
+  await page.getByRole('toolbar').getByRole('button', { name: 'Copy page address', exact: true }).click();
   await expect(page.locator('#notice')).toContainText('Page address copied');
   expect(await page.evaluate(() => window.copied)).toEqual([item.url, item.sourcePageUrl]);
   // Addresses that only work inside the page aren't offered.
   await page.evaluate(value => window.popupFixture.load([{ ...value, id: 'sw', serviceWorkerServed: true }, { ...value, id: 'blob', url: 'blob:https://fixture.invalid/1' }], [], {}), item);
   for (const index of [0, 1]) {
     await page.locator('.video-row').nth(index).click({ button: 'right' });
-    await expect(page.getByRole('menuitem', { name: 'Copy page address', exact: true })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'Copy video address', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('toolbar').getByRole('button', { name: 'Copy page address', exact: true })).toBeVisible();
+    await expect(page.getByRole('toolbar').getByRole('button', { name: 'Copy video address', exact: true })).toHaveCount(0);
     await page.keyboard.press('Escape');
   }
   expect(errors).toEqual([]);
@@ -180,8 +201,8 @@ test('the store build never copies a YouTube page address, even for another vide
   const embedded = { ...item, id: 'embedded', url: 'https://cdn.fixture.invalid/ad.mp4', type: 'file', sourcePageUrl: 'https://www.youtube.com/watch?v=abcdefghijk' };
   await page.evaluate(value => window.popupFixture.load([value], [], {}), embedded);
   await page.locator('.video-row').click({ button: 'right' });
-  await expect(page.getByRole('menuitem', { name: 'Hide', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Copy page address', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('toolbar').getByRole('button', { name: 'Hide', exact: true })).toBeVisible();
+  await expect(page.getByRole('toolbar').getByRole('button', { name: 'Copy page address', exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -195,13 +216,13 @@ test('the store build lists YouTube pages without a download or desktop handoff'
   await expect(row.locator('.row-status')).toHaveText("SnagThis doesn't save videos from this site");
   await expect(row.getByRole('button', { name: /Copy link|Download|Use desktop app/ })).toHaveCount(0);
   await row.click({ button: 'right' });
-  await expect(page.getByRole('menuitem', { name: 'Hide', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: /Copy|Download with desktop|Continue previous download|Preview|Rename/ })).toHaveCount(0);
+  await expect(page.getByRole('toolbar').getByRole('button', { name: 'Hide', exact: true })).toBeVisible();
+  await expect(page.getByRole('toolbar').getByRole('button', { name: /Copy|Download with desktop|Continue previous download|Preview|Rename/ })).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('desktop app');
   expect(errors).toEqual([]);
 });
 
-test('rows expose status to assistive tech, open menus from the keyboard and never clip a menu', async ({ page }) => {
+test('rows expose status to assistive tech, open drawers from the keyboard and never clip a drawer', async ({ page }) => {
   const errors = await loadPopup(page);
   const film = { ...item, subtitles: [{ url: 'https://fixture.invalid/en.vtt', language: 'en', name: 'English' }] };
   const paused = { id: 'paused', url: 'https://fixture.invalid/paused.mp4', type: 'file', sourcePageTitle: 'Paused fixture', sourcePageUrl: 'https://fixture.invalid/other', durationSeconds: 300 };
@@ -213,7 +234,7 @@ test('rows expose status to assistive tech, open menus from the keyboard and nev
   await expect(row).toHaveAttribute('aria-label', /^Quality fixture\. 1080p · 200 MB$/);
   await expect(page.locator('#open-app')).toHaveAccessibleName('Open SnagThis, 1 active download');
   // Resume never borrows the Play icon or name.
-  await expect(page.getByRole('button', { name: 'Resume download', exact: true })).toHaveAttribute('title', 'Resume download');
+  await expect(page.getByRole('button', { name: 'Resume download', exact: true })).toHaveAttribute('data-tip', 'Resume download');
   // Expired links explain the next step on two lines, with the duration beside the title.
   const problem = page.locator('.video-row[data-row-key="expired"]');
   await expect(problem.locator('.row-status')).toHaveText('Link expired at 34%. Play the video, then click Download to continue.');
@@ -225,30 +246,88 @@ test('rows expose status to assistive tech, open menus from the keyboard and nev
   await expect(page.locator('.video-row[data-row-key="paused"]')).toHaveCSS('opacity', '0.72');
   await expect(problem).toHaveCSS('opacity', '1');
 
-  // Shift+F10 on a focused row opens its menu; the row reveals its More button while focused.
+  // No native titles on the row: the title and status are in the row's name, and a clamped one uses the in-popup tooltip.
+  await expect(page.locator('.video-row [title]')).toHaveCount(0);
+
+  // Shift+F10 on a focused row opens its drawer; the row reveals its More button while focused.
   await row.focus();
   await expect(row.locator('.row-more')).toHaveCSS('opacity', '1');
   await page.keyboard.press('Shift+F10');
-  const menu = page.getByRole('menu');
-  await expect(menu.getByRole('menuitem', { name: 'Rename', exact: true })).toBeFocused();
+  await expect(row.getByRole('toolbar').getByRole('button', { name: 'Preview', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
+  await expect(row.getByRole('toolbar')).toHaveCount(0);
 
-  // The quality menu grows a short popup rather than covering the header or clipping subtitles.
+  // The quality drawer grows a short popup by its own height only (no floor): nothing is covered or clipped,
+  // and the header and the row's own content never move.
   await page.evaluate(value => window.popupFixture.load([value], [], {}), film);
-  await page.getByRole('button', { name: 'Choose quality' }).click();
-  await expect(menu.getByRole('menuitemradio', { name: 'None', exact: true })).toBeVisible();
-  const fit = await page.evaluate(() => {
-    const menu = document.getElementById('menu').getBoundingClientRect(); const popup = document.getElementById('popup').getBoundingClientRect();
-    const header = document.querySelector('.popup-header').getBoundingClientRect(); const node = document.getElementById('menu');
-    return { top: menu.top, bottom: menu.bottom, header: header.bottom, popup: popup.bottom, height: popup.height, clipped: node.scrollHeight > node.clientHeight };
+  const measure = () => page.evaluate(() => {
+    const box = selector => { const rect = document.querySelector(selector)?.getBoundingClientRect(); return rect && { top: rect.top, bottom: rect.bottom, height: rect.height }; };
+    return { popup: box('#popup'), header: box('.popup-header'), thumb: box('.video-row .thumb'), title: box('.video-row .row-title'), drawer: box('.row-drawer'), footer: box('.popup-footer'), minHeight: document.getElementById('popup').style.minHeight };
   });
-  expect(fit.top).toBeGreaterThanOrEqual(fit.header);
-  expect(fit.bottom).toBeLessThanOrEqual(fit.popup);
-  expect(fit.height).toBeGreaterThanOrEqual(300);
-  expect(fit.clipped).toBe(false);
+  // The earlier rows collapse away first.
+  await page.waitForFunction(() => document.querySelectorAll('.video-row').length === 1);
+  await drawersSettled(page);
+  const closed = await measure();
+  await page.getByRole('button', { name: 'Choose quality' }).click();
+  const drawer = page.getByRole('group', { name: 'Quality for Quality fixture' });
+  await expect(drawer.getByRole('radiogroup', { name: 'Subtitles' }).getByRole('radio', { name: 'None', exact: true })).toBeVisible();
+  await expect(drawer.getByRole('radio', { name: /^1080p/ })).toBeFocused();
+  await drawersSettled(page);
+  const open = await measure();
+  expect(open.minHeight).toBe('');
+  expect(open.header).toEqual(closed.header);
+  expect(open.thumb).toEqual(closed.thumb);
+  expect(open.title).toEqual(closed.title);
+  expect(open.drawer.top).toBeGreaterThanOrEqual(closed.thumb.bottom);
+  expect(open.drawer.bottom).toBeLessThanOrEqual(open.footer.top);
+  expect(Math.abs(open.popup.height - closed.popup.height - open.drawer.height)).toBeLessThanOrEqual(1);
+  // ←/→ move within a line, ↑/↓ between lines.
+  await page.keyboard.press('ArrowDown');
+  await expect(drawer.getByRole('radio', { name: 'None', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(drawer.getByRole('radio', { name: 'English', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(drawer.getByRole('radio', { name: /^1080p/ })).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(page.locator('#popup')).toHaveCSS('min-height', '0px');
+  await expect(drawer).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Choose quality' })).toBeFocused();
+  await expect.poll(async () => (await measure()).popup).toEqual(closed.popup);
+  await expect(page.locator('.row-drawer')).toHaveCount(0);
+  // Reduced motion opens and closes the drawer at once.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('button', { name: 'Choose quality' }).click();
+  expect(await page.locator('.row-drawer').evaluate(node => ({ running: node.getAnimations().length, rows: getComputedStyle(node).gridTemplateRows }))).toEqual({ running: 0, rows: expect.not.stringMatching(/^0px$/) });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.row-drawer')).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  expect(errors).toEqual([]);
+});
+
+test('a clamped title shows an in-popup tooltip, a title that fits shows none, and icon buttons name themselves', async ({ page }) => {
+  const errors = await loadPopup(page);
+  const long = { ...item, id: 'long', sourcePageTitle: 'The Very Long Crossing — Director’s Extended Harbour Edition, Remastered with Commentary and Every Deleted Scene Restored' };
+  const short = { ...item, id: 'short', url: 'https://fixture.invalid/short.m3u8', sourcePageTitle: 'Short fixture', durationSeconds: 60, variants: undefined };
+  await page.evaluate(values => window.popupFixture.load(values, [], {}), [long, short]);
+  const tip = page.getByRole('tooltip');
+  await page.locator('.video-row[data-row-key="short"] .row-title').hover();
+  await page.waitForTimeout(800);
+  await expect(tip).toHaveCount(0);
+  await page.locator('.video-row[data-row-key="long"] .row-title').hover();
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveText(long.sourcePageTitle);
+  const box = await tip.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(480);
+  await page.keyboard.press('Escape');
+  await expect(tip).toBeHidden();
+  // Keyboard focus on the row shows it at once; the Download button's name comes from the same element.
+  await page.locator('.popup-header').hover();
+  await page.getByRole('button', { name: 'Choose quality' }).focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('.video-row[data-row-key="long"]')).toBeFocused();
+  await expect(tip).toHaveText(long.sourcePageTitle);
+  await page.locator('.video-row[data-row-key="short"]').getByRole('button', { name: 'Download', exact: true }).hover();
+  await expect(tip).toHaveText('Download');
   expect(errors).toEqual([]);
 });
 
@@ -348,21 +427,23 @@ test('audio tracks: plain-language labels, DEFAULT preselected, hover to hear, E
   await page.evaluate(value => window.popupFixture.load([value], [], {}), tracks);
   const trigger = page.locator('.quality-button');
   await expect(trigger).toHaveText(/1080p\s*· Track 1/);
-  await trigger.click();
-  const menu = page.locator('#menu');
-  await expect(menu).toHaveClass(/\bwide\b/);
-  await expect(menu.locator('.menu-title').first()).toHaveText('Quality');
-  await expect(menu.locator('.menu-title').nth(1)).toHaveText('Audio 4 tracks');
-  const rows = menu.locator('.atrack');
+  await trigger.click(); await drawersSettled(page);
+  const drawer = page.getByRole('group', { name: 'Quality for Quality fixture' });
+  await expect(drawer.locator('.qline-label')).toHaveText(['Quality', 'Audio']);
+  const rows = drawer.getByRole('radiogroup', { name: 'Audio' }).locator('.atrack');
   await expect(rows).toHaveCount(4);
-  await expect(rows.locator('.alabel b')).toHaveText(['Track 1', 'Track 2', 'Track 3', 'Track 4']);
-  await expect(rows.locator('.alabel small')).toHaveText(['Unknown language · Default', 'Unknown language', 'Unknown language', 'Unknown language']);
-  await expect(rows.nth(0).getByRole('menuitemradio')).toHaveAttribute('aria-checked', 'true');
-  await expect(rows.nth(2).getByRole('menuitemradio')).toHaveAttribute('aria-label', 'Track 3, unknown language');
-  await expect(menu.locator('.menu-note')).toHaveText('This site doesn’t name its tracks. Rest on one to check.');
+  await expect(rows.locator('.alabel')).toHaveText(['Track 1', 'Track 2', 'Track 3', 'Track 4']);
+  // The line under the chips describes the chosen track until another is pointed at or focused.
+  const note = drawer.locator('.track-note');
+  await expect(note).toHaveText('Unknown language · Default');
+  await expect(rows.nth(0)).toHaveAttribute('aria-checked', 'true');
+  await expect(rows.nth(2)).toHaveAttribute('role', 'radio');
+  await expect(rows.nth(2)).toHaveAttribute('aria-label', 'Track 3, unknown language');
+  await expect(drawer.locator('.menu-note')).toHaveText('This site doesn’t name its tracks. Rest on one to check.');
 
   // Resting on a track starts one sample of that rendition.
   await rows.nth(2).hover();
+  await expect(note).toHaveText('Unknown language');
   await expect.poll(() => page.evaluate(() => window.samples.length)).toBe(1);
   expect(await page.evaluate(() => window.samples[0].options.rendition.url)).toBe('https://fixture.invalid/audio_3.m3u8');
   await expect(rows.nth(2)).toHaveClass(/is-loading/);
@@ -377,52 +458,68 @@ test('audio tracks: plain-language labels, DEFAULT preselected, hover to hear, E
   // A failed sample says so; the track can still be chosen.
   await page.evaluate(() => window.samples[1].options.onError());
   await expect(rows.nth(1)).toHaveClass(/is-failed/);
-  await expect(rows.nth(1).locator('.alabel small')).toHaveText('Sample unavailable · you can still choose it');
+  await expect(note).toHaveText('Sample unavailable · you can still choose it');
 
-  // Keyboard: Space plays the focused track, the first Esc stops it, the second closes the menu.
+  // Keyboard: Space plays the focused track, the first Esc stops it, the second closes the drawer.
   await page.mouse.move(5, 5);
-  await rows.nth(3).getByRole('menuitemradio').focus();
+  await rows.nth(3).focus();
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.samples.length)).toBe(3);
+  await expect(rows.nth(3)).toHaveAttribute('aria-checked', 'false');
   await page.keyboard.press('Escape');
   expect(await page.evaluate(() => window.samples[2].control.stopped)).toBe(1);
-  await expect(menu).toBeVisible();
+  await expect(drawer).toBeVisible();
   await expect(page.locator('#sample-status')).toHaveText('Sample stopped.');
   await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
+  await expect(drawer).toHaveCount(0);
   await expect(trigger).toBeFocused();
 
-  // Choosing a track stops any sample and names it in the trigger.
-  await trigger.click();
+  // Choosing a track stops any sample and names it in the trigger. With tracks the drawer stays open
+  // (quality and audio can both change); the chosen chip keeps focus and doesn't replay its sample.
+  await trigger.click(); await drawersSettled(page);
   await rows.nth(2).hover();
   await expect.poll(() => page.evaluate(() => window.samples.length)).toBe(4);
-  await rows.nth(2).getByRole('menuitemradio').click();
+  await rows.nth(2).click();
   expect(await page.evaluate(() => window.samples[3].control.stopped)).toBe(1);
-  await expect(menu).toBeHidden();
   await expect(trigger).toHaveText(/1080p\s*· Track 3/);
-  await trigger.click();
-  await expect(menu.locator('.atrack').nth(2).getByRole('menuitemradio')).toHaveAttribute('aria-checked', 'true');
+  await expect(drawer).toBeVisible();
+  await expect(rows.nth(2)).toHaveAttribute('aria-checked', 'true');
+  await expect(rows.nth(2)).toBeFocused();
+  await page.waitForTimeout(700);
+  expect(await page.evaluate(() => window.samples.length)).toBe(4);
+  // Choosing a quality in the same drawer keeps the track.
+  await drawer.getByRole('radio', { name: /^720p/ }).click();
+  await expect(trigger).toHaveText(/720p\s*· Track 3/);
   await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
-test('a quality menu taller than the popup scrolls inside it, so every audio track is reachable', async ({ page }) => {
+test('a tall quality drawer in a full popup stays inside it: the list scrolls and every audio track is reachable', async ({ page }) => {
   const errors = await loadPopup(page);
-  const tracks = { ...item, audio: [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ url: `https://fixture.invalid/audio_${n}.m3u8`, groupId: 'audio', name: `Track ${n}`, language: null, default: n === 1 })) };
-  await page.evaluate(value => window.popupFixture.load([value], [], {}), tracks);
-  await page.locator('.quality-button').click();
-  const menu = page.locator('#menu');
-  await expect(menu.locator('.atrack')).toHaveCount(8);
-  const fit = await page.evaluate(() => {
-    const node = document.getElementById('menu'); const box = node.getBoundingClientRect(); const popup = document.getElementById('popup').getBoundingClientRect();
-    return { bottom: box.bottom, popup: popup.bottom, scrolls: node.scrollHeight > node.clientHeight };
+  const tracks = { ...item, audio: [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ url: `https://fixture.invalid/audio_${n}.m3u8`, groupId: 'audio', name: `Track ${n}`, language: null, default: n === 1 })),
+    subtitles: ['en', 'es', 'fr', 'de'].map(language => ({ url: `https://fixture.invalid/${language}.vtt`, language, name: language.toUpperCase() })), durationSeconds: 30 };
+  const others = [1, 2, 3, 4].map(n => ({ ...item, id: `other-${n}`, url: `https://fixture.invalid/other-${n}.m3u8`, sourcePageTitle: `Other fixture ${n}`, durationSeconds: 600 + n, variants: undefined }));
+  await page.evaluate(values => window.popupFixture.load(values, [], {}), [...others, tracks]);
+  // The shortest video is listed last, below the fold of a 560px popup.
+  const row = page.locator('.video-row[data-row-key="master"]');
+  await row.getByRole('button', { name: /Choose quality/ }).click();
+  const chips = row.locator('.atrack');
+  await expect(chips).toHaveCount(8);
+  await drawersSettled(page);
+  const geometry = () => page.evaluate(() => {
+    const list = document.getElementById('video-list'); const popup = document.getElementById('popup').getBoundingClientRect();
+    const row = document.querySelector('.video-row[data-row-key="master"]').getBoundingClientRect(); const bounds = list.getBoundingClientRect();
+    return { popup: popup.height, scrolls: list.scrollHeight > list.clientHeight, rowTop: row.top, rowBottom: row.bottom, listTop: bounds.top, listBottom: bounds.bottom };
   });
-  expect(fit.bottom).toBeLessThanOrEqual(fit.popup);
+  // The opened row and its drawer are scrolled fully into view.
+  await expect.poll(async () => { const fit = await geometry(); return fit.rowBottom <= fit.listBottom + 1 && fit.rowTop >= fit.listTop - 1; }).toBe(true);
+  const fit = await geometry();
+  expect(fit.popup).toBeLessThanOrEqual(560);
   expect(fit.scrolls).toBe(true);
-  const last = menu.locator('.atrack').last();
-  await last.scrollIntoViewIfNeeded();
+  const last = chips.last();
   await expect(last).toBeInViewport();
-  expect(await last.evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(fit.popup);
+  expect(await last.evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(fit.listBottom);
   expect(errors).toEqual([]);
 });
 test('a video only its page Service Worker can serve says so and offers no download', async ({ page }) => {
@@ -434,7 +531,7 @@ test('a video only its page Service Worker can serve says so and offers no downl
   await expect(row.locator('.row-status')).toHaveText('This video only plays inside its own player');
   await expect(row.getByRole('button', { name: /^(Download|Use desktop app)$/ })).toHaveCount(0);
   await row.click({ button: 'right' });
-  await expect(page.getByRole('menuitem', { name: /Download with desktop/ })).toHaveCount(0);
+  await expect(page.getByRole('toolbar').getByRole('button', { name: /Download with desktop/ })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -484,7 +581,7 @@ test('a DRM-protected title is one explanatory row with no download; unprotected
   await expect(row.locator('.row-status')).toHaveText("Protected by Stream Service (DRM) — SnagThis can't save it");
   await expect(row.getByRole('button', { name: /^(Download|Use desktop app|Starting download)$/ })).toHaveCount(0);
   await row.click({ button: 'right' });
-  await expect(page.getByRole('menuitem', { name: /Download with desktop|Preview|Quality/ })).toHaveCount(0);
+  await expect(page.getByRole('toolbar').getByRole('button', { name: /Download with desktop|Preview|Quality/ })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await row.getByRole('button', { name: 'Why?' }).click();
   await expect(page.locator('#sheet-title')).toHaveText('Protected video');
