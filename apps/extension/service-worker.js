@@ -401,27 +401,35 @@ async function appRequest(path, body, apiBase = API_BASE, method = 'POST') {
   return data;
 }
 
-/* ── One-click pairing (docs/design/prototypes/pairing option 2) ──
- * The worker owns the request because Chrome closes the popup as soon as SnagThis
- * takes focus. The request secret lives only in storage.session, which is memory-only
- * and limited to trusted extension contexts; the popup sees just the public state. */
+/* ── Pairing (docs/design/prototypes/pairing-simple: B · Pair from the desktop, with A's one-tap banner) ──
+ * The worker owns the request, so it survives the popup closing. The request secret lives only in
+ * storage.session, which is memory-only and limited to trusted extension contexts; the popup sees just
+ * the public state. SnagThis surfaces its own approve card for a new request, so no snagthis:// link is
+ * opened (and Chrome never asks "Open SnagThis?") while the app is running. */
 const PAIRING_KEY = 'snagthis:pairing';
 const PAIRING_SECRET_KEY = 'snagthis:pairing-secret';
-const PAIRING_OPEN_DELAY_MS = 1200;
+// What automatic requests have been made: at most one per desktop "Waiting for Chrome…" session, none
+// while a Deny block or the request limit applies.
+const PAIRING_AUTO_KEY = 'snagthis:pairing-auto';
 const PAIRING_POLL_MS = 1000;
-let pairingPoll = null;
+const PAIRING_BLOCK_MS = 60 * 60_000;
+const PAIRING_LIMIT_MS = 5 * 60_000;
+const CONNECTED_BADGE_MS = 10_000;
+let pairingPoll = null; let autoPairing = null;
 let tokenUpgrade = null; let tokenUpgradeUnavailable = false;
 async function bridgePost(apiBase, path, body, token) {
   const response = await fetch(`${apiBase}${path}`, { method: 'POST', headers: bridgeHeaders(token), body: JSON.stringify(body || {}), signal: AbortSignal.timeout(8000) });
   return { status: response.status, data: await response.json().catch(() => ({})) };
 }
 async function pairingState() { return (await chrome.storage.session.get(PAIRING_KEY))[PAIRING_KEY] || null; }
+async function autoMemory() { return (await chrome.storage.session.get(PAIRING_AUTO_KEY))[PAIRING_AUTO_KEY] || { sessions: [] }; }
+async function rememberAuto(patch) { await chrome.storage.session.set({ [PAIRING_AUTO_KEY]: { ...(await autoMemory()), ...patch } }); }
 async function refreshTabBadge(tabId) {
   if (!Number.isInteger(tabId) || tabId < 0) return;
   const count = SnagThisHls.collapseDetections(visibleItems(await readPage(tabId))).length;
   await chrome.action.setBadgeText({ tabId, text: count ? String(count) : '' }).catch(() => {});
 }
-// While waiting, the toolbar badge repeats the four digits, so they stay visible after the popup closes.
+// While waiting, the toolbar badge repeats the four digits, so they stay visible if the popup closes.
 async function pairingBadge(text, tabId) {
   await chrome.action.setBadgeBackgroundColor({ color: text === '✓' ? '#1f9d55' : SnagThisAccentIcon.badgeColor() }).catch(() => {});
   await chrome.action.setBadgeText({ text }).catch(() => {});
@@ -431,13 +439,18 @@ async function pairingBadge(text, tabId) {
   }
   if (!text) await chrome.action.setBadgeBackgroundColor({ color: SnagThisAccentIcon.badgeColor() }).catch(() => {});
 }
+/** Only an explicit "Show SnagThis" opens the link; a running app comes forward by itself. */
 async function openPairingApp() { await chrome.tabs.create({ url: 'snagthis://open/pair' }).catch(() => {}); }
 async function finishPairing(state, status, token) {
   if (token) await chrome.storage.local.set({ appToken: token, appTokenVersion: 2 });
   await chrome.storage.session.remove([PAIRING_SECRET_KEY, ...(token ? ['snagthis:disconnected'] : [])]);
+  // Kept (memory only) so a popup that was closed shows the outcome once, as one inline line.
   const next = { ...state, status, finishedAt: Date.now() };
   await chrome.storage.session.set({ [PAIRING_KEY]: next });
+  if (status === 'denied') await rememberAuto({ blockedUntil: Date.now() + PAIRING_BLOCK_MS });
   await pairingBadge(status === 'connected' ? '✓' : '', state.tabId);
+  // The ✓ is a brief trace, not a state: it goes after a few seconds or when the popup opens.
+  if (status === 'connected') setTimeout(() => { pairingState().then(latest => { if (!latest || latest.requestId === state.requestId) pairingBadge('', state.tabId); }).catch(() => {}); }, CONNECTED_BADGE_MS);
   return next;
 }
 async function pollPairing() {
@@ -462,26 +475,55 @@ function resumePairingPoll() {
 async function startPairing(message) {
   const apiBase = !chrome.runtime.getManifest().update_url ? localApiBase(message.apiBase) : API_BASE;
   const tabId = Number.isInteger(message.tabId) ? message.tabId : null;
+  // One request at a time: a second Connect (or popup opening) joins the one already waiting.
   const current = await pairingState();
   if (current?.status === 'waiting' && current.expiresAt > Date.now()) { resumePairingPoll(); return current; }
   const secret = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
   let result;
   try { result = await bridgePost(apiBase, '/v1/pair/request', { secret }); }
-  catch { const state = { status: 'offline', finishedAt: Date.now() }; await chrome.storage.session.set({ [PAIRING_KEY]: state }); return state; }
+  catch { const state = { status: 'offline', finishedAt: Date.now(), auto: Boolean(message.auto) }; await chrome.storage.session.set({ [PAIRING_KEY]: state }); return state; }
   if (result.status !== 201 || !/^\d{4}$/.test(String(result.data.matchCode)) || !/^[0-9a-f]{32}$/.test(String(result.data.requestId))) {
     const status = result.status === 409 ? 'conflict' : result.status === 429 ? 'limited' : result.data.code === 'PAIRING_BLOCKED' ? 'blocked' : 'failed';
-    const state = { status, finishedAt: Date.now() };
+    if (status === 'blocked') await rememberAuto({ blockedUntil: Date.now() + Math.min(Math.max(Number(result.data.retryAfterMs) || PAIRING_BLOCK_MS, 0), PAIRING_BLOCK_MS) });
+    if (status === 'limited') await rememberAuto({ limitedUntil: Date.now() + PAIRING_LIMIT_MS });
+    const state = { status, finishedAt: Date.now(), auto: Boolean(message.auto) };
     await chrome.storage.session.set({ [PAIRING_KEY]: state });
     return state;
   }
   const expiresInMs = Math.min(Math.max(Number(result.data.expiresInMs) || 120000, 1000), 120000);
-  const state = { status: 'waiting', requestId: result.data.requestId, matchCode: result.data.matchCode, expiresAt: Date.now() + expiresInMs, startedAt: Date.now(), tabId };
+  const state = { status: 'waiting', requestId: result.data.requestId, matchCode: result.data.matchCode, expiresAt: Date.now() + expiresInMs, startedAt: Date.now(), tabId, auto: Boolean(message.auto) };
   await chrome.storage.session.set({ [PAIRING_KEY]: state, [PAIRING_SECRET_KEY]: { requestId: state.requestId, secret, apiBase } });
   await pairingBadge(state.matchCode, tabId);
   resumePairingPoll();
-  // Show the digits in the popup for a moment, then bring SnagThis forward. The link carries no ID or secret.
-  setTimeout(() => { pairingState().then(latest => { if (latest?.requestId === state.requestId && latest.status === 'waiting') openPairingApp(); }).catch(() => {}); }, PAIRING_OPEN_DELAY_MS);
   return state;
+}
+/**
+ * Pair from the desktop: when SnagThis shows "Waiting for Chrome…" and this browser isn't connected,
+ * ask without a click. Never twice for the same waiting card, never while a request waits, never after
+ * a Disconnect in this session, and never while SnagThis's Deny block or the request limit applies.
+ * Approval is unchanged: the person still checks the digits and chooses Allow in SnagThis.
+ */
+function autoPair(message = {}) {
+  if (autoPairing) return autoPairing;
+  autoPairing = (async () => {
+    const apiBase = !chrome.runtime.getManifest().update_url ? localApiBase(message.apiBase) : API_BASE;
+    if ((await chrome.storage.local.get('appToken')).appToken) return null;
+    const current = await pairingState();
+    if (current?.status === 'waiting' && current.expiresAt > Date.now()) { resumePairingPoll(); return current; }
+    if ((await chrome.storage.session.get('snagthis:disconnected'))['snagthis:disconnected']) return null;
+    const memory = await autoMemory();
+    if ((memory.blockedUntil || 0) > Date.now() || (memory.limitedUntil || 0) > Date.now()) return null;
+    let health = null;
+    try {
+      const response = await fetch(`${apiBase}/v1/health`, { headers: bridgeHeaders(), signal: AbortSignal.timeout(4000) });
+      if (response.ok) health = await response.json();
+    } catch { return null; }
+    const session = health?.pairing?.listening === true ? String(health.pairing.session || '') : '';
+    if (!/^[0-9a-f]{16}$/.test(session) || (memory.sessions || []).includes(session)) return null;
+    await rememberAuto({ sessions: [...(memory.sessions || []), session].slice(-20) });
+    return startPairing({ ...message, auto: true });
+  })().finally(() => { autoPairing = null; });
+  return autoPairing;
 }
 async function cancelPairing() {
   const stored = await chrome.storage.session.get([PAIRING_KEY, PAIRING_SECRET_KEY]);
@@ -490,7 +532,7 @@ async function cancelPairing() {
   await chrome.storage.session.remove([PAIRING_KEY, PAIRING_SECRET_KEY]);
   await pairingBadge('', stored[PAIRING_KEY]?.tabId);
 }
-/** The popup has shown the outcome; clear it and the ✓ badge. */
+/** The popup has shown the outcome (one inline line); clear it and the badge so it never replays. */
 async function acknowledgePairing() {
   const state = await pairingState();
   if (!state || state.status === 'waiting') return;
@@ -528,6 +570,11 @@ async function disconnectApp(message) {
   return { ok: true };
 }
 pairingState().then(state => { if (state?.status === 'waiting') resumePairingPoll(); }).catch(() => {});
+// The installed store build also asks when Chrome starts or the extension is added while SnagThis is
+// waiting for it, so the desktop card can show the digits (the badge repeats them). Unpacked copies
+// only ask from their popup, which knows which local app it talks to.
+function autoPairOnStartup() { if (chrome.runtime.getManifest().update_url) autoPair({}).catch(() => {}); }
+chrome.runtime.onStartup?.addListener(autoPairOnStartup);
 async function downloadMedia(message) {
   const key = `${message.tabId}:${message.mediaId}:${message.backend || 'auto'}`;
   if (pendingDownloads.has(key)) return pendingDownloads.get(key);
@@ -638,6 +685,7 @@ async function handleMessage(message, sender) {
   if (['STORE_DETECTED_MEDIA', 'PAGE_CONTEXT', 'PAGE_NAVIGATED', 'SERVICE_WORKER_MEDIA'].includes(message.cmd) && Number.isInteger(tabId)) return handleContentMessage(message, sender, tabId);
   if (!trustedPage(sender)) return { ok: false, error: 'Unavailable to this page.' };
   if (message.cmd === 'PAIR_START') return { ok: true, state: await startPairing(message) };
+  if (message.cmd === 'PAIR_AUTO') return { ok: true, state: await autoPair(message) };
   if (message.cmd === 'PAIR_STATE') { const state = await pairingState(); if (state?.status === 'waiting') resumePairingPoll(); return { ok: true, state }; }
   if (message.cmd === 'PAIR_OPEN_APP') { const state = await pairingState(); if (state?.status === 'waiting') await openPairingApp(); return { ok: true }; }
   if (message.cmd === 'PAIR_CANCEL') { await cancelPairing(); return { ok: true }; }
@@ -763,6 +811,7 @@ chrome.tabs.onRemoved.addListener(tabId => {
   serializeTab(tabId, () => chrome.storage.session.remove([getStorageKey(tabId), ...takePrerenderSlots(tabId)])).catch(logFailure);
 });
 chrome.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason === 'install') autoPairOnStartup();
   if (!['install', 'update'].includes(reason) || !chrome.scripting) return;
   chrome.tabs.query({ url: NETWORK_URLS }).then(tabs => Promise.all(tabs.map(tab => injectContentScripts(tab.id).catch(() => {})))).catch(logFailure);
 });

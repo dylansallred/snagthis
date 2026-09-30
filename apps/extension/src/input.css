@@ -388,54 +388,37 @@ html.accent-crossfade{transition:--color-primary 240ms ease,--color-primary-stro
 .accent-swatch:has(input:checked) .accent-dot{box-shadow:0 0 0 2px var(--color-surface-row),0 0 0 4px var(--swatch)}
 .accent-swatch:has(input:checked) .accent-dot .icon{opacity:1}
 .accent-swatch:has(input:focus-visible){outline:2px solid var(--color-primary-hover);outline-offset:0}
-/* ── One-click pairing (owner pick: docs/design/prototypes/pairing-polish option 4 · Cartridge): the four digits in one pixel-bevel housing, a 12-pip countdown, one sentence, the code link in the footer. ── */
-.sheet:is([data-view=pairing],[data-view=connected]) .sheet-content{display:flex;flex-direction:column;padding-bottom:0}
-.pair-pad{flex:1;display:flex;flex-direction:column;padding:0}
-.pair-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:18px 16px 16px;text-align:center}
-.pair-pad p{margin:0;max-width:400px}
-.pair-pad .pair-kicker{font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--color-foreground-subtle);margin:0 0 12px}
-.pair-pad .pair-say{margin:16px 0 0;font-size:13px;color:var(--color-foreground-muted)}
-.pair-say b{color:var(--color-foreground);font-weight:600}
+/* ── Pairing (owner pick 2026-09-29: docs/design/prototypes/pairing-simple, B + A fallback): no sheet, one inline banner in the connection slot. The four digits keep the Cartridge housing (pairing-polish option 4), small. ── */
 .pair-cart{display:inline-flex;gap:2px;margin:2px;padding:5px;background:#000;box-shadow:inset 2px 2px 0 var(--accent-bevel-light),inset -2px -2px 0 var(--accent-bevel-dark),0 0 0 2px var(--accent-bevel-face);clip-path:polygon(2px -2px,calc(100% - 2px) -2px,calc(100% - 2px) 0,100% 0,100% 2px,calc(100% + 2px) 2px,calc(100% + 2px) calc(100% - 2px),100% calc(100% - 2px),100% 100%,calc(100% - 2px) 100%,calc(100% - 2px) calc(100% + 2px),2px calc(100% + 2px),2px 100%,0 100%,0 calc(100% - 2px),-2px calc(100% - 2px),-2px 2px,0 2px,0 0,2px 0)}
 .pair-digit{width:40px;height:54px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent-bevel-dark) 16%,#0b0d10);color:#fff4e6;box-shadow:inset 0 2px 0 rgb(255 255 255 / .04);animation:pair-flip 300ms steps(3) both;animation-delay:calc(var(--i,0) * 90ms + 80ms)}
 .pair-digit svg{display:block}
 @keyframes pair-flip{0%{transform:scaleY(0)}}
 .pair-cart.off{box-shadow:inset 2px 2px 0 hsl(215 15% 26%),inset -2px -2px 0 #000,0 0 0 2px var(--color-border)}
 .pair-cart.off .pair-digit{background:#0b0d10;color:var(--color-foreground-subtle);animation:none}
-.pair-pips{display:flex;gap:4px;margin-top:16px}
-.pair-pip{width:6px;height:6px;background:var(--accent-bevel-face);transition:background-color 300ms}
-.pair-pip.gone,.pair-pips.idle .pair-pip{background:var(--color-border)}
-.pair-pip.now{animation:pair-blink 1s steps(1) infinite}
 @keyframes pair-blink{50%{opacity:.25}}
-.pair-pips.good{margin:0 0 18px}
-.pair-pips.good .pair-pip{background:hsl(150 50% 60%)}
-.pair-status{display:inline-flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--color-foreground-subtle)}
 .pair-tick{font:500 11.5px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--color-foreground-muted)}
-.pair-actions{justify-content:center;margin-top:22px}
-.pair-actions .action{height:32px;padding:0 14px}
-.pair-pad .pair-state-title{margin:18px 0 4px;font-size:15px;font-weight:620;color:var(--color-foreground)}
-.pair-pad .pair-state-body{font-size:12.5px;color:var(--color-foreground-muted);max-width:360px}
-.pair-foot{flex:none;height:44px;display:flex;align-items:center;justify-content:center;gap:6px;border-top:1px solid var(--color-border-subtle);font-size:12px;color:var(--color-foreground-subtle)}
-.pair-foot-link{padding:0;font-size:12px;color:var(--color-foreground-muted);text-decoration:underline;text-decoration-color:var(--color-border);text-underline-offset:3px}
-.pair-foot-link:hover{color:var(--color-foreground);text-decoration-color:currentColor}
 .pair-devchip{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:5px;background:var(--color-background-active);color:var(--color-foreground-muted);font:600 9.5px/20px var(--font-mono);letter-spacing:.06em;cursor:help;flex:none}
 .pair-devchip::before{content:"";width:5px;height:5px;background:var(--color-foreground-subtle)}
-.sheet:not([data-view=pairing]) .pair-devchip{display:none}
-.pair-code-link{margin-top:14px;font-size:12px}
-.pair-yay>*{animation:pair-rise 420ms cubic-bezier(.2,.8,.2,1) both}
-.pair-yay>:nth-child(2){animation-delay:160ms}.pair-yay>:nth-child(3){animation-delay:230ms}.pair-yay>:nth-child(4){animation-delay:300ms}.pair-yay>:nth-child(5){animation-delay:360ms}
-@keyframes pair-rise{from{opacity:0;transform:translateY(6px)}}
-.pair-yay-art{position:relative;width:64px;height:64px}
-.pair-burst i{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;background:var(--c);opacity:0;animation:pair-burst 900ms steps(6) 120ms forwards}
-@keyframes pair-burst{0%{opacity:1;transform:rotate(var(--a)) translateX(10px)}80%{opacity:1}100%{opacity:0;transform:rotate(var(--a)) translateX(var(--d,54px))}}
-.pair-yay-title{margin:16px 0 6px;color:#fff;line-height:0}
-.pair-yay-title svg{display:block}
-.pair-pad .pair-yay .pair-say{margin:0 0 18px;font-size:12.5px}
-.pair-yay .action.primary{min-width:120px;height:32px}
+.popup-header .pair-devchip{margin-left:10px;height:18px;padding:0 6px;font-size:9px}
+.pair-code-link{display:inline;padding:0;font-size:12px}
+.connection-banner.pair-banner{min-height:44px;padding:8px 10px 8px 14px}
+.connection-banner.pairing{background:color-mix(in srgb,var(--color-primary-muted) 70%,#0b0d10);border-bottom-color:color-mix(in srgb,var(--color-primary) 40%,transparent);color:var(--color-foreground)}
+.connection-banner.outcome>span{line-height:1.35}
+.connection-banner.ok{background:hsl(150 40% 10%);border-bottom-color:hsl(150 30% 20%);color:hsl(150 50% 72%);gap:8px;position:relative;overflow:hidden}
+.connection-banner.ok .icon{width:16px;height:16px;color:var(--color-status-completed)}
+.connection-banner.ok::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--color-status-completed);transform-origin:left;animation:pair-shrink 2s linear forwards}
+@keyframes pair-shrink{to{transform:scaleX(0)}}
+.pair-banner .pair-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;font-size:12px;line-height:1.35}
+.pair-banner .pair-text b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pair-banner .pair-sub{color:var(--color-foreground-muted);font-size:11.5px;white-space:nowrap}
+.pair-banner .pair-cart{flex:none}
+.pair-cart.sm{padding:3px;gap:1px}
+.pair-cart.sm .pair-digit{width:19px;height:26px}
+.connection-banner .action.pair-more{width:26px;padding:0;justify-content:center;color:inherit;opacity:.8}
 .setting-icon.connected{color:var(--color-status-completed)}
 .action.danger{color:var(--color-destructive);border:1px solid color-mix(in srgb,var(--color-destructive) 40%,transparent)}
 .action.danger:disabled{opacity:.5}
-@media(prefers-reduced-motion:reduce){.pair-burst{display:none}.pair-digit,.pair-pip.now,.pair-yay>*{animation:none}.pair-pip{transition:none}}
+@media(prefers-reduced-motion:reduce){.pair-digit,.connection-banner.ok::after{animation:none}}
 /* ── Popup Settings tabs (docs/design/prototypes/popup-settings option 3 · Icon tab bar). ── */
 .sheet-header .action.sheet-link{height:26px;padding:0 8px;gap:5px;font-size:12px;white-space:nowrap}
 .sheet-link .icon{width:13px;height:13px}
