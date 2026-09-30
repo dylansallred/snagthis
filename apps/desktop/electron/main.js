@@ -32,8 +32,11 @@ let requestedSettingsSection = null;
 let settingsListenerReady = false;
 // Clicking an update notification opens the update sheet once the renderer listens.
 let updateListenerReady = false;
-// snagthis://open/pair asks to show the one pending Chrome request; it carries no ID or secret.
+// A new Chrome request surfaces SnagThis by itself (without taking focus from Chrome);
+// snagthis://open/pair is kept for older extensions and carries no ID or secret.
 let pairingDialogRequested = false;
+// The request SnagThis last surfaced for, and how to put the window back afterwards.
+let pairingSurfaced = null;
 let pairingListenerReady = false;
 let pairingDialogShownFor = '';
 const explicitUserData = process.env.SNAGTHIS_USER_DATA || process.env.E2E_USER_DATA_DIR || app.commandLine.getSwitchValue('user-data-dir');
@@ -544,6 +547,48 @@ function showPendingPairing() {
   pairingDialogRequested = true;
   focusMainWindow();
   deliverPairingDialog();
+}
+
+/**
+ * A new pending request shows SnagThis without activating it, so Chrome keeps focus, its popup
+ * stays open, and the two sets of digits sit side by side. No link, so Chrome never asks
+ * "Open SnagThis?" for an app that is already running.
+ */
+function surfacePairingRequest(pending) {
+  if (!pending || pending.status !== 'pending' || pairingSurfaced?.requestId === pending.requestId || !app.isReady()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+  const restore = !mainWindow.isVisible() ? 'hidden' : mainWindow.isMinimized() ? 'minimized' : null;
+  pairingSurfaced = { requestId: pending.requestId, restore };
+  if (!mainWindow.isFocused()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.showInactive();
+    mainWindow.moveTop();
+    if (process.platform === 'darwin') app.dock?.bounce('informational');
+    else mainWindow.flashFrame(true);
+  }
+  pairingDialogRequested = true;
+  deliverPairingDialog();
+}
+
+/** After the decision (or expiry), a window that was hidden or minimised for the request goes back. */
+function settleSurfacedPairing(state) {
+  if (!pairingSurfaced || !state || state.requestId !== pairingSurfaced.requestId || state.status === 'pending') return;
+  const { restore } = pairingSurfaced;
+  pairingSurfaced = { requestId: state.requestId, restore: null };
+  if (process.platform !== 'darwin' && mainWindow && !mainWindow.isDestroyed()) mainWindow.flashFrame(false);
+  if (!restore) return;
+  // Long enough for the card's "Connected" to be seen before the window goes back.
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (restore === 'hidden') mainWindow.hide(); else mainWindow.minimize();
+  }, 1600).unref?.();
+}
+
+function onPairingChange(pending) {
+  // Match codes go only to the trusted renderer; they are never logged.
+  sendToRenderer('pairing:state', pending);
+  if (pending?.status === 'pending') surfacePairingRequest(pending);
+  else settleSurfacedPairing(pending);
 }
 
 function deliverPairingDialog() {
@@ -1077,8 +1122,7 @@ async function startLocalApi() {
       sendToRenderer('app:info-update', appInfo());
       sendToRenderer('pairing:extensions', apiServer?.listExtensions?.() || []);
     },
-    // Match codes go only to the trusted renderer; they are never logged.
-    onPairingChange: (pending) => sendToRenderer('pairing:state', pending),
+    onPairingChange,
     onGetSettings: currentSettings,
     onSaveSettings: saveSettings,
     onGetAppearance: accentState,
@@ -1327,6 +1371,8 @@ function registerIpc() {
     return apiServer.decidePairing(String(requestId || ''), allow === true);
   });
   handleIpc('pairing:listener-ready', async () => { pairingListenerReady = true; deliverPairingDialog(); });
+  // "Waiting for Chrome…" on screen; the renderer renews it while the card is visible.
+  handleIpc('pairing:listen', async (_event, on) => (apiStartupState === 'ready' ? apiServer.setPairingListening(on === true) : { listening: false }));
   handleIpc('extensions:list', async () => (apiStartupState === 'ready' ? apiServer.listExtensions() : []));
   handleIpc('extensions:disconnect', async (_event, id) => {
     if (apiStartupState !== 'ready') throw new Error('SnagThis is still starting');

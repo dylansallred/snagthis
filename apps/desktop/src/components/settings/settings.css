@@ -129,3 +129,8 @@ body:has(.pairing-dialog[data-state="open"]) .settings-pairing-waiting { display
 /* The sheet itself takes focus when it opens; its outline drew a stray accent line down the
    left edge. Keyboard focus is shown on the controls inside instead. */
 .settings-sheet:focus, .settings-sheet:focus-visible { outline: none; }
+
+/* Pair from the desktop: the waiting card fills its row. */
+.settings-row.settings-connect-card { display: block; padding: 10px 12px; }
+.settings-connect-card .chrome-connect-card { background: none; border: 0; padding: 6px 0 2px; }
+.settings-connect-card .chrome-connect-card.asking, .settings-connect-card .chrome-connect-card.connected { border: 1px solid var(--color-border); padding: 14px 16px 12px; background: var(--color-background-hover); }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Ban, Clock, Puzzle, TriangleAlert } from 'lucide-react';
+import { Ban, Check, Clock, ExternalLink, Puzzle, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { PixelButton, pressPixelButton } from '@/components/brand/PixelButton';
@@ -8,11 +8,21 @@ import type { PairingRequest } from '@/types/desktop-bridge';
 import { ui } from '@/lib/strings';
 import './PairingApproval.css';
 
-/** Allow stays disabled this long after the dialog appears, so a click meant for another window can't approve. */
+/** Allow stays disabled this long after the digits appear, so a click meant for another window can't approve. */
 export const ALLOW_DELAY_MS = 700;
+/** "Connected" stays this long, then the card or dialog closes itself (no Done). */
+export const CONNECTED_MS = 1400;
+/** The desktop renews "Waiting for Chrome…" this often while its card is on screen (the bridge forgets it after 90 s). */
+const LISTEN_RENEW_MS = 30_000;
 const REVIEW_EVENT = 'snagthis:review-pairing';
 const PIPS = 12;
 const PIP_MS = 10_000;
+
+/**
+ * Connect cards on screen that answer requests in place. While one is showing, the Approve dialog
+ * stays closed, so the digits appear once.
+ */
+let inlineHosts = 0;
 
 /** Opens the Approve dialog for the pending request (Settings → Chrome extension → Review). */
 export function reviewPairing(request: PairingRequest) {
@@ -57,28 +67,84 @@ function Identity({ request }: { request: PairingRequest }) {
   </div>;
 }
 
-const burstStyle = (angle: number, index: number) => ({ '--a': `${angle}deg`, '--d': `${index > 7 ? 40 : 58}px`, '--c': ['var(--accent-bevel-face, #fa5d0e)', 'var(--accent-bevel-light, #ffb238)', '#80bfa6', '#fff4e6'][index % 4] }) as React.CSSProperties;
+/** The one toast for a request that ended without Allow. */
+function announceEnded(status: string | undefined) {
+  if (status === 'denied') toast(ui.pairingDeniedToast, { icon: <Ban aria-hidden="true" /> });
+  else if (status === 'cancelled') toast(ui.pairingCancelledToast);
+  else if (status === 'conflict') toast(ui.pairingConflictTitle, { description: ui.pairingConflictBody, icon: <TriangleAlert aria-hidden="true" /> });
+  else toast(ui.pairingExpiredToast, { icon: <Clock aria-hidden="true" /> });
+}
+
+type Decision = { result: 'approved' } | { result: 'ended'; status?: string };
 
 /**
- * Connect Chrome?: the trusted desktop half of one-click pairing. Shown for
- * snagthis://open/pair while a request is pending, or from Settings → Review.
+ * The digits, countdown, who is asking, and Deny / Allow. Shared by the Approve dialog and the
+ * in-place connect card. Neither button takes focus; Allow arms for 700 ms each time digits appear.
  */
-export function PairingApproval({ onOpenChange }: { onOpenChange?: (open: boolean) => void } = {}) {
-  const [request, setRequest] = useState<PairingRequest | null>(null);
-  const [outcome, setOutcome] = useState<'approved' | 'conflict' | null>(null);
+function ApproveControls({ request, onDecided, demo = false }: { request: PairingRequest; onDecided: (decision: Decision) => void; demo?: boolean }) {
   const [allowReady, setAllowReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now);
-  const shownId = useRef('');
+  useEffect(() => {
+    setAllowReady(false); setNow(Date.now());
+    const arm = window.setTimeout(() => setAllowReady(true), ALLOW_DELAY_MS);
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => { window.clearTimeout(arm); window.clearInterval(tick); };
+  }, [request.requestId]);
+  const remaining = request.expiresAt - now;
+  const seconds = Math.max(0, Math.ceil(remaining / 1000));
+  // Screen readers hear the time only at 1:00 and 0:15; the ticking clock is hidden from them.
+  const announcement = seconds <= 15 ? ui.pairingFifteenSeconds : seconds <= 60 ? ui.pairingOneMinute : '';
+  const expired = remaining <= 0;
+  const decided = useRef(onDecided);
+  decided.current = onDecided;
+  useEffect(() => { if (expired && !demo) decided.current({ result: 'ended', status: 'expired' }); }, [expired, demo]);
+
+  const decide = async (allow: boolean) => {
+    if (busy || (allow && !allowReady)) return;
+    setBusy(true);
+    try {
+      const result = demo ? { ok: true, status: allow ? 'approved' : 'denied' } : await window.desktop.decidePairing(request.requestId, allow);
+      if (!result.ok) { decided.current({ result: 'ended', status: result.status === 'conflict' ? 'conflict' : 'expired' }); return; }
+      decided.current(allow ? { result: 'approved' } : { result: 'ended', status: 'denied' });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : ui.pairingExpiredToast);
+    } finally { setBusy(false); }
+  };
+
+  return <>
+    <PairingDigits code={request.matchCode} />
+    <PairingPips remaining={remaining} />
+    <Identity request={request} />
+    <div className="pairing-buttons">
+      <button type="button" className="row-action labelled" disabled={busy} onClick={() => decide(false)}>{ui.deny}</button>
+      <button type="button" className={`row-action primary-action pairing-allow${allowReady ? '' : ' arming'}`} disabled={busy || !allowReady} aria-describedby={`pairing-allow-hint-${request.requestId}`} onClick={() => decide(true)}><span>{ui.allow}</span></button>
+    </div>
+    <div className="pairing-foot"><span id={`pairing-allow-hint-${request.requestId}`}>{ui.pairingMismatchHint}</span><span className="pairing-tick" aria-hidden="true">{countdown(remaining)}</span></div>
+    <div className="sr-only" role="status">{announcement}</div>
+  </>;
+}
+
+const burstStyle = (angle: number, index: number) => ({ '--a': `${angle}deg`, '--d': `${index > 7 ? 40 : 58}px`, '--c': ['var(--accent-bevel-face, #fa5d0e)', 'var(--accent-bevel-light, #ffb238)', '#80bfa6', '#fff4e6'][index % 4] }) as React.CSSProperties;
+
+/**
+ * Connect Chrome?: the trusted desktop half of pairing, for requests that arrive while no connect
+ * card is on screen. SnagThis surfaces itself for a new request without taking focus, so Chrome's
+ * popup stays open beside it. Allow shows "Connected" for a moment and the dialog closes itself.
+ */
+export function PairingApproval({ onOpenChange, demo }: { onOpenChange?: (open: boolean) => void; demo?: PairingRequest | null } = {}) {
+  const [request, setRequest] = useState<PairingRequest | null>(demo || null);
+  const [outcome, setOutcome] = useState<'approved' | 'conflict' | null>(null);
+  const shownId = useRef(demo?.requestId || '');
   const content = useRef<HTMLDivElement>(null);
   const celebrate = useRef<HTMLDivElement>(null);
-  const done = useRef<HTMLButtonElement>(null);
   const open = Boolean(request);
 
   const show = useCallback((next: PairingRequest) => {
-    if (next.status !== 'pending') return;
+    // A connect card on screen answers the request in place.
+    if (next.status !== 'pending' || inlineHosts > 0) return;
     shownId.current = next.requestId;
-    setOutcome(null); setBusy(false); setNow(Date.now()); setRequest(next);
+    setOutcome(null); setRequest(next);
   }, []);
   const close = useCallback(() => { shownId.current = ''; setRequest(null); setOutcome(null); }, []);
 
@@ -96,8 +162,7 @@ export function PairingApproval({ onOpenChange }: { onOpenChange?: (open: boolea
       if (state.status === 'conflict') { setOutcome('conflict'); return; }
       if (state.status === 'approved' || state.status === 'collected') { setOutcome('approved'); return; }
       close();
-      if (state.status === 'expired') toast(ui.pairingExpiredToast, { icon: <Clock aria-hidden="true" /> });
-      if (state.status === 'cancelled') toast(ui.pairingCancelledToast);
+      if (state.status === 'expired' || state.status === 'cancelled') announceEnded(state.status);
     });
     const onReview = (event: Event) => show((event as CustomEvent<PairingRequest>).detail);
     window.addEventListener(REVIEW_EVENT, onReview);
@@ -112,44 +177,19 @@ export function PairingApproval({ onOpenChange }: { onOpenChange?: (open: boolea
     document.documentElement.dataset.pairingDialog = 'open';
     return () => { delete document.documentElement.dataset.pairingDialog; };
   }, [open]);
-
-  // Allow is enabled only after a moment, each time a request is shown; meanwhile it visibly fills.
-  const requestId = request?.requestId;
   useEffect(() => {
-    if (!requestId) return undefined;
-    setAllowReady(false);
-    const timer = window.setTimeout(() => setAllowReady(true), ALLOW_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [requestId]);
-  useEffect(() => {
-    if (!requestId || outcome) return undefined;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [requestId, outcome]);
-  const remaining = request ? request.expiresAt - now : 0;
-  const seconds = Math.max(0, Math.ceil(remaining / 1000));
-  // Screen readers hear the time only at 1:00 and 0:15; the ticking clock is hidden from them.
-  const announcement = seconds <= 15 ? ui.pairingFifteenSeconds : seconds <= 60 ? ui.pairingOneMinute : '';
-  useEffect(() => { if (request && !outcome && remaining <= 0) { close(); toast(ui.pairingExpiredToast, { icon: <Clock aria-hidden="true" /> }); } }, [request, outcome, remaining, close]);
-  useEffect(() => {
-    if (outcome !== 'approved') return;
-    // Success moves focus to Done (the ring shows only for keyboard users), then the button presses and bursts.
-    done.current?.focus({ focusVisible: false } as FocusOptions);
+    if (outcome !== 'approved') return undefined;
+    // The button presses and bursts, then everything closes by itself.
     requestAnimationFrame(() => pressPixelButton(celebrate.current?.querySelector('.pixel-button')));
-  }, [outcome]);
+    if (demo) return undefined;
+    const timer = window.setTimeout(close, CONNECTED_MS);
+    return () => window.clearTimeout(timer);
+  }, [outcome, close, demo]);
 
-  const decide = async (allow: boolean) => {
-    if (!request || busy || (allow && !allowReady)) return;
-    setBusy(true);
-    try {
-      const result = await window.desktop.decidePairing(request.requestId, allow);
-      if (!result.ok) { close(); toast(result.status === 'conflict' ? ui.pairingConflictTitle : ui.pairingExpiredToast); return; }
-      if (allow) setOutcome('approved');
-      else { close(); toast(ui.pairingDeniedToast, { icon: <Ban aria-hidden="true" /> }); }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : ui.pairingExpiredToast);
-    } finally { setBusy(false); }
-  };
+  const onDecided = useCallback((decision: Decision) => {
+    if (decision.result === 'approved') { setOutcome('approved'); return; }
+    close(); announceEnded(decision.status);
+  }, [close]);
 
   return <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}>
     <DialogContent ref={content} className={`pairing-dialog${outcome === 'approved' ? ' approved' : ''}`} showCloseButton={false}
@@ -165,24 +205,115 @@ export function PairingApproval({ onOpenChange }: { onOpenChange?: (open: boolea
           <div className="pairing-burst" aria-hidden="true">{[0, 45, 90, 135, 180, 225, 270, 315, 20, 200].map((angle, index) => <i key={angle} style={burstStyle(angle, index)} />)}</div>
           <PixelButton size={64} />
         </div>
-        <DialogTitle className="pairing-yay-title"><span className="sr-only">{ui.pairingConnectedTitle}</span><PixelWord text="Connected" scale={3} /></DialogTitle>
+        <DialogTitle className="pairing-yay-title" role="status"><span className="sr-only">{ui.pairingConnectedTitle}</span><PixelWord text="Connected" scale={3} /></DialogTitle>
         <DialogDescription>{ui.pairingConnectedBody}</DialogDescription>
-        <PairingPips tone="good" />
-        <button ref={done} type="button" className="row-action primary-action pairing-done" onClick={close}>{ui.done}</button>
+        <div className="pairing-closing" aria-hidden="true"><i /></div>
       </> : request && <>
         <PixelButton size={36} className="pairing-mark" />
         <DialogTitle>{ui.pairingDialogTitle}</DialogTitle>
         <DialogDescription>{ui.pairingDialogBody}</DialogDescription>
-        <PairingDigits code={request.matchCode} />
-        <PairingPips remaining={remaining} />
-        <Identity request={request} />
-        <div className="pairing-buttons">
-          <button type="button" className="row-action labelled" disabled={busy} onClick={() => decide(false)}>{ui.deny}</button>
-          <button type="button" className={`row-action primary-action pairing-allow${allowReady ? '' : ' arming'}`} disabled={busy || !allowReady} aria-describedby="pairing-allow-hint" onClick={() => decide(true)}><span>{ui.allow}</span></button>
-        </div>
-        <div className="pairing-foot"><span id="pairing-allow-hint">{ui.pairingMismatchHint}</span><span className="pairing-tick" aria-hidden="true">{countdown(remaining)}</span></div>
-        <div className="sr-only" role="status">{announcement}</div>
+        <ApproveControls request={request} onDecided={onDecided} demo={Boolean(demo)} />
       </>}
     </DialogContent>
   </Dialog>;
+}
+
+const galleryRequest = (): PairingRequest => ({ requestId: 'gallery', status: 'pending', matchCode: '4719', expiresAt: Date.now() + 112_000, extensionId: 'gedjaiphmbpcgkpjlnnhdbcbecnombmb', extensionVersion: '1.0.1', identity: 'unrecognized' });
+export const galleryPairingRequest = galleryRequest;
+
+/**
+ * Pair from the desktop (owner pick 2026-09-29, docs/design/prototypes/pairing-simple option B).
+ * While this card is on screen the desktop is "Waiting for Chrome…": opening the SnagThis popup in
+ * an unpaired Chrome starts the request by itself, and the card turns into the digits with Deny and
+ * Allow in place. Allow shows "Connected" briefly and the card folds away.
+ */
+export function ChromeConnectCard({ variant, active = true, gallery = false, demo, onInstall, onConnected, onUseCode }: {
+  variant: 'first' | 'settings' | 'another';
+  /** False while something covers the card (a sheet or dialog); it then neither listens nor answers. */
+  active?: boolean;
+  gallery?: boolean;
+  /** Gallery previews: 'waiting' (default), 'request' or 'connected'. */
+  demo?: string | null;
+  onInstall?: () => void;
+  onConnected?: () => void;
+  onUseCode?: () => void;
+}) {
+  const [request, setRequest] = useState<PairingRequest | null>(() => (gallery && demo === 'request' ? galleryRequest() : null));
+  const [phase, setPhase] = useState<'waiting' | 'connected' | 'closed'>(gallery && demo === 'connected' ? 'connected' : 'waiting');
+  const current = useRef<PairingRequest | null>(null);
+  current.current = request;
+  const connectedRef = useRef(onConnected);
+  connectedRef.current = onConnected;
+  const live = active && !gallery && phase !== 'closed' && Boolean(window.desktop?.onPairingState);
+
+  // Listening: renewed while the card is on screen and the window is visible; dropped when it goes.
+  useEffect(() => {
+    if (!live || phase !== 'waiting' || !window.desktop.setPairingListening) return undefined;
+    const listen = window.desktop.setPairingListening;
+    const renew = () => { void listen(document.visibilityState === 'visible').catch(() => {}); };
+    renew();
+    const timer = window.setInterval(renew, LISTEN_RENEW_MS);
+    document.addEventListener('visibilitychange', renew);
+    window.addEventListener('focus', renew);
+    return () => {
+      window.clearInterval(timer); document.removeEventListener('visibilitychange', renew); window.removeEventListener('focus', renew);
+      void listen(false).catch(() => {});
+    };
+  }, [live, phase]);
+
+  useEffect(() => {
+    if (!live) return undefined;
+    inlineHosts += 1;
+    let open = true;
+    void window.desktop.getPairingRequest().then((next) => { if (open && next?.status === 'pending') setRequest(next); }).catch(() => {});
+    const off = window.desktop.onPairingState((next) => {
+      if (next?.status === 'pending') { setRequest(next); return; }
+      const shown = current.current;
+      if (!shown || (next && next.requestId !== shown.requestId && next.status !== 'conflict')) return;
+      setRequest(null);
+      if (next?.status === 'approved' || next?.status === 'collected') setPhase('connected');
+      else if (next && next.status !== 'denied') announceEnded(next.status);
+    });
+    return () => {
+      open = false; off(); inlineHosts -= 1;
+      // Covered or closed while Chrome still waits: hand the request to the Approve dialog.
+      const waiting = current.current;
+      if (waiting && waiting.expiresAt > Date.now()) window.setTimeout(() => { if (inlineHosts === 0) reviewPairing(waiting); }, 0);
+    };
+  }, [live]);
+
+  useEffect(() => {
+    if (phase !== 'connected' || demo === 'connected') return undefined;
+    const timer = window.setTimeout(() => { setPhase('closed'); connectedRef.current?.(); }, CONNECTED_MS);
+    return () => window.clearTimeout(timer);
+  }, [phase, demo]);
+
+  const onDecided = useCallback((decision: Decision) => {
+    setRequest(null); current.current = null;
+    if (decision.result === 'approved') { setPhase('connected'); return; }
+    announceEnded(decision.status);
+  }, []);
+
+  if (phase === 'closed') return null;
+  const labelled = variant === 'another' ? ui.chromeConnectAnother : ui.connectChrome;
+  return <section className={`chrome-connect-card ${variant}${request ? ' asking' : ''}${phase === 'connected' ? ' connected' : ''}`} aria-label={labelled}>
+    {phase === 'connected' ? <div className="connect-done" role="status">
+      <span className="connect-done-mark"><Check aria-hidden="true" /></span>
+      <b>{ui.pairingConnectedCard}</b>
+      <span>{ui.pairingConnectedBody}</span>
+      <div className="pairing-closing" aria-hidden="true"><i /></div>
+    </div> : request ? <>
+      <h3>{ui.pairingCardTitle}</h3>
+      <p>{ui.pairingDialogBody}</p>
+      <ApproveControls request={request} onDecided={onDecided} demo={gallery} />
+    </> : <>
+      {variant === 'first' && <h3>{labelled}</h3>}
+      <p className="connect-hint"><PixelButton size={14} />{ui.chromeCardHintBefore}<b>SnagThis</b>{ui.chromeCardHintAfter}</p>
+      <p className="connect-listen" role="status"><span className="connect-blip" aria-hidden="true" />{variant === 'another' ? ui.chromeWaitingAnother : ui.chromeWaiting}</p>
+      {(onInstall || onUseCode) && <div className="connect-links">
+        {onInstall && <button type="button" className="text-link" aria-label={ui.addChrome} onClick={onInstall}>{ui.chromeCardInstall}<ExternalLink aria-hidden="true" /></button>}
+        {onUseCode && <button type="button" className="text-link" onClick={onUseCode}>{ui.chromeUseCode}</button>}
+      </div>}
+    </>}
+  </section>;
 }

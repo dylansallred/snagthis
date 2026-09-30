@@ -396,6 +396,8 @@ test('"Waiting for Chrome…": health shows only a listening flag and session, a
   assert.equal(asked.status, 201);
   assert.equal(bridge.api.getPendingPairing().status, 'pending', 'still waits for Allow in SnagThis');
   assert.equal((await bridge.status(ORIGIN_A, asked.body.requestId, asked.secret)).body.status, 'pending');
+  // While a request waits, nothing else is invited to ask (a second request would cancel both).
+  assert.deepEqual(await health(), { listening: false });
   // Allow ends listening: the next browser has to be asked for again.
   assert.equal(bridge.api.decidePairing(asked.body.requestId, true).ok, true);
   assert.deepEqual(await health(), { listening: false });

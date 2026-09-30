@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('desktop', {
   getConnectionState: () => ipcRenderer.invoke('app:get-connection-state'),
   getPairingRequest: () => ipcRenderer.invoke('pairing:get-state'),
   decidePairing: (requestId, allow) => ipcRenderer.invoke('pairing:decide', requestId, allow === true),
+  setPairingListening: (on) => ipcRenderer.invoke('pairing:listen', on === true),
   listExtensions: () => ipcRenderer.invoke('extensions:list'),
   disconnectExtension: (id) => ipcRenderer.invoke('extensions:disconnect', id),
   onPairingShow: (cb) => {

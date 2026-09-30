@@ -323,8 +323,10 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     return getListening();
   }
   function getListening() {
+    prune();
     if (listening && listening.until <= now()) listening = null;
-    return listening ? { listening: true, session: listening.session } : { listening: false };
+    // While one request waits, a second automatic one would only cancel both (the conflict rule).
+    return listening && !pairing ? { listening: true, session: listening.session } : { listening: false };
   }
 
   function listExtensions() {
