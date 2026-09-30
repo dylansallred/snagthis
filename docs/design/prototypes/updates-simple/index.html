@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Simpler updates</title>
+<link rel="stylesheet" href="../updates/shared.css">
+<link rel="stylesheet" href="story.css">
+<style>
+h2.h { margin: 44px 0 6px; font-size: 20px; font-weight: 640; }
+h2.h .pixel { color: var(--color-primary-hover); font-size: 26px; margin-right: 8px; }
+.sub { margin: 0 0 16px; color: var(--color-foreground-muted); font-size: 13px; max-width: 900px; }
+.sub b { color: var(--color-foreground); font-weight: 600; }
+blockquote { margin: 14px 0 0; padding: 8px 14px; border-left: 3px solid var(--color-primary-hover); color: var(--color-foreground); font-size: 13.5px; background: var(--color-background-raised); border-radius: 0 8px 8px 0; max-width: 900px; }
+table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.t th, table.t td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--color-border-subtle); }
+table.t th { color: var(--color-foreground-subtle); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }
+table.t td { color: var(--color-foreground-muted); }
+table.t td:first-child { color: var(--color-foreground); font-weight: 500; white-space: nowrap; }
+table.t td b { color: var(--color-foreground); font-weight: 600; }
+table.t .big { font: 400 20px/1 var(--font-pixel); color: var(--color-foreground); margin-right: 4px; }
+table.t .bad { color: var(--color-status-paused); }
+table.t .good { color: var(--color-status-completed); }
+.path { margin: 18px 0 8px; padding: 14px; border-radius: 12px; background: #0d0f13; border: 1px solid var(--color-border-subtle); }
+.path h3 { margin: 0 0 4px; font-size: 15px; font-weight: 620; display: flex; gap: 10px; align-items: baseline; }
+.path h3 small { margin-left: auto; font-weight: 400; font-size: 12.5px; color: var(--color-foreground-muted); }
+.path h3 small b { font: 400 18px/1 var(--font-pixel); color: var(--color-foreground); margin: 0 3px 0 10px; }
+.steps { display: flex; gap: 10px; overflow-x: auto; padding: 10px 0 4px; }
+.step { flex: none; width: 212px; font-size: 12px; color: var(--color-foreground-muted); }
+.step .th { display: block; width: 212px; height: 139px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border-subtle); background: #000; }
+.step .th img { width: 100%; height: 100%; object-fit: cover; object-position: top right; display: block; }
+.step .th.zoom img { width: 250%; height: auto; margin-left: -150%; }
+.step .th.live > * { transform: scale(.22083); transform-origin: 0 0; }
+.step p { margin: 6px 0 0; line-height: 1.4; }
+.step p em { font: normal 400 15px/1 var(--font-pixel); color: var(--color-primary-hover); margin-right: 5px; }
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 18px; }
+.opt { background: var(--color-background-raised); border: 1px solid var(--color-border-subtle); border-radius: 12px; padding: 14px; display: grid; gap: 10px; align-content: start; }
+.opt header { display: flex; align-items: baseline; gap: 10px; }
+.opt .n { font: 400 26px/1 var(--font-pixel); color: var(--color-primary-hover); }
+.opt h3 { margin: 0; font-size: 17px; font-weight: 620; }
+.opt header .btn { margin-left: auto; }
+.opt p { margin: 0; color: var(--color-foreground-muted); font-size: 13px; }
+.opt p b { color: var(--color-foreground); font-weight: 600; }
+.opt img { width: 100%; display: block; border-radius: 8px; border: 1px solid var(--color-border-subtle); }
+.opt.chosen { border-color: var(--color-primary-hover); box-shadow: 0 0 0 1px var(--color-primary-hover); }
+.opt .more { font-size: 12px; color: var(--color-foreground-subtle); }
+.opt .more a { color: var(--color-foreground-muted); }
+.findings { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+.findings section { padding: 14px 16px; border-radius: 10px; background: var(--color-background-raised); box-shadow: inset 0 0 0 1px var(--color-border-subtle); font-size: 12.5px; color: var(--color-foreground-muted); }
+.findings h3 { margin: 0 0 8px; font-size: 13px; color: var(--color-foreground); }
+.findings ul { margin: 0; padding-left: 18px; } .findings li + li { margin-top: 5px; }
+.findings b { color: var(--color-foreground); font-weight: 600; }
+.findings code, .sub code { font-family: var(--font-mono); font-size: 11px; color: var(--color-foreground); }
+#today-notifs { position: absolute; left: -9999px; top: 0; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><span>Updates</span>Simpler update experience · today’s map + 3 options · owner chose B</div>
+    <h1>Make desktop updates as simple as the new Chrome pairing</h1>
+    <p>Today a routine update shows <b>6 things</b> (2 OS notifications, 2 chip states, 2 sheet states) and needs <b>2 clicks</b>. Nothing confirms it worked afterwards, and an ignored update re-sends both notifications on every launch and never installs. Each option below removes the update sheet, Later/reminders and the “downloading” notification, keeps the friendly error with <b>Download installer ↗</b>, never interrupts a running download, never touches the queue, and ends with one fading <b>Updated to 1.1.0</b> toast.</p>
+    <p class="sub"><b>Owner decision (2026-09-29): B · Install on quit or idle</b>, built as described in <a href="../../ui-design-spec.md">ui-design-spec §8.1</a>. Later revision: the ready chip reads just <b>1.1.0 ready</b>; the popover carries the line “Installs next time you quit SnagThis, or restart now.” and Settings shows <b>1.1.0 ready · Restart now</b>.</p>
+    <blockquote>“There are too many screens. Once we are done we should auto close the screens. Needs to be much simpler.” … “Same thing for our updates in desktop app.”</blockquote>
+  </div>
+
+  <h2 class="h"><span class="pixel">0</span>Today, step by step</h2>
+  <p class="sub">Captured from the real renderer’s design gallery (<code>?gallery&amp;update=&lt;state&gt;</code>, script <code>capture-today.cjs</code>); OS notifications are drawn from the strings in <code>main.js</code>. Click a thumbnail for the full-size PNG. Counts: <b>notifications</b> · <b>in-app surfaces</b> (each distinct chip/sheet/toast state) · <b>clicks</b>.</p>
+  <div id="today"></div>
+
+  <div class="findings" style="margin-top:18px">
+    <section><h3>Every surface today</h3><ul>
+      <li><b>OS notification ×2</b> (<code>showUpdateNotification</code>): “SnagThis 1.1.0 is downloading” on <code>update-available</code> and “SnagThis 1.1.0 is ready” on <code>update-downloaded</code>. Shown even when the window is focused. Clicking either focuses the window and opens the sheet.</li>
+      <li><b>Header chip</b>: <code>41%</code> mini meter · <code>NEW 1.1.0</code> accent · <code>1.1.0 · 3:45 PM</code> after Later · amber <code>Update failed</code>. Hidden when idle, checking or up to date.</li>
+      <li><b>Update sheet</b> (500px modal, 9 views): checking, up to date, downloading, ready + What’s new, blocked (running downloads + “Install when downloads finish”), Later → toast with Undo, installing, errors (Details, Download installer, Try again).</li>
+      <li><b>Settings ▸ Updates &amp; support</b>: one summary row with <b>See update</b> or <b>Check now</b> (which opens the sheet).</li>
+      <li><b>After relaunch</b>: nothing. <code>reconcileUpdaterInstallState()</code> quietly deletes the install marker on success.</li>
+    </ul></section>
+    <section><h3>What makes it heavy</h3><ul>
+      <li><b>Ignored updates repeat:</b> the startup check finds the cached update again, so <code>update-available</code> and <code>update-downloaded</code> both fire and <b>both notifications come back on every launch</b>. <code>autoInstallOnAppQuit</code> is off, so quitting never installs.</li>
+      <li><b>Install when downloads finish</b> is armed only when the sheet is <i>opened</i> in the blocked view. If the person never opens it, nothing waits. If they do, SnagThis restarts <b>without warning</b> 3 s after the last download finishes.</li>
+      <li><b>Later</b> reminds every 30 min by turning the chip accent again (no notification). That adds another state, toast and Undo to a two-button decision.</li>
+      <li><b>Failed install after relaunch</b> sets an error with no version (<code>updateInfo</code> null), so the chip stays hidden. The launch check 3 s later overwrites it, so the failure is effectively invisible.</li>
+      <li><b>No success moment:</b> the notes are only in the sheet <i>before</i> installing; after installing nothing says it worked.</li>
+    </ul></section>
+  </div>
+
+  <h2 class="h"><span class="pixel">A–C</span>Three simpler experiences</h2>
+  <p class="sub">Each is a clickable storyboard (scenario tabs, dashed hotspots, ← →) in the app’s pixel/bevel style, with frames for idle, downloads running, window closed, ignored/cancel and failure/Applications, plus the code changes and risks. Frame PNGs are in each folder’s <code>frames/</code>.</p>
+  <div class="opts">
+    <section class="opt"><header><span class="n">A</span><h3>Quiet chip, one click</h3><a class="btn primary" href="a-quiet-chip/index.html">Open →</a></header>
+      <p>The chip is the only surface. <b>1.1.0 · Restart</b>: one click restarts. With downloads running, one line: <b>Install after they finish ✓</b>. No sheet, no Later, no notifications unless the window is closed.</p>
+      <a href="a-quiet-chip/index.html"><img src="a-quiet-chip/preview.png" alt="Option A preview"></a>
+      <p class="more">Idle <b>1</b> click · downloads <b>2</b> · notifications <b>0</b> (1 if window closed) · ignored: chip waits, never installs</p></section>
+    <section class="opt chosen"><header><span class="n">B</span><h3>Install on quit or idle · chosen</h3><a class="btn primary" href="b-install-on-quit/index.html">Open →</a></header>
+      <p>Neutral chip <b>1.1.0 · installs when you quit</b>. Installs silently on quit, or on macOS after 10 min idle with the window closed (relaunches hidden). Optional <b>Restart now</b>.</p>
+      <a href="b-install-on-quit/index.html"><img src="b-install-on-quit/preview.png" alt="Option B preview"></a>
+      <p class="more">Idle <b>0</b> clicks · downloads <b>0</b> · notifications <b>0</b> · ignored: installs at next quit/idle</p></section>
+    <section class="opt"><header><span class="n">C</span><h3>Fully automatic</h3><a class="btn primary" href="c-automatic/index.html">Open →</a></header>
+      <p>Installs itself when nothing downloads and you’ve been away 5 min. If the window is visible, a 10 s <b>Restarting to update… Cancel</b> toast; reopens without stealing focus. Cancel leaves a Restart chip.</p>
+      <a href="c-automatic/index.html"><img src="c-automatic/preview.png" alt="Option C preview"></a>
+      <p class="more">Idle <b>0</b> clicks · downloads <b>0</b> · notifications <b>0</b> · ignored: that <i>is</i> the common path</p></section>
+  </div>
+
+  <h2 class="h"><span class="pixel">=</span>Comparison</h2>
+  <table class="t">
+    <thead><tr><th></th><th>Today (C · Dedicated sheet)</th><th>A · Quiet chip</th><th>B · Install on quit/idle</th><th>C · Fully automatic</th></tr></thead>
+    <tbody>
+      <tr><td>(a) Update while idle</td><td><span class="big">6</span>things shown (2 notif + 4 in-app) · <span class="big">2</span>clicks</td><td><span class="big">2</span>shown (chip, toast) · <span class="big">1</span>click</td><td><span class="big">2</span>shown (chip, toast) · <span class="big">0</span>clicks</td><td><span class="big">2</span>shown (countdown, toast) · <span class="big">0</span>clicks</td></tr>
+      <tr><td>(b) Downloads running</td><td><span class="big">5</span>shown (2 notif + 3) · <span class="big">2</span>clicks, <span class="bad">then an unannounced restart</span>; if the sheet is never opened it never waits</td><td><span class="big">3</span>shown · <span class="big">2</span>clicks; 5 s cancellable “Restarting in…” chip</td><td><span class="big">2</span>shown · <span class="big">0</span>clicks; installs at quit (today’s prompt + 1 line) or idle</td><td><span class="big">2</span>shown · <span class="big">0</span>clicks; waits for downloads + 5 min away</td></tr>
+      <tr><td>(c) Ignored</td><td class="bad">2 notifications on <b>every launch</b>, chip forever, never installs</td><td>Chip waits quietly, no repeats; <span class="bad">never installs</span> unless clicked</td><td class="good">Installs at next quit or background idle</td><td class="good">Installs at the next safe moment</td></tr>
+      <tr><td>OS notifications</td><td>2 per version (+2 per relaunch)</td><td>0; 1 per version only when the window is closed</td><td>0</td><td>0</td></tr>
+      <tr><td>After relaunch</td><td>Nothing (no confirmation)</td><td colspan="3">One fading toast <b>Updated to 1.1.0 · What’s new</b> (8 s), popover notes on demand</td></tr>
+      <tr><td>Lingers</td><td>NEW chip until installed; sheet until closed</td><td>Chip until clicked</td><td>Neutral chip until quit</td><td>Nothing (chip only after Cancel)</td></tr>
+      <tr><td>Later / defer</td><td>Later → toast + Undo, reminder chip every 30 min</td><td>Removed (ignoring the chip is “later”)</td><td>Removed (the design is “later”)</td><td>Cancel → Restart chip, no auto for 4 h</td></tr>
+      <tr><td>Active downloads</td><td>Restart & install disabled; opt-in wait armed by opening the sheet</td><td>One-line confirm; main re-checks</td><td>Never while active; quit prompt unchanged</td><td>Never while active or in use</td></tr>
+      <tr><td>Failures</td><td colspan="4">Same friendly sentence, <b>You’re still on 1.0.0; nothing changed.</b>, Details, <b>Download installer ↗</b>, <b>Try again</b>. Options move it from the sheet into a small popover under an amber chip; B/C also surface a failed install on the next launch (fixes today’s hidden case).</td></tr>
+      <tr><td>macOS /Applications</td><td>No chip; Settings says “Move the app to /Applications”</td><td colspan="3">No chip; Settings row offers <b>Move to Applications</b> (<code>app.moveToApplicationsFolder()</code>, relaunches)</td></tr>
+      <tr><td>Code size</td><td>—</td><td>Small: chip states, popover, remove sheet/Later, toast</td><td>Medium: + quit-time install, hidden relaunch, idle timer</td><td>Largest: + safe-moment watcher, countdown IPC, focus-less relaunch, extension retry</td></tr>
+      <tr><td>Main risk</td><td>—</td><td>Ignored updates never land</td><td>macOS Squirrel staging on quit (see <code>autoInstallOnAppQuit</code> comment); silent background restarts</td><td>Surprise restarts; Chrome requests during restart</td></tr>
+    </tbody>
+  </table>
+
+  <p class="hub-footer">Prototype only; nothing here changes the app. Shared tokens, fonts and update meter from <code>../updates/</code>. Screenshots: <code>node docs/design/prototypes/updates-simple/capture-today.cjs</code> (real renderer) and <code>node docs/design/prototypes/updates-simple/capture.cjs</code> (storyboard frames + 1200×800 previews).</p>
+  <div id="today-notifs"></div>
+</main>
+<script src="../updates/brand.js"></script>
+<script src="../updates/shared.js"></script>
+<script src="story.js"></script>
+<script>
+const S = window.Story, P = window.SnagProto, V = S.V;
+P.setAccent('orange');
+const notifDownloading = () => S.desk({ notif: S.notif({ title: `SnagThis ${V} is downloading`, body: `Current version: ${S.CUR}. Downloading in the background. New: Accent colours. Pick Orange, Cobalt…`, next: false }) });
+const notifReady = () => S.desk({ notif: S.notif({ title: `SnagThis ${V} is ready`, body: 'Restart SnagThis to install. New: Accent colours. Pick Orange, Cobalt…', next: false }) });
+const notifBoth = () => S.desk({ notif: S.notif({ title: `SnagThis ${V} is downloading`, body: `Current version: ${S.CUR}. Downloading in the background. New: Accent colours…`, next: false }) + S.notif({ title: `SnagThis ${V} is ready`, body: 'Restart SnagThis to install. New: Accent colours…', next: false, cls: 'second' }) });
+const img = (f) => ({ img: `today/${f}.png`, zoom: /chip/.test(f) });
+const PATHS = [
+  { t: '(a) Update while idle', counts: [2, 4, 2], steps: [
+    [{ live: notifDownloading, png: '00-notif-downloading' }, 'Notification: “1.1.0 is downloading” (even if the window is focused)'],
+    [img('01-chip-downloading'), 'Chip shows a 41% meter'],
+    [{ live: notifReady, png: '00-notif-ready' }, 'Notification: “1.1.0 is ready”'],
+    [img('03-chip-ready'), 'Chip turns accent: NEW 1.1.0'],
+    [img('04-sheet-ready'), '<b>Click 1</b>: chip (or notification) opens the sheet: ready + What’s new'],
+    [img('08-sheet-installing'), '<b>Click 2</b>: Restart &amp; install → Installing sheet, app quits and reopens'],
+    [img('15-after-relaunch'), 'Reopened on 1.1.0: nothing is shown; no confirmation'],
+  ] },
+  { t: '(b) Update while downloads are running', counts: [2, 3, 2], steps: [
+    [{ live: notifDownloading, png: '00-notif-downloading' }, 'Notification: downloading'],
+    [img('01-chip-downloading'), 'Chip meter'],
+    [{ live: notifReady, png: '00-notif-ready' }, 'Notification: ready'],
+    [img('06-sheet-blocked'), '<b>Click 1</b>: chip → sheet lists running downloads; opening it arms “Install when downloads finish”; Restart disabled'],
+    [img('03-chip-ready'), '<b>Click 2</b>: close the sheet. NEW chip stays'],
+    [img('08-sheet-installing'), 'Last download finishes → restarts 3 s later <b>with no warning</b>'],
+    [img('07-later-toast-chip-deferred'), 'Alternative: Later → toast with Undo, chip shows the reminder time; every 30 min it turns accent again'],
+  ] },
+  { t: '(c) The person ignores it', counts: [2, 2, 0], steps: [
+    [{ live: notifBoth, png: '00-notif-both' }, 'Both notifications'],
+    [img('03-chip-ready'), 'NEW chip stays in the header indefinitely'],
+    [img('13-settings-ready'), 'Settings row: “1.1.0 is ready to install” + See update'],
+    [{ live: notifBoth, png: '00-notif-both' }, 'Quit + reopen: the launch check finds the cached update, so <b>both notifications again</b>, every launch'],
+    [img('03-chip-ready'), 'Never installs: quitting doesn’t install (autoInstallOnAppQuit is off)'],
+  ] },
+  { t: 'Errors and other sheet states', counts: null, steps: [
+    [img('09-chip-failed'), 'Amber chip: a found update failed'],
+    [img('10-sheet-error'), 'Error sheet: friendly sentence, Details, Download installer, Try again'],
+    [img('02-sheet-downloading'), 'Downloading sheet (bytes, time left, What’s new, Keep snagging)'],
+    [img('05-sheet-whats-new'), 'All changes expanded'],
+    [img('11-sheet-checking'), 'Checking (only after Check now)'],
+    [img('12-sheet-uptodate'), 'Up to date'],
+    [img('14-settings-blocked'), 'Settings row while blocked'],
+  ] },
+];
+document.getElementById('today').innerHTML = PATHS.map((p) => `<div class="path"><h3>${p.t}${p.counts ? `<small>notifications<b>${p.counts[0]}</b> in-app surfaces<b>${p.counts[1]}</b> clicks<b>${p.counts[2]}</b></small>` : ''}</h3>
+  <div class="steps">${p.steps.map(([s, cap], i) => `<div class="step">${s.img ? `<a class="th${s.zoom ? ' zoom' : ''}" href="${s.img}"><img src="${s.img}" alt="" loading="lazy"></a>` : `<a class="th live" href="today/${s.png}.png">${s.live()}</a>`}<p><em>${i + 1}</em>${cap}</p></div>`).join('')}</div></div>`).join('');
+// Full-size notification frames for capture.cjs.
+document.getElementById('today-notifs').innerHTML = `<div id="n-downloading">${notifDownloading()}</div><div id="n-ready">${notifReady()}</div><div id="n-both">${notifBoth()}</div>`;
+</script>
+</body>
+</html>

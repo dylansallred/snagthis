@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Simpler updates · C Fully automatic</title>
+<link rel="stylesheet" href="../../updates/shared.css">
+<link rel="stylesheet" href="../story.css">
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">← Simpler updates</a> · <span>C</span>Fully automatic</div>
+    <h1>C · SnagThis updates itself when you step away</h1>
+    <p>Downloads silently and installs by itself when it’s safe: <b>nothing downloading</b> and the window <b>not in use for 5 minutes</b> (unfocused or closed). If the window is on screen, a 10-second toast counts down <b>Restarting to update… Cancel</b>. Nothing appears until then. Zero clicks, and the only chip is the one Cancel leaves behind.</p>
+  </div>
+  <div class="toolbar"><div class="seg" id="scen" role="group" aria-label="Path"></div><div class="swatches" id="acc" role="group" aria-label="Accent"></div></div>
+  <div class="sb"><div id="stage"></div><div class="cap-box" id="caption"></div></div>
+  <div class="strip" id="strip"></div>
+
+  <div class="impl">
+    <section><h3>Behaviour</h3><ul>
+      <li><b>Safe moment</b> (all true for 5 min): no blocking download, SnagThis not focused or its window closed, no dialog, sheet, paste or pairing request open, and no request from Chrome in the last 2 min.</li>
+      <li><b>Window visible but unfocused:</b> 10 s countdown toast with <b>Cancel</b>, then a restart that reopens <b>behind</b> the current app (<code>showInactive</code>). <b>Window closed:</b> restart silently and stay hidden.</li>
+      <li><b>Cancel / defer:</b> Cancel leaves the <b>1.1.0 · Restart</b> chip for a manual install and skips auto-install for 4 h; quitting also installs (B’s path).</li>
+      <li><b>Never idle?</b> If no safe moment comes within 3 days, the chip appears anyway, still without notifications.</li>
+      <li><b>Failures / Applications:</b> same amber chip + friendly popover as A and B; unsupported copies never auto-install and Settings offers <b>Move to Applications</b>.</li>
+    </ul></section>
+    <section><h3>Code changes</h3><ul>
+      <li><b>main.js:</b> generalise <code>watchInstallWhenIdle</code> into an always-on “safe moment” watcher: <code>hasUpdateBlockingDownloads()</code>, <code>mainWindow.isFocused()</code> / <code>isVisible()</code>, <code>powerMonitor.getSystemIdleTime()</code>, a pending-pairing flag and the last bridge request time. Send <code>updater:countdown</code>; the renderer answers Cancel over IPC.</li>
+      <li>Install state gets <code>reopenHidden</code> / <code>reopenInactive</code>, so bootstrap restores the window the way it was.</li>
+      <li>Remove both notifications, Later/reminders, the Install-when-downloads-finish checkbox and <code>UpdateSheet</code>; add <code>updater:updated</code> → toast.</li>
+      <li><b>Renderer:</b> countdown toast (10 pixel pips), <code>UpdateChip</code> only for <code>restart</code> (after Cancel) and <code>failed</code>; popover for errors.</li>
+      <li><b>Settings:</b> new switch <b>Install updates automatically</b> (default on) beside Check automatically; row hint <code>Installs next time SnagThis is idle</code>.</li>
+    </ul></section>
+    <section><h3>Risks</h3><ul>
+      <li><b>Surprise restarts:</b> the most automatic option, and the hardest to trust. A person back at the window mid-countdown must be able to cancel with any key or click.</li>
+      <li><b>Chrome handoff:</b> a video sent during the ~5 s restart hits a closed bridge; the extension must queue and retry, not show “SnagThis isn’t open”.</li>
+      <li><b>“Idle” is guesswork:</b> watching a video in another app counts as unfocused. The 2-min bridge quiet period and download check cover SnagThis’s own work.</li>
+      <li>Same macOS Squirrel staging caveat as B: <code>quitAndInstall</code> needs the native download staged, so the watcher waits for it.</li>
+      <li>Most code: new watcher, window restore modes, extension retry.</li>
+    </ul></section>
+  </div>
+</main>
+<script src="../../updates/brand.js"></script>
+<script src="../../updates/shared.js"></script>
+<script src="../story.js"></script>
+<script>
+const S = window.Story, P = window.SnagProto, V = S.V;
+const away = (inner = '') => `<div style="position:relative">${S.win({ cls: 'blur-away', overlay: inner })}<div class="focus-note">You’re in another app · SnagThis unfocused 5 min · nothing downloading</div></div>`;
+S.mount({
+  scenarios: [
+    { id: 'auto', label: 'Step away', frames: [
+      { t: 'Downloads quietly', k: 'none', cap: 'Found at launch or on the 6-hour check and downloaded in the background. Nothing shown, ever, while you work.', r: () => S.win() },
+      { t: 'You step away', k: 'none', cap: 'You switch to another app. SnagThis waits until it has been unfocused for 5 minutes with nothing downloading.', r: () => away() },
+      { t: '10-second countdown', k: 'auto', n: { s: 1 }, cap: 'Only if the window is on screen: <b>Restarting to update to 1.1.0 in 7 s</b> with Cancel and 10 pixel pips. Glance over and you can stop it.', r: () => away(S.countdownToast({ secs: 7, next: false })) },
+      { t: 'Updated, behind your app', k: 'auto', n: { s: 1 }, cap: 'SnagThis reopens <b>without taking focus</b>. The toast waits until you come back to the window, then fades after 8 s.', r: () => S.win({ overlay: S.updatedToast() }) },
+      { t: 'Nothing lingers', k: 'auto', cap: '<b>Total: 2 surfaces, 0 notifications, 0 clicks.</b>', r: () => S.win() },
+    ] },
+    { id: 'hidden', label: 'Window closed', frames: [
+      { t: 'Closed, idle', k: 'none', cap: 'Window closed on macOS (app in the background), nothing downloading.', r: () => S.desk() },
+      { t: 'Silent restart', k: 'auto', cap: 'No countdown: nobody can see it. It restarts and stays in the background.', r: () => S.desk({ overlay: '<div class="gone">Restarted on 1.1.0 · still in the background</div>' }) },
+      { t: 'Next open', k: 'auto', n: { s: 1 }, cap: 'The toast appears once when you next open the window. <b>1 surface, 0 clicks.</b>', r: () => S.win({ overlay: S.updatedToast() }) },
+    ] },
+    { id: 'busy', label: 'Downloads running', frames: [
+      { t: 'While you work', k: 'none', cap: 'Update ready, downloads running, window focused: <b>nothing appears</b>. It never counts down while any download is active, or while the window is in use.', r: () => S.win({ mode: 'busy' }) },
+      { t: 'Downloads finish, you leave', k: 'none', cap: 'Downloads finish; you switch away. The 5-minute clock starts.', r: () => `<div style="position:relative">${S.win({ mode: 'done', cls: 'blur-away' })}<div class="focus-note">Downloads finished · SnagThis unfocused 5 min</div></div>` },
+      { t: 'Countdown', k: 'auto', n: { s: 1 }, cap: 'The same 10 s toast.', r: () => `<div style="position:relative">${S.win({ mode: 'done', cls: 'blur-away', overlay: S.countdownToast({ secs: 4, next: false }) })}</div>` },
+      { t: 'Updated', k: 'auto', n: { s: 1 }, cap: 'Reopened on 1.1.0. <b>0 clicks.</b>', r: () => S.win({ mode: 'done', overlay: S.updatedToast({ next: false }) }) },
+    ] },
+    { id: 'cancel', label: 'Cancel', frames: [
+      { t: 'Countdown', n: { s: 1 }, cap: 'You glance back during the countdown. Cancel (or any key/click in the window) stops it.', r: () => S.win({ overlay: S.countdownToast({ secs: 6 }) }) },
+      { t: 'Chip left behind', k: 'click', n: { s: 1, c: 1 }, cap: 'After Cancel the only trace is the <b>1.1.0 · Restart</b> chip. No auto-install for 4 hours; quitting still installs.', r: () => S.win({ chip: S.chip('restart') }) },
+      { t: 'Restart when you like', k: 'click', n: { c: 1 }, cap: 'Clicking the chip restarts (or offers “after downloads” as in A).', r: () => S.win({ chip: S.chip('restarting', { next: false }) }) },
+      { t: 'Updated', k: 'auto', n: { s: 1 }, cap: 'Toast, fades.', r: () => S.win({ overlay: S.updatedToast({ next: false }) }) },
+    ] },
+    { id: 'fail', label: 'Failure · Applications', frames: [
+      { t: 'Amber chip', n: { s: 1 }, cap: 'A failed download or install turns into the amber chip. Auto-install stops until Try again.', r: () => S.win({ chip: S.chip('failed') }) },
+      { t: 'Friendly error', k: 'click', n: { s: 1, c: 1 }, cap: 'The same popover as A and B, with <b>Download installer ↗</b> and <b>Try again</b>.', r: () => S.win({ chip: S.chip('failed', { next: false }), overlay: S.errorPop() }) },
+      { t: 'Settings', n: { s: 0 }, cap: 'Settings ▸ Updates gains one switch, <b>Install updates automatically</b>, for people who want A’s manual chip instead.', r: () => S.win({ dim: true, overlay: S.settings(S.srow(`SnagThis ${S.CUR}`, `${V} installs next time SnagThis is idle`, 'acc', '<button class="btn">Restart now</button>') + S.srow('Install updates automatically', 'Restarts when nothing is downloading and you’re away.', '', '<span class="switch"></span>')) }) },
+    ] },
+  ],
+  preview: {
+    n: 'C', title: 'Fully automatic',
+    pitch: 'Installs by itself when nothing downloads and you’ve been away 5 min. A 10 s “Restarting… Cancel” toast if the window is visible. Zero clicks.',
+    frames: [['auto', 2, 'Away 5 min, nothing downloading: 10 s countdown'], ['auto', 3, 'Reopens behind your app; fading “Updated” toast']],
+    flow: ['-Downloads silently', '-Waits: no downloads + away 5 min', 'sCountdown toast “Restarting… Cancel”', '-Restarts, keeps focus away', 'sToast “Updated to 1.1.0”', '-Fades'],
+    note: '<b>Removed:</b> update sheet · Later/reminders · both notifications · the chip (except after Cancel or a failure). <b>Risk:</b> surprise restarts; Chrome sending a video during the ~5 s restart.',
+    counts: [['clicks when idle', '0', 'today 2'], ['clicks with downloads', '0', 'today 2 + surprise restart'], ['notifications', '0', 'today 2 per launch'], ['surfaces (idle)', '2', 'today 6']],
+  },
+});
+</script>
+</body>
+</html>
