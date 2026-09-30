@@ -80,13 +80,13 @@ test('queue broadcasts include metadata and rate changes without scanning histor
     if (this.queueFilePath === path.join(directory, 'queue.json')) manager = this;
     return originalQueue.apply(this, args);
   };
-  HistoryIndexService.prototype.walkMediaFiles = async function (currentDir = this.downloadDir, relativeDir = '') {
-    if (this.downloadDir === downloadDir && !relativeDir) {
+  HistoryIndexService.prototype.walkMediaFiles = async function (rootDir, options) {
+    if (this.downloadDir === downloadDir && rootDir === this.downloadDir) {
       historyIndex = this;
       scans += 1;
       if (heldScan) await heldScan;
     }
-    return originalWalk.call(this, currentDir, relativeDir);
+    return originalWalk.call(this, rootDir, options);
   };
   t.after(async () => {
     releaseHeldScan?.();

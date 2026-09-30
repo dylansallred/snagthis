@@ -5,7 +5,10 @@ const { isCurrentPreviewClipPath } = require('@m3u8/downloader-engine/src/core/P
 const { readJsonState, writeFileDurable } = require('@m3u8/downloader-engine/src/utils/durableJson');
 const logger = require('../utils/logger');
 const { compareSaved, isSort } = require('@m3u8/contracts/src/library');
-const { isJunkName, isMediaName, isSkippedDirName, isVideoFolder, looksLikeJobId, stemOf } = require('./libraryLayout');
+const {
+  isJunkName, isMediaName, isSkippedDirName, isTransportStream, isVideoFolder, looksLikeJobId, stemOf,
+} = require('./libraryLayout');
+const { JOB_STORAGE_MARKER } = require('@m3u8/downloader-engine/src/core/JobStorage');
 const { youtubeVideoIdOf, youtubeArtwork } = require('../utils/youtubeArtwork');
 const { sourceInfoOf } = require('../utils/sourceInfo');
 const {
@@ -19,9 +22,14 @@ const {
 
 const INDEX_VERSION = 2;
 const DEFAULT_LIMIT = 200;
-// A save folder chosen by mistake (a whole drive) must not stall every rescan.
+// The save folder may be a general folder (all of Downloads, a whole drive). Every rescan is
+// bounded: folders at most this deep, at most this many directory entries (files and folders)
+// read, and at most this long spent reading; package, cache, bundle and hidden folders are not
+// entered (libraryLayout.isSkippedDirName). Folders are read a few at a time, asynchronously.
 const MAX_LIBRARY_DEPTH = 8;
-const MAX_LIBRARY_ENTRIES = 50_000;
+const MAX_SCAN_ENTRIES = 50_000;
+const MAX_SCAN_MS = 2_000;
+const SCAN_CONCURRENCY = 16;
 const HISTORY_MEDIA_EXTENSIONS = new Set([
   '.mp4',
   '.ts',
@@ -40,6 +48,24 @@ function validatePersistedIndex(parsed) {
 }
 
 const TERMINAL_STATUSES = new Set(['completed', 'completed-with-errors', 'failed', 'cancelled']);
+
+/** Runs `task` over `items`, at most `limit` at a time. */
+async function mapLimit(items, limit, task) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      await task(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+const isInsideDir = (parent, child) => {
+  const relative = path.relative(parent, child);
+  return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+};
 
 function isVideoHistoryFile(fileName) {
   const ext = path.extname(fileName).toLowerCase();
@@ -188,6 +214,7 @@ class HistoryIndexService {
       onChange,
       minRefreshIntervalMs = 1_000,
       getLibraryRoot,
+      scanLimits = {},
     } = options;
 
     if (!downloadDir) {
@@ -204,6 +231,11 @@ class HistoryIndexService {
     this.jobs = jobs || new Map();
     this.onChange = typeof onChange === 'function' ? onChange : null;
     this.minRefreshIntervalMs = Math.max(1_000, Number(minRefreshIntervalMs) || 5_000);
+    this.scanLimits = {
+      maxDepth: Number(scanLimits.maxDepth) || MAX_LIBRARY_DEPTH,
+      maxEntries: Number(scanLimits.maxEntries) || MAX_SCAN_ENTRIES,
+      maxMs: Number(scanLimits.maxMs) || MAX_SCAN_MS,
+    };
     this.indexFilePath = path.join(indexDir, 'history-index.json');
     this.legacyIndexFilePath = path.join(downloadDir, 'history-index.json');
     // Path -> time the user removed it. A file written there later (the same
@@ -225,6 +257,15 @@ class HistoryIndexService {
     this.scanDirs = null;
     // User folders in the save folder, from the last rescan.
     this.folders = [];
+    // Folders made, renamed or filled in SnagThis (absolute paths). Saved shows these even when
+    // they hold no video; any other folder shows only while a video is somewhere inside it.
+    this.keptFolders = new Set();
+    // `.ts` files already sniffed: path -> { size, mtimeMs, video }, so a rescan reads each once.
+    this.transportStreams = new Map();
+    // One rescan at a time; a forced rescan asked for meanwhile runs once, after it.
+    this.refreshFollowUp = null;
+    this.lastScanMs = 0;
+    this.lastScanTruncated = false;
     this.folderSignature = '';
     this.libraryRoot = path.resolve(downloadDir);
     // Folder operations run alone: a rescan never interleaves with a move.
@@ -281,6 +322,9 @@ class HistoryIndexService {
     this.removedPaths = new Map((Array.isArray(parsed.removedPaths) ? parsed.removedPaths : [])
       .filter((value) => typeof value === 'string')
       .map((value) => [value, Number(removedAt[value]) || loadedAt]));
+    this.keptFolders = new Set((Array.isArray(parsed.keptFolders) ? parsed.keptFolders : [])
+      .filter((value) => typeof value === 'string' && path.isAbsolute(value))
+      .map((value) => path.resolve(value)));
     this.items = parsed.items
       .map(normalizeStoredItem)
       .filter(Boolean)
@@ -294,6 +338,7 @@ class HistoryIndexService {
       items: this.items,
       removedPaths: [...this.removedPaths.keys()],
       removedAt: Object.fromEntries(this.removedPaths),
+      keptFolders: [...this.keptFolders],
     };
     return JSON.stringify(payload);
   }
@@ -389,82 +434,115 @@ class HistoryIndexService {
     return byFile;
   }
 
-  async walkMediaFiles(currentDir = this.downloadDir, relativeDir = '', walk = null) {
-    if (walk) {
-      walk.entries += 1;
-      if (walk.entries > MAX_LIBRARY_ENTRIES || walk.depth > MAX_LIBRARY_DEPTH) return [];
+  /** Records a folder made, renamed or filled in SnagThis, so Saved keeps showing it when empty. */
+  keepFolder(absolutePath) {
+    if (typeof absolutePath === 'string' && absolutePath) this.keptFolders.add(path.resolve(absolutePath));
+  }
+
+  /** A kept folder (and any inside it) moved or renamed from `from` to `to`. */
+  moveKeptFolders(from, to) {
+    const source = path.resolve(from);
+    for (const kept of [...this.keptFolders]) {
+      if (kept !== source && !isInsideDir(source, kept)) continue;
+      this.keptFolders.delete(kept);
+      this.keptFolders.add(path.join(path.resolve(to), path.relative(source, kept)));
     }
-    let entries;
-    try {
-      entries = await this.fsPromises.readdir(currentDir, { withFileTypes: true });
-    } catch (error) {
-      // The download folder must be readable; a vanished or locked folder in the save folder is skipped.
-      if (!walk) throw error;
-      return [];
-    }
+  }
+
+  /** A folder deleted in SnagThis, with every kept folder inside it. */
+  forgetKeptFolders(absolutePath) {
+    const folder = path.resolve(absolutePath);
+    for (const kept of [...this.keptFolders]) if (kept === folder || isInsideDir(folder, kept)) this.keptFolders.delete(kept);
+  }
+
+  /** True for a real video; a `.ts` file must also look like a transport stream, not TypeScript. */
+  async isMediaFile(fullPath, stat, { trusted }) {
+    if (path.extname(fullPath).toLowerCase() !== '.ts' || trusted) return true;
+    const known = this.transportStreams.get(fullPath);
+    if (known && known.size === stat.size && known.mtimeMs === stat.mtimeMs) return known.video;
+    const video = await isTransportStream(this.fsPromises, fullPath, stat.size);
+    this.transportStreams.set(fullPath, { size: stat.size, mtimeMs: stat.mtimeMs, video });
+    return video;
+  }
+
+  /**
+   * The videos under `rootDir`, read level by level (shallow folders first), a few folders at a
+   * time, within the rescan's shared limits (`scan`). `library` walks the save folder: hidden,
+   * package and bundle folders and `skip` are not entered, and an unreadable folder is passed
+   * over. The download folder itself must be readable.
+   */
+  async walkMediaFiles(rootDir, { library = false, skip = new Set(), scan }) {
     const files = [];
-    if (this.scanListing) this.scanListing.set(currentDir, new Set(entries.filter((entry) => entry && !entry.isDirectory()).map((entry) => entry.name)));
-    if (this.scanDirs) {
-      const info = { files: [], dirs: [], hasMarker: false };
-      for (const entry of entries) {
-        if (!entry) continue;
-        if (entry.isDirectory()) { if (!isSkippedDirName(entry.name)) info.dirs.push(entry.name); }
-        else if (entry.isFile()) { if (entry.name === '.snagthis-job.json') info.hasMarker = true; else info.files.push(entry.name); }
-      }
-      this.scanDirs.set(currentDir, info);
-    }
-
-    for (const entry of entries) {
-      if (!entry) continue;
-      const childRelative = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
-      const fullPath = path.join(currentDir, entry.name);
-
-      if (entry.isDirectory()) {
-        if (isLocalPreviewDirectory(entry.name)
-          || (!relativeDir && (entry.name.startsWith('temp-') || entry.name === '__previews'))) {
-          continue;
+    let level = [{ directory: rootDir, relativeDir: '' }];
+    for (let depth = 0; level.length; depth += 1) {
+      if (depth > this.scanLimits.maxDepth) { scan.truncated = true; break; }
+      const nextLevel = [];
+      await mapLimit(level, SCAN_CONCURRENCY, async ({ directory, relativeDir }) => {
+        if (scan.entries >= this.scanLimits.maxEntries || Date.now() > scan.deadline) { scan.truncated = true; return; }
+        let entries;
+        try {
+          entries = await this.fsPromises.readdir(directory, { withFileTypes: true });
+        } catch (error) {
+          if (!library && !relativeDir) throw error;
+          return;
         }
-        if (walk && (isSkippedDirName(entry.name) || walk.skip.has(path.resolve(fullPath)))) continue;
-        if (walk) walk.depth += 1;
-        const nested = await this.walkMediaFiles(fullPath, childRelative, walk);
-        if (walk) walk.depth -= 1;
-        files.push(...nested);
-        continue;
-      }
+        scan.entries += entries.length;
+        const info = { files: [], dirs: [], hasMarker: false };
+        const media = [];
+        for (const entry of entries) {
+          if (!entry) continue;
+          if (entry.isDirectory()) {
+            if (!isSkippedDirName(entry.name)) info.dirs.push(entry.name);
+            if (isLocalPreviewDirectory(entry.name)
+              || (!relativeDir && (entry.name.startsWith('temp-') || entry.name === '__previews'))) continue;
+            const fullPath = path.join(directory, entry.name);
+            if (library && (isSkippedDirName(entry.name) || skip.has(path.resolve(fullPath)))) continue;
+            nextLevel.push({ directory: fullPath, relativeDir: relativeDir ? `${relativeDir}/${entry.name}` : entry.name });
+          } else if (entry.isFile()) {
+            if (entry.name === JOB_STORAGE_MARKER) info.hasMarker = true;
+            else info.files.push(entry.name);
+            if (isVideoHistoryFile(entry.name)) media.push(entry.name);
+          }
+        }
+        if (this.scanListing) this.scanListing.set(directory, new Set(entries.filter((entry) => entry && !entry.isDirectory()).map((entry) => entry.name)));
+        if (this.scanDirs) this.scanDirs.set(directory, info);
 
-      if (!entry.isFile()) continue;
-      if (!isVideoHistoryFile(entry.name)) continue;
-
-      let stat = null;
-      try {
-        stat = await this.fsPromises.stat(fullPath);
-      } catch {
-        stat = null;
-      }
-      if (!stat) continue;
-
-      files.push(walk ? {
-        fullPath,
-        absolutePath: fullPath,
-        relativePath: this.toRelativePath(fullPath) || entry.name,
-        fileName: entry.name,
-        // Keep sibling checks (a .ts beside its .mp4) within this folder of the save folder.
-        dirRelative: `library:${relativeDir}`,
-        stat,
-      } : {
-        fullPath,
-        relativePath: childRelative,
-        fileName: entry.name,
-        dirRelative: relativeDir,
-        stat,
+        const names = new Set(info.files);
+        await mapLimit(media, SCAN_CONCURRENCY, async (name) => {
+          const fullPath = path.join(directory, name);
+          let stat = null;
+          try { stat = await this.fsPromises.stat(fullPath); } catch { stat = null; }
+          if (!stat || !stat.isFile()) return;
+          // The download folder holds only SnagThis's own files; in the save folder, its video
+          // folders and a .ts beside its .mp4 are trusted without reading.
+          const trusted = !library || info.hasMarker || names.has(`${stemOf(name)}.mp4`);
+          if (!await this.isMediaFile(fullPath, stat, { trusted })) { scan.notMedia.add(fullPath); return; }
+          scan.found.add(fullPath);
+          files.push(library ? {
+            fullPath,
+            absolutePath: fullPath,
+            relativePath: this.toRelativePath(fullPath) || name,
+            fileName: name,
+            // Keep sibling checks (a .ts beside its .mp4) within this folder of the save folder.
+            dirRelative: `library:${relativeDir}`,
+            stat,
+          } : {
+            fullPath,
+            relativePath: relativeDir ? `${relativeDir}/${name}` : name,
+            fileName: name,
+            dirRelative: relativeDir,
+            stat,
+          });
+        });
       });
+      level = nextLevel;
     }
-
-    return files;
+    // Folders are read concurrently; keep the result in a stable order.
+    return files.sort((a, b) => (a.fullPath < b.fullPath ? -1 : a.fullPath > b.fullPath ? 1 : 0));
   }
 
   /** The save folder's own videos, when it is not the download folder (walked separately). */
-  async walkLibraryRoot(root) {
+  async walkLibraryRoot(root, scan) {
     const downloadRoot = path.resolve(this.downloadDir);
     if (root === downloadRoot) return [];
     const inside = path.relative(downloadRoot, root);
@@ -474,7 +552,36 @@ class HistoryIndexService {
       if (!stat.isDirectory()) return [];
     } catch { return []; }
     const skip = new Set([downloadRoot, path.resolve(path.dirname(this.indexFilePath))]);
-    return this.walkMediaFiles(root, '', { skip, entries: 0, depth: 0 });
+    return this.walkMediaFiles(root, { library: true, skip, scan });
+  }
+
+  /**
+   * Kept folders the bounded walk did not reach are read on their own (with the folders above
+   * them), so a folder made in SnagThis always shows; one that no longer exists is forgotten.
+   */
+  async readKeptFolders(root) {
+    for (const kept of [...this.keptFolders]) {
+      if (!isInsideDir(root, kept)) continue;
+      const chain = [];
+      for (let current = kept; isInsideDir(root, current); current = path.dirname(current)) chain.unshift(current);
+      for (const directory of chain) {
+        if (this.scanDirs.has(directory)) continue;
+        if (isSkippedDirName(path.basename(directory))) break;
+        let entries;
+        try {
+          entries = await this.fsPromises.readdir(directory, { withFileTypes: true });
+        } catch (error) {
+          if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) this.keptFolders.delete(kept);
+          break;
+        }
+        const info = { files: [], dirs: [], hasMarker: false };
+        for (const entry of entries) {
+          if (entry.isDirectory()) { if (!isSkippedDirName(entry.name)) info.dirs.push(entry.name); }
+          else if (entry.isFile()) { if (entry.name === JOB_STORAGE_MARKER) info.hasMarker = true; else info.files.push(entry.name); }
+        }
+        this.scanDirs.set(directory, info);
+      }
+    }
   }
 
   /**
@@ -501,16 +608,31 @@ class HistoryIndexService {
     return kept.join('/');
   }
 
-  collectFolders(root) {
+  /**
+   * The user folders Saved shows, from the rescan's directory contents: a folder appears when a
+   * video is somewhere inside it (at any depth the rescan reached) or it was made, renamed or
+   * filled in SnagThis (`keptFolders`). A general save folder such as Downloads so shows only the
+   * folders that matter, not every folder it collects.
+   */
+  collectFolders(root, items) {
     const folders = [];
     if (!this.scanDirs) return folders;
+    const shown = new Set();
+    const mark = (directory) => {
+      for (let current = directory; isInsideDir(root, current) && !shown.has(current); current = path.dirname(current)) shown.add(current);
+    };
+    for (const item of items) {
+      if (item.missing) continue;
+      mark(path.dirname(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath))));
+    }
+    for (const kept of this.keptFolders) mark(kept);
     const visit = (directory, relative) => {
       const info = this.scanDirs.get(directory);
       if (!info) return;
       for (const name of [...info.dirs].sort((a, b) => a.localeCompare(b))) {
         const child = path.join(directory, name);
         const childInfo = this.scanDirs.get(child);
-        if (!childInfo || isVideoFolder(name, childInfo)) continue;
+        if (!childInfo || !shown.has(child) || isVideoFolder(name, childInfo)) continue;
         const childRelative = relative ? `${relative}/${name}` : name;
         folders.push({ path: childRelative, name, parent: relative, files: childInfo.files.filter((file) => !isJunkName(file)) });
         visit(child, childRelative);
@@ -520,7 +642,20 @@ class HistoryIndexService {
     return folders;
   }
 
-  collectExternalJobMediaFiles() {
+  /** A file's stat, or null. A folder the rescan listed answers "not there" without asking again. */
+  async statIfPresent(candidate) {
+    const listed = this.scanListing && this.scanListing.get(path.dirname(candidate));
+    if (listed && !listed.has(path.basename(candidate))) return null;
+    try {
+      const stat = await this.fsPromises.stat(candidate);
+      return stat.isFile() ? stat : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Finished downloads kept outside the folders the rescan walked (the walk already has the rest).
+  async collectExternalJobMediaFiles(found) {
     const files = [];
     if (!this.jobs || typeof this.jobs.values !== 'function') {
       return files;
@@ -534,33 +669,32 @@ class HistoryIndexService {
       const internal = (value) => typeof value !== 'string' || !value.trim() || Boolean(this.toRelativePath(value));
       if (internal(job.mp4Path) && internal(job.filePath)) continue;
 
-      const candidatePath = job.mp4Path && fs.existsSync(job.mp4Path) ? job.mp4Path : job.filePath;
-      if (typeof candidatePath !== 'string' || !candidatePath.trim()) continue;
-      if (!fs.existsSync(candidatePath)) continue;
-      const relative = this.toRelativePath(candidatePath);
-      if (relative) continue;
-
-      try {
-        const stat = fs.statSync(candidatePath);
-        if (!stat.isFile()) continue;
-        files.push({
-          fullPath: candidatePath,
-          absolutePath: candidatePath,
-          relativePath: path.basename(candidatePath),
-          fileName: path.basename(candidatePath),
-          dirRelative: '',
-          stat,
-          job,
-        });
-      } catch {
-        continue;
+      // The MP4 when it exists, else the downloaded file; one the walk found needs no second look.
+      let candidatePath = null;
+      let stat = null;
+      for (const value of [job.mp4Path, job.filePath]) {
+        if (typeof value !== 'string' || !value.trim()) continue;
+        if (found.has(value)) { candidatePath = value; break; }
+        stat = await this.statIfPresent(value);
+        if (stat) { candidatePath = value; break; }
       }
+      if (!stat || this.toRelativePath(candidatePath)) continue;
+      files.push({
+        fullPath: candidatePath,
+        absolutePath: candidatePath,
+        relativePath: path.basename(candidatePath),
+        fileName: path.basename(candidatePath),
+        dirRelative: '',
+        stat,
+        job,
+      });
     }
 
     return files;
   }
 
-  collectPersistedExternalMediaFiles() {
+  // Saved videos outside the walked folders (another volume, beyond the rescan's limits).
+  async collectPersistedExternalMediaFiles(found, notMedia) {
     const files = [];
     const seen = new Set();
 
@@ -569,28 +703,60 @@ class HistoryIndexService {
       const absolutePath = item.absolutePath.trim();
       const relative = this.toRelativePath(absolutePath);
       if (relative) continue;
-      if (seen.has(absolutePath)) continue;
-      if (!fs.existsSync(absolutePath)) continue;
-
-      try {
-        const stat = fs.statSync(absolutePath);
-        if (!stat.isFile()) continue;
-        files.push({
-          fullPath: absolutePath,
-          absolutePath,
-          relativePath: path.basename(absolutePath),
-          fileName: path.basename(absolutePath),
-          dirRelative: '',
-          stat,
-          persistedItem: item,
-        });
-        seen.add(absolutePath);
-      } catch {
-        continue;
-      }
+      if (seen.has(absolutePath) || found.has(absolutePath) || notMedia.has(absolutePath)) continue;
+      seen.add(absolutePath);
+      const stat = await this.statIfPresent(absolutePath);
+      if (!stat) continue;
+      files.push({
+        fullPath: absolutePath,
+        absolutePath,
+        relativePath: path.basename(absolutePath),
+        fileName: path.basename(absolutePath),
+        dirRelative: '',
+        stat,
+        persistedItem: item,
+      });
     }
 
     return files;
+  }
+
+  /**
+   * Answers ahead of time, asynchronously, the existence checks building the list will make
+   * (earlier videos, removed paths, posters and preview clips) outside the folders just listed,
+   * so pathExists never waits on the disk.
+   */
+  async prefetchExists() {
+    const candidates = new Set();
+    const add = (value) => { if (typeof value === 'string' && value) candidates.add(value); };
+    const addUrl = (value) => {
+      if (typeof value !== 'string') return;
+      if (value.startsWith('/downloads/')) add(resolveDownloadPath(this.downloadDir, value.slice('/downloads/'.length)));
+      else if (value.startsWith(EXTERNAL_DOWNLOAD_PREFIX)) add(decodeExternalDownloadPath(value.slice(EXTERNAL_DOWNLOAD_PREFIX.length)));
+    };
+    for (const item of this.items) {
+      add(path.resolve(item.absolutePath || path.join(this.downloadDir, item.relativePath || '')));
+      addUrl(item.thumbnailUrl);
+      add(item.previewClipPath);
+    }
+    for (const removed of this.removedPaths.keys()) add(removed);
+    if (this.jobs && typeof this.jobs.values === 'function') {
+      for (const job of this.jobs.values()) {
+        if (!job) continue;
+        add(job.thumbnailPath);
+        add(job.previewClipPath);
+        if (Array.isArray(job.thumbnailPaths)) job.thumbnailPaths.forEach(add);
+      }
+    }
+    const unknown = [...candidates].filter((candidate) => !this.scanListing.has(path.dirname(candidate)) && !this.scanExists.has(candidate));
+    await mapLimit(unknown, SCAN_CONCURRENCY, async (candidate) => {
+      try {
+        await this.fsPromises.stat(candidate);
+        this.scanExists.set(candidate, true);
+      } catch {
+        this.scanExists.set(candidate, false);
+      }
+    });
   }
 
   findThumbnailUrl({ validJobId, dirAbsolute, dirRelative, job, persistedItem }) {
@@ -748,31 +914,60 @@ class HistoryIndexService {
       .join('|');
   }
 
+  /**
+   * Time between rescans that nobody forced (the regular refresh, window focus, opening Saved):
+   * at least `minRefreshIntervalMs`, and twice the last rescan's length, so a slow disk is read
+   * at most a third of the time.
+   */
+  refreshIntervalMs() {
+    return Math.max(this.minRefreshIntervalMs, 2 * this.lastScanMs);
+  }
+
+  /**
+   * Rescans the download and save folders. One rescan runs at a time: a request made meanwhile
+   * shares it, except a forced one (a download finished, a folder changed), which runs once more
+   * after it, however many ask. Unforced requests within `refreshIntervalMs` of the last rescan
+   * finishing use its result.
+   */
   async refreshFromDisk(options = {}) {
     const force = Boolean(options.force);
-    const now = Date.now();
-    if (!force && now - this.lastRefreshAt < this.minRefreshIntervalMs) {
-      return { changed: false, reason: 'throttled' };
-    }
-
     if (this.refreshInFlight) {
-      return this.refreshInFlight;
+      if (!force) return this.refreshInFlight;
+      if (!this.refreshFollowUp) {
+        this.refreshFollowUp = this.refreshInFlight.catch(() => {}).then(() => {
+          this.refreshFollowUp = null;
+          return this.refreshFromDisk({ force: true });
+        });
+      }
+      return this.refreshFollowUp;
+    }
+    if (!force && Date.now() - this.lastRefreshAt < this.refreshIntervalMs()) {
+      return { changed: false, reason: 'throttled' };
     }
     // A folder operation in progress changes the files being scanned; rescan once it is done.
     while (this.exclusive) await this.exclusive.catch(() => {});
-    if (this.refreshInFlight) return this.refreshInFlight;
+    if (this.refreshInFlight) return this.refreshFromDisk(options);
 
+    const started = Date.now();
     this.refreshInFlight = (async () => {
-      this.lastRefreshAt = Date.now();
       this.scanListing = new Map();
       this.scanExists = new Map();
       this.scanDirs = new Map();
       const root = this.libraryRootPath();
+      const scan = { entries: 0, deadline: started + this.scanLimits.maxMs, truncated: false, found: new Set(), notMedia: new Set() };
 
-      const mediaFiles = await this.walkMediaFiles();
-      mediaFiles.push(...await this.walkLibraryRoot(root));
-      mediaFiles.push(...this.collectExternalJobMediaFiles());
-      mediaFiles.push(...this.collectPersistedExternalMediaFiles());
+      const mediaFiles = await this.walkMediaFiles(this.downloadDir, { scan });
+      mediaFiles.push(...await this.walkLibraryRoot(root, scan));
+      mediaFiles.push(...await this.collectExternalJobMediaFiles(scan.found));
+      mediaFiles.push(...await this.collectPersistedExternalMediaFiles(scan.found, scan.notMedia));
+      await this.readKeptFolders(root);
+      await this.prefetchExists();
+      // Forget sniffed .ts files that are gone, so the cache never outgrows the library.
+      for (const file of this.transportStreams.keys()) if (!scan.found.has(file) && !scan.notMedia.has(file)) this.transportStreams.delete(file);
+      if (scan.truncated !== this.lastScanTruncated) {
+        this.lastScanTruncated = scan.truncated;
+        if (scan.truncated) logger.info('Save folder is large; rescans stop at their limits', { entries: scan.entries, ms: Date.now() - started });
+      }
       const filesByDir = new Map();
       for (const mediaFile of mediaFiles) {
         const key = mediaFile.dirRelative || '';
@@ -810,6 +1005,8 @@ class HistoryIndexService {
         // those records, including already-cleaned scratch files, without
         // deleting files or weakening missing-file recovery for user media.
         if (this.isInternalPreviewFile(absolute)) continue;
+        // A `.ts` file that turned out to be TypeScript source was never a video.
+        if (scan.notMedia.has(absolute)) continue;
         if (!this.removedPaths.has(absolute)) {
           nextItemsByLocator.set(locator, { ...previous, missing: !this.pathExists(absolute) });
         }
@@ -826,14 +1023,17 @@ class HistoryIndexService {
         seenIds.add(item.id);
       }
       const previousFolders = new Map(this.items.map((item) => [getHistoryItemLocator(item), item.folder]));
-      const folders = this.collectFolders(root);
+      const folders = this.collectFolders(root, nextItems);
       const folderPaths = new Set(folders.map((folder) => folder.path));
       for (const item of nextItems) {
         const previous = previousFolders.get(getHistoryItemLocator(item));
         // A missing file stays in the folder it was last seen in, while that folder exists.
-        item.folder = item.missing && typeof previous === 'string'
+        let folder = item.missing && typeof previous === 'string'
           ? (folderPaths.has(previous) ? previous : '')
           : this.folderOf(item.absolutePath || path.join(this.downloadDir, item.relativePath), root, previous);
+        // A video beyond the rescan's limits is listed in the nearest folder Saved shows.
+        while (folder && !folderPaths.has(folder)) folder = folder.includes('/') ? folder.slice(0, folder.lastIndexOf('/')) : '';
+        item.folder = folder;
       }
 
       nextItems.sort((a, b) => Number(b.modifiedAt || 0) - Number(a.modifiedAt || 0));
@@ -860,6 +1060,8 @@ class HistoryIndexService {
       this.scanListing = null;
       this.scanExists = null;
       this.scanDirs = null;
+      this.lastRefreshAt = Date.now();
+      this.lastScanMs = this.lastRefreshAt - started;
       this.refreshInFlight = null;
     });
 
