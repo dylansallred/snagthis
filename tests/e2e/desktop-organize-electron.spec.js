@@ -9,7 +9,8 @@ test('real Electron: a downloaded video moves into a folder of the save folder a
   test.setTimeout(150_000);
   const fixture = await startFixtureServer();
   const saveDir = path.join(fixture.directory, 'organised');
-  fs.mkdirSync(path.join(saveDir, 'Road trips'), { recursive: true });
+  // A folder made outside the app, still empty: Saved doesn't list it (the save folder may be all of Downloads).
+  fs.mkdirSync(path.join(saveDir, 'Made in Finder'), { recursive: true });
   const renderer = await startRenderer();
   let native;
   try {
@@ -25,11 +26,21 @@ test('real Electron: a downloaded video moves into a folder of the save folder a
     await paste.press('Enter');
     await expect(window.locator('.video-row').first().getByRole('button', { name: /^Play:/ })).toBeVisible({ timeout: 60_000 });
 
-    // Saved is the save folder: the folder made outside the app is listed before the video.
+    // A folder made in the app is listed, empty, before the video; the empty one made outside is not.
+    const created = await window.evaluate(async () => {
+      const info = await window.desktop.getAppInfo();
+      const response = await fetch(`${info.apiBaseUrl}/api/library/folders`, {
+        method: 'POST', headers: { Authorization: `Bearer ${info.apiAuthToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent: '', name: 'Road trips' }),
+      });
+      return response.status;
+    });
+    expect(created).toBe(200);
     await window.locator('.list-tabs button[data-tab="saved"]').click();
     await expect(window.locator('.path-bar .crumb.current')).toHaveText('organised');
     const folder = window.locator('.saved-folder-row[data-folder="Road trips"]');
     await expect(folder).toContainText('Empty');
+    await expect(window.locator('.saved-folder-row[data-folder="Made in Finder"]')).toHaveCount(0);
     const row = window.locator('.video-row[data-state="saved"]').first();
     await expect(row).toBeVisible();
     const before = await window.evaluate(async () => {
