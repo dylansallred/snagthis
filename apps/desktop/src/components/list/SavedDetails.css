@@ -71,7 +71,7 @@
 .saved-spec.missing .spec-row dd { color: #aeb5bf; }
 
 /* One quiet action bar. */
-.spec-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 5px 8px; border-top: 1px solid var(--color-border-subtle); background: hsl(215 22% 6%); }
+.spec-bar { container-type: inline-size; display: flex; flex-wrap: nowrap; align-items: center; gap: 2px; padding: 5px 8px; border-top: 1px solid var(--color-border-subtle); background: hsl(215 22% 6%); }
 .spec-bar-item { display: inline-flex; }
 .spec-space { flex: 1; }
 .spec-sep { width: 1px; height: 16px; margin: 0 4px; background: var(--color-border); }
@@ -83,6 +83,13 @@
 .spec-action.copy-action > .copy-feedback-label { display: inline-grid; }
 .spec-action:focus-visible, .spec-play:focus-visible, .spec-locate:focus-visible { box-shadow: 0 0 0 2px var(--color-primary-hover); color: var(--color-foreground); }
 .spec-play:focus-visible, .spec-locate:focus-visible { color: #fff; box-shadow: inset 2px 2px 0 var(--accent-bevel-light, #ffb238), inset -2px -2px 0 var(--accent-bevel-dark, #bd3f00), 0 0 0 2px var(--color-primary-hover); }
+
+/* In a narrow window (the app opens at 820px) Move to… and Rename… drop to icons with tooltips, so the
+   bar never wraps; wider fonts on Windows and Linux get the same room. */
+@container (max-width: 790px) {
+  .spec-action.compact-action .spec-label, .spec-action.compact-action kbd { display: none; }
+  .spec-action.compact-action { padding: 0 8px; }
+}
 
 /* H3 · Pixel shine: the logo's cream shine makes one pass in 9 pixel steps (600ms) across a hovered action,
    Play or the poster, and a 1px accent outline lights (Play also glows). It runs once each time the pointer

@@ -179,8 +179,8 @@ export function SavedDetails({ row, apiBase, context, previewUrl, onPosterActive
           </button>)}
           {!missing && <>
             <span className="spec-sep" aria-hidden="true" />
-            {bar(<button type="button" className="spec-action px-shine" onClick={() => onCommand('move-to')}><FolderInput aria-hidden="true" />{copy.moveTo}<kbd aria-hidden="true">M</kbd></button>)}
-            {bar(<button type="button" className="spec-action px-shine" onClick={() => onCommand('rename')}><Pencil aria-hidden="true" />{copy.detailRename}</button>)}
+            {bar(<button type="button" className="spec-action px-shine compact-action" aria-label={copy.moveTo} title={copy.moveTo} onClick={() => onCommand('move-to')}><FolderInput aria-hidden="true" /><span className="spec-label">{copy.moveTo}</span><kbd aria-hidden="true">M</kbd></button>)}
+            {bar(<button type="button" className="spec-action px-shine compact-action" aria-label={copy.detailRename} title={copy.detailRename} onClick={() => onCommand('rename')}><Pencil aria-hidden="true" /><span className="spec-label">{copy.detailRename}</span></button>)}
           </>}
           <span className="spec-space" />
           {bar(<button type="button" className="spec-action px-shine danger" onClick={() => onCommand('remove')}>{missing ? <ListX aria-hidden="true" /> : <Trash2 aria-hidden="true" />}{missing ? copy.detailRemoveFromList : copy.detailRemove}</button>)}
