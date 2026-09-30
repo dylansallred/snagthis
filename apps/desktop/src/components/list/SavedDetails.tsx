@@ -7,7 +7,6 @@ import { PixelFolder } from '@/components/library/FolderRow';
 import { revealLabel } from '@/lib/libraryBackend';
 import type { MediaInfo, SourceInfo } from '@/types/history';
 import { FillThumb } from './FillThumb';
-import './SavedDetails.css';
 import { QualityLabel } from './QualityLabel';
 import type { RowCommand } from './RowDetails';
 

@@ -14,6 +14,7 @@ import { FolderRow, NewFolderRow, SectionLabel } from '@/components/library/Fold
 import { MoveToMenu } from '@/components/library/MoveToMenu';
 import { DeleteFolderPopover, FolderNameDialog, SelectionBar } from '@/components/library/FolderDialogs';
 import '@/components/library/organize.css';
+import '@/components/list/SavedDetails.css';
 import type { ListSection } from '@/components/list/VideoList';
 import { defaultVariant } from '@m3u8/contracts/src/hls.mjs';
 import { useAppInit } from '@/hooks/useAppInit';
