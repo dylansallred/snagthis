@@ -379,3 +379,44 @@ test('the Chrome Web Store build pairs as the store extension, any other ID as u
   assert.equal(store.status, 201);
   assert.equal(bridge.api.getPendingPairing().identity, 'store');
 });
+
+test('"Waiting for Chrome…": health shows only a listening flag and session, and auth is unchanged', async (t) => {
+  const bridge = await startBridge(t);
+  const health = () => bridge.call('/v1/health', { origin: ORIGIN_A }).then((result) => result.body.pairing);
+  assert.deepEqual(await health(), { listening: false });
+  const first = bridge.api.setPairingListening(true);
+  assert.equal(first.listening, true);
+  assert.match(first.session, /^[0-9a-f]{16}$/);
+  assert.deepEqual(await health(), first, 'the public flag carries a random session and nothing else');
+  // Renewing keeps the same session, so an extension asks at most once per listening card.
+  assert.equal(bridge.api.setPairingListening(true).session, first.session);
+  // Listening never authenticates anything and never approves a request.
+  assert.equal((await bridge.call('/v1/queue', { origin: ORIGIN_A })).status, 403, 'an unpaired extension origin is still refused');
+  const asked = await bridge.ask(ORIGIN_A);
+  assert.equal(asked.status, 201);
+  assert.equal(bridge.api.getPendingPairing().status, 'pending', 'still waits for Allow in SnagThis');
+  assert.equal((await bridge.status(ORIGIN_A, asked.body.requestId, asked.secret)).body.status, 'pending');
+  // While a request waits, nothing else is invited to ask (a second request would cancel both).
+  assert.deepEqual(await health(), { listening: false });
+  // Allow ends listening: the next browser has to be asked for again.
+  assert.equal(bridge.api.decidePairing(asked.body.requestId, true).ok, true);
+  assert.deepEqual(await health(), { listening: false });
+  // Deny blocks and rate limits are not relaxed while listening.
+  bridge.api.setPairingListening(true);
+  const denied = await bridge.ask(ORIGIN_B);
+  bridge.api.decidePairing(denied.body.requestId, false);
+  assert.equal((await bridge.ask(ORIGIN_B)).body.code, 'PAIRING_BLOCKED');
+  const previous = bridge.api.setPairingListening(true).session;
+  bridge.api.setPairingListening(false);
+  assert.deepEqual(await health(), { listening: false });
+  assert.notEqual(bridge.api.setPairingListening(true).session, previous, 'a new card is a new session');
+});
+
+test('listening lapses on its own when the desktop stops renewing it', async (t) => {
+  const bridge = await startBridge(t);
+  const realNow = Date.now;
+  t.after(() => { Date.now = realNow; });
+  bridge.api.setPairingListening(true);
+  Date.now = () => realNow() + 91_000;
+  assert.deepEqual((await bridge.call('/v1/health')).body.pairing, { listening: false });
+});

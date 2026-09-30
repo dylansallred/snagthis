@@ -19,6 +19,9 @@ const DENY_BLOCK_MS = 60 * 60_000;
 // Finished requests stay long enough for the requester's next poll to read the outcome.
 const FINISHED_RETENTION_MS = 5 * 60_000;
 const LAST_SEEN_SAVE_MS = 60_000;
+// "Waiting for Chrome…": while the desktop shows its connect card it renews this window,
+// so a crashed or hidden renderer stops listening on its own.
+const LISTEN_TTL_MS = 90_000;
 // Web Store item IDs, recorded once the store item exists (docs/extension-release.md,
 // "Establish the store identity"). Any other ID is shown to the user as unrecognised.
 const STORE_EXTENSION_IDS = Object.freeze(['dempkhcipnakfiidcnlckkjfbieggcbp']);
@@ -148,6 +151,8 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     if (!extensions.some((entry) => entry.legacy)) legacyToken = null;
     // Connecting deliberately (for example with a code after a Deny) lifts that extension's block.
     blockedUntil.delete(origin);
+    // Connected: nothing else starts a request on its own until the desktop waits again.
+    listening = null;
     save();
     notify();
     if (existing) revoked();
@@ -304,6 +309,26 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     return { ok: true, status: 'approved' };
   }
 
+  /**
+   * Pair from the desktop: while its connect card is on screen the desktop "listens", and an
+   * unpaired extension may start a request without a click. This is only a hint on the public
+   * health route (a random session ID, no secret); requesting, the digits and Allow are unchanged.
+   */
+  let listening = null;
+  function setListening(on) {
+    if (!on) { listening = null; return getListening(); }
+    const time = now();
+    if (!listening || listening.until <= time) listening = { session: randomHex(8), until: 0 };
+    listening.until = time + LISTEN_TTL_MS;
+    return getListening();
+  }
+  function getListening() {
+    prune();
+    if (listening && listening.until <= now()) listening = null;
+    // While one request waits, a second automatic one would only cancel both (the conflict rule).
+    return listening && !pairing ? { listening: true, session: listening.session } : { listening: false };
+  }
+
   function listExtensions() {
     return extensions.map((entry) => ({
       id: entry.id, extensionId: extensionIdOf(entry.origin), createdAt: entry.createdAt, lastSeenAt: entry.lastSeenAt,
@@ -366,6 +391,7 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     get token() { return token; },
     originAllowed, authenticate, isCurrent, getPairingInfo, completePairing, markConnected, signAsset, verifyAsset, publicPayload,
     requestPairing, pairingStatus, cancelPairing, getPendingPairing, decidePairing, listExtensions, revokeExtension, upgradeLegacy,
+    setListening, getListening,
     getConnectionState: () => ({ extensionConnected: extensionConnected(), pairedExtensions: extensions.length }),
   };
 }

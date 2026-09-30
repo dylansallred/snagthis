@@ -62,7 +62,32 @@
 @keyframes pairing-burst { 0% { opacity: 1; transform: rotate(var(--a)) translateX(10px); } 80% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--d, 54px)); } }
 .pairing-dialog h2.pairing-yay-title { margin: 16px 0 6px; line-height: 0; color: #fff; }
 .pairing-yay-title svg { display: block; }
-.pairing-done { min-width: 120px; height: 32px; }
+/* A thin bar that empties while "Connected" shows, then the dialog or card closes itself. */
+.pairing-closing { width: 120px; height: 3px; margin-top: 4px; background: var(--color-border); overflow: hidden; }
+.pairing-closing i { display: block; height: 100%; background: hsl(150 50% 60%); transform-origin: left; animation: pairing-closing 1400ms linear forwards; }
+@keyframes pairing-closing { to { transform: scaleX(0); } }
+
+/* Pair from the desktop: "Waiting for Chrome…", which turns into the digits and Allow in place. */
+.chrome-connect-card { display: grid; justify-items: center; gap: 0; width: min(420px, 100%); margin: 18px auto 0; padding: 16px 18px 14px; border-radius: 12px; background: var(--color-background-hover); border: 1px solid var(--color-border); text-align: center; }
+.chrome-connect-card.settings, .chrome-connect-card.another { width: 100%; margin: 0; }
+.chrome-connect-card h3 { margin: 0 0 6px; font-size: 13.5px; font-weight: 620; color: var(--color-foreground); }
+.chrome-connect-card > p { margin: 0 0 10px; font-size: 12px; color: var(--color-foreground-muted); max-width: none; }
+.chrome-connect-card .connect-hint { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 7px; border-radius: 14px; background: var(--color-background-active); color: var(--color-foreground); }
+.chrome-connect-card .connect-hint b { font-weight: 600; margin: 0 -2px; }
+.chrome-connect-card .connect-listen { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; }
+.connect-blip { width: 8px; height: 8px; flex: none; background: var(--accent-bevel-face, #fa5d0e); animation: pairing-blink 1s steps(1) infinite; }
+.chrome-connect-card .connect-links { display: flex; gap: 16px; justify-content: center; }
+.chrome-connect-card .connect-links .text-link { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+.chrome-connect-card .connect-links svg { width: 12px; height: 12px; }
+.chrome-connect-card.asking { border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border)); }
+.chrome-connect-card.asking .pairing-who { margin: 14px 0 12px; }
+.chrome-connect-card.asking .pairing-pips { margin-top: 12px; }
+.chrome-connect-card.asking .pairing-digits:not(.sm) .pairing-digit { width: 34px; height: 46px; }
+.chrome-connect-card.connected { border-color: #2b7a55; }
+.connect-done { display: grid; justify-items: center; gap: 4px; padding: 6px 0 2px; font-size: 12px; color: var(--color-foreground-muted); }
+.connect-done b { font-size: 14px; color: var(--color-foreground); }
+.connect-done-mark { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: hsl(150 40% 18%); color: var(--color-status-completed); }
+.connect-done-mark svg { width: 16px; height: 16px; }
 
 /* Settings → Chrome extension: a waiting request. Hidden while the dialog is open, so the code shows once. */
 :root[data-pairing-dialog] :is(.pairing-pending, .settings-pairing-waiting, #chrome-waiting) { display: none; }
@@ -87,7 +112,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pairing-burst { display: none; }
-  .pairing-digit, .pairing-pips i.now, .pairing-spinner, .pairing-dialog.approved > * { animation: none; }
+  .pairing-digit, .pairing-pips i.now, .pairing-spinner, .pairing-dialog.approved > *, .connect-blip, .pairing-closing i { animation: none; }
   .pairing-pips i { transition: none; }
   /* No sweep: Allow stays muted, then turns primary when it is ready. */
   .pairing-allow.arming::before { animation: none; }

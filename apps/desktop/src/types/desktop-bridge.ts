@@ -82,9 +82,11 @@ export interface DesktopBridge {
   getConnectionState(): Promise<ConnectionState>;
   getPairingRequest(): Promise<PairingRequest | null>;
   decidePairing(requestId: string, allow: boolean): Promise<{ ok: boolean; status: string }>;
+  /** "Waiting for Chrome…": lets an unpaired extension start its request without a click. Renew within 90 s. */
+  setPairingListening?(on: boolean): Promise<{ listening: boolean; session?: string }>;
   listExtensions(): Promise<ConnectedExtension[]>;
   disconnectExtension(id: string): Promise<{ ok: boolean }>;
-  /** snagthis://open/pair while a request is pending. */
+  /** A new pending request (SnagThis surfaced itself), or snagthis://open/pair from an older extension. */
   onPairingShow(cb: (request: PairingRequest) => void): () => void;
   onPairingState(cb: (request: PairingRequest | null) => void): () => void;
   onExtensionsChange(cb: (extensions: ConnectedExtension[]) => void): () => void;

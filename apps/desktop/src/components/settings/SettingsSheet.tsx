@@ -11,7 +11,7 @@ import { buildSiteReportUrl } from '@/lib/siteReport';
 import { defaultSettings } from '@/hooks/useAppInit';
 import { NumberSetting, SavedMark, SettingRow, SettingsFormContext, SettingsGroup, SwitchRow, TextSetting, type Draft, type SettingsForm } from './settingsFields';
 import { AccentPicker } from './AccentPicker';
-import { PairingDigits, countdown, reviewPairing, shortExtensionId } from './PairingApproval';
+import { ChromeConnectCard, PairingDigits, countdown, reviewPairing, shortExtensionId } from './PairingApproval';
 import { settingsSections, type SettingsSectionId } from './settingsSections';
 import { UpdateErrorBody, type UpdateActions } from '@/components/updates/UpdateChip';
 import { afterDownloads, updateSummary } from '@/components/updates/updateModel';
@@ -52,6 +52,8 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
   const [extensions, setExtensions] = useState<ConnectedExtension[]>(gallery ? galleryExtensions : []);
   const [confirmDisconnect, setConfirmDisconnect] = useState('');
   const [disconnected, setDisconnected] = useState(false);
+  // "Connect another browser" / "Connect Chrome" after a disconnect: show the waiting card on request.
+  const [listenAgain, setListenAgain] = useState(() => gallery && new URLSearchParams(window.location.search).has('pair'));
   const [saved, setSaved] = useState({ key: '', announcement: '' });
   const savedTimer = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -191,9 +193,11 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
       const name = (entry: ConnectedExtension) => entry.identity === 'store' ? ui.pairingStoreName : 'Chrome extension';
       const legacyConnected = !connected && !disconnected && !!appInfo?.extensionConnected;
       const codeLive = pairing && pairingSeconds > 0;
+      // Nothing connected: SnagThis waits for Chrome here. Otherwise it waits only when asked to.
+      const showCard = (!connected && !legacyConnected && !disconnected) || listenAgain;
       return <section className="settings-chrome" aria-label="Chrome extension setup">
         <SettingsGroup id="chrome-status" title={ui.chromeStatus} list={connected} listLabel="Connected browsers" footer={connected ? ui.chromeKeysNote : undefined}>
-          {waiting && <SettingRow as={connected ? 'li' : 'div'} id="chrome-waiting" className="settings-pairing-waiting" label={<><span className="pairing-spinner" aria-hidden="true" />{ui.pairingWaiting}</>} hintRole="status"
+          {waiting && !showCard && <SettingRow as={connected ? 'li' : 'div'} id="chrome-waiting" className="settings-pairing-waiting" label={<><span className="pairing-spinner" aria-hidden="true" />{ui.pairingWaiting}</>} hintRole="status"
             hint={ui.pairingWaitingHint.replace('{time}', countdown(waiting.expiresAt - pairingNow))}
             control={<><PairingDigits code={waiting.matchCode} size="sm" />{button(ui.pairingReview, () => reviewPairing(waiting), { className: 'primary' })}</>} />}
           {connected ? extensions.map((entry) => confirmDisconnect === entry.id
@@ -207,7 +211,11 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
               control={!appInfo?.extensionConnected && button(<>{ui.chromeAddToChrome}<ExternalLink aria-hidden="true" /></>, () => run('install-extension', async () => { if (!gallery) await window.desktop.openExternal('https://github.com/dylansallred/snagthis#run-locally'); }))} />}
         </SettingsGroup>
         <SettingsGroup id="chrome-connect" title={connected || legacyConnected ? ui.chromeConnectAnother : ui.chromeConnectGroup}>
-          {!connected && !legacyConnected && !waiting && <SettingRow id="chrome-one-click" label={ui.chromeOneClick} below={<ol className="settings-steps">{ui.pairingSteps.map((step) => <li key={step}>{step}</li>)}</ol>} />}
+          {showCard
+            ? <div className="settings-row settings-connect-card"><ChromeConnectCard variant={connected || legacyConnected ? 'another' : 'settings'} gallery={gallery} demo={gallery ? new URLSearchParams(window.location.search).get('pair') : null}
+              onConnected={() => { setListenAgain(false); setDisconnected(false); }} /></div>
+            : <SettingRow id="chrome-listen" label={connected || legacyConnected ? ui.chromeConnectAnother : ui.chromeConnectButton} hint={ui.chromeListenHint}
+              control={button(connected || legacyConnected ? ui.chromeConnectAnother : ui.chromeConnectButton, () => setListenAgain(true), { className: 'primary' })} />}
           <SettingRow id="chrome-code" label={ui.chromeUseCode} hint={pairing && !codeLive ? ui.chromeCodeExpired : ui.chromeUseCodeHint} error={!!pairing && !codeLive} hintRole={pairing && !codeLive ? 'status' : undefined}
             control={codeLive
               ? button(codeCopied ? 'Copied' : 'Copy code', () => run('copy-code', async () => { await navigator.clipboard.writeText(pairing.code); setCodeCopied(true); }), { disabled: !!busy })

@@ -36,7 +36,7 @@ import '@/components/layout/PixelChrome.css';
 import type { RowCommand } from '@/components/list/RowDetails';
 import type { QueueJob } from '@/types/queue';
 import { SettingsSheet } from '@/components/settings/SettingsSheet';
-import { PairingApproval } from '@/components/settings/PairingApproval';
+import { ChromeConnectCard, PairingApproval, galleryPairingRequest } from '@/components/settings/PairingApproval';
 import { defaultSettingsSection, isSettingsSection, type SettingsSectionId } from '@/components/settings/settingsSections';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -603,7 +603,7 @@ function App() {
           selectedIds={organize.selected} onSelect={(row, mode, from) => organize.select(row, mode, rows, from)}
           dragIds={(row) => (organize.selected.has(row.id) ? selectedSources : [String(row.source.id)])} showLocation={filter === 'all' || !!query} savedContext={savedContext}
           onRefreshLink={async (row, url) => { await run(row.id, async () => { if (gallery) mutateDemo(row, { queueStatus: 'downloading', error: null }); else await api?.refreshSource(row.jobId || row.id, url); }); }}
-          onMoveTo={(sourceId, targetId) => { if (gallery) { setDemoRows((current) => { const moving = current.find((row) => row.id === sourceId); const target = current.findIndex((row) => row.id === targetId); if (!moving || target < 0) return current; const next = current.filter((row) => row !== moving); next.splice(target, 0, moving); return next; }); return; } const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><PixelMascot variant="first" /><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{!connectedOnce && <><button className="row-action primary-action" onClick={() => run('chrome', () => openExternal(chromeInstallUrl))}>{ui.addChrome}</button><ol className="pairing-steps">{ui.firstPairingSteps.map((step) => <li key={step}>{step}</li>)}</ol><button className="text-link" onClick={() => openSettings('chrome')}>{ui.chromeInstalled}</button></>}</div> : !failure && (query ? <p className="empty-note">{ui.noMatches}</p>
+          onMoveTo={(sourceId, targetId) => { if (gallery) { setDemoRows((current) => { const moving = current.find((row) => row.id === sourceId); const target = current.findIndex((row) => row.id === targetId); if (!moving || target < 0) return current; const next = current.filter((row) => row !== moving); next.splice(target, 0, moving); return next; }); return; } const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><PixelMascot variant="first" /><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{!connectedOnce && <ChromeConnectCard variant="first" active={!modalOpen} gallery={gallery} demo={gallery ? params.get('pair') : null} onInstall={() => run('chrome', () => openExternal(chromeInstallUrl))} />}</div> : !failure && (query ? <p className="empty-note">{ui.noMatches}</p>
           : inFolderView && folder ? <div className="empty-state-quiet folder-empty"><PixelMascot variant="shelf" /><p className="empty-note">{libraryText('emptyFolderTitle', { name: organize.nameOf(folder) })}</p><p className="folder-empty-body">{libraryStrings.emptyFolderBody}</p></div>
             : <div className="empty-state-quiet"><PixelMascot variant={filter === 'downloading' ? 'dozing' : 'shelf'} /><p className="empty-note">{filter === 'downloading' ? ui.nothingDownloading : ui.noSaved}</p></div>)}
       </main>
@@ -617,7 +617,7 @@ function App() {
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} settings={settings} onSave={save} updater={updater} appInfo={appInfo} api={api} gallery={gallery}
         updateBlocking={updateBlocking.length} updateActions={updateActions} />
       <UpdatedNotice updater={updater} actions={updateActions} initialNotesOpen={gallery && params.get('updateNotes') === '1'} />
-      <PairingApproval onOpenChange={setPairingOpen} />
+      <PairingApproval onOpenChange={setPairingOpen} demo={gallery && params.get('pair') === 'dialog' ? galleryPairingRequest() : null} />
       <MoveToMenu key={moveTarget?.key} request={moveTarget} folders={organize.folders} rootName={organize.rootName} rootDisplayPath={organize.rootDisplayPath}
         onMove={(to) => { if (moveTarget) void organize.move(moveTarget.ids, to); }}
         onNewFolder={() => { if (moveTarget) organize.setNameDialog({ kind: 'create-and-move', ids: moveTarget.ids, parent: inFolderView ? folder : '', returnFocus: moveTarget.returnFocus }); }}

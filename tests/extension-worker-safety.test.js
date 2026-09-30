@@ -23,7 +23,7 @@ function storage(initial = {}, quota = { bytes: Infinity }) {
 }
 
 // The shipped worker with Chrome's event and storage surface replaced.
-function loadWorker({ tab = { id: 7, url: 'https://cinema.example/watch', title: 'Watch', documentId: 'document-a' }, frames = {}, downloads, fetch, local = { appToken: 'fixture-token', appTokenVersion: 2 } } = {}) {
+function loadWorker({ tab = { id: 7, url: 'https://cinema.example/watch', title: 'Watch', documentId: 'document-a' }, frames = {}, downloads, fetch, local = { appToken: 'fixture-token', appTokenVersion: 2 }, manifest = {} } = {}) {
   const listeners = {};
   const event = name => ({ addListener: listener => { listeners[name] = listener; } });
   const quota = { bytes: Infinity };
@@ -37,7 +37,7 @@ function loadWorker({ tab = { id: 7, url: 'https://cinema.example/watch', title:
     storage: { session, local: localStorage },
     action: { setBadgeText: async value => { badges.push(clone(value)); }, setBadgeBackgroundColor: async () => {} },
     runtime: { id: 'a'.repeat(32), getURL: value => `chrome-extension://${'a'.repeat(32)}/${value}`,
-      getManifest: () => ({ version: '1.0.0' }), onMessage: event('message'), onInstalled: event('installed') },
+      getManifest: () => ({ version: '1.0.0', ...manifest }), onMessage: event('message'), onInstalled: event('installed'), onStartup: event('startup') },
     tabs: { get: async () => clone(tab), onRemoved: event('removed'), create: async value => { opened.push(value.url); } },
     webNavigation: { getFrame: async ({ frameId }) => clone(frames[frameId] || (frameId === 0 ? { url: tab.url, documentId: tab.documentId, parentFrameId: -1, frameType: 'outermost_frame', documentLifecycle: 'active' } : null)),
       onCommitted: event('committed'), onHistoryStateUpdated: event('history') },
@@ -241,7 +241,7 @@ test('one-click pairing: the worker keeps the secret, polls, stores its own key 
   assert.deepEqual(worker.badges.filter(badge => badge.text === '4719').map(badge => badge.tabId ?? null), [null, 7], 'the badge repeats the digits');
   assert.equal(worker.local.values.appToken, undefined);
   await new Promise(resolve => setTimeout(resolve, 1300));
-  assert.deepEqual(worker.opened, ['snagthis://open/pair'], 'SnagThis is opened by a link carrying no ID or secret');
+  assert.deepEqual(worker.opened, [], 'no snagthis:// link (and no "Open SnagThis?" prompt): the running app comes forward by itself');
   decided = true;
   for (let turn = 0; turn < 40 && worker.session.values['snagthis:pairing']?.status !== 'connected'; turn++) await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(worker.session.values['snagthis:pairing'].status, 'connected');
@@ -252,7 +252,8 @@ test('one-click pairing: the worker keeps the secret, polls, stores its own key 
   assert.equal(worker.badges.at(-1).text, '✓');
   assert.equal((await worker.message({ cmd: 'PAIR_ACK' })).ok, true);
   assert.equal(worker.session.values['snagthis:pairing'], undefined);
-  assert.equal(worker.badges.some(badge => badge.text === '' && badge.tabId === undefined), true, 'the celebration clears the badge');
+  assert.equal(worker.badges.some(badge => badge.text === '' && badge.tabId === undefined), true, 'the inline Connected line clears the badge');
+  assert.equal((await worker.message({ cmd: 'PAIR_STATE' })).state, null, 'a reopened popup has nothing to replay');
   // Content scripts cannot start or read pairing.
   const fromPage = await worker.message({ cmd: 'PAIR_STATE' }, worker.content());
   assert.equal(fromPage.ok, false);
@@ -268,4 +269,94 @@ test('a key from before per-browser keys is swapped once for this browser\'s own
   assert.equal(worker.local.values.appTokenVersion, 2);
   await worker.message({ cmd: 'PAIR_UPGRADE', apiBase: 'http://127.0.0.1:39999' });
   assert.deepEqual(worker.requests, ['/v1/pair/upgrade'], 'the swap happens once');
+});
+
+const LISTEN = '0123456789abcdef';
+function pairingBridge({ session = LISTEN, request = () => reply(201, { requestId: 'c'.repeat(32), matchCode: '4719', expiresInMs: 120000, status: 'pending' }), status = () => reply(200, { status: 'pending', expiresInMs: 110000 }) } = {}) {
+  const calls = [];
+  const bridge = { session, calls, request, status };
+  bridge.fetch = async (url, options = {}) => {
+    const route = new URL(url).pathname; calls.push({ url, route });
+    if (route === '/v1/health') return reply(200, { status: 'ok', pairing: bridge.session ? { listening: true, session: bridge.session } : { listening: false } });
+    if (route === '/v1/pair/request') return bridge.request(options);
+    if (route === '/v1/pair/status') return bridge.status(options);
+    if (route === '/v1/pair/cancel') return reply(200, { status: 'cancelled' });
+    return reply(404, {});
+  };
+  bridge.asked = () => calls.filter(call => call.route === '/v1/pair/request').length;
+  return bridge;
+}
+
+test('pair from the desktop: one automatic request per waiting card, never after Cancel, Deny or a Disconnect', async () => {
+  const bridge = pairingBridge();
+  const worker = loadWorker({ local: {}, fetch: bridge.fetch });
+  const auto = () => worker.message({ cmd: 'PAIR_AUTO', tabId: 7, apiBase: 'http://127.0.0.1:39999' });
+  // Not waiting: nothing is asked.
+  bridge.session = '';
+  assert.equal((await auto()).state, null);
+  assert.equal(bridge.asked(), 0);
+  // SnagThis shows "Waiting for Chrome…": the popup opening asks once, even if two openings race.
+  bridge.session = LISTEN;
+  const [first, second] = await Promise.all([auto(), auto()]);
+  assert.equal(first.state.status, 'waiting');
+  assert.equal(second.state.requestId, first.state.requestId);
+  assert.equal(first.state.auto, true);
+  assert.equal(bridge.asked(), 1, 'one pending request, not two (which would cancel both)');
+  assert.equal((await auto()).state.requestId, first.state.requestId, 'reopening joins the waiting request');
+  assert.equal(bridge.asked(), 1);
+  assert.deepEqual(worker.opened, [], 'no snagthis:// link');
+  // Cancel in the popup: the same waiting card is not asked again.
+  await worker.message({ cmd: 'PAIR_CANCEL' });
+  assert.equal((await auto()).state, null);
+  assert.equal(bridge.asked(), 1);
+  // A new waiting card (a new session) may ask once more; Deny then blocks automatic requests.
+  bridge.session = 'fedcba9876543210';
+  bridge.status = () => reply(200, { status: 'denied' });
+  assert.equal((await auto()).state.status, 'waiting');
+  for (let turn = 0; turn < 40 && worker.session.values['snagthis:pairing']?.status !== 'denied'; turn++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(worker.session.values['snagthis:pairing'].status, 'denied');
+  assert.equal(worker.local.values.appToken, undefined, 'Deny never stores a key');
+  bridge.session = '1111111111111111';
+  await worker.message({ cmd: 'PAIR_ACK' });
+  assert.equal((await auto()).state, null, 'the Deny block holds for automatic requests');
+  assert.equal(bridge.asked(), 2);
+});
+
+test('automatic requests respect the bridge\'s block and limit, a Disconnect, and an existing key', async () => {
+  const blocked = pairingBridge({ request: () => reply(403, { code: 'PAIRING_BLOCKED', retryAfterMs: 30 * 60_000 }) });
+  let worker = loadWorker({ local: {}, fetch: blocked.fetch });
+  assert.equal((await worker.message({ cmd: 'PAIR_AUTO', apiBase: 'http://127.0.0.1:39999' })).state.status, 'blocked');
+  blocked.session = '2222222222222222';
+  assert.equal((await worker.message({ cmd: 'PAIR_AUTO', apiBase: 'http://127.0.0.1:39999' })).state, null);
+  assert.equal(blocked.asked(), 1);
+
+  const limited = pairingBridge({ request: () => reply(429, { code: 'RATE_LIMITED' }) });
+  worker = loadWorker({ local: {}, fetch: limited.fetch });
+  assert.equal((await worker.message({ cmd: 'PAIR_AUTO', apiBase: 'http://127.0.0.1:39999' })).state.status, 'limited');
+  limited.session = '3333333333333333';
+  assert.equal((await worker.message({ cmd: 'PAIR_AUTO', apiBase: 'http://127.0.0.1:39999' })).state, null);
+  assert.equal(limited.asked(), 1);
+
+  const quiet = pairingBridge();
+  worker = loadWorker({ local: {}, fetch: quiet.fetch });
+  worker.session.values['snagthis:disconnected'] = true;
+  assert.equal((await worker.message({ cmd: 'PAIR_AUTO', apiBase: 'http://127.0.0.1:39999' })).state, null, 'after a Disconnect, Chrome asks only when Connect again is chosen');
+  worker = loadWorker({ fetch: quiet.fetch });
+  assert.equal((await worker.message({ cmd: 'PAIR_AUTO', apiBase: 'http://127.0.0.1:39999' })).state, null, 'a connected browser never asks');
+  assert.equal(quiet.asked(), 0);
+});
+
+test('the store build asks on its own when Chrome starts while SnagThis waits; an unpacked copy does not', async () => {
+  const store = pairingBridge();
+  const worker = loadWorker({ local: {}, fetch: store.fetch, manifest: { update_url: 'https://clients2.google.com/service/update2/crx' } });
+  await worker.emit('startup');
+  for (let turn = 0; turn < 40 && !worker.session.values['snagthis:pairing']; turn++) await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(worker.session.values['snagthis:pairing'].status, 'waiting');
+  assert.ok(store.calls.every(call => call.url.startsWith('http://127.0.0.1:49732/')), 'the store build only talks to the fixed local port');
+  assert.ok(worker.badges.some(badge => badge.text === '4719'), 'the badge carries the digits');
+  const unpacked = pairingBridge();
+  const dev = loadWorker({ local: {}, fetch: unpacked.fetch });
+  await dev.emit('startup');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(unpacked.calls.length, 0);
 });

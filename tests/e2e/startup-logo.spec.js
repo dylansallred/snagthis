@@ -102,7 +102,8 @@ test('desktop types the logo and presses play on first launch, settles briefly a
     // An empty library shows the first-download steps; tabs and search arrive with the first video.
     await expect(page.getByText('Download your first video', { exact: true })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Filter videos' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Already installed? Connect Chrome', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Connect Chrome', exact: true })).toContainText('Waiting for Chrome…');
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('.startup-logo-overlay')).toHaveCount(0);

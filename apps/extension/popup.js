@@ -98,7 +98,7 @@
     request('/v1/app/focus', { body: view ? { view } : {} }).catch(error => notice(error.message));
   }
   function renderConnection() {
-    const banner = $('connection-banner'); banner.replaceChildren();
+    const banner = $('connection-banner');
     const unavailable = !reachable || !compatible || !appToken;
     $('video-list').classList.toggle('unavailable', unavailable);
     $('video-list').inert = false;
@@ -107,6 +107,10 @@
       if (button) button.disabled = button.getAttribute('aria-label') === 'Starting download'
         || Boolean(current?.jobId && current.row.source.backend !== 'browser' && unavailable && !['open-page', 'details'].includes(current.row.action?.id));
     }
+    if (pairUi && (connectionChecked || isDemo)) renderPairBanner(banner);
+    else {
+    document.querySelector('.popup-header .pair-devchip')?.remove();
+    banner.className = 'connection-banner'; delete banner.dataset.pair; delete banner.dataset.pairKey; banner.replaceChildren();
     banner.hidden = !unavailable || !connectionChecked;
     if (!connectionChecked) {
       // A connection check in flight is not evidence that the app is offline.
@@ -116,9 +120,11 @@
       if (compatibilityIssue === 'extension') banner.append(el('span', '', 'Update the Chrome extension to use desktop downloads.'), action('Update Chrome extension', showExtensionUpdate, 'primary'));
       else banner.append(el('span', '', 'Update SnagThis to use desktop downloads.'), action('Update', () => external(RELEASES), 'primary'));
     } else if (!appToken && disconnectedNotice) {
-      banner.append(el('span', '', 'Disconnected from SnagThis. Supported files still save in Chrome.'), action('Connect again', showPairing, 'primary'));
+      banner.append(el('span', '', 'Disconnected from SnagThis. Supported files still save in Chrome.'), action('Connect again', showPairing, 'primary'), moreButton());
     } else if (!appToken) {
-      banner.append(el('span', '', 'Save supported files in Chrome. Connect SnagThis for streams and more.'), action('Connect', showPairing, 'primary'));
+      // Popup first (SnagThis isn't waiting for Chrome): one tap starts the request.
+      banner.append(el('span', '', strings.pairOffer), action(strings.pairConnect, showPairing, 'primary'), moreButton());
+    }
     }
     $('help-button').hidden = connectionChecked && !reachable;
     const activeCount = queue.filter(job => job.backend !== 'browser' && ['downloading', 'queued'].includes(job.queueStatus)).length;
@@ -811,7 +817,7 @@
     $('sheet').addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); }, { once: true });
     video.play().catch(() => {});
   }
-  function openSheet(title) { closeMenu(); clearInterval(pairingTick); delete $('sheet').dataset.view; $('sheet-link').hidden = true; $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); if (!$('sheet').open) $('sheet').showModal(); syncPopupHeight(); syncThumbPreviews(); return $('sheet-content'); }
+  function openSheet(title) { closeMenu(); delete $('sheet').dataset.view; $('sheet-link').hidden = true; $('sheet-title').textContent = title; $('sheet-content').replaceChildren(); if (!$('sheet').open) $('sheet').showModal(); syncPopupHeight(); syncThumbPreviews(); return $('sheet-content'); }
   function showProblem(row) {
     const content = openSheet('Video details'); const pad = el('div', 'sheet-pad');
     const youtube = SnagThisDetection.youtubeId(row.source.sourcePageUrl) || SnagThisDetection.youtubeId(row.source.url || row.source.mediaUrl);
@@ -838,133 +844,123 @@
     const note = el('p', 'help-note', 'Some sites protect their videos. See '); note.append(link, '.');
     help.querySelector('p').after(note); content.append(help);
   }
-  /* ── One-click pairing (owner pick: docs/design/prototypes/pairing-polish option 4 · Cartridge).
-   * The worker owns the request; this sheet shows its public state and the same four digits
-   * SnagThis shows, in one pixel-bevel housing with a 12-pip countdown (one pip per 10 s). ── */
+  /* ── Pairing (owner pick 2026-09-29: docs/design/prototypes/pairing-simple, B · Pair from the desktop,
+   * with A's one-tap banner as the popup-first fallback). No sheet: one inline banner in the list's
+   * connection slot. The worker owns the request; SnagThis surfaces its own approve card without taking
+   * focus, so this popup stays open and the same four digits sit side by side. Outcomes are one inline
+   * line that clears itself and is acknowledged at once, so a reopened popup never replays them. ── */
   const PAIRING_KEY = 'snagthis:pairing';
-  let pairingTick = null; let disconnectedNotice = false;
-  const PAIR_PIPS = 12; const PAIR_PIP_MS = 10000;
+  const PAIR_OK_MS = 2000; const PAIR_OUTCOME_MS = 8000;
+  let pairingTick = null; let pairClear = null; let disconnectedNotice = false;
+  /** The worker's public pairing state as this popup shows it (null: nothing in progress). */
+  let pairUi = null; let autoAskedFor = '';
   const pairingCopy = {
-    expired: ['Timed out', 'Nothing was connected.'],
-    denied: ['Not connected', 'SnagThis chose Deny. Chrome can ask again in an hour.'],
-    blocked: ['Not connected', 'SnagThis chose Deny less than an hour ago, so Chrome can’t ask again yet.'],
-    conflict: ['Two requests at once', 'Something else asked to connect at the same moment, so SnagThis cancelled both.'],
-    cancelled: ['Cancelled', 'Nothing was connected.'],
-    limited: ['Too many requests', 'Wait a few minutes, then try again.'],
-    offline: ['SnagThis isn’t reachable', 'Open the desktop app, then try again.'],
-    failed: ['Couldn’t connect', 'SnagThis couldn’t finish connecting.'],
+    expired: [strings.pairExpired, 'retry'], denied: [strings.pairDenied, 'code'], blocked: [strings.pairBlocked, 'code'],
+    conflict: [strings.pairConflict, 'retry'], limited: [strings.pairLimited, 'code'], offline: [strings.pairOffline, 'open'], failed: [strings.pairFailed, 'retry'],
   };
   /** The four digits in one frame built like the logo's bevel button; `code` empty draws a blank housing. */
   function pairingDigits(code, tone = 'hot') {
     const box = el('div', `pair-cart ${tone}`);
     if (code) { box.classList.add('pair-digits'); box.dataset.code = code; box.setAttribute('role', 'img'); box.setAttribute('aria-label', `Match code ${[...code].join(' ')}`); } else box.setAttribute('aria-hidden', 'true');
-    (code ? [...code] : ['', '', '', '']).forEach((digit, index) => { const cell = el('span', 'pair-digit'); cell.setAttribute('aria-hidden', 'true'); cell.style.setProperty('--i', index); if (digit) cell.append(pixel.text(digit, 6)); box.append(cell); });
+    (code ? [...code] : ['', '', '', '']).forEach((digit, index) => { const cell = el('span', 'pair-digit'); cell.setAttribute('aria-hidden', 'true'); cell.style.setProperty('--i', index); if (digit) cell.append(pixel.text(digit, 3)); box.append(cell); });
     return box;
   }
-  const pipsGone = remaining => Math.min(PAIR_PIPS, Math.max(0, PAIR_PIPS - Math.ceil(Math.max(0, remaining) / PAIR_PIP_MS)));
-  function pairingPips(tone = '') {
-    const row = el('div', `pair-pips ${tone}`); row.setAttribute('aria-hidden', 'true');
-    for (let index = 0; index < PAIR_PIPS; index++) row.append(el('i', 'pair-pip'));
-    return row;
-  }
-  function drawPips(row, remaining) { const gone = pipsGone(remaining); [...row.children].forEach((pip, index) => { pip.className = `pair-pip${index < gone ? ' gone' : index === gone ? ' now' : ''}`; }); }
   // Screen readers hear the countdown only at 1:00 and 0:15; the ticking clock is hidden from them.
   const countdownNote = seconds => (seconds <= 15 ? '15 seconds left to choose Allow in SnagThis.' : seconds <= 60 ? '1 minute left to choose Allow in SnagThis.' : '');
   const clock = ms => { const seconds = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; };
-  function pairingSheetOpen() { return $('sheet').open && $('sheet').dataset.view === 'pairing'; }
-  // Unpacked copies get a quiet header chip instead of a leading note; the store build shows none.
+  // Unpacked copies get a quiet chip (SnagThis labels them Not Web Store); the store build shows none.
   function devBuild() { return isDemo ? new URLSearchParams(location.search).get('build') !== 'store' : !chrome.runtime.getManifest().update_url; }
-  function pairingDevChip() {
-    const header = $('sheet').querySelector('.sheet-header'); header.querySelector('.pair-devchip')?.remove();
-    if (!devBuild()) return;
-    const chip = el('span', 'pair-devchip', 'DEV BUILD'); chip.title = 'Unpacked copy. SnagThis will label it Not Web Store.'; header.querySelector('h2').after(chip);
+  function pairingDevChip() { const chip = el('span', 'pair-devchip', 'DEV BUILD'); chip.title = 'Unpacked copy. SnagThis will label it Not Web Store.'; return chip; }
+  function codeLink() { const link = el('button', 'text-link pair-code-link', strings.pairUseCode); link.type = 'button'; link.addEventListener('click', useCode); return link; }
+  function useCode() { closeMenu(false); if (!isDemo && pairUi?.status === 'waiting') message({ cmd: 'PAIR_CANCEL' }).catch(() => {}); setPairUi(null); showCodePairing(); }
+  function pairingMenu(trigger) {
+    const menu = openMenu(trigger);
+    if (pairUi?.status === 'waiting') menuItem(menu, strings.pairShowApp, () => { if (!isDemo) message({ cmd: 'PAIR_OPEN_APP' }).catch(() => {}); });
+    menuItem(menu, strings.pairUseCode, useCode);
+    fitMenu(menu);
   }
-  function pairingSheet() { const content = openSheet('Connect SnagThis'); $('sheet').dataset.view = 'pairing'; clearInterval(pairingTick); pairingDevChip(); return content; }
-  function codeLink() { const link = el('button', 'text-link pair-code-link', 'Use a code instead'); link.type = 'button'; link.addEventListener('click', useCode); return link; }
-  function useCode() { if (!isDemo) message({ cmd: 'PAIR_CANCEL' }).catch(() => {}); showCodePairing(); }
-  function pairingFoot(lead, label) {
-    const foot = el('div', 'pair-foot'); const link = el('button', 'pair-foot-link', label); link.type = 'button'; link.addEventListener('click', useCode);
-    foot.append(lead, link); return foot;
-  }
+  function moreButton() { const button = action(strings.pairMore, event => pairingMenu(event.currentTarget), 'icon-only pair-more', 'more'); button.setAttribute('aria-haspopup', 'menu'); button.setAttribute('aria-expanded', 'false'); return button; }
+  /** Connect (the banner, footer, or popup Settings): starts one request; SnagThis comes forward by itself. */
   async function showPairing() {
-    if (isDemo) { renderPairing({ status: 'waiting', matchCode: '4719', expiresAt: Date.now() + 112000 }); return; }
+    if (settingsOpen()) $('sheet').close();
     disconnectedNotice = false;
-    renderPairing({ status: 'starting' });
-    try { const result = await message({ cmd: 'PAIR_START', tabId: activeTab?.id, apiBase }); renderPairing(result?.state || { status: 'failed' }); }
-    catch { renderPairing({ status: 'failed' }); }
+    if (isDemo) { setPairUi({ status: 'waiting', matchCode: '4719', expiresAt: Date.now() + 112000 }); return; }
+    setPairUi({ status: 'starting' });
+    try { const result = await message({ cmd: 'PAIR_START', tabId: activeTab?.id, apiBase }); setPairUi(result?.state || { status: 'failed' }); }
+    catch { setPairUi({ status: 'failed' }); }
   }
-  function renderPairing(state) {
-    if (state?.status === 'connected') { celebrateConnection(); return; }
-    const status = state?.status || 'failed';
-    // The same waiting request can arrive twice (reply + storage change); keep the sheet steady.
-    if (status === 'waiting' && state.requestId && pairingSheetOpen() && $('sheet').dataset.pairRequest === state.requestId) return;
-    const content = pairingSheet(); const pad = el('div', 'sheet-pad pair-pad'); const center = el('div', 'pair-center'); pad.append(center);
-    if (status === 'waiting' && state.requestId) $('sheet').dataset.pairRequest = state.requestId; else delete $('sheet').dataset.pairRequest;
-    if (status === 'starting' || status === 'waiting') {
-      const say = el('p', 'pair-say'); say.append('Then choose ', el('b', '', 'Allow'), ' there.');
-      const live = el('div', 'sr-only'); live.setAttribute('role', 'status');
-      const line = el('div', 'pair-status'); const lead = el('span', '');
-      if (status === 'starting') {
-        lead.textContent = 'Asking SnagThis for four digits…'; live.textContent = 'Asking SnagThis to connect.'; line.append(lead);
-        center.append(el('p', 'pair-kicker', 'Match in SnagThis'), pairingDigits('', 'off'), say, live, pairingPips('idle'), line);
-      } else {
-        const opening = () => Date.now() - (state.startedAt || 0) < 1500;
-        const sep = el('span', '', '·'); sep.setAttribute('aria-hidden', 'true'); const tick = el('span', 'pair-tick'); tick.setAttribute('aria-hidden', 'true'); line.append(lead, sep, tick);
-        const pips = pairingPips();
-        live.textContent = opening() ? 'Opening SnagThis. Check that it shows the same digits.' : 'Waiting for you to choose Allow in SnagThis.';
-        const actions = el('div', 'sheet-actions pair-actions');
-        actions.append(action('Show SnagThis', () => { if (!isDemo) message({ cmd: 'PAIR_OPEN_APP' }).catch(() => {}); }, 'bordered'), action('Cancel', async () => { if (!isDemo) await message({ cmd: 'PAIR_CANCEL' }).catch(() => {}); $('sheet').close(); }));
-        center.append(el('p', 'pair-kicker', 'Match in SnagThis'), pairingDigits(state.matchCode), say, live, pips, line, actions);
-        let note = '';
-        const update = () => {
-          const remaining = state.expiresAt - Date.now();
-          lead.textContent = opening() ? 'Opening SnagThis…' : 'Waiting for Allow'; tick.textContent = clock(remaining); drawPips(pips, remaining);
-          const next = countdownNote(Math.ceil(remaining / 1000)); if (next !== note) { if (note || next) live.textContent = next; note = next; }
-        };
-        note = countdownNote(Math.ceil((state.expiresAt - Date.now()) / 1000)); update();
-        pairingTick = setInterval(update, 1000);
-      }
-      pad.append(pairingFoot('SnagThis didn’t open? ', 'Use a code'));
-    } else {
-      const [title, body] = pairingCopy[status] || pairingCopy.failed;
-      const refused = ['blocked', 'denied'].includes(status);
-      center.append(pairingDigits(state.matchCode || '', 'off'));
-      const heading = el('p', 'pair-state-title', title); heading.setAttribute('role', 'alert');
-      const actions = el('div', 'sheet-actions pair-actions');
-      // One clear primary: a refused extension can only connect with a code for now; anything else can try again.
-      if (refused) actions.append(action('Use a code', useCode, 'primary'));
-      else actions.append(action('Try again', async () => { if (!isDemo) await message({ cmd: 'PAIR_ACK' }).catch(() => {}); showPairing(); }, 'primary'));
-      actions.append(action('Close', () => $('sheet').close()));
-      center.append(heading, el('p', 'pair-state-body', body), actions);
-      if (!refused) pad.append(pairingFoot('Or ', 'use a code'));
-      if (!isDemo) message({ cmd: 'PAIR_ACK' }).catch(() => {});
+  /** Pair from the desktop: SnagThis is "Waiting for Chrome…", so ask without a click (the worker dedupes). */
+  async function autoConnect(health) {
+    const session = health?.pairing?.listening === true ? String(health.pairing.session || '') : '';
+    if (!session || session === autoAskedFor || appToken || disconnectedNotice || !compatible || pairUi) return;
+    autoAskedFor = session;
+    const result = await message({ cmd: 'PAIR_AUTO', tabId: activeTab?.id, apiBase }).catch(() => null);
+    if (result?.state && !appToken) setPairUi(result.state);
+  }
+  async function cancelPairingRequest() { if (!isDemo) await message({ cmd: 'PAIR_CANCEL' }).catch(() => {}); setPairUi(null); }
+  async function acknowledgePairing() { if (!isDemo) await message({ cmd: 'PAIR_ACK' }).catch(() => {}); }
+  function setPairUi(state) {
+    clearTimeout(pairClear); clearInterval(pairingTick); pairClear = null; pairingTick = null;
+    // A cancelled request just returns to the Connect banner.
+    pairUi = state && state.status !== 'cancelled' ? state : null;
+    if (state?.status === 'cancelled') acknowledgePairing();
+    if (pairUi && !['starting', 'waiting'].includes(pairUi.status)) {
+      // Seen once, here, inline: the worker forgets it now, so nothing replays on the next opening.
+      acknowledgePairing();
+      if (pairUi.status === 'connected') connectedLocally();
+      pairClear = setTimeout(() => { pairClear = null; setPairUi(null); }, pairUi.status === 'connected' ? PAIR_OK_MS : PAIR_OUTCOME_MS);
     }
-    content.append(pad);
+    renderConnection();
   }
-  // Chrome closes this popup when SnagThis takes focus, so the next opening celebrates once.
-  async function celebrateConnection() {
-    const content = openSheet('Connect SnagThis'); $('sheet').dataset.view = 'connected'; clearInterval(pairingTick); delete $('sheet').dataset.pairRequest;
-    const pad = el('div', 'sheet-pad pair-pad'); const center = el('div', 'pair-center pair-yay'); const art = el('div', 'pair-yay-art'); const burst = el('div', 'pair-burst'); burst.setAttribute('aria-hidden', 'true');
-    [0, 45, 90, 135, 180, 225, 270, 315, 20, 200].forEach((angle, index) => { const dot = el('i'); dot.style.setProperty('--a', `${angle}deg`); dot.style.setProperty('--d', `${index > 7 ? 40 : 58}px`); dot.style.setProperty('--c', ['var(--accent-bevel-face)', 'var(--accent-bevel-light)', '#80bfa6', '#fff4e6'][index % 4]); burst.append(dot); });
-    const mark = pixel.button(64); art.append(burst, mark);
-    const title = el('h3', 'pair-yay-title'); title.setAttribute('role', 'status'); title.append(el('span', 'sr-only', 'Connected'), pixel.word('Connected', 3));
-    const done = action('Done', () => $('sheet').close(), 'primary');
-    center.append(art, title, el('p', 'pair-say', 'Play a video, then choose Download.'), pairingPips('good'), done); pad.append(center); content.append(pad);
-    // Focus Done rather than the close button; the ring still shows only for keyboard users.
-    done.focus({ focusVisible: false });
-    requestAnimationFrame(() => pixel.press(mark));
-    if (isDemo) return;
-    await message({ cmd: 'PAIR_ACK' }).catch(() => {});
+  async function connectedLocally() {
+    if (isDemo) { appToken = 'demo-only'; renderRows(); return; }
     appToken = (await chrome.storage.local.get('appToken')).appToken || ''; disconnectedNotice = false;
     await loadPreferences(); await refresh(); renderConnection();
   }
+  /** The banner for a request in progress or its outcome; kept steady (and focus kept) while only the clock changes. */
+  function renderPairBanner(banner) {
+    const state = pairUi; const status = state.status;
+    const key = `${status}:${state.requestId || ''}:${state.matchCode || ''}`;
+    banner.className = `connection-banner pair-banner ${status === 'connected' ? 'ok' : ['starting', 'waiting'].includes(status) ? 'pairing' : 'outcome'}`;
+    banner.hidden = false; banner.dataset.pair = status;
+    // While asking, an unpacked copy says so beside the logo (SnagThis tags it Not Web Store).
+    document.querySelector('.popup-header .pair-devchip')?.remove();
+    if (['starting', 'waiting'].includes(status) && devBuild()) document.querySelector('.popup-header .logo-finish').after(pairingDevChip());
+    if (banner.dataset.pairKey === key && banner.childElementCount) return;
+    banner.dataset.pairKey = key; banner.replaceChildren();
+    if (status === 'connected') { banner.append(icon('check'), el('span', '', strings.pairConnected)); return; }
+    if (status === 'starting' || status === 'waiting') {
+      const text = el('span', 'pair-text'); const title = el('b', '', strings.pairConnecting); const sub = el('small', 'pair-sub');
+      const live = el('span', 'sr-only'); live.setAttribute('role', 'status');
+      text.append(title, sub, live);
+      banner.append(pairingDigits(state.matchCode || '', state.matchCode ? 'hot sm' : 'off sm'), text);
+      if (status === 'starting') { sub.textContent = strings.pairStarting; live.textContent = strings.pairStarting; return; }
+      banner.append(action('Cancel', cancelPairingRequest), moreButton());
+      const lead = el('span', '', strings.pairChooseAllow); const tick = el('span', 'pair-tick'); tick.setAttribute('aria-hidden', 'true');
+      sub.append(lead, ' · ', tick);
+      live.textContent = strings.pairChooseAllow;
+      let note = countdownNote(Math.ceil((state.expiresAt - Date.now()) / 1000));
+      const update = () => {
+        const remaining = state.expiresAt - Date.now(); tick.textContent = clock(remaining);
+        const next = countdownNote(Math.ceil(remaining / 1000)); if (next !== note) { if (next) live.textContent = next; note = next; }
+      };
+      update(); clearInterval(pairingTick); pairingTick = setInterval(update, 1000);
+      return;
+    }
+    const [line, next] = pairingCopy[status] || pairingCopy.failed;
+    const text = el('span', '', line); text.setAttribute('role', 'alert'); banner.append(text);
+    if (next === 'retry') banner.append(action(strings.retry, showPairing, 'primary'));
+    else if (next === 'open') banner.append(action(getAppFallback ? 'Get the app' : 'Open SnagThis', () => openDesktop(), 'primary'));
+    else banner.append(action(strings.pairUseCodeShort, useCode, 'primary'));
+  }
   function onPairingChange(state) {
-    if (!state) return;
-    if (state.status === 'connected') { celebrateConnection(); return; }
-    if (pairingSheetOpen()) renderPairing(state);
+    // The request this popup is showing moved on (Allow, Deny, timeout); a new one is shown as it starts.
+    if (!state) { if (pairUi && ['starting', 'waiting'].includes(pairUi.status)) setPairUi(null); return; }
+    if (pairUi?.status === state.status && pairUi.requestId === state.requestId) return;
+    setPairUi(state);
   }
   function showCodePairing() {
-    const content = openSheet('Connect with a code'); $('sheet').dataset.view = 'code'; clearInterval(pairingTick); const form = el('form', 'sheet-pad');
+    const content = openSheet('Connect with a code'); $('sheet').dataset.view = 'code'; const form = el('form', 'sheet-pad');
     form.append(el('p', '', '1. In the SnagThis desktop app, open Settings → Chrome extension → Show connection code.'), el('p', '', '2. Paste that code below. It connects as soon as all six digits are in, and you only need to do this once.'));
     const label = el('label', '', 'Connection code'); label.htmlFor = 'pairing-code'; const input = el('input', 'text-input'); input.id = 'pairing-code'; input.inputMode = 'numeric'; input.autocomplete = 'one-time-code'; input.pattern = '[0-9]{6}'; input.maxLength = 16; input.required = true; input.placeholder = '000000';
     const help = el('p', '', 'Six digits from the desktop app. Codes expire after 5 minutes.'); help.id = 'pairing-code-help'; input.setAttribute('aria-describedby', help.id);
@@ -1084,7 +1080,7 @@
     const row = (glyph, tone, title, note, control) => { const node = el('div', 'setting-row'); const text = el('div', 'setting-description'); text.append(el('span', 'setting-title', title), el('small', '', note)); node.append(settingIcon(glyph, tone), text, control); group.append(node); };
     if (state === 'unpaired') {
       row('plug', 'grey', 'Not connected', 'Supported files still save in Chrome. Connect for streams and more.', action(disconnectedNotice ? 'Connect again' : 'Connect', showPairing, 'primary'));
-      const hint = el('p', 'settings-hint', 'SnagThis shows four digits to check, then you choose Allow there. '); hint.append(codeLink());
+      const hint = el('p', 'settings-hint', strings.pairSettingsHint); hint.append(codeLink());
       return [...nodes, group, hint];
     }
     const offline = state === 'offline';
@@ -1175,10 +1171,12 @@
   async function checkHealth() {
     if (healthBusy || isDemo) return; healthBusy = true;
     const wasReachable = reachable;
-    try { const health = await request('/v1/health', { public: true }); reachable = health.status === 'ok'; desktopAudioTracks = Array.isArray(health.features) && health.features.includes('audio-track'); compatibilityIssue = model.compatibilityIssue(health, runtimeVersion); compatible = !compatibilityIssue; if (reachable) getAppFallback = false; }
+    let health = null;
+    try { health = await request('/v1/health', { public: true }); reachable = health.status === 'ok'; desktopAudioTracks = Array.isArray(health.features) && health.features.includes('audio-track'); compatibilityIssue = model.compatibilityIssue(health, runtimeVersion); compatible = !compatibilityIssue; if (reachable) getAppFallback = false; }
     catch { reachable = false; }
     finally { healthBusy = false; connectionChecked = true; renderRows(); }
     if (reachable && !wasReachable) { await loadPreferences(); await refresh(); }
+    if (reachable) await autoConnect(health);
   }
   function refresh() {
     if (isDemo) return Promise.resolve();
@@ -1202,7 +1200,7 @@
     return refreshBusy;
   }
   async function initialize() {
-    $('sheet').addEventListener('close', () => { clearInterval(pairingTick); delete $('sheet').dataset.view; syncPopupHeight(); syncThumbPreviews(); });
+    $('sheet').addEventListener('close', () => { delete $('sheet').dataset.view; syncPopupHeight(); syncThumbPreviews(); });
     reducedMotion.addEventListener('change', syncThumbPreviews);
     document.addEventListener('visibilitychange', syncThumbPreviews);
     document.addEventListener('visibilitychange', () => { if (document.hidden) stopSample('hidden'); });
@@ -1221,7 +1219,8 @@
       SnagThisSpeedTrace.record(speedJobs(queue)); renderRows();
       // Sample speeds keep moving so the gallery shows live traces; 'snag' also finishes a download.
       SnagThisDemo.live?.(() => { queue = SnagThisDemo.state.queue; SnagThisSpeedTrace.record(speedJobs(queue)); renderRows(); });
-      if (params.get('demo') === 'pairing') { if (params.get('pair') === 'connected') celebrateConnection(); else if (params.get('pair') === 'code') showCodePairing(); else if (params.get('pair')) renderPairing({ status: params.get('pair'), matchCode: params.get('pair') === 'starting' ? '' : '4719', expiresAt: Date.now() + 112000 }); else showPairing(); } if (params.get('demo') === 'settings') { if (params.get('conn') === 'offline') reachable = false; if (params.get('conn') === 'unpaired') appToken = ''; renderConnection(); showSettings(params.get('tab')); } if (['quality', 'audio'].includes(params.get('demo'))) showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
+      // ?demo=pairing shows the Connect banner; &pair=starting|waiting|connected|denied|blocked|expired|conflict|limited|offline|failed|code shows that state.
+      if (params.get('demo') === 'pairing') { const pair = params.get('pair'); if (pair === 'code') showCodePairing(); else if (pair === 'connected') { pairUi = { status: 'connected' }; renderConnection(); } else if (pair) { pairUi = { status: pair, requestId: 'demo', matchCode: pair === 'starting' ? '' : '4719', expiresAt: Date.now() + 112000 }; renderConnection(); } else renderConnection(); } if (params.get('demo') === 'settings') { if (params.get('conn') === 'offline') reachable = false; if (params.get('conn') === 'unpaired') appToken = ''; renderConnection(); showSettings(params.get('tab')); } if (['quality', 'audio'].includes(params.get('demo'))) showQuality(mediaItems[0], rowElements.get(mediaItems[0].id).querySelector('.quality-button'));
       return;
     }
     const stored = await chrome.storage.local.get(['appToken', 'appTokenVersion', 'preferences']); appToken = stored.appToken || ''; preferences = { ...preferences, ...(stored.preferences || {}) };
@@ -1242,11 +1241,10 @@
       if (area === 'session' && activeTab?.id && changes[`snagthis:tab:${activeTab.id}`]) refresh();
       if (area === 'session' && changes[PAIRING_KEY]) onPairingChange(changes[PAIRING_KEY].newValue);
     });
-    // A request that finished or is still waiting while the popup was closed.
+    // A request still waiting, or an outcome this browser hasn't seen: one inline line, once, never a sheet.
     const pairing = (await message({ cmd: 'PAIR_STATE' }).catch(() => null))?.state;
-    if (pairing?.status === 'connected') celebrateConnection();
-    else if (pairing) renderPairing(pairing);
+    if (pairing) setPairUi(pairing);
   }
-  window.addEventListener('pagehide', () => { stopSample('hidden'); popupClosed = true; stopPosterPreparation(); clearInterval(queueTimer); clearInterval(healthTimer); clearTimeout(openTimer); clearInterval(pairingTick); for (const node of rowElements.values()) stopThumbPreview(node); });
+  window.addEventListener('pagehide', () => { stopSample('hidden'); popupClosed = true; stopPosterPreparation(); clearInterval(queueTimer); clearInterval(healthTimer); clearTimeout(openTimer); clearInterval(pairingTick); clearTimeout(pairClear); for (const node of rowElements.values()) stopThumbPreview(node); });
   initialize().catch(error => { discoveryPending = false; discoveryError = true; renderRows(); notice(error.message); });
 })();

@@ -1480,6 +1480,8 @@ function createApiServer(options = {}) {
       supportedProtocolVersions: compatibility.supportedProtocolVersions,
       minExtensionVersion: compatibility.minExtensionVersion,
       pairingRequired: true,
+      // Whether the desktop is showing "Waiting for Chrome…" (no secret; auth is unchanged).
+      pairing: security.getListening(),
       wsPath: '/ws',
       features: ['audio-track', 'audio-sample'],
     });
@@ -2432,6 +2434,7 @@ function createApiServer(options = {}) {
     getPairingInfo: security.getPairingInfo,
     getPendingPairing: security.getPendingPairing,
     decidePairing: security.decidePairing,
+    setPairingListening: security.setListening,
     listExtensions: security.listExtensions,
     revokeExtension: security.revokeExtension,
     getConnectionState: security.getConnectionState,
