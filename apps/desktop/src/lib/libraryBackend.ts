@@ -10,6 +10,7 @@ export function createApiLibraryBackend(api: ApiClient): LibraryBackend {
     renameFolder: (path, name) => api.renameFolder(path, name),
     deleteFolder: (path, mode) => api.deleteFolder(path, mode),
     move: async (ids, to) => (await api.moveVideos(ids, to)).results,
+    renameVideo: async (id, name) => { await api.renameVideo(id, name); },
     reveal: async (path) => {
       const result = await window.desktop.openLibraryFolder(path);
       if (!result.ok) throw new Error(result.error || libraryStrings.reasonFolderMissing);

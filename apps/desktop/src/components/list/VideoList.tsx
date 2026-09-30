@@ -6,6 +6,7 @@ import { VideoRow, type SelectMode } from './VideoRow';
 import type { RowCommand } from './RowDetails';
 import { ui } from '@/lib/strings';
 import type { RequestThumbnailPreview } from './FillThumb';
+import type { SavedDetailsContext } from './SavedDetails';
 
 interface RowHandlers {
   onToggle: (row: RowModel) => void;
@@ -55,7 +56,9 @@ const noSelect = () => {};
 const ownId = (row: RowModel) => [String(row.source.id)];
 
 export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyIds, hasMore, loadingMore, onLoadMore, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview, motionScope = '',
-  prefix, sections, onToggleSection, selectedIds = noSelection, onSelect = noSelect, dragIds = ownId, showLocation = false }: {
+  prefix, sections, onToggleSection, selectedIds = noSelection, onSelect = noSelect, dragIds = ownId, showLocation = false, savedContext }: {
+  /** Saved's folders and the file probe, for saved videos' details. */
+  savedContext?: SavedDetailsContext;
   motionScope?: string;
   /** Rows before the videos: the folders of the folder being shown. */
   prefix?: ReactNode;
@@ -186,7 +189,7 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
     {(() => {
       const render = (row: RowModel) => <StableVideoRow key={row.id} row={row} inputMode={inputMode} apiBase={apiBase} folder={folder} expanded={expandedId === row.id} renaming={renamingId === row.id} busy={busyIds.has(row.id)}
         selected={selectedIds.has(row.id)} location={showLocation && row.isHistory ? String(row.source.folder || '') : ''}
-        handlers={handlers} onRequestPreview={onRequestPreview} />;
+        handlers={handlers} onRequestPreview={onRequestPreview} savedContext={savedContext} />;
       if (!sections) return shown.map(render);
       return sections.map((section) => <Fragment key={`section:${section.key}`}>
         {section.label && <div role="listitem" className="group-item" data-item-key={`group:${section.key}`}>

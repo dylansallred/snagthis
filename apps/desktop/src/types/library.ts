@@ -25,5 +25,7 @@ export interface LibraryBackend {
   renameFolder(path: string, name: string): Promise<{ path: string }>;
   deleteFolder(path: string, mode?: DeleteMode): Promise<{ deleted: 'empty' | 'keep' | 'trash'; moved: number }>;
   move(ids: string[], to: string): Promise<MoveResult[]>;
+  /** Renames a saved video's file, own folder and side files on disk. */
+  renameVideo(id: string, name: string): Promise<void>;
   reveal(path: string): Promise<void>;
 }

@@ -4,6 +4,7 @@ import type { RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { FillThumb, type RequestThumbnailPreview } from './FillThumb';
 import { RowDetails, type RowCommand } from './RowDetails';
+import { SavedDetails, type SavedDetailsContext } from './SavedDetails';
 import { QualityLabel } from './QualityLabel';
 import { SpeedTrace, type SpeedTraceState } from './SpeedTrace';
 import { ui } from '@/lib/strings';
@@ -16,12 +17,14 @@ export type SelectMode = 'toggle' | 'range';
 // The row being dragged, so drop targets can show where it will land (dataTransfer is unreadable during dragover).
 let draggingRowId: string | null = null;
 
-export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, busy, selected = false, location = '', onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview, onSelect, dragIds }: {
+export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, busy, selected = false, location = '', savedContext, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview, onSelect, dragIds }: {
   row: RowModel; inputMode: 'pointer' | 'keyboard'; apiBase: string; folder: string; expanded: boolean; renaming: boolean; busy: boolean;
   /** Part of a multi-selection (⌘/Ctrl-click, Shift-click). */
   selected?: boolean;
   /** The folder of Saved it is in, shown in All and in search results. */
   location?: string;
+  /** Saved's folder names, folder navigation and the file probe, for a saved video's details. */
+  savedContext?: SavedDetailsContext;
   onToggle: () => void; onCommand: (command: RowCommand) => void;
   onRename: (title: string | null) => Promise<void>; onRefreshLink: (url: string) => Promise<void>;
   onMoveTo: (sourceId: string, targetId: string) => void;
@@ -65,7 +68,10 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
   const previewKey = `${previewKind}:${previewId}`;
   const suppliedPreview = typeof row.source.previewClipUrl === 'string' ? row.source.previewClipUrl : null;
   const previewUrl = suppliedPreview || (requestedPreview?.key === previewKey ? requestedPreview.url : null);
+  // The details poster loops the same excerpt as the row thumbnail.
+  const [posterActive, setPosterActive] = useState(false);
   const previewActive = (inputMode === 'pointer' ? hovered : focused) && !reducedMotion && visible && row.state !== 'missing';
+  const wantPreview = previewActive || (posterActive && !reducedMotion && visible && row.state !== 'missing');
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const onPreference = () => setReducedMotion(preference.matches);
@@ -75,13 +81,13 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
     return () => { preference.removeEventListener('change', onPreference); document.removeEventListener('visibilitychange', onVisibility); };
   }, []);
   useEffect(() => {
-    if (!previewActive || previewUrl) return;
+    if (!wantPreview || previewUrl) return;
     let stopped = false;
     onRequestPreview(previewId, previewKind, row.thumbnailUrl).then((url) => {
       if (!stopped && url) setRequestedPreview({ key: previewKey, url });
     }).catch(() => { /* An unavailable preview keeps the existing poster. */ });
     return () => { stopped = true; };
-  }, [previewActive, previewUrl, previewId, previewKind, previewKey, row.thumbnailUrl, onRequestPreview]);
+  }, [wantPreview, previewUrl, previewId, previewKind, previewKey, row.thumbnailUrl, onRequestPreview]);
   useEffect(() => {
     // Spark only cells finished while this row was on screen; mounting never replays the whole lane.
     // At most one spark every 250ms, on the newest finished cell.
@@ -115,9 +121,10 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
       return () => cancelAnimationFrame(frame);
     }
     setDetailsOpen(false);
-    const timer = setTimeout(() => setDetailsMounted(false), reducedMotion ? 0 : 360);
+    // The saved spec sheet folds faster than the drawer (see globals.css).
+    const timer = setTimeout(() => setDetailsMounted(false), reducedMotion ? 0 : saved ? 300 : 360);
     return () => clearTimeout(timer);
-  }, [expanded, reducedMotion, detailsMounted]);
+  }, [expanded, reducedMotion, detailsMounted, saved]);
   useEffect(() => { if (renaming) { setTitle(row.title); input.current?.focus(); input.current?.select(); } }, [renaming, row.title]);
   const command = (action: RowCommand) => { setMenuOpen(false); onCommand(action); };
   // Resume keeps its own glyph and name so it never reads as Play on a saved file.
@@ -192,6 +199,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
               <DropdownMenuItem onSelect={() => command('details')}>{ui.details}</DropdownMenuItem>
               {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('move-to')}>{libraryStrings.moveTo}<span className="menu-hint" aria-hidden="true">M</span></DropdownMenuItem>}
               {['waiting', 'paused'].includes(row.state) && <DropdownMenuItem onSelect={() => command('rename')}>{ui.rename}</DropdownMenuItem>}
+              {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('rename')}>{libraryStrings.detailRename}</DropdownMenuItem>}
               {row.state === 'waiting' && <><DropdownMenuItem onSelect={() => command('start')}>{ui.startNow}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('move-up')}>{ui.moveUp}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('move-down')}>{ui.moveDown}</DropdownMenuItem></>}
               {(row.source.url || row.source.sourcePageUrl) && <><DropdownMenuItem onSelect={() => command('copy-link')}>{ui.copyLink}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('open-page')}>{ui.openPage}</DropdownMenuItem></>}
               {saved && row.state !== 'missing' && <DropdownMenuItem onSelect={() => command('show-folder')}>{ui.showFolder}</DropdownMenuItem>}
@@ -205,7 +213,11 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
           </button>}
         </div>
       </div>
-      {detailsMounted && <div className={`details-drawer${detailsOpen ? ' open' : ''}`}><div className="details-drawer-clip"><RowDetails row={row} folder={folder} onCommand={command} onRefreshLink={onRefreshLink} /></div></div>}
+      {detailsMounted && <div className={`details-drawer${saved && savedContext ? ' spec' : ''}${detailsOpen ? ' open' : ''}`}><div className="details-drawer-clip">
+        {saved && savedContext
+          ? <SavedDetails row={row} apiBase={apiBase} context={savedContext} previewUrl={previewUrl} onPosterActive={setPosterActive} onCommand={command} />
+          : <RowDetails row={row} folder={folder} onCommand={command} onRefreshLink={onRefreshLink} />}
+      </div></div>}
     </div>
   );
 }

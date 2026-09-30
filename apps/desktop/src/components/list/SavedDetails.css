@@ -1,0 +1,116 @@
+/* A saved video's details: owner choice A · Spec sheet with H3 · Pixel shine (docs/design/prototypes/saved-details).
+   See ui-design-spec §7.1. Downloading and waiting rows keep the Drawer and inspector card in globals.css. */
+
+/* Motion. Open: the height eases (240ms); the poster pops from .94; the title, each fact and the action bar
+   fade and drop 5px on a short stagger. Close: the card fades up 4px (130ms), then the height folds (200ms). */
+.details-drawer.spec { transition: grid-template-rows 200ms cubic-bezier(.4, 0, .6, 1) 70ms; }
+.details-drawer.spec.open { transition: grid-template-rows 240ms cubic-bezier(.2, .8, .2, 1); }
+.details-drawer.spec > .details-drawer-clip > .row-details { transform: none; opacity: 1; transition: none; }
+.details-drawer.spec:not(.open) .spec-card { animation: spec-out 130ms cubic-bezier(.4, 0, .6, 1) both; }
+.details-drawer.spec.open .spec-poster { animation: spec-pop 280ms cubic-bezier(.2, .8, .2, 1) 40ms both; }
+.details-drawer.spec.open :is(.spec-play, .spec-title, .spec-missing) { animation: spec-rise 220ms cubic-bezier(.2, .8, .2, 1) 70ms both; }
+.details-drawer.spec.open .spec-row { animation: spec-rise 220ms cubic-bezier(.2, .8, .2, 1) calc(90ms + var(--i, 0) * 22ms) both; }
+.details-drawer.spec.open .spec-bar-item { animation: spec-rise 200ms cubic-bezier(.2, .8, .2, 1) calc(190ms + var(--i, 0) * 16ms) both; }
+@keyframes spec-pop { from { opacity: 0; transform: scale(.94); } }
+@keyframes spec-rise { from { opacity: 0; transform: translateY(-5px); } }
+@keyframes spec-out { to { opacity: 0; transform: translateY(-4px); } }
+@keyframes spec-fade { from { opacity: 0; } }
+
+/* The card. */
+.saved-spec { padding: 12px 14px 16px 17px; }
+.spec-card { border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface-row); overflow: hidden; }
+.spec-top { display: grid; grid-template-columns: 256px minmax(0, 1fr); gap: 18px; padding: 14px 16px 12px 14px; }
+.spec-media { display: grid; gap: 8px; align-content: start; }
+.spec-poster { position: relative; width: 256px; aspect-ratio: 16 / 9; border-radius: 2px; overflow: hidden; background: var(--color-background); box-shadow: 0 0 0 1px var(--color-border); transition: box-shadow 160ms; }
+.spec-poster .fill-thumb { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; }
+.spec-play { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 30px; padding: 0 11px; border: 0; border-radius: 2px; background: var(--accent-bevel-face, #fa5d0e); color: #fff; font-size: 12.5px; font-weight: 560; text-shadow: 0 1px 0 rgb(0 0 0 / .35); box-shadow: inset 2px 2px 0 var(--accent-bevel-light, #ffb238), inset -2px -2px 0 var(--accent-bevel-dark, #bd3f00); overflow: hidden; isolation: isolate; outline: none; transition: box-shadow 160ms; }
+.spec-play > svg { width: 13px; height: 13px; fill: currentColor; stroke-width: 0; }
+.spec-play:active { box-shadow: inset -2px -2px 0 var(--accent-bevel-light, #ffb238), inset 2px 2px 0 var(--accent-bevel-dark, #bd3f00); }
+.spec-main { min-width: 0; }
+.spec-title { margin: 0 0 12px; color: var(--color-foreground); font-size: 14.5px; font-weight: 600; line-height: 1.35; text-wrap: pretty; overflow-wrap: anywhere; }
+
+/* Facts: two columns of pixel labels and values; unknown facts are left out. */
+.spec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 26px; margin: 0; }
+.spec-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: baseline; gap: 10px; min-height: 30px; padding: 6px 0; border-bottom: 1px dotted hsl(215 14% 19%); }
+.spec-row.wide { grid-column: 1 / -1; }
+.spec-row dt { padding-top: 1px; color: #8a94a2; font: 400 15px/1 var(--font-pixel, var(--font-sans)); letter-spacing: .06em; text-transform: uppercase; }
+.spec-row dd { min-width: 0; margin: 0; color: #dce0e5; font-size: 12.5px; line-height: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.spec-row dd .sub, .spec-track .sub { color: var(--color-foreground-muted); }
+.spec-row .quality-mark { vertical-align: baseline; }
+.spec-tracks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.spec-track { display: inline-flex; align-items: baseline; gap: 6px; }
+.spec-track b { font-weight: 560; }
+.spec-tag { color: var(--color-primary-hover); font: 400 13px/1 var(--font-pixel, var(--font-sans)); letter-spacing: .05em; text-transform: uppercase; }
+.spec-source { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.spec-sitemark { display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none; background: hsl(215 18% 22%); color: #fff; font: 400 13px/1 var(--font-pixel, var(--font-sans)); text-transform: uppercase; box-shadow: inset 1px 1px 0 rgb(255 255 255 / .25), inset -1px -1px 0 rgb(0 0 0 / .4); }
+.spec-mono { color: #b9c0ca; font: 11.5px/18px var(--font-mono); word-break: break-all; }
+.spec-row.pending dd i { display: block; width: 58%; height: 8px; margin-top: 5px; border-radius: 1px; background: linear-gradient(90deg, hsl(215 16% 14%) 0 30%, hsl(215 16% 19%) 50%, hsl(215 16% 14%) 70%) 0 0 / 300% 100%; animation: spec-shimmer 1.6s linear infinite; }
+@keyframes spec-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+/* Folder: the path bar's minimal segments at panel size; each opens that folder in Saved. */
+.spec-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0; margin: -4px 0 -4px -4px; }
+.spec-crumb { position: relative; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 24px; padding: 0 4px; border: 0; border-radius: 3px; background: none; color: var(--color-foreground-muted); font-size: 12.5px; font-weight: 520; outline: none; }
+.spec-crumb > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spec-crumb.current { color: var(--color-primary-hover); font-weight: 650; }
+.spec-crumb .folder-glyph.small { width: 16px; height: 13px; }
+.spec-crumb::after { content: ""; position: absolute; left: 4px; right: 4px; bottom: 1px; height: 2px; background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 4px); opacity: 0; transition: opacity 120ms; pointer-events: none; }
+.spec-crumb:not(.current):hover { color: var(--color-foreground); }
+.spec-crumb:hover::after { opacity: .9; }
+.spec-crumb:hover .k-closed { visibility: hidden; }
+.spec-crumb:hover .k-open { visibility: visible; }
+.spec-crumb:focus-visible { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.spec-crumbs .crumb-sep { flex: none; }
+
+/* Missing file: one amber sentence, the last folder and Locate…. */
+.spec-missing { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 10px 12px; border-radius: 3px; background: color-mix(in srgb, var(--color-status-paused) 9%, transparent); box-shadow: inset 2px 0 0 var(--color-status-paused); color: var(--color-status-paused); font-size: 12.5px; line-height: 18px; }
+.spec-missing > svg { width: 15px; height: 15px; flex: none; }
+.spec-missing > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.spec-missing .was { color: var(--color-foreground-muted); font-size: 11.5px; }
+.spec-locate { position: relative; display: inline-flex; flex: none; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border: 0; border-radius: 2px; background: var(--accent-bevel-face, #fa5d0e); color: #fff; font-size: 12.5px; font-weight: 560; box-shadow: inset 2px 2px 0 var(--accent-bevel-light, #ffb238), inset -2px -2px 0 var(--accent-bevel-dark, #bd3f00); overflow: hidden; isolation: isolate; outline: none; }
+.spec-locate > svg { width: 14px; height: 14px; }
+.saved-spec.missing .spec-row dd { color: #aeb5bf; }
+
+/* One quiet action bar. */
+.spec-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 5px 8px; border-top: 1px solid var(--color-border-subtle); background: hsl(215 22% 6%); }
+.spec-bar-item { display: inline-flex; }
+.spec-space { flex: 1; }
+.spec-sep { width: 1px; height: 16px; margin: 0 4px; background: var(--color-border); }
+.spec-action { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 9px; border: 0; border-radius: 6px; background: none; color: #c4cad3; font-size: 12.5px; font-weight: 560; white-space: nowrap; overflow: hidden; isolation: isolate; outline: none; transition: color 160ms, box-shadow 160ms; }
+.spec-action > svg { width: 14px; height: 14px; stroke-width: 1.75; flex: none; transition: transform 240ms cubic-bezier(.2, .8, .2, 1); }
+.spec-action kbd { margin-left: 2px; padding: 0 4px; border-radius: 3px; background: rgb(255 255 255 / .07); color: var(--color-foreground-subtle); font: 500 10.5px/15px var(--font-sans); }
+.spec-action.danger { color: hsl(0 60% 72%); }
+.spec-action.copied, .spec-action.copied:hover { color: hsl(145 50% 66%); }
+.spec-action.copy-action > .copy-feedback-label { display: inline-grid; }
+.spec-action:focus-visible, .spec-play:focus-visible, .spec-locate:focus-visible { box-shadow: 0 0 0 2px var(--color-primary-hover); color: var(--color-foreground); }
+.spec-play:focus-visible, .spec-locate:focus-visible { color: #fff; box-shadow: inset 2px 2px 0 var(--accent-bevel-light, #ffb238), inset -2px -2px 0 var(--accent-bevel-dark, #bd3f00), 0 0 0 2px var(--color-primary-hover); }
+
+/* H3 · Pixel shine: the logo's cream shine makes one pass in 9 pixel steps (600ms) across a hovered action,
+   Play or the poster, and a 1px accent outline lights (Play also glows). It runs once each time the pointer
+   enters and never loops. CSS only; none under reduced motion. */
+.px-shine::before { content: ""; position: absolute; z-index: 4; top: -2px; bottom: -2px; left: 0; width: 30%; background: linear-gradient(90deg, transparent, rgb(255 244 222 / .22) 30% 70%, transparent); transform: translateX(-120%) skewX(-18deg); pointer-events: none; }
+.px-shine:hover::before { animation: px-shine 600ms steps(9, end) 1 both; }
+@keyframes px-shine { from { transform: translateX(-120%) skewX(-18deg); } to { transform: translateX(420%) skewX(-18deg); } }
+.spec-action:hover { color: var(--color-foreground); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 70%, transparent); }
+.spec-action:hover > svg { transform: scale(1.1); }
+.spec-action.danger:hover { color: hsl(0 72% 76%); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-destructive) 70%, transparent); }
+.spec-play:hover, .spec-locate:hover { box-shadow: inset 2px 2px 0 var(--accent-bevel-light, #ffb238), inset -2px -2px 0 var(--accent-bevel-dark, #bd3f00), 0 0 0 1px color-mix(in srgb, var(--accent-bevel-light, #ffb238) 80%, transparent), 0 0 14px -2px var(--color-primary-hover); }
+.spec-poster:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 75%, transparent); }
+/* Pointer clicks leave no ring behind (keyboard focus keeps it). */
+.video-list[data-input-mode="pointer"] :is(.spec-action, .spec-play, .spec-locate, .spec-crumb):focus:not(:hover) { box-shadow: none; }
+
+/* 820px and narrower: a 200px poster beside one column of facts. */
+@media (max-width: 900px) {
+  .spec-top { grid-template-columns: 200px minmax(0, 1fr); }
+  .spec-poster { width: 200px; }
+  .spec-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Reduced motion: the panel opens and closes at once with a 120ms fade; no pop, stagger, shimmer or shine. */
+@media (prefers-reduced-motion: reduce) {
+  .details-drawer.spec, .details-drawer.spec.open { transition: none; }
+  .details-drawer.spec :is(.spec-card, .spec-poster, .spec-play, .spec-title, .spec-missing, .spec-row, .spec-bar-item) { animation: none !important; }
+  .details-drawer.spec.open .spec-card { animation: spec-fade 120ms ease-out both !important; }
+  .px-shine::before, .px-shine:hover::before { animation: none; display: none; }
+  .spec-action > svg, .spec-action:hover > svg { transform: none; transition: none; }
+  .spec-row.pending dd i { animation: none; }
+}
