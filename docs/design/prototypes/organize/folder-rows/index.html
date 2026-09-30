@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Folder rows · 3 options</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+.baseline { display: grid; grid-template-columns: minmax(0, 560px) 1fr; gap: 24px; align-items: start; margin-top: 8px; }
+.baseline img { width: 100%; border-radius: 8px; border: 1px solid var(--color-border-subtle); display: block; }
+.baseline ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--color-foreground-muted); }
+.baseline ul li + li { margin-top: 4px; }
+.baseline b { color: var(--color-foreground); }
+.dir .shot + .shot { margin-top: -4px; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Organise the library</a> · <span>Folder rows</span>3 options for how a folder looks in Saved · owner chose C</div>
+    <h1>Make folders look like folders</h1>
+    <p>Owner feedback: <i>“the folder gallery shows 4 grid of images by default, but what if have less? looks odd. prolly want a folder stand out more from how it looks if you are looking at video row. As they look very identical.”</i> Each option below shows the <b>same Saved folder</b>: folders of <b>0, 1, 2, 3 and 6 videos</b> above loose videos, in the <b>list and the shelf</b>, with <b>hover, drag-over (drop target) and keyboard focus</b>. Open one to click through its states (keys 1–8), drag a real video onto a folder to watch it go 0 → 1 → 2 → …, Tab through the rows, switch list ⇄ shelf in the window, and try other accents.</p>
+  </div>
+  <div class="dirs">
+    <section class="dir"><header><span class="n">A</span><h2>Pixel folder</h2><a class="btn primary" href="a-pixel-folder/index.html">Open →</a></header>
+      <p>A <b>bevelled pixel-art folder in the accent colour</b>, the <b>newest poster peeking out</b>, sheets behind for more, and a <b>count badge</b>. Shorter <b>tinted</b> row, <b>permanent accent rail</b>, name in the <b>pixel font</b>.</p>
+      <a class="shot" href="a-pixel-folder/index.html"><img src="a-pixel-folder/preview.png" alt="Saved list with pixel-art accent folders showing counts 6, 3, 2, 1 and an empty greyed folder"></a>
+      <a class="shot" href="a-pixel-folder/index.html#state=shelf"><img src="a-pixel-folder/state-shelf.png" alt="Shelf view with pixel folders in tinted cubbies before the video posters"></a>
+      <ul><li><b>Best for</b> the loudest, most on-brand “this is a folder”.</li><li><b>Cost</b>: shows one poster only; many folders make a lot of accent.</li></ul>
+      <p class="more">States: <a href="a-pixel-folder/state-hover.png">hover</a> · <a href="a-pixel-folder/state-drop.png">drag-over</a> · <a href="a-pixel-folder/state-focus.png">focus</a> · <a href="a-pixel-folder/state-shelf-hover.png">shelf hover</a> · <a href="a-pixel-folder/state-shelf-drop.png">shelf drag-over</a> · <a href="a-pixel-folder/state-shelf-focus.png">shelf focus</a></p></section>
+    <section class="dir"><header><span class="n">B</span><h2>Adaptive stack</h2><a class="btn primary" href="b-adaptive-stack/index.html">Open →</a></header>
+      <p>Posters become <b>framed cards on a sunken tray</b>: 1 card, 2 offset, 3 stacked, then <b>+N</b>. Empty is a <b>dashed pixel folder outline</b>. <b>Bold name with a pixel folder glyph</b> on a raised row.</p>
+      <a class="shot" href="b-adaptive-stack/index.html"><img src="b-adaptive-stack/preview.png" alt="Saved list with card stacks: three cards and +3, three, two, one, and a dashed empty outline"></a>
+      <a class="shot" href="b-adaptive-stack/index.html#state=shelf"><img src="b-adaptive-stack/state-shelf.png" alt="Shelf view with card stacks on dark trays before the video posters"></a>
+      <ul><li><b>Best for</b> keeping “see what's inside” without blank tiles.</li><li><b>Cost</b>: closest to a video row in height; the difference is shape, not size.</li></ul>
+      <p class="more">States: <a href="b-adaptive-stack/state-hover.png">hover</a> · <a href="b-adaptive-stack/state-drop.png">drag-over</a> · <a href="b-adaptive-stack/state-focus.png">focus</a> · <a href="b-adaptive-stack/state-shelf-hover.png">shelf hover</a> · <a href="b-adaptive-stack/state-shelf-drop.png">shelf drag-over</a> · <a href="b-adaptive-stack/state-shelf-focus.png">shelf focus</a></p></section>
+    <section class="dir"><header><span class="n">C</span><h2>Sections · chosen</h2><a class="btn primary" href="c-sections/index.html">Open →</a></header>
+      <p>File-manager style: <b>compact 44px one-line rows</b> under a <b>FOLDERS</b> label (pixel icon · name · count · size), <b>no posters</b>; videos follow under <b>VIDEOS</b>. Shelf: folder <b>chips</b> above the posters.</p>
+      <a class="shot" href="c-sections/index.html"><img src="c-sections/preview.png" alt="Saved list with a FOLDERS section of compact one-line rows, then a VIDEOS section"></a>
+      <a class="shot" href="c-sections/index.html#state=shelf"><img src="c-sections/state-shelf.png" alt="Shelf view with a row of folder chips above the video poster grid"></a>
+      <ul><li><b>Best for</b> the clearest separation and the least height.</li><li><b>Cost</b>: no preview of contents; adds two section labels.</li></ul>
+      <p class="more">States: <a href="c-sections/state-hover.png">hover</a> · <a href="c-sections/state-drop.png">drag-over</a> · <a href="c-sections/state-focus.png">focus</a> · <a href="c-sections/state-shelf-hover.png">shelf hover</a> · <a href="c-sections/state-shelf-drop.png">shelf drag-over</a> · <a href="c-sections/state-shelf-focus.png">shelf focus</a></p></section>
+  </div>
+
+  <h2 class="section-title">Side by side</h2>
+  <table class="cmp">
+    <tr><th></th><th>A · Pixel folder</th><th>B · Adaptive stack</th><th>C · Sections</th></tr>
+    <tr><td>Row height (video row 85px)</td><td>68px</td><td>76px</td><td>44px</td></tr>
+    <tr><td>Left column</td><td>Accent pixel folder, newest poster peeking</td><td>1–3 framed cards on a sunken tray, +N</td><td>None: 32px pixel folder icon inline</td></tr>
+    <tr><td>0 videos</td><td>Hollow, greyed folder; “Empty · drag videos here”</td><td>Dashed pixel folder outline</td><td>Dotted outline icon; “Empty”</td></tr>
+    <tr><td>1 / 2 / 3 videos</td><td>Poster; + 1 sheet; + 2 sheets; badge 1 / 2 / 3</td><td>1 card; 2 offset; 3 stacked</td><td>Same row; only the count changes</td></tr>
+    <tr><td>4+ videos</td><td>Badge carries the number</td><td>3 cards + pixel “+N”</td><td>Same row</td></tr>
+    <tr><td>Name</td><td>Jersey 15 pixel font</td><td>Inter bold + pixel folder glyph</td><td>Inter semibold, one line with count · size</td></tr>
+    <tr><td>Hover / focus</td><td>Poster lifts; rail full; 2px ring on focus</td><td>Cards fan wider; 2px ring on focus</td><td>Folder icon opens; 2px ring on focus</td></tr>
+    <tr><td>Drag-over</td><td>Front flap drops open, poster lifts, accent fill</td><td>Cards fan, dashed accent slot appears in front</td><td>Icon opens, accent ring, “Move here · path”</td></tr>
+    <tr><td>Shelf</td><td>Folder in a tinted 16:9 cubby, first in the grid</td><td>Stack on a 16:9 tray, first in the grid</td><td>FOLDERS chip grid, then VIDEOS posters</td></tr>
+  </table>
+
+  <h2 class="section-title">Shared across all three</h2>
+  <p class="section-sub">Folders stay first, A–Z, above loose videos; the chevron, Show in Finder and ⋯ menu are unchanged; drag-over always rewrites the line to <i>Move here · ~/Downloads/SnagThis/Folder</i>. The shelf now draws folders <b>as shelf items</b> (today it puts list-style folder rows above the grid). Everything follows the accent picker. Nothing is drawn over a video's own thumbnail.</p>
+
+  <h2 class="section-title">Questions for the owner</h2>
+  <ol class="questions">
+    <li><b>Preview or not?</b> Do you want to glimpse what's inside a folder (A shows one poster, B up to three), or is the name enough (C)?</li>
+    <li><b>How loud?</b> A puts the accent on every folder; B and C keep the accent for the icon and hover. With 10+ folders, is A too much?</li>
+    <li><b>Mix and match:</b> the list and shelf treatments are independent, e.g. C's compact rows in the list with A's or B's tiles on the shelf.</li>
+  </ol>
+
+  <h2 class="section-title">0 · Previous baseline (replaced by C)</h2>
+  <div class="baseline">
+    <img src="baseline.png" alt="Today's folder rows: a 2×2 poster mosaic with blank cells for folders under 4 videos">
+    <ul>
+      <li>Folder rows use a <b>2×2 mosaic</b> in the 128px thumbnail column; with fewer than 4 videos the rest are <b>blank dark cells</b> (<code>FolderRow.tsx</code> <code>Mosaic</code>).</li>
+      <li>They are 64px tall versus a video's 85px, but share the same column, surface and name weight, so they read like videos.</li>
+      <li>On the shelf, folder rows render as list rows above the poster grid.</li>
+    </ul>
+  </div>
+  <p class="hub-footer">The owner chose <b>C · Sections</b> (2026-09-29); it is built in the app (<code>FolderRow.tsx</code>, <code>organize.css</code>, ui-design-spec §6.2). A and B are prototypes only. Posters are the Pixel worlds set (<code>docs/design/prototypes/sample-media/1-pixel</code>). Screenshots: <code>node docs/design/prototypes/organize/folder-rows/capture.cjs</code> (1200×800, 1x, reduced motion; shelf shots are palette-reduced to stay under 250 KB).</p>
+</main>
+</body>
+</html>

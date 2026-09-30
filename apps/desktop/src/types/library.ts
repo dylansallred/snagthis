@@ -6,8 +6,6 @@ export interface LibraryFolder {
   /** Videos inside, counting subfolders. */
   videoCount: number;
   sizeBytes: number;
-  /** The newest posters inside, for the folder row's mosaic. */
-  thumbnails: string[];
   /** Files SnagThis didn't save (named in the delete confirmation). */
   otherFiles: { count: number; names: string[] };
 }

@@ -8,7 +8,7 @@ import { useOrganize } from '@/hooks/useOrganize';
 import { createApiLibraryBackend } from '@/lib/libraryBackend';
 import { GalleryLibrary } from '@/dev/galleryLibrary';
 import { PathBar } from '@/components/library/PathBar';
-import { FolderRow, NewFolderRow } from '@/components/library/FolderRow';
+import { FolderRow, NewFolderRow, SectionLabel } from '@/components/library/FolderRow';
 import { MoveToMenu } from '@/components/library/MoveToMenu';
 import { DeleteFolderPopover, FolderNameDialog, SelectionBar } from '@/components/library/FolderDialogs';
 import '@/components/library/organize.css';
@@ -24,7 +24,7 @@ import { TopBar, type ListFilter } from '@/components/layout/TopBar';
 import { StartupLogo } from '@/components/layout/StartupLogo';
 import { QualityPicker, type AudioSampleLoader } from '@/components/layout/QualityPicker';
 import { VideoList } from '@/components/list/VideoList';
-import { SavedShelf, SavedViewToggle, useSavedView, type SavedView } from '@/components/library/SavedShelf';
+import { SavedShelf, SavedViewToggle, moveGridFocus, useSavedView, type SavedView } from '@/components/library/SavedShelf';
 import { CommandPalette, paletteShortcut, type PaletteActions } from '@/components/palette/CommandPalette';
 import { SnagMoment } from '@/components/list/SnagMoment';
 import { PixelMascot } from '@/components/brand/PixelMascot';
@@ -495,6 +495,7 @@ function App() {
     if (organizePreview === 'folder') void saveSettings({ libraryViews: { 'saved:Road trips': { sort: 'length', group: 'none' } } });
     if (organizePreview === 'grouped') void saveSettings({ libraryViews: { 'saved:': { sort: 'newest', group: 'site' } } });
     if (organizePreview === 'new') organize.setCreating(true);
+    if (organizePreview === 'shelf') setSavedViewState('shelf');
     if (organizePreview === 'select' || organizePreview === 'moveto') organize.setSelected(new Set(picked));
     if (organizePreview === 'moveto') later(() => organize.openMove(picked, '', document.querySelector<HTMLElement>('.selection-bar [aria-haspopup]')));
     if (organizePreview === 'delete') later(() => {
@@ -506,14 +507,23 @@ function App() {
     // Runs once, when the preview's folders first arrive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organize.info]);
-  const folderPrefix = inFolderView ? <>
-    {organize.creating && <NewFolderRow parentDisplayPath={folder ? `${organize.rootDisplayPath}/${folder}` : organize.rootDisplayPath} onCreate={(name) => organize.createFolder(folder, name)} onCancel={() => organize.setCreating(false)} />}
-    {subfolders.map((entry) => <FolderRow key={entry.path} folder={entry} apiBase={gallery ? window.location.origin : apiBase} rootDisplayPath={organize.rootDisplayPath}
+  // Saved's folders (owner choice C · Sections): compact rows in the list, chips above the shelf's posters.
+  const folderEntries = (variant: 'row' | 'chip') => <>
+    {organize.creating && <NewFolderRow variant={variant} parentDisplayPath={folder ? `${organize.rootDisplayPath}/${folder}` : organize.rootDisplayPath} onCreate={(name) => organize.createFolder(folder, name)} onCancel={() => organize.setCreating(false)} />}
+    {subfolders.map((entry) => <FolderRow key={entry.path} folder={entry} variant={variant} rootDisplayPath={organize.rootDisplayPath}
       renaming={organize.renaming === entry.path} previewHot={organizePreview === 'drag' && entry.path === 'Road trips'}
       onOpen={() => navigate(entry.path)} onReveal={() => { void organize.reveal(entry.path); }} onStartRename={() => organize.setRenaming(entry.path)}
       onRename={(name) => organize.renameFolder(entry.path, name)} onCancelRename={() => organize.setRenaming(null)}
       onDelete={(anchor) => { void organize.requestDelete(entry, anchor); }} onDropVideos={(ids) => { void organize.move(ids, entry.path); }} />)}
-  </> : null;
+  </>;
+  const hasFolderEntries = inFolderView && (subfolders.length > 0 || organize.creating);
+  // FOLDERS n and VIDEOS n · size only appear in a place that has subfolders; otherwise the videos are shown as before.
+  const sectioned = inFolderView && subfolders.length > 0;
+  const partial = !gallery && library.hasMore;
+  const videosLabel = (inList: boolean) => sectioned && filteredRows.length > 0 ? <SectionLabel inList={inList} name={libraryStrings.videosSection} count={partial ? `${filteredRows.length}+` : String(filteredRows.length)}
+    meta={partial ? undefined : formatSize(filteredRows.reduce((total, row) => total + (row.state === 'saved' && Number(row.source.sizeBytes) > 0 ? Number(row.source.sizeBytes) : 0), 0)) || undefined} /> : null;
+  const foldersLabel = (inList: boolean) => sectioned ? <SectionLabel inList={inList} name={libraryStrings.foldersSection} count={String(subfolders.length)} /> : null;
+  const folderPrefix = hasFolderEntries ? <>{foldersLabel(true)}{folderEntries('row')}{videosLabel(true)}</> : null;
   const showList = rows.length > 0 || subfolders.length > 0 || (inFolderView && organize.creating);
   const removeSelected = async () => {
     const chosen = baseRows.filter((row) => organize.selected.has(row.id) && row.isHistory);
@@ -548,7 +558,7 @@ function App() {
         onDeleteCurrent={(anchor) => { const entry = organize.folders.find((item) => item.path === folder); if (entry) void organize.requestDelete(entry, anchor); }}
         onDropVideos={(path, ids) => { void organize.move(ids, path); }} sortMenuOpen={organizePreview === 'sortmenu'} />}
       <main className="workbench-content" data-view-fade={viewFade || undefined}>
-        {!ready && !failure ? <div className="skeleton-list" role="status"><span className="sr-only">{ui.startup}</span>{[0, 1, 2].map((index) => <div key={index} className="skeleton-row" aria-hidden="true"><i /><div><span /><span /></div></div>)}</div> : showList ? filter === 'saved' && savedView === 'shelf' ? <>{folderPrefix && <div role="list" aria-label={libraryStrings.pathBar} className="video-list folder-list">{folderPrefix}</div>}{rows.length > 0 && <SavedShelf rows={rows} apiBase={gallery ? window.location.origin : apiBase} busyIds={busyIds} hasMore={!gallery && library.hasMore} loadingMore={library.loadingMore} onLoadMore={library.loadMore} onRequestPreview={requestThumbnailPreview}
+        {!ready && !failure ? <div className="skeleton-list" role="status"><span className="sr-only">{ui.startup}</span>{[0, 1, 2].map((index) => <div key={index} className="skeleton-row" aria-hidden="true"><i /><div><span /><span /></div></div>)}</div> : showList ? filter === 'saved' && savedView === 'shelf' ? <>{hasFolderEntries && <div className="shelf-folders">{foldersLabel(false)}<div role="list" aria-label={libraryStrings.foldersSection} className="folder-chips" onKeyDown={(event) => moveGridFocus(event, '.saved-folder-chip')}>{folderEntries('chip')}</div></div>}{videosLabel(false)}{rows.length > 0 && <SavedShelf rows={rows} apiBase={gallery ? window.location.origin : apiBase} busyIds={busyIds} hasMore={!gallery && library.hasMore} loadingMore={library.loadingMore} onLoadMore={library.loadMore} onRequestPreview={requestThumbnailPreview}
           onCommand={(row, action) => { if (action === 'details') { setSavedView('list'); setExpandedId(row.id); } else command(row, action); }} />}</> : <VideoList rows={rows} motionScope={`${filter}\n${query}\n${folder}\n${view.sort}\n${view.group}`} apiBase={gallery ? window.location.origin : apiBase} folder={saveFolder} expandedId={expandedId} renamingId={renamingId} busyIds={busyIds} hasMore={!gallery && library.hasMore && filter !== 'downloading'} loadingMore={library.loadingMore} onLoadMore={library.loadMore}
           onToggle={(row) => { if (organize.selected.size) organize.clearSelection(); setExpandedId(expandedId === row.id ? null : row.id); }} onCommand={command} onRename={rename} onRequestPreview={requestThumbnailPreview}
           prefix={folderPrefix} sections={sections} onToggleSection={(key) => organize.toggleSection(`${placeKey}|${key}`)}

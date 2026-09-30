@@ -1004,14 +1004,14 @@ class HistoryIndexService {
 
   /**
    * The save folder and its user folders for Saved: each with its videos (counted through
-   * subfolders), their size, the newest posters for a mosaic, and files SnagThis didn't save.
+   * subfolders), their size, and files SnagThis didn't save.
    */
   async library() {
     await this.refreshFromDisk({ force: this.items.length === 0 });
     const root = this.libraryRoot;
     const byPath = new Map(this.folders.map((folder) => [folder.path, {
       path: folder.path, name: folder.name, parent: folder.parent,
-      videoCount: 0, sizeBytes: 0, thumbnails: [], otherFiles: [],
+      videoCount: 0, sizeBytes: 0, otherFiles: [],
     }]));
     const chain = (folder, visit) => {
       for (let current = folder; current; current = current.includes('/') ? current.slice(0, current.lastIndexOf('/')) : '') {
@@ -1019,13 +1019,11 @@ class HistoryIndexService {
         if (entry) visit(entry);
       }
     };
-    // Newest first, so the mosaic shows the latest posters.
     for (const item of this.items) {
       if (item.missing || !item.folder) continue;
       chain(item.folder, (entry) => {
         entry.videoCount += 1;
         entry.sizeBytes += Number(item.sizeBytes) || 0;
-        if (item.thumbnailUrl && entry.thumbnails.length < 4) entry.thumbnails.push(item.thumbnailUrl);
       });
     }
     for (const folder of this.folders) {

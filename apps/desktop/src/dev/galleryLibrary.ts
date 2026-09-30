@@ -25,7 +25,7 @@ const item = (id: string, title: string, folder: string, site: string, height: n
 /** The organise preview: the Pixel worlds sample media filed into a few folders, and some loose videos. */
 function organizeSample(): { items: GalleryItem[]; folders: string[] } {
   return {
-    folders: ['Music & ambience', 'Road trips', 'Tutorials', 'Tutorials/Advanced', 'Watch later'],
+    folders: ['Music & ambience', 'Road trips', 'Tutorials', 'Tutorials/Advanced', 'Watch later', 'Wishlist'],
     items: [
       item('g-skyhop', 'Sky Hop — a play button’s day out', '', 'vimeo.com', 720, 96, 342, 0, skyHop),
       item('g-boss', 'Star Courier — boss rush', '', 'archive.org', 2160, 1300, 921, 1, starCourier),
@@ -103,7 +103,7 @@ export class GalleryLibrary implements LibraryBackend {
         const videos = newest.filter((entry) => inside(entry.folder, path));
         return {
           path, name: path.split('/').pop() as string, parent: parentFolder(path), videoCount: videos.length,
-          sizeBytes: videos.reduce((total, entry) => total + entry.sizeBytes, 0), thumbnails: videos.slice(0, 4).map((entry) => entry.thumbnailUrl),
+          sizeBytes: videos.reduce((total, entry) => total + entry.sizeBytes, 0),
           otherFiles: path === 'Road trips' ? { count: 2, names: ['route.gpx', 'notes.txt'] } : { count: 0, names: [] },
         };
       }),

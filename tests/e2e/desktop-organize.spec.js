@@ -18,7 +18,7 @@ async function open(page, query = '') {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`${renderer.baseUrl}/?gallery&organize${query}`);
   await expect(page.locator('.path-bar')).toBeVisible();
-  await expect(page.locator('.saved-folder-row').first()).toBeVisible();
+  await expect(page.locator('.saved-folder-row, .saved-folder-chip').first()).toBeVisible();
 }
 const savedTitles = (page) => page.locator('.video-row[data-state="saved"] .row-title').allTextContents();
 const folderRow = (page, name) => page.locator(`.saved-folder-row[data-folder="${name}"]`);
@@ -36,8 +36,9 @@ test('Sort & group changes the order, names the view and is remembered per place
   await expect(sort).toHaveText('Name A–Z');
   const byName = await savedTitles(page);
   expect(byName).toEqual([...newest].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base', numeric: true })));
-  // Folders stay first whatever the order.
-  await expect(page.locator('.video-list > [role="listitem"]').first()).toHaveClass(/folder-item/);
+  // Folders stay first, under their own label, whatever the order.
+  await expect(page.locator('.video-list > [role="listitem"]').first()).toHaveClass(/list-section/);
+  await expect(page.locator('.video-list > [role="listitem"]').nth(1)).toHaveClass(/folder-item/);
 
   // A folder has its own view; coming back finds the save folder's order again.
   await folderRow(page, 'Road trips').click();
@@ -89,6 +90,95 @@ test('Group by site shows collapsible headers with each group’s count and size
   await expect(page.locator('.video-row', { hasText: 'Night market in 8 bits' })).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.video-row', { hasText: 'Star Courier — boss rush' })).toBeFocused();
+});
+
+test('folders are compact rows under FOLDERS, videos follow under VIDEOS, and an empty folder looks empty', async ({ page }) => {
+  await open(page);
+  const labels = page.locator('.video-list > .list-section');
+  await expect(labels).toHaveCount(2);
+  await expect(labels.nth(0).getByRole('heading')).toHaveText('Folders 5');
+  await expect(labels.nth(1).getByRole('heading')).toHaveText('Videos 8');
+  await expect(labels.nth(1).locator('.list-section-meta')).toHaveText('3.1 GB');
+  // FOLDERS, the five folders, then VIDEOS and the videos.
+  const items = await page.locator('.video-list > [role="listitem"]').evaluateAll((elements) => elements.slice(0, 8).map((element) => element.className.split(' ')[0]));
+  expect(items).toEqual(['list-section', 'folder-item', 'folder-item', 'folder-item', 'folder-item', 'folder-item', 'list-section', 'video-item']);
+
+  // One line, no posters: a pixel folder, the name and "N videos · size".
+  const road = folderRow(page, 'Road trips');
+  await expect(road.locator('img')).toHaveCount(0);
+  await expect(road.locator('.folder-name')).toHaveText('Road trips');
+  await expect(road.locator('.folder-meta')).toHaveText('5 videos · 4.6 GB');
+  await expect(road.locator('.pixel-folder.k-closed')).toBeVisible();
+  const height = await road.evaluate((element) => element.getBoundingClientRect().height);
+  expect(height).toBeLessThan(50);
+  await road.hover();
+  await expect(road.locator('.pixel-folder.k-open')).toBeVisible();
+
+  // An empty folder: the dotted outline and Empty, muted.
+  const wishlist = folderRow(page, 'Wishlist');
+  await expect(wishlist).toHaveClass(/is-empty/);
+  await expect(wishlist.locator('.pixel-folder.k-empty')).toBeVisible();
+  await expect(wishlist.locator('.pixel-folder.k-closed')).toHaveCount(0);
+  await expect(wishlist.locator('.folder-meta')).toHaveText('Empty');
+  await expect(road).not.toHaveClass(/is-empty/);
+
+  // Grouping sorts only the videos: the folders keep their section on top.
+  await page.locator('.path-bar .sort-button').click();
+  await page.getByRole('menuitemradio', { name: 'Site' }).nth(1).click();
+  await expect(page.locator('.group-header').first()).toBeVisible();
+  const grouped = await page.locator('.video-list > [role="listitem"]').evaluateAll((elements) => elements.slice(0, 7).map((element) => element.className.split(' ')[0]));
+  expect(grouped).toEqual(['list-section', 'folder-item', 'folder-item', 'folder-item', 'folder-item', 'folder-item', 'list-section']);
+
+  // A place with no subfolders shows its videos as before, without labels.
+  await road.click();
+  await expect(page.locator('.path-bar [aria-current="page"]')).toHaveText('Road trips');
+  await expect(page.locator('.video-row').first()).toBeVisible();
+  await expect(page.locator('.list-section')).toHaveCount(0);
+});
+
+test('the shelf shows folders as chips above the posters; they open, take drops and move with the arrow keys', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await open(page, '=shelf');
+  const chips = page.locator('.folder-chips .saved-folder-chip');
+  await expect(chips).toHaveCount(5);
+  await expect(page.locator('.saved-folder-row')).toHaveCount(0);
+  await expect(page.locator('.shelf-folders .list-section-title')).toHaveText('Folders 5');
+  await expect(page.locator('.workbench-content > .list-section .list-section-title')).toHaveText('Videos 8');
+  // Chips sit above the poster grid, with no posters of their own.
+  const chipBottom = await chips.first().evaluate((element) => element.getBoundingClientRect().bottom);
+  const gridTop = await page.locator('.shelf-grid').evaluate((element) => element.getBoundingClientRect().top);
+  expect(chipBottom).toBeLessThan(gridTop);
+  await expect(page.locator('.folder-chips img')).toHaveCount(0);
+  const wishlist = page.locator('.saved-folder-chip[data-folder="Wishlist"]');
+  await expect(wishlist).toHaveClass(/is-empty/);
+  await expect(wishlist.locator('.pixel-folder.k-empty')).toBeVisible();
+  await expect(wishlist).toContainText('Empty');
+
+  // Arrow keys move between chips.
+  await chips.first().focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.saved-folder-chip[data-folder="Road trips"]')).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(wishlist).toBeFocused();
+
+  // A poster dragged onto a chip moves into that folder.
+  await page.locator('.shelf-tile[data-row-key="g-market"] .shelf-poster').dragTo(wishlist);
+  await expect(page.getByText('Moved “Night market in 8 bits” to Wishlist')).toBeVisible();
+  await expect(page.locator('.shelf-tile[data-row-key="g-market"]')).toHaveCount(0);
+  await expect(wishlist).toContainText('1 video · 144 MB');
+  await expect(wishlist).not.toHaveClass(/is-empty/);
+
+  // Enter or a click opens the folder.
+  await wishlist.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.path-bar [aria-current="page"]')).toHaveText('Wishlist');
+  await expect(page.locator('.shelf-tile[data-row-key="g-market"]')).toBeVisible();
+  await expect(page.locator('.saved-folder-chip')).toHaveCount(0);
+  await expect(page.locator('.list-section')).toHaveCount(0);
+  await page.locator('.path-bar .path-back').click();
+  await page.locator('.saved-folder-chip[data-folder="Tutorials"]').click();
+  expect(await crumbs(page)).toEqual(['SnagThis', 'Tutorials']);
+  await expect(page.locator('.saved-folder-chip[data-folder="Tutorials/Advanced"]')).toBeVisible();
 });
 
 test('folders open from their row or the keyboard, and the breadcrumb and Back return', async ({ page }) => {

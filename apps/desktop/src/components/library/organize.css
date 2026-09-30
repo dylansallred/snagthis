@@ -1,4 +1,4 @@
-/* Organise the library (owner choice B · Real folders, with C's Sort & group): see ui-design-spec §6.2. */
+/* Organise the library (owner choice B · Real folders, with C's Sort & group; folder rows C · Sections): see ui-design-spec §6.2. */
 
 /* Path bar: where Saved is, its path, Sort & group, New folder and Show in Finder. */
 .path-bar { display: flex; align-items: center; gap: 4px; height: 42px; padding: 0 8px 0 10px; flex-shrink: 0; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; min-width: 0; }
@@ -34,40 +34,75 @@
 .move-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .move-menu .menu-note { word-break: break-all; }
 
-/* Folder rows: the poster mosaic sits where a video's thumbnail does. */
-.folder-item { position: relative; border-top: 1px solid var(--color-border-subtle); }
-.folder-item:first-child { border-top: 0; }
-.video-list > .folder-item:last-child { border-bottom: 1px solid var(--color-border-subtle); }
+/* Saved's sections (owner choice C · Sections): FOLDERS n above compact folder rows, then VIDEOS n with their size.
+   Only a place with subfolders has them. The labels stay pinned while the list scrolls. */
+.list-section { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; border-bottom: 1px solid var(--color-border-subtle); background: hsl(215 22% 5.5%); }
+.list-section-title { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--color-foreground-subtle); font: 400 16px/1 var(--font-pixel, var(--font-sans)); letter-spacing: .08em; text-transform: uppercase; }
+.list-section-title b { font-weight: 400; color: var(--color-primary-hover); }
+.list-section-meta { margin-left: auto; color: var(--color-foreground-subtle); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.list-section + :is(.video-item, .group-item) { border-top: 0; }
+.list-section + .group-item .group-header { border-top: 0; }
+
+/* A folder: pixel folder · name · "N videos · size" on one 44px line, no posters, so it never reads as a video. */
+.folder-item { position: relative; border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent); }
+.folder-item + .video-item { border-top: 0; }
 .folder-item::after { content: ""; position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); pointer-events: none; opacity: 0; transform: scaleY(0); transition: transform 380ms cubic-bezier(.4, 0, .2, 1), opacity 380ms ease; }
 .folder-item:has(> .saved-folder-row:is(:hover, :focus-visible, :has(:focus-visible), .menu-open, .drop-hot))::after { opacity: 1; transform: none; transition: transform 300ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
-.saved-folder-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-height: 64px; padding-right: 14px; background: hsl(215 22% 7%); cursor: pointer; outline: none; transition: background-color 160ms ease; }
-.saved-folder-row:hover, .saved-folder-row:focus-visible, .saved-folder-row:has(:focus-visible), .saved-folder-row.menu-open { background: var(--color-surface-row-hover); }
-.saved-folder-row:focus-visible { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--color-primary-hover) 75%, transparent); }
-.saved-folder-row.editing { cursor: default; }
-.saved-folder-row > .row-text { padding: 10px 0; }
-.folder-mosaic { align-self: stretch; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; min-height: 64px; background: var(--color-background); overflow: hidden; }
-.folder-mosaic img, .folder-mosaic i { display: block; width: 100%; height: 100%; min-height: 0; object-fit: cover; background: #1a2029; }
-.folder-mosaic.none { grid-template-columns: 1fr; grid-template-rows: 1fr; place-items: center; color: var(--color-foreground-subtle); }
-.folder-mosaic.none svg { width: 22px; height: 22px; }
-.folder-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; font-weight: 570; }
-.folder-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.folder-name > svg { width: 15px; height: 15px; flex-shrink: 0; color: #e3b35c; }
-.folder-meta { font-variant-numeric: tabular-nums; }
+.saved-folder-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 14px 0 18px; background: hsl(215 22% 6.5%); cursor: pointer; outline: none; transition: background-color 140ms ease; }
+.saved-folder-row:is(:hover, :focus-visible, :has(:focus-visible), .menu-open) { background: var(--color-surface-row-hover); }
+.saved-folder-row:focus-visible { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.folder-text { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
+.folder-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; }
+.folder-meta { flex: none; color: var(--color-foreground-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.saved-folder-row .folder-meta::before { content: "·"; margin-right: 8px; color: var(--color-foreground-subtle); }
+.saved-folder-row .folder-meta.drop-hint::before { content: none; }
+.folder-meta.drop-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-primary-hover); }
+:is(.saved-folder-row, .saved-folder-chip).is-empty .folder-name { color: var(--color-foreground-muted); font-weight: 520; }
+:is(.saved-folder-row, .saved-folder-chip).editing { cursor: default; }
+:is(.saved-folder-row, .saved-folder-chip).editing .folder-text { display: block; padding: 6px 0; }
 .folder-hint { font: 11px/1.5 var(--font-mono); color: var(--color-foreground-subtle); }
 .folder-name-field .inline-rename { max-width: 320px; font-size: 13px; }
 .folder-chevron { display: grid; place-items: center; width: 30px; color: var(--color-foreground-subtle); }
 .folder-chevron svg { width: 15px; height: 15px; }
 .saved-folder-row:hover .hover-action, .video-list[data-input-mode="keyboard"] .saved-folder-row:focus-within .hover-action, .saved-folder-row .hover-action.menu-open { opacity: 1; pointer-events: auto; }
-.folder-list { border-bottom: 0; }
-/* A drop target: a folder row or a breadcrumb the dragged videos would move into. */
-.saved-folder-row.drop-hot, .crumb.drop-hot { background: color-mix(in srgb, var(--color-primary-hover) 16%, transparent); box-shadow: inset 0 0 0 1.5px var(--color-primary-hover); color: var(--color-foreground); }
-.saved-folder-row.drop-hot .folder-mosaic { opacity: .7; }
-.saved-folder-row .drop-hint { color: var(--color-primary-hover); overflow: hidden; text-overflow: ellipsis; }
+
+/* The pixel folder, in the accent's bevel colours. With videos in it, it opens on hover, focus and drag-over;
+   an empty one is a dotted outline that lights in the accent as a drop target. */
+.folder-glyph { position: relative; flex: none; width: 32px; height: 26px; }
+.pixel-folder { position: absolute; inset: 0; width: 100%; height: 100%; shape-rendering: crispEdges; }
+.pixel-folder .b { fill: var(--accent-bevel-dark, #bd3f00); }
+.pixel-folder .f { fill: var(--accent-bevel-face, #fa5d0e); }
+.pixel-folder .l { fill: var(--accent-bevel-light, #ffb238); }
+.pixel-folder .p { fill: #ece7df; }
+.pixel-folder .o { fill: var(--color-foreground-subtle); }
+.pixel-folder.k-open { visibility: hidden; }
+:is(.saved-folder-row, .saved-folder-chip):not(.is-empty):is(:hover, :focus-visible, :has(:focus-visible), .menu-open, .drop-hot) .k-closed { visibility: hidden; }
+:is(.saved-folder-row, .saved-folder-chip):not(.is-empty):is(:hover, :focus-visible, :has(:focus-visible), .menu-open, .drop-hot) .k-open { visibility: visible; }
+.drop-hot .pixel-folder.k-empty .o { fill: var(--color-primary-hover); }
+
+/* The shelf: FOLDERS chips in a grid above the posters. */
+.folder-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); gap: 10px; padding: 14px 16px 18px; }
+.folder-chip-item { min-width: 0; }
+.saved-folder-chip { display: flex; align-items: center; gap: 11px; min-height: 54px; padding: 0 8px 0 12px; background: hsl(215 20% 9.5%); box-shadow: inset 1px 1px 0 #ffffff12, inset -1px -1px 0 #0008, 0 0 0 1px var(--color-border-subtle); cursor: pointer; outline: none; transition: background-color 140ms ease; }
+.saved-folder-chip:is(:hover, :focus-visible, :has(:focus-visible), .menu-open) { background: hsl(215 20% 12.5%); }
+.saved-folder-chip:focus-visible { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.saved-folder-chip .folder-text { flex-direction: column; align-items: stretch; gap: 2px; }
+.saved-folder-chip .folder-name { font-size: 13px; }
+.saved-folder-chip .folder-meta { overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.saved-folder-chip .row-actions { gap: 0; }
+.saved-folder-chip .folder-chevron { width: 20px; }
+/* At rest a chip keeps its width for the name and count: ⋯ only takes space on hover, focus or while its menu is open. */
+.saved-folder-chip:not(:hover, :focus-within, .menu-open) .hover-action { display: none; }
+.saved-folder-chip:is(:hover, :focus-within, .menu-open) .hover-action { opacity: 1; pointer-events: auto; }
+
+/* A drop target: a folder or a breadcrumb the dragged videos would move into. */
+:is(.saved-folder-row, .saved-folder-chip).drop-hot, .crumb.drop-hot { background: color-mix(in srgb, var(--color-primary-hover) 16%, transparent); box-shadow: inset 0 0 0 1.5px var(--color-primary-hover); color: var(--color-foreground); }
+:is(.saved-folder-row, .saved-folder-chip).drop-hot { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
 .drag-ghost { position: fixed; top: -200px; left: 0; z-index: -1; display: inline-flex; align-items: center; gap: 8px; max-width: 320px; height: 30px; padding: 0 10px 0 4px; border-radius: 7px; background: hsl(215 22% 11.5%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 70%, transparent); color: var(--color-foreground); font-size: 12px; font-weight: 560; white-space: nowrap; }
 .drag-ghost img { width: 36px; height: 22px; border-radius: 3px; object-fit: cover; }
 .drag-ghost span { overflow: hidden; text-overflow: ellipsis; }
 .drag-ghost b { padding: 1px 6px; border-radius: 9px; background: var(--color-primary); color: #fff; font-size: 11px; font-weight: 600; }
-.video-item.dragging { opacity: .55; }
+.video-item.dragging, .shelf-tile.dragging { opacity: .55; }
 
 /* Group headers (Sort & group ▸ Group by): collapsible, with the group's count and size. */
 .group-item { position: sticky; top: 0; z-index: 3; }
@@ -119,5 +154,5 @@
 [data-sonner-toast][data-type="warning"] { color: var(--color-status-paused); }
 
 @media (prefers-reduced-motion: reduce) {
-  .folder-item::after, .saved-folder-row, .sort-button .chev, .group-header .chev { transition: none; }
+  .folder-item::after, .saved-folder-row, .saved-folder-chip, .sort-button .chev, .group-header .chev { transition: none; }
 }
