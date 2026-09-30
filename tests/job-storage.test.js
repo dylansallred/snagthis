@@ -56,7 +56,7 @@ test('new jobs use owned title folders with atomic collision suffixes throughout
     return { id, title, filePath, mp4Path: filePath, storageDir: directory, thumbnailPath, thumbnailPaths: [thumbnailPath], status: 'completed', queueStatus: 'completed' };
   };
   const completed = makeCompleted(queue[1].id, folders[1], 'Family Movie');
-  manager.relocateCompletedArtifact(completed);
+  await manager.relocateCompletedArtifact(completed);
   assert.equal(completed.storageDir, folders[1], 'completion must not allocate another suffix for its own named folder');
   assert.equal(path.basename(completed.mp4Path), 'Family Movie.mp4');
   assert.equal(completed.thumbnailPaths[0], completed.thumbnailPath);
@@ -64,7 +64,7 @@ test('new jobs use owned title folders with atomic collision suffixes throughout
 
   const unknownFolder = allocateJobStorageDir(downloadDir, 'resolved-later', 'video');
   const resolved = makeCompleted('resolved-later', unknownFolder, 'Resolved Movie');
-  manager.relocateCompletedArtifact(resolved);
+  await manager.relocateCompletedArtifact(resolved);
   assert.equal(path.basename(resolved.storageDir), 'Resolved Movie');
   assert.equal(fs.existsSync(unknownFolder), false, 'the newly allocated placeholder folder is removed after relocation');
   assert.equal(path.dirname(resolved.thumbnailPath), resolved.storageDir);
@@ -72,17 +72,17 @@ test('new jobs use owned title folders with atomic collision suffixes throughout
   const legacyFolder = path.join(downloadDir, 'legacy-job');
   fs.mkdirSync(legacyFolder);
   const legacy = makeCompleted('legacy-job', legacyFolder, 'Legacy Movie');
-  manager.relocateCompletedArtifact(legacy);
+  await manager.relocateCompletedArtifact(legacy);
   assert.equal(legacy.storageDir, legacyFolder, 'existing ID folders are not migrated');
 
   const external = path.join(dataDir, 'chosen-output');
   fs.mkdirSync(path.join(external, 'Resolved Movie'), { recursive: true });
   fs.writeFileSync(path.join(external, 'Resolved Movie', 'keep.txt'), 'existing movie');
   manager.getCompletedOutputDir = () => external;
-  manager.relocateCompletedArtifact(resolved);
+  await manager.relocateCompletedArtifact(resolved);
   assert.equal(path.basename(resolved.storageDir), 'Resolved Movie (2)');
   const chosenFolder = resolved.storageDir;
-  manager.relocateCompletedArtifact(resolved);
+  await manager.relocateCompletedArtifact(resolved);
   assert.equal(resolved.storageDir, chosenFolder, 'repeated finalization keeps its owned destination');
   assert.equal(fs.readFileSync(path.join(external, 'Resolved Movie', 'keep.txt'), 'utf8'), 'existing movie');
 
@@ -117,25 +117,25 @@ test('completed files get byte-bounded, device-safe media names and failed moves
   };
 
   const longTitle = complete('long-title', '电影标题'.repeat(25));
-  manager.relocateCompletedArtifact(longTitle);
+  await manager.relocateCompletedArtifact(longTitle);
   assert.equal(longTitle.status, 'completed', longTitle.error);
   assert.ok(Buffer.byteLength(path.basename(longTitle.mp4Path)) <= 255);
   assert.match(path.basename(longTitle.mp4Path), /^(?:电影标题)+电?影?标?\.mp4$/u, 'truncation keeps whole characters and the extension');
   assert.equal(fs.existsSync(longTitle.mp4Path), true);
 
   const device = complete('device-name', 'CON');
-  manager.relocateCompletedArtifact(device);
+  await manager.relocateCompletedArtifact(device);
   assert.equal(path.basename(device.mp4Path), 'Video CON.mp4');
 
   const program = complete('program-type', 'Installer', 'program-type-source.exe');
   program.mp4Path = null;
-  manager.relocateCompletedArtifact(program);
+  await manager.relocateCompletedArtifact(program);
   assert.equal(path.extname(program.filePath), '.mp4', 'a produced file never keeps a non-media extension');
 
   const failed = complete('failed-move', 'Failed Move');
-  const originalRename = fs.renameSync;
-  fs.renameSync = (from, to) => { throw Object.assign(new Error(`ENAMETOOLONG: name too long, rename '${from}' -> '${to}'`), { code: 'ENAMETOOLONG' }); };
-  try { manager.relocateCompletedArtifact(failed); } finally { fs.renameSync = originalRename; }
+  const originalRename = fs.promises.rename;
+  fs.promises.rename = async (from, to) => { throw Object.assign(new Error(`ENAMETOOLONG: name too long, rename '${from}' -> '${to}'`), { code: 'ENAMETOOLONG' }); };
+  try { await manager.relocateCompletedArtifact(failed); } finally { fs.promises.rename = originalRename; }
   assert.equal(failed.status, 'completed-with-errors');
   assert.equal(failed.error, 'Completed file move failed (ENAMETOOLONG)', 'clients see the cause without local paths');
   assert.equal(fs.existsSync(path.join(downloadDir, 'Failed Move')), false, 'the empty destination folder is removed');
@@ -163,16 +163,16 @@ test('completed files move to a save folder on another volume without losing the
   };
   // rename(2) cannot cross volumes; model that between the two roots.
   const volumeOf = (file) => (path.resolve(file).startsWith(otherVolume) ? 'other' : 'data');
-  const originalRename = fs.renameSync;
-  fs.renameSync = (from, to) => {
+  const originalRename = fs.promises.rename;
+  fs.promises.rename = async (from, to) => {
     if (volumeOf(from) !== volumeOf(to)) throw Object.assign(new Error(`EXDEV: cross-device link not permitted, rename '${from}' -> '${to}'`), { code: 'EXDEV' });
     return originalRename(from, to);
   };
-  t.after(() => { fs.renameSync = originalRename; });
+  t.after(() => { fs.promises.rename = originalRename; });
 
   const moved = complete('cross-volume', 'Far Away');
   const sourceDir = moved.storageDir;
-  manager.relocateCompletedArtifact(moved);
+  await manager.relocateCompletedArtifact(moved);
   assert.equal(moved.status, 'completed', moved.error);
   assert.equal(moved.error, undefined);
   assert.equal(path.dirname(moved.mp4Path), path.join(otherVolume, 'Far Away'));
@@ -185,11 +185,65 @@ test('completed files move to a save folder on another volume without losing the
 
   // An incomplete copy must never replace the original.
   const truncated = complete('cross-volume-short', 'Short Copy');
-  const originalCopy = fs.copyFileSync;
-  fs.copyFileSync = (from, to, mode) => { originalCopy(from, to, mode); fs.truncateSync(to, 10); };
-  try { manager.relocateCompletedArtifact(truncated); } finally { fs.copyFileSync = originalCopy; }
+  const originalCopy = fs.promises.copyFile;
+  fs.promises.copyFile = async (from, to, mode) => { await originalCopy(from, to, mode); fs.truncateSync(to, 10); };
+  try { await manager.relocateCompletedArtifact(truncated); } finally { fs.promises.copyFile = originalCopy; }
   assert.equal(truncated.status, 'completed-with-errors');
   assert.equal(truncated.error, 'Completed file move failed (EIO)');
   assert.deepEqual(fs.readFileSync(truncated.mp4Path), media, 'the original file is untouched');
   assert.equal(fs.existsSync(path.join(otherVolume, 'Short Copy')), false, 'no partial copy or empty folder is left');
+});
+
+test('a cross-volume move keeps the app responsive while the copy runs', { timeout: 60000 }, async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snagthis-move-responsive-'));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 75 }));
+  const { moveFile } = require('../packages/downloader-engine/src/utils/moveFile');
+  const crypto = require('node:crypto');
+  const otherVolume = path.join(dataDir, 'external-drive');
+  fs.mkdirSync(otherVolume);
+  const source = path.join(dataDir, 'Long Film.mp4');
+  // 256 MB: a synchronous copy of this holds the main process for a noticeable time on any disk.
+  const chunk = crypto.randomBytes(1024 * 1024);
+  const handle = fs.openSync(source, 'w');
+  for (let index = 0; index < 256; index += 1) fs.writeSync(handle, chunk);
+  fs.closeSync(handle);
+  const sourceSize = fs.statSync(source).size;
+  const hashOf = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const sourceHash = hashOf(source);
+
+  const originalRename = fs.promises.rename;
+  fs.promises.rename = async (from, to) => {
+    if (path.resolve(from).startsWith(otherVolume) !== path.resolve(to).startsWith(otherVolume)) {
+      throw Object.assign(new Error('EXDEV: cross-device link not permitted'), { code: 'EXDEV' });
+    }
+    return originalRename(from, to);
+  };
+  t.after(() => { fs.promises.rename = originalRename; });
+
+  // A timer standing in for the API, download progress and window dragging.
+  let ticks = 0;
+  let last = performance.now();
+  let longestPause = 0;
+  const timer = setInterval(() => {
+    const now = performance.now();
+    longestPause = Math.max(longestPause, now - last);
+    last = now;
+    ticks += 1;
+  }, 5);
+  const target = path.join(otherVolume, 'Long Film.mp4');
+  const started = performance.now();
+  try {
+    await moveFile(source, target);
+  } finally {
+    clearInterval(timer);
+  }
+  const elapsed = performance.now() - started;
+  longestPause = Math.max(longestPause, performance.now() - last);
+
+  assert.equal(fs.existsSync(source), false, 'the original goes once the copy is verified');
+  assert.equal(fs.statSync(target).size, sourceSize);
+  assert.equal(hashOf(target), sourceHash, 'the copy is byte-identical');
+  assert.deepEqual(fs.readdirSync(otherVolume), ['Long Film.mp4'], 'no partial copy is left');
+  assert.ok(longestPause < 250, `the event loop stalled for ${Math.round(longestPause)} ms during a ${Math.round(elapsed)} ms move`);
+  assert.ok(ticks >= Math.floor(elapsed / 50), `only ${ticks} timer ticks ran during a ${Math.round(elapsed)} ms move`);
 });

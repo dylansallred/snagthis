@@ -8,7 +8,7 @@ process.env.NODE_ENV = 'test';
 process.env.DISABLE_FILE_LOGS = '1';
 const { createApiServer } = require('../packages/downloader-api/src');
 const { folderNameProblem, groupSaved, sortSaved, viewLabel, normalizeView } = require('../packages/contracts');
-const { moveDirectorySync } = require('../packages/downloader-engine/src/utils/moveFile');
+const { moveDirectory } = require('../packages/downloader-engine/src/utils/moveFile');
 
 // Saved videos laid out the way SnagThis writes them, with real files in a temporary save folder:
 // a marked video folder with its poster and subtitles, a legacy job-ID folder, and a loose video
@@ -77,7 +77,7 @@ test('folders are real subfolders: create, rename, move a video with its side fi
 
   let info = (await request('/api/library')).body;
   assert.equal(info.root.name, 'SnagThis');
-  assert.deepEqual(info.folders.map((folder) => folder.path), ['Road trips'], 'video folders (marked, job-ID and legacy) are part of their video, not user folders');
+  assert.deepEqual(info.folders.map((folder) => folder.path), [], 'video folders (marked, job-ID and legacy) are part of their video, and an empty folder made outside SnagThis is not shown');
   const ember = await byTitle(/Ember Tide/);
   assert.equal(ember.folder, '');
   assert.equal((await byTitle(/Night bus/)).folder, '', 'a legacy job-ID folder is the video, so it sits at the top level');
@@ -167,13 +167,13 @@ test('a move that fails leaves the original intact, including a partly moved vid
   const original = ['Loose clip.mp4', 'Loose clip.en.srt', 'Loose clip.jpg'].map((name) => [name, fs.readFileSync(path.join(saveDir, name))]);
 
   // A side file refuses to move after the video has already gone: the video comes back.
-  const rename = fs.renameSync;
-  fs.renameSync = function (from, to) {
+  const rename = fs.promises.rename;
+  fs.promises.rename = async function (from, to) {
     if (String(from).endsWith('Loose clip.jpg') && String(to).includes('Road trips')) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
     return rename.apply(this, arguments);
   };
   let result;
-  try { result = (await request('/api/library/move', { ids: [loose.id], to: 'Road trips' })).body; } finally { fs.renameSync = rename; }
+  try { result = (await request('/api/library/move', { ids: [loose.id], to: 'Road trips' })).body; } finally { fs.promises.rename = rename; }
   assert.deepEqual(result.results[0], { id: loose.id, ok: false, code: 'in-use' });
   for (const [name, content] of original) assert.deepEqual(fs.readFileSync(path.join(saveDir, name)), content, `${name} is back where it was`);
   assert.deepEqual(fs.readdirSync(path.join(saveDir, 'Road trips')), []);
@@ -205,26 +205,26 @@ test('moving across volumes copies, verifies and only then removes the original 
   const library = makeLibrary(t);
   const source = path.join(library.saveDir, 'Ember Tide');
   const target = path.join(library.saveDir, 'Road trips', 'Ember Tide');
-  const rename = fs.renameSync;
-  const copy = fs.copyFileSync;
+  const rename = fs.promises.rename;
+  const copy = fs.promises.copyFile;
   // The first rename of the folder crosses a "volume"; the copy of the video then fails once.
   let crossed = false;
   let failCopy = true;
-  fs.renameSync = function (from) {
+  fs.promises.rename = async function (from) {
     if (!crossed && path.resolve(from) === source) { crossed = true; throw Object.assign(new Error('cross-device'), { code: 'EXDEV' }); }
     return rename.apply(this, arguments);
   };
-  fs.copyFileSync = function (from) {
+  fs.promises.copyFile = async function (from) {
     if (failCopy && String(from).endsWith('Ember Tide.mp4')) { failCopy = false; throw Object.assign(new Error('full'), { code: 'ENOSPC' }); }
     return copy.apply(this, arguments);
   };
   try {
-    assert.throws(() => moveDirectorySync(source, target), { code: 'ENOSPC' });
+    await assert.rejects(moveDirectory(source, target), { code: 'ENOSPC' });
     assert.ok(fs.existsSync(path.join(source, 'Ember Tide.mp4')), 'the original folder is untouched');
     assert.deepEqual(fs.readdirSync(path.join(library.saveDir, 'Road trips')), [], 'no partial copy is left behind');
     crossed = false;
     const before = fs.statSync(path.join(source, 'Ember Tide.mp4'));
-    moveDirectorySync(source, target);
+    await moveDirectory(source, target);
     assert.equal(fs.existsSync(source), false);
     const after = fs.statSync(path.join(target, 'Ember Tide.mp4'));
     assert.equal(after.size, before.size);
@@ -232,8 +232,8 @@ test('moving across volumes copies, verifies and only then removes the original 
     assert.ok(Math.abs(after.mtimeMs - before.mtimeMs) < 1000, 'the saved date survives the copy');
     assert.deepEqual(fs.readdirSync(target).sort(), ['.snagthis-job.json', 'Ember Tide.en.srt', 'Ember Tide.mp4', `${JOB_ID}-thumb.jpg`]);
   } finally {
-    fs.renameSync = rename;
-    fs.copyFileSync = copy;
+    fs.promises.rename = rename;
+    fs.promises.copyFile = copy;
   }
 });
 
@@ -300,7 +300,8 @@ test('changes made in Finder or Explorer are picked up by a rescan', async (t) =
   library.write(path.join(saveDir, 'Coast', 'Dropped in.webm'), Buffer.alloc(300, 5));
   await nextRescan();
   const info = (await request('/api/library')).body;
-  assert.deepEqual(info.folders.map((folder) => folder.path).sort(), ['Coast', 'Made in Finder', 'Made in Finder/Inside']);
+  // Folders holding a video show; an empty one made outside SnagThis does not.
+  assert.deepEqual(info.folders.map((folder) => folder.path).sort(), ['Coast', 'Made in Finder']);
   const coast = info.folders.find((folder) => folder.path === 'Coast');
   assert.equal(coast.videoCount, 1);
   const dropped = await byTitle(/Dropped in/);

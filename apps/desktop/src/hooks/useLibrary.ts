@@ -57,6 +57,23 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
   }, [api, query, scopeKey]);
   const refreshRef = useRef(refresh);
   useLayoutEffect(() => { refreshRef.current = refresh; });
+  // Background reasons to reload (window focus, a library change, the offline fallback) are
+  // coalesced: they wait a moment, one runs at a time, and any that arrive meanwhile become a
+  // single reload after it. Each reload can make the app rescan the save folder.
+  const background = useRef({ timer: undefined as ReturnType<typeof setTimeout> | undefined, running: false, again: false });
+  const requestRefresh = useCallback(() => {
+    const state = background.current;
+    if (state.running) { state.again = true; return; }
+    if (state.timer) return;
+    state.timer = setTimeout(async () => {
+      state.timer = undefined;
+      state.running = true;
+      try { await refreshRef.current(); } finally {
+        state.running = false;
+        if (state.again) { state.again = false; requestRefresh(); }
+      }
+    }, 150);
+  }, []);
   useEffect(() => {
     generation.current += 1; historyCount.current = 100; setLoading(true); setHistory([]); setCursor(null);
   }, [api, query]);
@@ -73,6 +90,7 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
     let socket: WebSocket | null = null;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
     let fallback: ReturnType<typeof setInterval> | undefined;
+    const pending = background.current;
     const connect = () => {
       if (disposed) return;
       socket = new WebSocket(toWebSocketUrl(api.baseUrl), ['snagthis', `snagthis-auth.${api.authToken}`]);
@@ -90,27 +108,28 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
             queueRevision.current += 1;
             setQueue(payload.data);
           }
-          if (payload.type === 'history:update') refreshRef.current();
+          if (payload.type === 'history:update') requestRefresh();
         } catch { /* Ignore malformed notification. */ }
       };
       socket.onclose = () => {
         if (disposed) return;
-        if (!fallback) fallback = setInterval(() => refreshRef.current(), 5000);
+        if (!fallback) fallback = setInterval(requestRefresh, 5000);
         reconnect = setTimeout(connect, 2000);
       };
       socket.onerror = () => { /* Close starts recovery. */ };
     };
     connect();
     // Coming back to the window rescans the save folder, so changes made in Finder or Explorer show up.
-    const onFocus = () => { refreshRef.current(); };
+    const onFocus = () => { requestRefresh(); };
     window.addEventListener('focus', onFocus);
     return () => {
       disposed = true; generation.current += 1; clearTimeout(reconnect); clearInterval(fallback);
+      clearTimeout(pending.timer); pending.timer = undefined;
       window.removeEventListener('focus', onFocus);
       if (socket?.readyState === WebSocket.OPEN) socket.close();
       else if (socket?.readyState === WebSocket.CONNECTING) socket.onopen = () => socket?.close();
     };
-  }, [api]);
+  }, [api, requestRefresh]);
   // A new search (or a new connection) loads at once.
   useEffect(() => { refresh(); }, [api, query]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadMore = useCallback(async () => {
