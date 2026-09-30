@@ -316,7 +316,10 @@ test('settings sections swap from the rail, confirm saves, pick an accent and va
     await page.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
     await page.goto(`${renderer.baseUrl}/?gallery=empty`);
-    await page.getByRole('button', { name: 'Already installed? Connect Chrome', exact: true }).click();
+    // First run waits for Chrome on its own card; the code stays in Settings → Chrome extension.
+    await expect(page.getByRole('region', { name: 'Connect Chrome', exact: true })).toContainText('Waiting for Chrome…');
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('tab', { name: 'Chrome extension', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Chrome extension setup' }).getByRole('button', { name: 'Show connection code', exact: true })).toBeVisible();
 
     // A narrow 640px window keeps the rail and a usable pane.
