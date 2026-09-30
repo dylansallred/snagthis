@@ -210,7 +210,7 @@ jobs:
 
           Needs macOS 13 or later, or Windows 10 or later. If SnagThis is already installed, it updates itself.
 
-          Get the Chrome extension from the Chrome Web Store. snagthis-extension.zip is for manual installs, which don't update automatically.
+          Chrome extension: see https://snagthisvid.com/help#install-by-hand to install snagthis-extension.zip by hand until the Chrome Web Store listing is live. Manual installs don't update automatically.
           NOTES
           cat >> "$GITHUB_STEP_SUMMARY" <<'CHECKLIST'
           ## Before publishing this draft
