@@ -1,5 +1,6 @@
-import { folderNameProblem, isInternalName, libraryText, parentFolder } from '@m3u8/contracts/src/library.mjs';
+import { folderNameProblem, isInternalName, libraryText, parentFolder, videoNameProblem } from '@m3u8/contracts/src/library.mjs';
 import { ApiRequestError } from '@/lib/api';
+import type { MediaInfo, SourceInfo } from '@/types/history';
 import type { DeleteMode, LibraryBackend, LibraryInfo, MoveResult } from '@/types/library';
 import emberTide from './media/ember-tide.jpg';
 import neonRain from './media/neon-rain.jpg';
@@ -10,6 +11,9 @@ import starCourier from './media/star-courier.jpg';
 export interface GalleryItem {
   id: string; jobId: string | null; fileName: string; title: string; folder: string; sourcePageUrl?: string;
   height?: number; sizeBytes: number; modifiedAt: number; thumbnailUrl: string; durationSeconds?: number; missing?: boolean;
+  ext?: string; absolutePath?: string; completedAt?: number; sourceInfo?: SourceInfo;
+  /** What the details panel reads from the file: a sample, `fail` for an unreadable one, `pending` for one still being read. */
+  mediaInfo?: MediaInfo | 'fail' | 'pending';
   /** Fails the next move with "open in another app", once (the gallery's move-failed preview). */
   locked?: boolean;
 }
@@ -19,8 +23,38 @@ const day = 86_400_000;
 const MB = 1_000_000;
 const item = (id: string, title: string, folder: string, site: string, height: number, mb: number, seconds: number, daysAgo: number, thumbnailUrl: string, extra: Partial<GalleryItem> = {}): GalleryItem => ({
   id, jobId: id, fileName: `${title}.mp4`, title, folder, sourcePageUrl: `https://${site}/watch/${id}`, height, sizeBytes: mb * MB,
-  modifiedAt: now - daysAgo * day - 3_600_000, thumbnailUrl, durationSeconds: seconds, ...extra,
+  modifiedAt: now - daysAgo * day - 3_600_000, thumbnailUrl, durationSeconds: seconds, ext: '.mp4',
+  absolutePath: `/Users/you/Downloads/SnagThis/${folder ? `${folder}/` : ''}${title}/${title}.mp4`, ...extra,
 });
+
+/** The details previews' rich item: 4K HDR, two audio tracks, a subtitle in the file and one beside it. */
+const RICH_MEDIA: MediaInfo = {
+  formatName: 'mov,mp4,m4a,3gp,3g2,mj2', durationSeconds: 245, bitRate: 16_400_000,
+  video: { codec: 'hevc', profile: 'Main 10', width: 3840, height: 2160, fps: 60, bitRate: 15_800_000, hdr: 'HDR10' },
+  audio: [
+    { codec: 'aac', profile: 'LC', channels: 2, layout: 'stereo', language: 'eng', title: null, bitRate: 256_000, default: true },
+    { codec: 'aac', profile: 'LC', channels: 6, layout: '5.1', language: 'jpn', title: null, bitRate: 384_000, default: false },
+  ],
+  subtitles: [{ codec: 'mov_text', language: 'eng', title: null, default: true, forced: false }],
+  sideSubtitles: [{ fileName: 'Harbour lights timelapse.es.srt', format: 'srt', language: 'es' }],
+};
+/** An ordinary file: what most saved videos report. */
+function sampleMedia(entry: GalleryItem): MediaInfo {
+  const height = entry.height || 720;
+  return {
+    formatName: 'mov,mp4,m4a,3gp,3g2,mj2', durationSeconds: entry.durationSeconds || null, bitRate: height * 4200,
+    video: { codec: 'h264', profile: 'High', width: Math.round(height * 16 / 9), height, fps: 30, bitRate: height * 4000, hdr: null },
+    audio: [{ codec: 'aac', profile: 'LC', channels: 2, layout: 'stereo', language: 'eng', title: null, bitRate: 128_000, default: true }],
+    subtitles: [], sideSubtitles: [],
+  };
+}
+/** `?gallery&organize&saved=minimal`: a pasted file link with nothing known but its size and name. */
+const MINIMAL_ITEM: GalleryItem = {
+  id: 'g-pasted', jobId: null, fileName: 'neon-rain_final_v3.mp4', title: 'neon-rain_final_v3', folder: '', sizeBytes: 412 * MB,
+  modifiedAt: now - 17 * day, thumbnailUrl: neonRain, ext: '.mp4', absolutePath: '/Users/you/Downloads/SnagThis/neon-rain_final_v3.mp4', mediaInfo: 'fail',
+};
+/** Which saved video each details preview opens. */
+export const GALLERY_SAVED_DETAILS: Readonly<Record<string, string>> = { rich: 'g-harbour', minimal: 'g-pasted', missing: 'g-live', loading: 'g-harbour' };
 
 /** The organise preview: the Pixel worlds sample media filed into a few folders, and some loose videos. */
 function organizeSample(): { items: GalleryItem[]; folders: string[] } {
@@ -39,7 +73,9 @@ function organizeSample(): { items: GalleryItem[]; folders: string[] } {
       item('g-coast', 'Coast road — drive at dusk', 'Road trips', 'vimeo.com', 2160, 720, 1005, 39, emberTide),
       item('g-drive', 'Neon Rain — night drive', 'Road trips', 'nebula.tv', 1080, 412, 757, 0, neonRain),
       item('g-bus', 'Night bus to the coast', 'Road trips', 'dailymotion.com', 1080, 480, 664, 60, skyHop),
-      item('g-harbour', 'Harbour lights timelapse', 'Road trips', 'archive.org', 2160, 1800, 245, 14, emberTide),
+      item('g-harbour', 'Harbour lights timelapse', 'Road trips', 'archive.org', 2160, 1800, 245, 14, emberTide, {
+        sourceInfo: { pageTitle: 'Harbour lights timelapse — Pixel Worlds Studio', siteName: 'archive.org', uploader: 'Pixel Worlds Studio' }, mediaInfo: RICH_MEDIA,
+      }),
       item('g-lofi', 'Lo-fi harbour loop (1 hour)', 'Music & ambience', 'archive.org', 480, 820, 3600, 4, emberTide),
       item('g-ost', 'Star Courier OST — full soundtrack', 'Music & ambience', 'archive.org', 480, 210, 2465, 6, starCourier),
       item('g-jingles', 'Courier jingles — chiptune session', 'Music & ambience', 'nebula.tv', 480, 176, 1930, 18, starCourier),
@@ -77,9 +113,11 @@ export class GalleryLibrary implements LibraryBackend {
   folders: string[];
   version = 0;
   private listeners = new Set<() => void>();
-  constructor(seed: 'organize' | 'states' | 'default' | 'empty', deep = '') {
+  constructor(seed: 'organize' | 'states' | 'default' | 'empty', deep = '', details = '') {
     const sample = seed === 'organize' ? organizeSample() : seed === 'empty' ? { items: [], folders: [] } : classicSample(seed === 'states');
     this.items = sample.items;
+    if (details === 'minimal') this.items = [...this.items, MINIMAL_ITEM];
+    if (details === 'loading') this.items = this.items.map((entry) => entry.id === 'g-harbour' ? { ...entry, mediaInfo: 'pending' } : entry);
     this.folders = sample.folders;
     if (deep) {
       const parts = deep.split('/');
@@ -190,4 +228,22 @@ export class GalleryLibrary implements LibraryBackend {
     return results;
   }
   async reveal() { /* The gallery has no file manager to open. */ }
+  /** What the details panel reads from the file, after a moment, as the bridge's probe would. */
+  mediaInfo(id: string): Promise<MediaInfo | null> {
+    const entry = this.items.find((candidate) => candidate.id === id);
+    if (!entry || entry.missing || entry.mediaInfo === 'fail') return Promise.resolve(null);
+    if (entry.mediaInfo === 'pending') return new Promise(() => { /* Still reading. */ });
+    const info = entry.mediaInfo || sampleMedia(entry);
+    return new Promise((resolve) => setTimeout(() => resolve(info), 40));
+  }
+  async renameVideo(id: string, name: string) {
+    const problem = videoNameProblem(name);
+    if (problem) throw new ApiRequestError(problem.message, problem.code);
+    const entry = this.items.find((candidate) => candidate.id === id);
+    if (!entry || entry.missing) throw refuse('reasonMissing');
+    const taken = new Set(this.items.filter((other) => other !== entry && other.folder === entry.folder).map((other) => other.title.toLowerCase()));
+    let next = name.normalize('NFC');
+    for (let number = 2; taken.has(next.toLowerCase()); number += 1) next = `${name.normalize('NFC')} (${number})`;
+    this.patch(id, { title: next, fileName: `${next}${entry.ext || '.mp4'}` });
+  }
 }

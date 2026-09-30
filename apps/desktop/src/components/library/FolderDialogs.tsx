@@ -6,8 +6,10 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import type { DeleteMode, LibraryFolder } from '@/types/library';
 
 /** Names a folder in a small dialog: New folder… from Move to…, or Rename from the path bar. */
-export function FolderNameDialog({ open, title, body, initial = '', confirm, onSubmit, onClose }: {
+export function FolderNameDialog({ open, title, body, initial = '', confirm, placeholder = copy.folderNamePlaceholder, onSubmit, onClose }: {
   open: boolean; title: string; body: string; initial?: string; confirm: string;
+  /** The field's name: a folder's by default, or a video's when renaming one. */
+  placeholder?: string;
   onSubmit: (name: string) => Promise<string | null>; onClose: () => void;
 }) {
   const [value, setValue] = useState(initial);
@@ -26,7 +28,7 @@ export function FolderNameDialog({ open, title, body, initial = '', confirm, onS
       <DialogTitle>{title}</DialogTitle>
       <DialogDescription>{body}</DialogDescription>
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-        <input className="inline-rename" autoFocus value={value} placeholder={copy.folderNamePlaceholder} aria-label={copy.folderNamePlaceholder} disabled={busy}
+        <input className="inline-rename" autoFocus value={value} placeholder={placeholder} aria-label={placeholder} disabled={busy}
           aria-invalid={!!problem || undefined} onChange={(event) => { setValue(event.target.value); setProblem(''); }} />
         <p className="folder-dialog-problem tone-attention" role={problem ? 'alert' : undefined}>{problem}</p>
         <div className="folder-dialog-actions">

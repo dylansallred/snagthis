@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Saved details B · Cards</title>
+<link rel="stylesheet" href="../../organize/shared.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* B · Cards: pixel-bevel stat tiles on top, then Tracks and Source cards, the file line, and a row of bevel
+   buttons. Motion: tiles pop in with a small "press" (bevel flips, then settles) on a 40ms stagger. */
+.opt-b { --open-ms: 220ms; --close-ms: 180ms; --close-delay: 90ms; --open-total: 700; --close-total: 320; }
+.b-wrap { display: grid; gap: 10px; }
+.b-title { display: flex; align-items: baseline; gap: 10px; margin: 0 2px; font-size: 14px; font-weight: 600; line-height: 1.35; }
+.b-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.b-tiles > section.tile { grid-column: span 2; padding: 11px 12px 12px; display: grid; gap: 9px; align-content: start; }
+.b-tiles .tile { padding: 10px 12px 11px; min-height: 76px; display: grid; align-content: start; gap: 5px; }
+.b-tiles .big { font: 400 30px/26px var(--font-pixel); letter-spacing: .02em; color: var(--color-foreground); display: flex; align-items: center; gap: 8px; }
+.b-tiles .big small { font-size: 20px; color: #aeb6c1; }
+.b-tiles .tierpx { display: inline-grid; place-items: center; height: 24px; padding: 0 6px; background: #d1d9e3; color: #131922; font: 400 22px/1 var(--font-pixel); box-shadow: inset 2px 2px 0 #fff, inset -2px -2px 0 #8b96a5; }
+.b-tiles .sub { color: var(--color-foreground-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.b-tiles .tile.unknown .big { color: var(--color-foreground-subtle); font-size: 22px; }
+.b-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 8px; }
+.b-grid .tile { padding: 11px 12px 12px; display: grid; gap: 9px; align-content: start; }
+:is(.b-grid, .b-tiles) .hd { display: flex; align-items: center; gap: 8px; }
+:is(.b-grid, .b-tiles) .hd .n { color: var(--color-primary-hover); font: 400 15px/1 var(--font-pixel); }
+.b-lane { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.b-lane > svg.i { width: 14px; height: 14px; color: var(--color-foreground-muted); margin-right: 2px; }
+.b-lane .none { color: var(--color-foreground-subtle); font-size: 12px; }
+.b-src { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 4px 10px; align-items: center; }
+.b-src .sitemark { width: 32px; height: 32px; font-size: 26px; grid-row: span 2; box-shadow: inset 2px 2px 0 rgb(255 255 255 / .35), inset -2px -2px 0 rgb(0 0 0 / .35); }
+.b-src .sitemark.plain { background: hsl(215 18% 20%); }
+.b-src b { font-size: 13px; font-weight: 600; }
+.b-src .pt { color: var(--color-foreground-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-src-acts { display: flex; gap: 4px; margin-left: -4px; }
+.b-file { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 10px 4px 8px; border-radius: 3px; background: hsl(215 22% 8.5%); box-shadow: inset 0 0 0 1px var(--color-border-subtle); }
+.b-file .fname { flex: 1; min-width: 0; color: #b9c0ca; font: 11.5px/1.4 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-file .fmt { flex: none; color: var(--color-foreground-muted); font-size: 11.5px; position: relative; }
+.b-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-top: 2px; }
+.b-acts .sp { flex: 1; }
+.b-acts .sa.primary { padding: 0 16px; }
+.missing .b-tiles .tile, .b-wrap.missing .tile { background: hsl(215 22% 9.5%); }
+.b-wrap.missing .big { color: #aeb5bf; }
+.sdwin[style*="820"] .b-grid { grid-template-columns: minmax(0, 1fr); }
+.sdwin[style*="820"] .b-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Motion: press-in tiles. The bevel starts inverted (pressed), overshoots by 1px, then settles raised. */
+@keyframes b-press {
+  0% { opacity: 0; transform: translateY(7px) scale(.93); box-shadow: inset -2px -2px 0 rgb(255 255 255 / .06), inset 2px 2px 0 rgb(0 0 0 / .5); }
+  55% { opacity: 1; transform: translateY(-2px) scale(1.015); }
+  78% { transform: translateY(1px); box-shadow: inset -2px -2px 0 rgb(255 255 255 / .06), inset 2px 2px 0 rgb(0 0 0 / .5); }
+  100% { transform: none; }
+}
+@keyframes b-chip { from { opacity: 0; transform: translateY(4px) scale(.9); } 70% { opacity: 1; transform: translateY(-1px); } }
+@keyframes b-fade { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes b-sink { to { opacity: 0; transform: translateY(4px) scale(.96); } }
+.item.anim-in .b-title, .item.anim-in .miss { animation: b-fade calc(200ms * var(--k)) var(--ease-out) calc(30ms * var(--k)) both; }
+.item.anim-in .b-tiles .tile { animation: b-press calc(300ms * var(--k)) var(--ease-out) calc((50ms + var(--i) * 40ms) * var(--k)) both; }
+.item.anim-in :is(.b-grid .tile, .b-tiles > section.tile) { animation: b-press calc(300ms * var(--k)) var(--ease-out) calc((190ms + var(--i) * 40ms) * var(--k)) both; }
+.item.anim-in .b-grid .chip { animation: b-chip calc(220ms * var(--k)) var(--ease-out) calc((280ms + var(--c) * 25ms) * var(--k)) both; }
+.item.anim-in .b-file, .item.anim-in .b-acts > * { animation: b-fade calc(200ms * var(--k)) var(--ease-out) calc((300ms + var(--i, 0) * 20ms) * var(--k)) both; }
+.item.closing .b-wrap > * { animation: b-sink calc(140ms * var(--k)) var(--ease-in) both; }
+.item.closing .b-tiles .tile { animation: b-sink calc(140ms * var(--k)) var(--ease-in) calc(var(--i) * 15ms * var(--k)) both; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Saved-video details</a> · <span>B</span>Cards</div>
+    <h1>B · Cards</h1>
+    <p>Pixel-bevel <b>stat tiles</b> (Quality, Length, Size, Saved) you can read at a glance in the pixel font, then a <b>Tracks</b> card (audio and subtitle chips, the ones you picked lit in the accent) and a <b>Source</b> card (a pixel site chip, the channel, Copy page link and Open original page), the file line with the path-bar crumbs, and a row of <b>bevel buttons</b>. Click the sample rows, or replay the motion.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../organize/brand.js"></script>
+<script src="../../organize/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const S = window.SD, i = S.i, esc = S.esc;
+  const TIER = { 480: 'SD', 720: 'HD', 1080: 'FHD', 2160: '4K' };
+  function panel(it, m) {
+    let t = 0, c = 0, g = 0;
+    const tile = (label, big, sub, kind = 'today', demo = false) => S.has(m, kind) && big
+      ? `<div class="tile" style="--i:${t++}"${S.nw(m, kind)}${demo ? ' data-hover-demo' : ''}><span class="px-label">${label}</span><span class="big">${big}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</div>` : '';
+    const Saved = it.saved[0].toUpperCase() + it.saved.slice(1);
+    const tiles = [
+      tile('Quality', it.h ? `${TIER[it.h] ? `<span class="tierpx">${TIER[it.h]}</span>` : ''}${it.h}p` : '', m.data === 'today' ? '' : [it.res, it.vprofile && 'HDR10', it.fps].filter(Boolean).join(' · '), 'today', true),
+      tile('Length', it.dur, it.dur && it.id === 'rich' && m.data !== 'today' ? 'Read from the file' : '', it.id === 'missing' ? 'today' : 'probe'),
+      tile(it.missing ? 'Size · last seen' : 'Size', it.size.replace(/ (GB|MB)/, ' <small>$1</small>'), it.id === 'rich' ? '8,601 MB on disk' : ''),
+      tile('Saved', Saved, it.savedFull.replace(/ 2026/, '')),
+    ].join('');
+    const chips = (list, pickedLabel) => {
+      const shown = m.data === 'today' ? list.filter((x) => x.picked) : list;
+      return shown.map((x, n) => `<span class="chip${x.picked ? ' picked' : ''}" style="--c:${c++}"${n === 0 && it.id === 'rich' ? ' data-hover-demo' : ''} title="${x.picked ? pickedLabel : ''}"><span class="code">${x.code}</span>${x.lang}${m.data === 'today' ? '' : `<small>${x.ch || x.kind}</small>`}</span>`).join('');
+    };
+    const multi = it.audio.length > 1 || it.subs.length > 1;
+    const tracks = (it.audio.length || it.subs.length) ? `<section class="tile" style="--i:${g++}"${multi ? S.nw(m, 'probe') : ''}>
+        <div class="hd"><span class="px-label">Tracks</span>${m.data !== 'today' ? `<span class="n">${it.audio.length + it.subs.length}</span>` : ''}</div>
+        <div class="b-lane">${i('audio')}${chips(it.audio, 'Plays by default') || '<span class="none">No audio</span>'}</div>
+        <div class="b-lane">${i('captions')}${chips(it.subs, 'Shown by default') || '<span class="none">No subtitles</span>'}</div>
+      </section>` : '';
+    const pageActs = it.page ? `<div class="b-src-acts">${S.copyBtn('text', 'Copy page link', ' data-focus-demo')}<button class="sa text open-page" data-act="noop">${i('external')}Open original page</button></div>`
+      : it.mediaHost && S.has(m, 'new') ? `<div class="b-src-acts">${S.copyBtn('text', 'Copy video link', ' data-focus-demo')}</div>` : '';
+    const source = (it.site || S.has(m, 'new')) ? `<section class="tile" style="--i:${g++}"${it.site ? '' : S.nw(m, 'new')}>
+        <div class="hd"><span class="px-label">Source</span></div>
+        <div class="b-src">${it.site ? `<span class="sitemark" style="--c:${it.siteColor}">${it.siteMark}</span><b>${it.site}${it.channel && m.data !== 'today' ? ` <span class="muted" style="font-weight:450">· ${esc(it.channel)}</span>` : ''}</b><span class="pt" title="${esc(it.page)}">${esc(m.data === 'today' ? it.page.replace(/^https?:\/\//, '') : it.pageTitle)}</span>`
+          : `<span class="sitemark plain">${i('link')}</span><b>Pasted link</b><span class="pt">${it.mediaHost}</span>`}</div>
+        ${pageActs}
+      </section>` : '';
+    let k = 0;
+    const b = (html) => html.replace('<button', `<button style="--i:${k++}"`);
+    const acts = it.missing
+      ? [b(`<button class="sa bevel danger" data-act="noop">${i('trash')}Remove from list</button>`)]
+      : [b(`<button class="sa bevel primary" data-act="noop" data-hover-demo>${i('playTri')}Play</button>`),
+        b(`<button class="sa bevel" data-act="noop">${i('folder')}${S.finder(m)}</button>`),
+        b(`<button class="sa bevel" data-act="noop">${i('folderInput')}Move to…<span class="kbd">M</span></button>`),
+        S.has(m, 'new') ? b(`<button class="sa bevel" data-act="noop"${S.nw(m, 'new')}>${i('pencil')}Rename…</button>`) : '',
+        '<span class="sp"></span>',
+        b(`<button class="sa bevel danger" data-act="remove">${i('trash')}Remove…</button>`)];
+    const fmt = [it.container, m.data !== 'today' && it.vcodec, m.data !== 'today' && it.bitrate].filter(Boolean).join(' · ');
+    return `<div class="b-wrap${it.missing ? ' missing' : ''}">
+      ${it.missing ? `<div class="miss">${i('alert')}<span>File was moved or deleted <span class="was">· last seen in ${esc(it.dir)}</span></span><span class="sp"></span><button class="sa bevel primary" data-act="noop">${i('folderOpen')}Locate…</button></div>` : ''}
+      <div class="b-title">${esc(it.title)}</div>
+      ${t <= 2 && !tracks ? `<div class="b-tiles">${tiles}${source}</div>` : `<div class="b-tiles">${tiles}</div>
+      ${tracks || source ? `<div class="b-grid"${!tracks ? ' style="grid-template-columns:minmax(0,1fr)"' : ''}>${tracks}${source}</div>` : ''}`}
+      <div class="b-file" style="--i:0">${S.crumbs(it)}${S.slash()}<span class="fname" title="${esc(it.file)}">${esc(it.file)}</span><span class="fmt"${it.vcodec ? S.nw(m, 'probe') : ''}>${fmt}</span></div>
+      <div class="b-acts">${acts.join('')}</div>
+    </div>`;
+  }
+
+  const notes = () => `<h2>B · Cards</h2>
+    <p>The most “SnagThis”: the same pixel bevel as the logo button and the folder chips, with the four numbers people actually scan <b>big in the pixel font</b>.</p>
+    <ul>
+      <li><b>Stat tiles</b> wrap responsively; a tile is left out when its fact is unknown (the minimal item shows Size and Saved only).</li>
+      <li><b>Tracks</b>: audio and subtitle chips with pixel language codes; the track you picked is lit in the accent; the count only appears with the probe.</li>
+      <li><b>Source</b>: a pixel site chip (a lettered swatch, no favicons fetched), host · channel, the page title, <b>Copy page link</b> (Sheets-snap “Copied”) and <b>Open original page</b>.</li>
+      <li><b>File line</b>: path-bar crumbs, the file name and the format on one line.</li>
+      <li><b>Bevel buttons</b>: Play (accent), ${'Show in Finder'} / Explorer, Move to…, Rename…, then Remove… on the right. Missing files: Locate… in the banner; Remove from list only.</li>
+    </ul>
+    <h3>Motion — open 220ms height + ~560ms choreography · close 180ms</h3>
+    <ul><li>Tiles <b>press in</b> on a 40ms stagger: they rise from 7px with the bevel inverted, overshoot 2px, dip 1px as the bevel flips back (a button press), and settle (300ms each).</li><li>Tracks/Source follow; each chip pops on a 25ms stagger; the file line and buttons fade last.</li><li>Close: tiles sink 4px and fade (140ms, 15ms stagger), then the height folds.</li><li>Reduced motion: instant height, 120ms opacity fade.</li></ul>
+    <div class="cost"><h3>Cost to build</h3>Medium. New tile/chip components (reusable in Settings and the shelf) and keyframes with per-item <code>--i</code>/<code>--c</code>. The richest version depends on <b>ffprobe on expand</b> (tracks list, resolution, frame rate) and YouTube-style channel metadata for other sites.</div>`;
+
+  S.mount({ id: 'b', name: 'Cards', panel, notes });
+})();
+</script>
+</body>
+</html>

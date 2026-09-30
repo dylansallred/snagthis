@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Saved details A · Spec sheet</title>
+<link rel="stylesheet" href="../../organize/shared.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* A · Spec sheet: poster + Play on the left, the full title and a two-column fact grid on the right,
+   one quiet action bar beneath. Motion: height ease, poster pops, facts fade/slide in on a 22ms stagger. */
+.opt-a { --open-ms: 260ms; --close-ms: 200ms; --close-delay: 70ms; --open-total: 560; --close-total: 330; }
+.a-card { border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface-row); overflow: hidden; }
+.a-top { display: grid; grid-template-columns: 256px minmax(0, 1fr); gap: 18px; padding: 14px 16px 12px 14px; }
+.a-media { display: grid; gap: 8px; align-content: start; }
+.a-poster { width: 256px; aspect-ratio: 16 / 9; border-radius: 2px; box-shadow: 0 0 0 1px var(--color-border); transition: box-shadow 160ms, transform 160ms; }
+.a-poster .len { display: none; }
+.a-under { display: flex; align-items: center; gap: 6px; }
+.a-under .sa.primary { flex: 1; justify-content: center; }
+.a-under .muted-note { color: var(--color-foreground-subtle); font-size: 11px; }
+.a-main { min-width: 0; }
+.a-title { margin: 0 0 12px; font-size: 14.5px; line-height: 1.35; font-weight: 600; color: var(--color-foreground); text-wrap: pretty; }
+.kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 26px; margin: 0; }
+.kvr { position: relative; display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: baseline; gap: 10px; min-height: 30px; padding: 6px 0; border-bottom: 1px dotted hsl(215 14% 19%); }
+.kvr.wide { grid-column: 1 / -1; }
+.kvr dt { padding-top: 1px; }
+.kvr dd { margin: 0; min-width: 0; color: #dce0e5; font-size: 12.5px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.kvr dd .sub { color: var(--color-foreground-muted); }
+.kvr dd .tracks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.kvr dd .trk { display: inline-flex; gap: 6px; align-items: baseline; }
+.kvr dd .trk b { font-weight: 560; }
+.kvr dd .trk .tag { font: 400 13px/1 var(--font-pixel); letter-spacing: .05em; color: var(--color-primary-hover); text-transform: uppercase; }
+.kvr dd .src { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.kvr dd .src .sitemark { width: 16px; height: 16px; font-size: 13px; }
+.kvr dd .mono { font-size: 11.5px; color: #b9c0ca; word-break: break-all; }
+.kvr .crumbs { margin: -4px 0 -4px -4px; }
+.kvr dd.unk { color: var(--color-foreground-subtle); }
+.a-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding: 5px 8px; border-top: 1px solid var(--color-border-subtle); background: hsl(215 22% 6%); }
+.a-bar .sp { flex: 1; }
+.a-bar .sep { width: 1px; height: 16px; margin: 0 4px; background: var(--color-border); }
+.a-card .miss { margin: 0 0 10px; }
+.missing-card .kvr dd { color: #aeb5bf; }
+/* Narrow (820): the grid drops to one column beside a 200px poster. */
+.sdwin[style*="820"] .a-top { grid-template-columns: 200px minmax(0, 1fr); }
+.sdwin[style*="820"] .a-poster { width: 200px; }
+.sdwin[style*="820"] .kv { grid-template-columns: minmax(0, 1fr); }
+
+/* Motion */
+@keyframes a-pop { from { opacity: 0; transform: scale(.94); } }
+@keyframes a-rise { from { opacity: 0; transform: translateY(-5px); } }
+@keyframes a-out { to { opacity: 0; transform: translateY(-4px); } }
+.item.anim-in .a-poster { animation: a-pop calc(280ms * var(--k)) var(--ease-out) calc(40ms * var(--k)) both; }
+.item.anim-in .a-under, .item.anim-in .a-title, .item.anim-in .miss { animation: a-rise calc(220ms * var(--k)) var(--ease-out) calc(70ms * var(--k)) both; }
+.item.anim-in .kvr { animation: a-rise calc(220ms * var(--k)) var(--ease-out) calc((90ms + var(--i) * 22ms) * var(--k)) both; }
+.item.anim-in .a-bar > * { animation: a-rise calc(200ms * var(--k)) var(--ease-out) calc((190ms + var(--i, 0) * 16ms) * var(--k)) both; }
+.item.closing .a-card { animation: a-out calc(130ms * var(--k)) var(--ease-in) both; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Saved-video details</a> · <span>A</span>Spec sheet</div>
+    <h1>A · Spec sheet</h1>
+    <p>A <b>poster that plays its loop on hover</b> with <b>Play</b> under it, then the <b>full title</b> and a <b>two-column spec grid</b> in pixel-font labels: Quality, Length, Size, Format, Video, Frame rate, Audio, Subtitles, Source, Saved, Folder and File. One quiet <b>action bar</b> underneath. Click any of the three sample rows to open or close it; use <b>Replay open / close</b> and <b>Slow ×4</b> to judge the motion.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../organize/brand.js"></script>
+<script src="../../organize/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const S = window.SD, i = S.i, esc = S.esc;
+  let n = 0;
+  const kv = (m, label, value, kind = 'today', wide = false) => value && S.has(m, kind)
+    ? `<div class="kvr${wide ? ' wide' : ''}" style="--i:${n++}"${S.nw(m, kind)}><dt class="px-label">${label}</dt><dd>${value}</dd></div>` : '';
+  const tracks = (m, list, picked) => {
+    const shown = m.data === 'today' ? list.filter((t) => t.picked) : list;
+    return shown.length ? `<span class="tracks">${shown.map((t) => `<span class="trk"><b>${t.lang}</b><span class="sub">${[m.data === 'today' ? '' : t.ch || t.kind, m.data === 'today' ? '' : t.codec].filter(Boolean).join(' · ')}</span>${t.picked ? `<span class="tag">${picked}</span>` : ''}</span>`).join('')}</span>` : '';
+  };
+
+  function panel(it, m) {
+    n = 0;
+    const rich = it.id === 'rich';
+    const probeAudio = it.audio.length > 1;
+    const facts = [
+      kv(m, 'Quality', it.h ? S.quality(it) + (it.vprofile && m.data !== 'today' ? `<span class="sub"> · HDR10</span>` : '') : ''),
+      kv(m, 'Length', it.dur, it.id === 'missing' ? 'today' : 'probe'),
+      kv(m, 'Size', it.missing ? `${it.size} <span class="sub">last seen</span>` : it.size),
+      kv(m, 'Format', it.container + (it.vcodec && m.data !== 'today' ? ` <span class="sub">· ${it.vcodec} ${it.vprofile.split(' · ')[0]}</span>` : '')),
+      kv(m, 'Video', it.res && it.vcodec ? `${it.res} <span class="sub">· ${it.bitrate}</span>` : '', 'probe'),
+      kv(m, 'Frame rate', it.fps, 'probe'),
+      kv(m, probeAudio && m.data !== 'today' ? 'Audio · 2' : 'Audio', tracks(m, it.audio, 'Default'), probeAudio ? 'probe' : 'today'),
+      kv(m, 'Subtitles', tracks(m, it.subs, 'On'), it.subs.length > 1 ? 'probe' : 'today'),
+      kv(m, 'Source', it.site ? `<span class="src"><span class="sitemark" style="--c:${it.siteColor}">${it.siteMark}</span>${it.site}${it.channel && m.data !== 'today' ? `<span class="sub">· ${esc(it.channel)}</span>` : ''}</span>` : it.mediaHost ? `<span class="sub">Pasted link ·</span> ${it.mediaHost}` : '', it.site ? 'today' : 'new'),
+      kv(m, 'Saved', `${it.saved[0].toUpperCase() + it.saved.slice(1)} <span class="sub">· ${it.savedFull.split(', ').pop()}</span>`),
+      kv(m, it.missing ? 'Last folder' : 'Folder', S.crumbs(it)),
+      kv(m, 'File', `<span class="mono">${esc(it.file)}</span>`, 'today', true),
+    ].join('');
+    const hasPage = !!it.page;
+    let k = 0;
+    const b = (html) => html.replace('<button', `<button style="--i:${k++}"`);
+    const bar = it.missing
+      ? [hasPage ? b(`<button class="sa text open-page" data-act="noop" data-focus-demo>${i('external')}Open original page</button>`) : '',
+        hasPage ? b(S.copyBtn('text')) : '', '<span class="sp"></span>',
+        b(`<button class="sa text danger" data-act="noop">${i('trash')}Remove from list</button>`)]
+      : [b(`<button class="sa text" data-act="noop" data-hover-demo>${i('folder')}${S.finder(m)}</button>`),
+        hasPage ? b(`<button class="sa text open-page" data-act="noop">${i('external')}Open original page</button>`) : '',
+        hasPage ? b(S.copyBtn('text', 'Copy page link', ' data-focus-demo')) : it.mediaHost && S.has(m, 'new') ? b(S.copyBtn('text', 'Copy video link', ' data-focus-demo')) : '',
+        '<span class="sep"></span>',
+        b(`<button class="sa text" data-act="noop">${i('folderInput')}Move to…<span class="kbd">M</span></button>`),
+        S.has(m, 'new') ? b(`<button class="sa text" data-act="noop"${S.nw(m, 'new')}>${i('pencil')}Rename…</button>`) : '',
+        '<span class="sp"></span>',
+        b(`<button class="sa text danger" data-act="remove">${i('trash')}Remove…</button>`)];
+    return `<div class="a-card${it.missing ? ' missing-card' : ''}">
+      <div class="a-top">
+        <div class="a-media">
+          <div class="pv a-poster" data-hover-demo style="background-image:url(${S.MEDIA}${it.img}.jpg)">${it.missing ? '' : S.clip(it)}</div>
+          ${it.missing ? '' : `<div class="a-under"><button class="sa bevel primary" data-act="noop" data-hover-demo>${i('playTri')}Play</button></div>`}
+        </div>
+        <div class="a-main">
+          ${it.missing ? `<div class="miss">${i('alert')}<span>File was moved or deleted<br><span class="was">Last seen in ${esc(it.dir)}</span></span><span class="sp"></span><button class="sa bevel primary" data-act="noop">${i('folderOpen')}Locate…</button></div>` : ''}
+          <h3 class="a-title">${esc(it.title)}</h3>
+          <dl class="kv">${facts}</dl>
+        </div>
+      </div>
+      <div class="a-bar">${bar.join('')}</div>
+    </div>`;
+  }
+
+  const notes = (m) => `<h2>A · Spec sheet</h2>
+    <p>Reads like a label on the back of a tape box: every fact in one grid, <b>unknowns simply absent</b> (the minimal item collapses to four lines).</p>
+    <ul>
+      <li><b>Poster</b> 256px, 16:9, plays the same ~10s loop as the row on hover/focus; nothing over the image.</li>
+      <li><b>Play</b> is the one filled bevel button; everything else is a quiet text action in the bar.</li>
+      <li><b>Full title</b> wraps here, since the row truncates it.</li>
+      <li><b>Folder</b> uses the path-bar crumbs (D · Minimal): each crumb opens that folder; the file name sits below in mono.</li>
+      <li><b>Missing file:</b> an amber sentence with <b>Locate…</b> and the last folder; Remove from list only (no Trash — there is no file).</li>
+      <li><b>Remove…</b> opens the §9 popover: Remove from list (default) / Move file to Trash.</li>
+    </ul>
+    <h3>Motion — open 260ms · close 200ms</h3>
+    <ul><li>Height eases on the existing drawer grid (0fr → 1fr, ease-out).</li><li>Poster scales .94 → 1 and fades (280ms); the title, then each fact row, fade and drop 5px on a 22ms stagger; the action bar arrives last.</li><li>Close: the card fades up 4px in 130ms, then the height folds (200ms, 70ms delay).</li><li>Reduced motion: instant height, 120ms opacity fade.</li></ul>
+    <div class="cost"><h3>Cost to build</h3>Low. One grid component; motion is CSS only (a <code>--i</code> index per row). Needs <b>ffprobe on expand</b> for Length/Video/Frame rate/all tracks; Rename and a pasted link's source need small new API.</div>`;
+
+  S.mount({ id: 'a', name: 'Spec sheet', panel, notes });
+})();
+</script>
+</body>
+</html>

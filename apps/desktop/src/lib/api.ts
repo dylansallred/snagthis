@@ -1,5 +1,5 @@
 import type { QueueData, QueueSettings, QueueJob } from '@/types/queue';
-import type { HistoryItem } from '@/types/history';
+import type { HistoryItem, MediaInfo } from '@/types/history';
 import type { DeleteMode, LibraryInfo, MoveResult } from '@/types/library';
 import { normalizeLocalApiBase } from '@/lib/network';
 
@@ -13,6 +13,10 @@ export interface MediaInspection {
   mediaType?: 'hls' | 'file';
   title?: string;
   sourcePageUrl?: string;
+  /** From a resolved page: its own title, the site's name and the channel or author. */
+  pageTitle?: string;
+  siteName?: string;
+  uploader?: string;
   thumbnailUrl?: string;
   headers?: Record<string, string>;
   isDrm?: boolean;
@@ -66,9 +70,12 @@ export function createApiClient(baseUrl: string, authToken = '') {
     renameFolder: (path: string, name: string) => post<{ path: string }>('/api/library/folders/rename', { path, name }),
     deleteFolder: (path: string, mode?: DeleteMode) => post<{ deleted: 'empty' | 'keep' | 'trash'; moved: number }>('/api/library/folders/delete', { path, mode }),
     moveVideos: (ids: string[], to: string) => post<{ results: MoveResult[] }>('/api/library/move', { ids, to }),
+    renameVideo: (id: string, name: string) => post<{ item: HistoryItem }>('/api/library/rename-video', { id, name }),
+    getMediaInfo: (historyId: string) => request<MediaInfo>(`/api/history/${id(historyId)}/media-info`),
     createJob: (url: string, selection: MediaSelection, inspection?: MediaInspection) => post('/api/jobs', { queue: {
       url: inspection?.mediaUrl || url, selection, mediaType: inspection?.mediaType,
       title: inspection?.title, sourcePageUrl: inspection?.sourcePageUrl || url,
+      sourcePageTitle: inspection?.pageTitle, siteName: inspection?.siteName, uploader: inspection?.uploader,
       thumbnailUrl: inspection?.thumbnailUrl, headers: inspection?.headers,
     } }),
     inspectMedia: async (url: string) => {

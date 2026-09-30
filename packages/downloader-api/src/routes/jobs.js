@@ -12,6 +12,7 @@ const { normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloade
 const { redactPaths } = require('@m3u8/downloader-engine/src/utils/redact');
 const { isHttpUrl } = require('../utils/urls');
 const { downloadRemoteImage } = require('../utils/remoteImage');
+const { sourceInfoOf } = require('../utils/sourceInfo');
 
 async function persistRemoteThumbnailLocally(job, downloadDir) {
   if (!job) return false;
@@ -181,6 +182,7 @@ function registerJobRoutes(
       selection: queue.selection || undefined,
       mediaType: queue.mediaType || (isHls ? 'hls' : 'file'),
       sourcePageUrl: queue.sourcePageUrl || '',
+      sourceInfo: sourceInfoOf(queue),
       totalSegments: 0,
       completedSegments: 0,
       bytesDownloaded: 0,

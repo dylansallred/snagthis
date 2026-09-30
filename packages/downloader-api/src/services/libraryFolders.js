@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { moveFileSync, moveDirectorySync } = require('@m3u8/downloader-engine/src/utils/moveFile');
-const { failureCode, folderNameProblem, parentFolder } = require('@m3u8/contracts/src/library');
+const { failureCode, folderNameProblem, parentFolder, videoNameProblem } = require('@m3u8/contracts/src/library');
 const logger = require('../utils/logger');
 const {
   buildDownloadAssetUrl, decodeExternalDownloadPath, EXTERNAL_DOWNLOAD_PREFIX, resolveDownloadPath,
@@ -311,7 +311,113 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
     return result;
   }
 
-  return { createFolder, renameFolder, deleteFolder, moveVideos, resolveFolder };
+  /** Renames files in one directory as a set (`pairs` of [from, to] names), putting every one back if any fails. */
+  function renameSet(directory, pairs) {
+    const done = [];
+    // Two steps, through names nobody uses, so a change of case or a swap never meets itself.
+    const staged = pairs.filter(([from, to]) => from !== to).map(([from, to], index) => [from, `.snagthis-rename-${process.pid}-${Date.now()}-${index}`, to]);
+    try {
+      for (const [from, temp] of staged) { fs.renameSync(path.join(directory, from), path.join(directory, temp)); done.push([from, temp]); }
+      for (const [, temp, to] of staged) {
+        if (fs.existsSync(path.join(directory, to))) throw Object.assign(new Error('Name taken'), { code: 'EEXIST' });
+        fs.renameSync(path.join(directory, temp), path.join(directory, to));
+        const index = done.findIndex(([, name]) => name === temp);
+        done[index] = [done[index][0], to];
+      }
+    } catch (error) {
+      for (const [from, current] of done.reverse()) {
+        try { fs.renameSync(path.join(directory, current), path.join(directory, from)); } catch (undoError) { logger.warn('Could not undo a partial rename', { code: undoError && undoError.code }); }
+      }
+      throw error;
+    }
+    return staged.map(([from, , to]) => [path.join(directory, from), path.join(directory, to)]);
+  }
+
+  /**
+   * Renames a saved video on disk: its own folder, the video file and the side files that share
+   * its name, together; a name in use gets ` (2)`. On any failure every file keeps its old name.
+   */
+  async function renameVideo(id, name) {
+    if (typeof id !== 'string' || !id || id.length > 4096) throw new LibraryError(400, 'invalid-request', 'Choose the video to rename');
+    const problem = videoNameProblem(name);
+    if (problem) throw new LibraryError(400, problem.code, problem.message);
+    const wanted = name.normalize('NFC');
+    const result = await historyIndex.runExclusive(async () => {
+      const item = historyIndex.findById(id);
+      if (!item) throw new LibraryError(404, 'missing', 'Saved item not found');
+      const source = historyIndex.resolveFilePath(item.id);
+      if (!source || !fs.existsSync(source)) throw new LibraryError(409, 'missing');
+      const file = path.resolve(source);
+      const parent = path.dirname(file);
+      const base = root();
+      const parentInfo = readDirInfo(parent);
+      const ownFolder = parent !== base && parent !== path.resolve(downloadDir) && isVideoFolder(path.basename(parent), parentInfo);
+      const fileName = path.basename(file);
+      const stem = stemOf(fileName);
+      const job = item.jobId && jobs.get(item.jobId);
+      // The files that carry the video's name: it, its subtitles and poster (not the job's `{id}-…` files).
+      const named = [fileName, ...sideFilesOf(fileName, parentInfo.files, null)].filter((entry) => entry === fileName || entry.startsWith(`${stem}.`));
+      const renamed = (entry, number) => {
+        const next = number === 1 ? wanted : `${wanted} (${number})`;
+        return `${next}${entry.slice(stem.length)}`;
+      };
+      const mine = new Set(named.map((entry) => entry.toLowerCase()));
+      const freeIn = (directory, candidates, own) => candidates.every((candidate) => !fs.existsSync(path.join(directory, candidate)) || own.has(candidate.toLowerCase()));
+      const pairs = [];
+      try {
+        if (ownFolder) {
+          // The folder first (it may need a suffix), then the files inside it take the same name.
+          const container = path.dirname(parent);
+          const ownName = new Set([path.basename(parent).toLowerCase()]);
+          let folderName = wanted;
+          for (let number = 1; number <= 10_000; number += 1) {
+            folderName = number === 1 ? wanted : `${wanted} (${number})`;
+            if (freeIn(container, [folderName], ownName)) break;
+          }
+          const inside = named.map((entry) => [entry, renamed(entry, 1)]);
+          const moved = renameSet(parent, inside);
+          let target = parent;
+          try {
+            if (folderName !== path.basename(parent)) {
+              [[, target]] = renameSet(container, [[path.basename(parent), folderName]]);
+            }
+          } catch (error) {
+            renameSet(parent, inside.map(([from, to]) => [to, from]));
+            throw error;
+          }
+          const byPath = new Map(moved.map(([from, to]) => [from, path.join(target, path.basename(to))]));
+          const map = (value) => byPath.get(value) || (value === parent ? target : isInside(parent, value) ? path.join(target, path.relative(parent, value)) : null);
+          pairs.push(map);
+        } else {
+          let targets = null;
+          for (let number = 1; number <= 10_000 && !targets; number += 1) {
+            const candidates = named.map((entry) => renamed(entry, number));
+            if (freeIn(parent, candidates, mine)) targets = candidates;
+          }
+          if (!targets) throw Object.assign(new Error('Too many files with this name'), { code: 'EEXIST' });
+          const moved = renameSet(parent, named.map((entry, index) => [entry, targets[index]]));
+          pairs.push(exactMap(moved));
+        }
+      } catch (error) {
+        const code = error instanceof LibraryError ? error.code : failureCode(error);
+        logger.warn('Saved video could not be renamed', { code: error && error.code, reason: code });
+        throw new LibraryError(409, code);
+      }
+      const jobsChanged = follow(pairs[0]);
+      item.title = wanted;
+      if (job) {
+        job.title = wanted;
+        job.manualTitleOverride = true;
+        job.updatedAt = Date.now();
+      }
+      await finish('rename', jobsChanged || !!job);
+      return { item: { ...item } };
+    });
+    await rescan();
+    return result;
+  }
+
+  return { createFolder, renameFolder, deleteFolder, moveVideos, renameVideo, resolveFolder };
 }
 
 module.exports = { createLibraryFolders, LibraryError };

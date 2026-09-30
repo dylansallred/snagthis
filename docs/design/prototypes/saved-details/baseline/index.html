@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Saved details · Current baseline</title>
+<link rel="stylesheet" href="../../organize/shared.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* Today's inspector card for a saved row (RowDetails.tsx + globals.css): "Saved in" header, fact tiles, footer links. */
+.opt-0 { --open-ms: 340ms; --close-ms: 300ms; --open-total: 420; --close-total: 340; }
+.z-card { border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; background: var(--color-surface-row); }
+.z-loc { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 14px; border-bottom: 1px solid var(--color-border-subtle); text-align: left; font-size: 12px; color: #909ba9; }
+.z-loc svg.i { width: 18px; height: 18px; color: #b8bec7; }
+.z-loc .p { flex: 1; color: #9aa3af; } .z-loc .p strong { color: #e6e9ee; font-weight: 550; }
+.z-body { padding: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.z-fact { padding: 12px; border-radius: 7px; background: hsl(215 22% 11%); font-size: 12px; }
+.z-fact dt { color: #89929f; font-size: 10.5px; margin-bottom: 4px; } .z-fact dd { margin: 0; color: #dce0e5; font-weight: 500; }
+.z-links { display: flex; gap: 4px; padding: 7px 8px; border-top: 1px solid var(--color-border-subtle); background: hsl(215 22% 6%); }
+.z-links .danger { margin-left: auto; }
+@keyframes z-in { from { transform: translateY(-38px); opacity: .2; } }
+.item.anim-in .z-card { animation: z-in calc(380ms * var(--k)) var(--ease-out) both; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Saved-video details</a> · <span>0</span>Current baseline</div>
+    <h1>0 · Current baseline</h1>
+    <p>What a saved row shows today when expanded (as in the owner’s screenshot): <b>Saved in</b> + path, then only the facts the history item carries — often just <b>Size</b> — and <b>Remove…</b>. Quality, From, Copy link and Open page appear only when the job recorded a chosen quality or a source page.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../organize/brand.js"></script>
+<script src="../../organize/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const S = window.SD, i = S.i, esc = S.esc;
+  function panel(it) {
+    const q = it.h ? `<div class="z-fact"><dt>Quality</dt><dd>${S.quality(it)}${it.audio[0] && it.id !== 'minimal' ? ` · ${it.audio.find((a) => a.picked).lang} audio` : ''}${it.subs[0] ? ` · ${it.subs[0].lang} subtitles` : ''}</dd></div>` : '';
+    return `<div class="z-card">
+      <button class="z-loc" data-act="noop">${i('folder')}<span class="p">Saved in ${esc(it.dir)}<strong>${esc(it.file.replace(/\.mp4$/, ''))}</strong></span>${i('chevronRight')}</button>
+      <dl class="z-body" style="margin:0">${q}<div class="z-fact"><dt>Size</dt><dd>${it.size}</dd></div>${it.site ? `<div class="z-fact"><dt>From</dt><dd>${it.site}</dd></div>` : ''}</dl>
+      <div class="z-links">${it.missing ? `<button class="sa text" data-act="noop">${i('folderOpen')}Locate</button>` : ''}${it.page ? `${S.copyBtn('text', 'Copy link', ' data-focus-demo')}<button class="sa text open-page" data-act="noop">${i('external')}Open page</button>` : ''}<button class="sa text danger" data-act="remove">${i('trash')}Remove…</button></div>
+    </div>`;
+  }
+  const notes = () => `<h2>Current baseline</h2><ul><li>No preview, no length, no track list, no date, no folder crumbs.</li><li>A pasted direct link (like the owner’s) has no source page, so <b>Copy link</b> and <b>Open page</b> disappear.</li><li>The file itself is never inspected after download: codec, frame rate and tracks are unknown.</li></ul>`;
+  S.mount({ id: '0', name: 'Baseline', panel, notes });
+})();
+</script>
+</body>
+</html>

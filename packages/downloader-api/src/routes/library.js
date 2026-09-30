@@ -14,6 +14,7 @@ function registerLibraryRoutes(app, historyIndex, folders) {
   app.post('/api/library/folders', (req, res) => send(res, folders.createFolder(text(req.body?.parent) ?? '', text(req.body?.name) ?? '')));
   app.post('/api/library/folders/rename', (req, res) => send(res, folders.renameFolder(text(req.body?.path) ?? '', text(req.body?.name) ?? '')));
   app.post('/api/library/folders/delete', (req, res) => send(res, folders.deleteFolder(text(req.body?.path) ?? '', text(req.body?.mode))));
+  app.post('/api/library/rename-video', (req, res) => send(res, folders.renameVideo(text(req.body?.id) ?? '', text(req.body?.name) ?? '')));
   app.post('/api/library/move', (req, res) => send(res, folders.moveVideos(req.body?.ids, text(req.body?.to) ?? '').then((results) => ({ results }))));
 }
 
