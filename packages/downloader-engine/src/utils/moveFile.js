@@ -2,6 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+/*
+ * Moves run on the app's main process, so every step is asynchronous: a copy to an external
+ * drive can take many seconds per gigabyte, and the interface, the local API and download
+ * progress must keep going meanwhile. fs.promises.copyFile runs in libuv's thread pool (using
+ * the system's copy call), never on the event loop. `fs.promises` is read at call time so tests
+ * can model another volume.
+ */
+
 const partialName = (targetPath) => path.join(
   path.dirname(targetPath),
   `.${path.basename(targetPath)}.${crypto.randomBytes(4).toString('hex')}.partial`,
@@ -9,22 +17,23 @@ const partialName = (targetPath) => path.join(
 
 // Copies one file, flushes it and checks its size. The copy keeps the source's
 // modification time, which the library shows as the day a video was saved.
-function copyVerifiedSync(sourcePath, targetPath) {
-  const stat = fs.statSync(sourcePath);
-  fs.copyFileSync(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
-  const handle = fs.openSync(targetPath, 'r+');
+async function copyVerified(sourcePath, targetPath) {
+  const fsp = fs.promises;
+  const stat = await fsp.stat(sourcePath);
+  await fsp.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
+  const handle = await fsp.open(targetPath, 'r+');
   try {
-    fs.fsyncSync(handle);
+    await handle.sync();
   } finally {
-    fs.closeSync(handle);
+    await handle.close();
   }
-  const copiedSize = fs.statSync(targetPath).size;
+  const copiedSize = (await fsp.stat(targetPath)).size;
   if (copiedSize !== stat.size) {
     const error = new Error(`Copied file is incomplete (${copiedSize} of ${stat.size} bytes)`);
     error.code = 'EIO';
     throw error;
   }
-  try { fs.utimesSync(targetPath, stat.atime, stat.mtime); } catch { /* Times are cosmetic. */ }
+  try { await fsp.utimes(targetPath, stat.atime, stat.mtime); } catch { /* Times are cosmetic. */ }
 }
 
 // Moves a file, including to another volume (external drive, NAS), where
@@ -32,9 +41,10 @@ function copyVerifiedSync(sourcePath, targetPath) {
 // target folder, is flushed and size-checked, and only then renamed into
 // place. The source is removed last, so a failure at any step leaves the
 // original file where it was.
-function moveFileSync(sourcePath, targetPath) {
+async function moveFile(sourcePath, targetPath) {
+  const fsp = fs.promises;
   try {
-    fs.renameSync(sourcePath, targetPath);
+    await fsp.rename(sourcePath, targetPath);
     return;
   } catch (error) {
     if (!error || error.code !== 'EXDEV') throw error;
@@ -42,27 +52,28 @@ function moveFileSync(sourcePath, targetPath) {
 
   const tempPath = partialName(targetPath);
   try {
-    copyVerifiedSync(sourcePath, tempPath);
-    fs.renameSync(tempPath, targetPath);
+    await copyVerified(sourcePath, tempPath);
+    await fsp.rename(tempPath, targetPath);
   } catch (error) {
-    try { fs.rmSync(tempPath, { force: true }); } catch { /* Keep the original error. */ }
+    try { await fsp.rm(tempPath, { force: true }); } catch { /* Keep the original error. */ }
     throw error;
   }
 
   // The copy is complete at the target. A source that cannot be removed is
   // left behind rather than treating the move as failed.
   try {
-    fs.unlinkSync(sourcePath);
+    await fsp.unlink(sourcePath);
   } catch { /* The saved copy is authoritative. */ }
 }
 
-function copyTreeSync(sourceDir, targetDir) {
-  fs.mkdirSync(targetDir);
-  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+async function copyTree(sourceDir, targetDir) {
+  const fsp = fs.promises;
+  await fsp.mkdir(targetDir);
+  for (const entry of await fsp.readdir(sourceDir, { withFileTypes: true })) {
     const from = path.join(sourceDir, entry.name);
     const to = path.join(targetDir, entry.name);
-    if (entry.isDirectory()) copyTreeSync(from, to);
-    else if (entry.isFile()) copyVerifiedSync(from, to);
+    if (entry.isDirectory()) await copyTree(from, to);
+    else if (entry.isFile()) await copyVerified(from, to);
     // Links and devices are not copied across volumes; the source keeps them.
     else { const error = new Error(`Cannot copy ${entry.name}`); error.code = 'EPERM'; throw error; }
   }
@@ -73,24 +84,25 @@ function copyTreeSync(sourceDir, targetDir) {
 // beside the target and verified, renamed into place, and only then is the
 // source removed. A failure before that point removes the partial copy and
 // leaves the original folder untouched.
-function moveDirectorySync(sourceDir, targetDir) {
+async function moveDirectory(sourceDir, targetDir) {
+  const fsp = fs.promises;
   try {
-    fs.renameSync(sourceDir, targetDir);
+    await fsp.rename(sourceDir, targetDir);
     return;
   } catch (error) {
     if (!error || error.code !== 'EXDEV') throw error;
   }
   const tempDir = partialName(targetDir);
   try {
-    copyTreeSync(sourceDir, tempDir);
-    fs.renameSync(tempDir, targetDir);
+    await copyTree(sourceDir, tempDir);
+    await fsp.rename(tempDir, targetDir);
   } catch (error) {
-    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* Keep the original error. */ }
+    try { await fsp.rm(tempDir, { recursive: true, force: true }); } catch { /* Keep the original error. */ }
     throw error;
   }
   try {
-    fs.rmSync(sourceDir, { recursive: true, force: true });
+    await fsp.rm(sourceDir, { recursive: true, force: true });
   } catch { /* The copy is authoritative; leftovers stay visible to the person. */ }
 }
 
-module.exports = { moveFileSync, moveDirectorySync };
+module.exports = { moveFile, moveDirectory };

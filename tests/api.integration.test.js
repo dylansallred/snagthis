@@ -1315,7 +1315,7 @@ test('relocateCompletedArtifact moves thumbnail and subtitle sidecars with the c
     downloadNameMp4: path.basename(mediaPath),
   };
 
-  queueManager.relocateCompletedArtifact(job);
+  await queueManager.relocateCompletedArtifact(job);
 
   const completedFolder = path.dirname(job.filePath);
   assert.equal(path.dirname(completedFolder), externalCompletedDir);

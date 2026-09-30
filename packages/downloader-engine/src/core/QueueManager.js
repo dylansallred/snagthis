@@ -8,7 +8,7 @@ const { isCurrentPreviewClipPath } = require('./PreviewClip');
 const { normalizeMediaExtension } = require('../utils/mediaFiles');
 
 const { readJsonState, writeFileDurable } = require('../utils/durableJson');
-const { moveFileSync } = require('../utils/moveFile');
+const { moveFile } = require('../utils/moveFile');
 const { redactPaths } = require('../utils/redact');
 
 const FINAL_FILE_NAME_MAX_BYTES = 200;
@@ -133,7 +133,13 @@ class QueueManager {
             queuedJob.originalHlsUrl || queuedJob.url || ''
           );
         }
-        if (
+        if (queuedJob.queueStatus === 'downloading' && ['completed', 'completed-with-errors'].includes(queuedJob.status)) {
+          // The app quit while a finished download was moving into the save folder. A move
+          // never removes the original before the copy is complete, so the file is where the
+          // job says; it is finished, not something to download again.
+          queuedJob.queueStatus = 'completed';
+          queuedJob.completedAt = queuedJob.completedAt || Date.now();
+        } else if (
           queuedJob.queueStatus === 'downloading'
           || queuedJob.status === 'downloading'
           || queuedJob.status === 'fetching-playlist'
@@ -340,7 +346,7 @@ class QueueManager {
     return candidate;
   }
 
-  relocateSidecarArtifact(candidatePath, resolvedTargetDir) {
+  async relocateSidecarArtifact(candidatePath, resolvedTargetDir) {
     if (typeof candidatePath !== 'string' || !candidatePath.trim()) {
       return candidatePath;
     }
@@ -357,13 +363,15 @@ class QueueManager {
     }
 
     if (targetPath !== resolvedCandidate) {
-      moveFileSync(resolvedCandidate, targetPath);
+      await moveFile(resolvedCandidate, targetPath);
     }
 
     return targetPath;
   }
 
-  relocateCompletedArtifact(job) {
+  // Asynchronous: a save folder on another volume means copying the file, which must not
+  // hold up the app while it runs.
+  async relocateCompletedArtifact(job) {
     if (!job) return;
 
     const primaryPath = job.mp4Path && fs.existsSync(job.mp4Path) ? job.mp4Path : job.filePath;
@@ -405,7 +413,7 @@ class QueueManager {
       }
 
       if (targetPath !== resolvedCurrent) {
-        moveFileSync(resolvedCurrent, targetPath);
+        await moveFile(resolvedCurrent, targetPath);
       }
 
       if (job.mp4Path && path.resolve(job.mp4Path) === resolvedCurrent) {
@@ -430,11 +438,11 @@ class QueueManager {
       job.storageDir = resolvedTargetDir;
 
       const relocatedSidecars = new Map();
-      const relocateSidecar = candidate => {
+      const relocateSidecar = async candidate => {
         if (relocatedSidecars.has(candidate)) return relocatedSidecars.get(candidate);
         let moved = candidate;
         try {
-          moved = this.relocateSidecarArtifact(candidate, resolvedTargetDir);
+          moved = await this.relocateSidecarArtifact(candidate, resolvedTargetDir);
         } catch (err) {
           logger.warn('Failed to relocate completed sidecar', {
             jobId: job.id,
@@ -445,14 +453,14 @@ class QueueManager {
         relocatedSidecars.set(candidate, moved);
         return moved;
       };
-      job.thumbnailPath = relocateSidecar(job.thumbnailPath);
+      job.thumbnailPath = await relocateSidecar(job.thumbnailPath);
       if (Array.isArray(job.thumbnailPaths)) {
-        job.thumbnailPaths = job.thumbnailPaths.map((thumbPath) =>
-          relocateSidecar(thumbPath)
-        );
+        const thumbnailPaths = [];
+        for (const thumbPath of job.thumbnailPaths) thumbnailPaths.push(await relocateSidecar(thumbPath));
+        job.thumbnailPaths = thumbnailPaths;
       }
-      job.subtitlePath = relocateSidecar(job.subtitlePath);
-      job.subtitleZipPath = relocateSidecar(job.subtitleZipPath);
+      job.subtitlePath = await relocateSidecar(job.subtitlePath);
+      job.subtitleZipPath = await relocateSidecar(job.subtitleZipPath);
       if (currentDir !== resolvedTargetDir && hasJobStorageMarker(currentDir, job.id)) {
         try {
           const remaining = fs.readdirSync(currentDir);
@@ -820,10 +828,11 @@ class QueueManager {
     const completion = Promise.resolve().then(() => runner(job)).catch((error) => {
       job.status = job.cancelled ? 'cancelled' : 'error';
       job.error = error && error.message || 'Download failed';
-    }).finally(() => {
-      this.runners.delete(jobId);
-      this.onJobComplete(jobId, job);
-    });
+    })
+      // Finishing (moving the file into the save folder) is part of the run, so shutdown waits for it.
+      .then(() => this.onJobComplete(jobId, job))
+      .catch((error) => logger.warn('Could not finish a download', { jobId, error: error && error.message }))
+      .finally(() => { this.runners.delete(jobId); });
     this.runners.set(jobId, completion);
 
     return true;
@@ -857,8 +866,9 @@ class QueueManager {
     return true;
   }
 
-  // Called when a job completes
-  onJobComplete(jobId, runnerJob) {
+  // Called when a job's run ends. A finished file is moved into the save folder first, which
+  // may copy it to another volume; the job stays active until that is done.
+  async onJobComplete(jobId, runnerJob) {
     const job = this.jobs.get(jobId);
     if (!job || (runnerJob && job !== runnerJob)) {
       this.activeJobs.delete(jobId);
@@ -887,7 +897,7 @@ class QueueManager {
 
     // Update queue status based on job status
     if (job.status === 'completed' || job.status === 'completed-with-errors') {
-      this.relocateCompletedArtifact(job);
+      await this.relocateCompletedArtifact(job);
       job.queueStatus = 'completed';
       job.completedAt = Date.now();
     } else if (job.status === 'error') {
@@ -937,9 +947,10 @@ class QueueManager {
     const job = this.jobs.get(jobId);
     if (!job) return false;
 
-    // Finalizing is local work on already-downloaded pieces. Cancelling it
-    // would discard those pieces yet report the job as resumable.
-    if (job.queueStatus === 'downloading' && job.status !== 'finalizing') {
+    // Finalizing is local work on already-downloaded pieces, and a finished
+    // download may still be moving into the save folder. Cancelling either
+    // would discard finished work yet report the job as resumable.
+    if (job.queueStatus === 'downloading' && !['finalizing', 'completed', 'completed-with-errors'].includes(job.status)) {
       job.pauseRequested = true;
       job.resumeRequested = false;
       job.cancelled = true;
