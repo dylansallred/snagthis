@@ -44,7 +44,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => { await context?.close(); await stub?.close(); await fixture?.close(); if (profile) fs.rmSync(profile, { recursive: true, force: true }); });
 
-// Opens the fixture page, then Preview from the popup row's right-click menu, as a person would.
+// Opens the fixture page, then Preview from the popup row's right-click actions, as a person would.
 async function previewFromPopup() {
   const page = await context.newPage();
   await page.goto(`${fixture.baseUrl}/pages/variants.html`);
@@ -56,7 +56,8 @@ async function previewFromPopup() {
   await expect(row.getByRole('button', { name: 'Choose quality' })).toBeVisible();
   await row.click({ button: 'right' });
   const opened = context.waitForEvent('page');
-  await popup.getByRole('menuitem', { name: 'Preview', exact: true }).click();
+  // The row's actions open as a menu or, with the inline drawer, as a grid of keys.
+  await popup.getByRole('menuitem', { name: 'Preview', exact: true }).or(row.getByRole('button', { name: 'Preview', exact: true })).click();
   const player = await opened;
   await player.setViewportSize({ width: 1440, height: 900 });
   await popup.close();
