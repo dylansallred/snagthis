@@ -19,6 +19,9 @@ const DENY_BLOCK_MS = 60 * 60_000;
 // Finished requests stay long enough for the requester's next poll to read the outcome.
 const FINISHED_RETENTION_MS = 5 * 60_000;
 const LAST_SEEN_SAVE_MS = 60_000;
+// "Waiting for Chrome…": while the desktop shows its connect card it renews this window,
+// so a crashed or hidden renderer stops listening on its own.
+const LISTEN_TTL_MS = 90_000;
 // Web Store item IDs, recorded once the store item exists (docs/extension-release.md,
 // "Establish the store identity"). Any other ID is shown to the user as unrecognised.
 const STORE_EXTENSION_IDS = Object.freeze(['dempkhcipnakfiidcnlckkjfbieggcbp']);
@@ -298,10 +301,30 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
       return { ok: true, status: 'denied' };
     }
     request.issuedToken = issueExtensionToken(request.origin);
+    // Connected: nothing else should start a request on its own until the desktop asks again.
+    listening = null;
     finish(request, 'approved');
     // An uncollected token is dropped with the request after the retention window.
     setTimeout(() => { request.issuedToken = null; }, FINISHED_RETENTION_MS).unref?.();
     return { ok: true, status: 'approved' };
+  }
+
+  /**
+   * Pair from the desktop: while its connect card is on screen the desktop "listens", and an
+   * unpaired extension may start a request without a click. This is only a hint on the public
+   * health route (a random session ID, no secret); requesting, the digits and Allow are unchanged.
+   */
+  let listening = null;
+  function setListening(on) {
+    if (!on) { listening = null; return getListening(); }
+    const time = now();
+    if (!listening || listening.until <= time) listening = { session: randomHex(8), until: 0 };
+    listening.until = time + LISTEN_TTL_MS;
+    return getListening();
+  }
+  function getListening() {
+    if (listening && listening.until <= now()) listening = null;
+    return listening ? { listening: true, session: listening.session } : { listening: false };
   }
 
   function listExtensions() {
@@ -366,6 +389,7 @@ function createBridgeSecurity({ dataDir, authToken, allowedOrigins = [], onExten
     get token() { return token; },
     originAllowed, authenticate, isCurrent, getPairingInfo, completePairing, markConnected, signAsset, verifyAsset, publicPayload,
     requestPairing, pairingStatus, cancelPairing, getPendingPairing, decidePairing, listExtensions, revokeExtension, upgradeLegacy,
+    setListening, getListening,
     getConnectionState: () => ({ extensionConnected: extensionConnected(), pairedExtensions: extensions.length }),
   };
 }
