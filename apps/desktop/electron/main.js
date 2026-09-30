@@ -522,6 +522,19 @@ function normalizeReleaseNotes(updateInfo) {
   return [];
 }
 
+// Automated tests run the real app in the background: its window is shown (so it paints and
+// animates normally) but fully transparent, never takes focus and stays out of the Dock and
+// taskbar, so test runs don't flash windows over whatever the developer is doing.
+// E2E_BACKGROUND=0 shows it normally for watching a test.
+// CI has no screen to disturb, and an inactive window there can miss keyboard focus, so CI shows it normally.
+const backgroundTestWindow = Boolean(process.env?.E2E_USER_DATA_DIR) && !process.env?.CI && process.env?.E2E_BACKGROUND !== '0';
+function showWindow(window) {
+  if (!backgroundTestWindow) { window.show(); return; }
+  window.setOpacity(0);
+  window.setSkipTaskbar(true);
+  window.showInactive();
+}
+
 function focusMainWindow(view, settingsSection = 'chrome') {
   if (view === 'settings') { requestedView = 'settings'; requestedSettingsSection = settingsSection; }
   if (view === 'update') requestedView = 'update';
@@ -530,8 +543,8 @@ function focusMainWindow(view, settingsSection = 'chrome') {
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
-  mainWindow.show();
-  mainWindow.focus();
+  showWindow(mainWindow);
+  if (!backgroundTestWindow) mainWindow.focus();
   deliverRequestedView();
 }
 
@@ -1192,7 +1205,7 @@ function createWindow() {
   });
 
   const window = mainWindow;
-  const reveal = () => { if (!window.isDestroyed() && !window.isVisible()) window.show(); };
+  const reveal = () => { if (!window.isDestroyed() && !window.isVisible()) showWindow(window); };
   window.once('ready-to-show', reveal);
   // Without GPU compositing (some Linux desktops, virtual displays) a hidden window can
   // skip its first paint, so ready-to-show never fires. Never leave the app invisible.
@@ -1519,6 +1532,7 @@ async function bootstrap() {
   if (initialProtocol) handleProtocol(initialProtocol);
 
   await app.whenReady();
+  if (backgroundTestWindow && process.platform === 'darwin') app.dock?.hide();
   if (app.isPackaged) app.setAsDefaultProtocolClient('snagthis');
   reconcileUpdaterInstallState();
   registerIpc();
