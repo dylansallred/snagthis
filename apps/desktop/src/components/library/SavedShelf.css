@@ -5,7 +5,7 @@
 
 .shelf-view { padding: 16px 16px 8px; }
 .shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 22px 14px; }
-.workbench-content[data-view-fade] > :is(.video-list, .shelf-view) { animation: shelf-view-fade 160ms ease-out; }
+.workbench-content[data-view-fade] > :is(.video-list, .shelf-view, .shelf-folders, .list-section) { animation: shelf-view-fade 160ms ease-out; }
 @keyframes shelf-view-fade { from { opacity: 0; } }
 
 .shelf-item { min-width: 0; }
@@ -35,5 +35,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .shelf-tile, .shelf-poster::after { transition: none; }
-  .workbench-content[data-view-fade] > :is(.video-list, .shelf-view) { animation: none; }
+  .workbench-content[data-view-fade] > :is(.video-list, .shelf-view, .shelf-folders, .list-section) { animation: none; }
 }

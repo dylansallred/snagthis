@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Organise A · Collections</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+/* A · Collections: a slim sidebar of in-app collections; a list header carries the sort. */
+.side { width: 190px; flex: none; display: flex; flex-direction: column; background: hsl(215 22% 6.2%); border-right: 1px solid var(--color-border-subtle); }
+.side .sh { display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 6px 0 14px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--color-foreground-subtle); }
+.side .sh .iconbtn { width: 26px; height: 26px; }
+.side .sh .iconbtn svg.i { width: 14px; height: 14px; }
+.colls { display: grid; gap: 1px; padding: 0 6px; }
+.coll { position: relative; display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 6px 0 10px; border-radius: 6px; font-size: 12.5px; color: var(--color-foreground-muted); text-align: left; outline: none; }
+.coll:hover, .coll:focus-visible { background: var(--color-background-active); color: var(--color-foreground); }
+.coll:focus-visible { box-shadow: inset 0 0 0 2px var(--color-primary-hover); }
+.coll[aria-current="true"] { background: var(--color-background-active); color: var(--color-foreground); }
+.coll[aria-current="true"]::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: var(--color-primary-hover); }
+.coll .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.coll .ct { font-size: 11.5px; color: var(--color-foreground-subtle); font-variant-numeric: tabular-nums; }
+.coll .cm { display: none; width: 22px; height: 22px; border-radius: 5px; place-items: center; color: var(--color-foreground-muted); }
+.coll .cm:hover { background: hsl(215 18% 18%); color: var(--color-foreground); }
+.coll:is(:hover, :focus-within, .menu-open) .cm { display: inline-grid; }
+.coll:is(:hover, :focus-within, .menu-open) .ct { display: none; }
+.coll.edit { padding: 0 4px; background: none; }
+.coll.edit .swatch { margin-left: 6px; }
+.coll.drop-hot .ct { color: var(--color-primary-hover); }
+.side .hint { margin: 6px 12px; padding: 12px; border-radius: 8px; font-size: 11.5px; line-height: 1.5; color: var(--color-foreground-subtle);
+  background: linear-gradient(90deg, var(--color-border) 50%, transparent 0) 0 0 / 6px 1px repeat-x, linear-gradient(90deg, var(--color-border) 50%, transparent 0) 0 100% / 6px 1px repeat-x, linear-gradient(0deg, var(--color-border) 50%, transparent 0) 0 0 / 1px 6px repeat-y, linear-gradient(0deg, var(--color-border) 50%, transparent 0) 100% 0 / 1px 6px repeat-y; }
+.side .sfoot { margin-top: auto; padding: 10px 14px 12px; font-size: 11px; line-height: 1.45; color: var(--color-foreground-subtle); }
+.lhead { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 8px 0 14px; flex: none; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); }
+.lhead h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 620; white-space: nowrap; }
+.lhead .meta { font-size: 12px; color: var(--color-foreground-subtle); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lhead .sp { flex: 1; }
+.lhead .iconbtn { width: 28px; height: 28px; }
+.lhead .viewtog { display: inline-flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--color-background); }
+.lhead .viewtog .iconbtn { width: 26px; height: 24px; border-radius: 5px; }
+.lhead .viewtog .iconbtn[aria-pressed="true"] { background: var(--color-background-active); color: var(--color-foreground); }
+.pips { display: inline-flex; gap: 3px; align-self: center; flex: none; }
+.pips i { width: 7px; height: 7px; background: var(--c); box-shadow: inset 1px 1px 0 rgb(255 255 255 / .35), inset -1px -1px 0 rgb(0 0 0 / .35); }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Organise the library</a> · <span>A</span>Collections</div>
+    <h1>A · Collections</h1>
+    <p>A slim <b>Collections sidebar</b> beside the list. Collections are <b>virtual</b>: a video can sit in several at once, and nothing moves on disk. A <b>list header</b> above the rows names the place, its size, and the current <b>sort</b>. Drag rows onto a collection, or use <b>⋯ ▸ Add to collection…</b> for one or many selected videos.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+  <h2 class="section-title">Key-state screenshots</h2>
+  <p class="section-sub">Captured with <code>node docs/design/prototypes/organize/capture.cjs</code>.</p>
+  <div id="shots" class="dirs" style="--min:300px"></div>
+</main>
+<script src="../brand.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org;
+  const STATES = [['sorted', 'Sorted list'], ['sortmenu', 'Sort menu'], ['create', 'New collection'], ['drag', 'Drag onto collection'], ['moveto', 'Add to… (3 selected)'], ['folder', 'Collection view'], ['delete', 'Delete collection'], ['empty', 'Empty collection']];
+  const here = (m) => m.tab === 'folder' ? P.folder(m, m.folder) : null;
+  const pips = (m) => (it) => { const fs = it.f.map((id) => P.folder(m, id)).filter(Boolean); return fs.length ? `<span class="pips" title="In ${fs.map((f) => f.name).join(', ')}">${fs.map((f) => `<i style="--c:${f.color}"></i>`).join('')}</span>` : ''; };
+
+  const sidebar = (m) => {
+    const colls = m.folders.map((f) => {
+      const cur = m.tab === 'folder' && m.folder === f.id;
+      if (m.renaming === f.id) return `<div class="coll edit"><span class="swatch" style="--c:${f.color}"></span><input class="namefield" data-name value="${P.esc(f.name)}" aria-label="Rename collection"></div>`;
+      return `<div class="coll${m.menu && m.menu.fid === f.id ? ' menu-open' : ''}${m.drag && m.drag.target === f.id ? ' drop-hot' : ''}" role="button" tabindex="0" data-nav data-act="open" data-arg="${f.id}" data-drop="${f.id}" data-fk="coll:${f.id}" aria-current="${cur}" aria-label="${P.esc(f.name)}, ${P.count(P.inFolder(m, f.id).length)}">
+        <span class="swatch" style="--c:${f.color}"></span><span class="nm">${f.name}</span><span class="ct">${P.inFolder(m, f.id).length}</span>
+        <button class="cm" data-act="foldermenu" data-arg="${f.id}" data-fk="cm:${f.id}" tabindex="-1" aria-label="Collection options: ${P.esc(f.name)}" aria-haspopup="menu">${P.icon('more')}</button></div>`;
+    }).join('');
+    const creating = m.creating ? `<div class="coll edit"><span class="swatch" style="--c:${P.COLORS[m.folders.length % P.COLORS.length]}"></span><input class="namefield" data-name value="${m.draft || ''}" placeholder="Collection name" aria-label="New collection name"></div>` : '';
+    const hint = !m.folders.length && !m.creating ? `<div class="hint">Group videos your way, like <b style="color:var(--color-foreground-muted)">Road trips</b> or <b style="color:var(--color-foreground-muted)">Tutorials</b>. A video can be in more than one.<div style="margin-top:10px"><button class="btn" data-act="newfolder" data-arg="side">${P.icon('plus')}New collection</button></div></div>` : '';
+    return `<aside class="side" aria-label="Collections"><div class="sh">Collections<button class="iconbtn" data-act="newfolder" data-arg="side" data-fk="newcoll" aria-label="New collection" title="New collection">${P.icon('plus')}</button></div>
+      <div class="colls" data-navgroup>${colls}${creating}</div>${hint}
+      <div class="sfoot">Collections live in SnagThis. Files stay in ~/Downloads/SnagThis.</div></aside>`;
+  };
+
+  const listFor = (m) => {
+    const f = here(m);
+    if (m.tab === 'downloading') return [];
+    return P.sort(f ? P.inFolder(m, f.id) : m.items, P.getSort(m));
+  };
+
+  const head = (m) => {
+    const f = here(m), items = listFor(m), dl = m.tab === 'downloading';
+    const title = f ? `<span class="swatch" style="--c:${f.color}"></span>${f.name}` : { all: 'All videos', saved: 'Saved', downloading: 'Downloading' }[m.tab];
+    const meta = dl ? P.count(P.ACTIVE.length, 'download', 'downloads') : `${P.count(items.length)} · ${P.size(P.sumMb(items))}`;
+    const sort = dl ? `<button class="sortbtn" disabled title="Drag waiting videos to reorder">${P.icon('sort')}Queue order</button>`
+      : `<button class="sortbtn" data-act="sortmenu" data-fk="sortbtn" aria-haspopup="menu" aria-expanded="${!!(m.menu && m.menu.kind === 'sort')}" aria-label="Sort: ${P.sortLabel(P.getSort(m), true)}">${P.icon('sort')}<b>${P.sortLabel(P.getSort(m), true)}</b>${P.icon('chevron', 'chev')}</button>`;
+    return `<div class="lhead"><h2>${title}</h2><span class="meta">${meta}</span><span class="sp"></span>${sort}
+      ${m.tab === 'saved' || f ? `<span class="viewtog" role="group" aria-label="View"><button class="iconbtn" aria-pressed="true" data-act="noop" aria-label="List">${P.icon('list')}</button><button class="iconbtn" aria-pressed="false" data-act="noop" aria-label="Shelf">${P.icon('grid')}</button></span>` : ''}
+      ${f ? `<button class="iconbtn" data-act="foldermenu" data-arg="${f.id}" data-fk="headmore" aria-label="Collection options" aria-haspopup="menu">${P.icon('more')}</button>` : ''}</div>`;
+  };
+
+  const rowMenu = (m) => {
+    const id = m.menu.id, f = here(m), many = m.sel.length > 1;
+    return P.menu([
+      ...(many ? [{ lbl: `${m.sel.length} videos` }] : [{ label: 'Details', icon: 'list' }]),
+      { label: 'Add to collection…', icon: 'layers', act: 'move', arg: id, r: 'M' },
+      ...(f ? [{ label: `Remove from “${f.name}”`, icon: 'minus', act: 'uncollect', arg: id }] : []),
+      ...(many ? [] : [{ label: 'Copy link', icon: 'link' }, { label: 'Open page', icon: 'reveal' }, { label: 'Show in folder', icon: 'folder' }]),
+      'sep', { label: many ? `Remove ${m.sel.length} videos…` : 'Remove…', danger: 1 },
+    ], { anchor: `[data-fk="more:${id}"]`, label: 'Video actions', width: 236 });
+  };
+  const addMenu = (m) => {
+    const ids = m.menu.ids;
+    return P.menu([
+      { lbl: ids.length > 1 ? `Add ${ids.length} videos to` : 'Add to collection' },
+      ...m.folders.map((f) => { const n = ids.filter((id) => m.items.find((x) => x.id === id).f.includes(f.id)).length; return { label: f.name, act: 'into', arg: f.id, check: n === ids.length ? 'on' : n ? 'mixed' : 'off', r: P.inFolder(m, f.id).length }; }),
+      'sep', { label: 'New collection…', icon: 'plus', act: 'newfolder', arg: 'side' },
+      { note: 'Tick as many as you like. Files don’t move.' },
+    ], { anchor: m.menu.id ? `[data-fk="more:${m.menu.id}"]` : '[data-fk="selmove"]', label: 'Add to collection', width: 248 });
+  };
+  const collMenu = (m) => {
+    const f = P.folder(m, m.menu.fid);
+    const fromHead = m.tab === 'folder' && m.folder === f.id && m.menu.head;
+    return P.menu([
+      { label: 'Rename', icon: 'pencil', act: 'rename', arg: f.id, r: 'F2' },
+      { lbl: 'Colour' },
+      { html: `<div style="display:flex;gap:8px;padding:4px 9px 8px">${P.COLORS.map((c) => `<button class="swatch" data-act="recolor" data-arg="${c}" aria-label="Colour ${c}" style="--c:${c};width:14px;height:14px;${c === f.color ? 'outline:2px solid var(--color-foreground);outline-offset:2px' : ''}"></button>`).join('')}</div>` },
+      'sep', { label: 'Delete collection…', icon: 'trash', danger: 1, act: 'delete', arg: f.id, r: '⌫' },
+    ], { anchor: fromHead ? '[data-fk="headmore"]' : `[data-fk="coll:${f.id}"]`, align: fromHead ? 'end' : 'right', label: 'Collection options', width: 210 });
+  };
+  const confirm = (m) => {
+    const f = P.folder(m, m.confirm.id), n = P.inFolder(m, f.id).length;
+    return `<div class="pop confirm" role="alertdialog" aria-label="Delete collection" data-anchor='[data-fk="coll:${f.id}"]' data-align="right">
+      <h4>Delete “${f.name}”?</h4>
+      <p>${n ? `Its ${P.count(n)} stay in Saved and on disk, and in any other collection. Only the collection goes.` : 'It’s empty, so nothing else changes.'}</p>
+      <div class="acts"><button class="btn" data-act="close" data-default>Cancel</button><button class="btn danger" data-act="dodelete">Delete collection</button></div></div>`;
+  };
+
+  window.Org.mount({
+    states: STATES,
+    init(m) { const add = (id, f) => m.items.find((x) => x.id === id).f.push(f); add('i20', 'road'); add('i1', 'later'); add('i15', 'music'); add('i24', 'later'); },
+    view(m) {
+      const f = here(m), items = listFor(m), o = { sort: P.getSort(m), extra: pips(m) };
+      let list;
+      if (m.tab === 'downloading') list = P.activeRows();
+      else if (f && !items.length) list = P.empty({ title: `Nothing in ${f.name} yet`, text: `Drag videos onto <b style="color:var(--color-foreground)">${f.name}</b> in the sidebar, or choose ⋯ ▸ Add to collection… on any saved video.`, acts: '<button class="btn" data-act="tab" data-arg="saved">Go to Saved</button>', drop: f.id });
+      else list = (m.tab === 'all' ? P.activeRows() : '') + items.map((it) => P.row(it, m, o)).join('');
+      const over = [
+        m.menu && m.menu.kind === 'sort' ? P.sortMenu(m, '[data-fk="sortbtn"]', { scope: f ? `“${f.name}”` : m.tab === 'all' ? 'All (in-progress downloads stay on top)' : 'Saved' }) : '',
+        m.menu && m.menu.kind === 'row' ? rowMenu(m) : '',
+        m.menu && m.menu.kind === 'move' ? addMenu(m) : '',
+        m.menu && m.menu.kind === 'folder' ? collMenu(m) : '',
+        m.confirm ? confirm(m) : '',
+      ].join('');
+      const selbar = P.selbar(m, `<button class="btn" data-act="move" data-fk="selmove" aria-haspopup="menu" aria-expanded="${!!(m.menu && m.menu.kind === 'move')}">${P.icon('layers')}Add to collection…</button>${f ? `<button class="btn" data-act="uncollect">Remove from “${f.name}”</button>` : ''}<button class="btn quiet" data-act="noop">Remove…</button>`);
+      return { side: sidebar(m), head: head(m), list, over, selbar };
+    },
+    acts: {
+      into(fid, el, ev, m) {
+        const ids = m.menu ? m.menu.ids : m.sel;
+        P.snapshot(m);
+        const all = ids.every((id) => m.items.find((x) => x.id === id).f.includes(fid));
+        ids.forEach((id) => { const it = m.items.find((x) => x.id === id); if (all) it.f = it.f.filter((x) => x !== fid); else if (!it.f.includes(fid)) it.f.push(fid); });
+        const name = P.folder(m, fid).name;
+        m.toast = { text: all ? `Removed ${ids.length > 1 ? P.count(ids.length) : 'it'} from ${name}` : `Added ${ids.length > 1 ? P.count(ids.length) : `“${m.items.find((x) => x.id === ids[0]).title}”`} to ${name}` };
+      },
+      uncollect(id, el, ev, m) {
+        const ids = m.sel.length ? m.sel : [id]; const f = here(m); P.snapshot(m);
+        ids.forEach((x) => { const it = m.items.find((y) => y.id === x); it.f = it.f.filter((z) => z !== f.id); });
+        m.menu = null; m.sel = []; m.toast = { text: `Removed ${P.count(ids.length)} from ${f.name}. ${ids.length > 1 ? 'They stay' : 'It stays'} in Saved.` };
+      },
+      foldermenu(fid, el, ev, m) { const open = m.menu && m.menu.kind === 'folder'; m.confirm = null; m.menu = open ? null : { kind: 'folder', fid, head: el && el.dataset.fk === 'headmore' }; },
+      recolor(c, el, ev, m) { P.folder(m, m.menu.fid).color = c; },
+    },
+    moveInto(m, ids, fid) { // drag onto a collection adds (never removes)
+      let added = 0;
+      ids.forEach((id) => { const it = m.items.find((x) => x.id === id); if (!it.f.includes(fid)) { it.f.push(fid); added++; } });
+      m.toast = { text: added ? `Added ${ids.length > 1 ? P.count(ids.length) : `“${m.items.find((x) => x.id === ids[0]).title}”`} to ${P.folder(m, fid).name}` : `Already in ${P.folder(m, fid).name}` };
+    },
+    deleteFolder(m, fid) { const f = P.folder(m, fid); m.items.forEach((it) => { it.f = it.f.filter((x) => x !== fid); }); m.folders = m.folders.filter((x) => x.id !== fid); m.toast = { text: `Deleted “${f.name}”. Its videos are still in Saved.` }; },
+    onCreate(m, id, c) { if (!c.ids) { m.tab = 'folder'; m.folder = id; m.sel = []; } },
+    folderFocus: (id) => 'coll:' + id,
+    dropEffect: 'copy',
+    navKey(ev, nav, m, act) {
+      const coll = nav.dataset.fk && nav.dataset.fk.startsWith('coll:') ? nav.dataset.arg : null;
+      if (coll && ev.key === 'Enter') { act('open', coll); return true; }
+      if (coll && ev.key === 'F2') { act('rename', coll); return true; }
+      if (coll && (ev.key === 'Delete' || ev.key === 'Backspace')) { act('delete', coll); return true; }
+      if (coll && ((ev.key === 'F10' && ev.shiftKey) || ev.key === 'ContextMenu')) { m.menu = { kind: 'folder', fid: coll }; return true; }
+      return false;
+    },
+    presets: {
+      sorted(m) { m.sort.saved = 'size'; },
+      sortmenu(m) { m.sort.saved = 'size'; m.menu = { kind: 'sort' }; },
+      create(m) { m.creating = { where: 'side' }; m.draft = 'Game ja'; },
+      drag(m) { m.drag = { ids: ['i6'], target: 'road', anchor: '[data-drop="road"]', hint: '+ Road trips', preset: 1 }; },
+      moveto(m) { m.sel = ['i1', 'i3', 'i6']; m.menu = { kind: 'move', ids: m.sel, id: null }; },
+      folder(m) { m.tab = 'folder'; m.folder = 'road'; m.sort['f:road'] = 'oldest'; m.hot = 'i24'; },
+      delete(m) { m.tab = 'folder'; m.folder = 'road'; m.confirm = { id: 'road' }; },
+      empty(m) { m.folders.push({ id: 'jams', name: 'Game jams', color: P.COLORS[4] }); m.tab = 'folder'; m.folder = 'jams'; },
+    },
+    notes(state, m) {
+      const N = {
+        sorted: `<h2>Sorted list · Saved by Largest first</h2><p>The <b>list header</b> names the place (<b>Saved</b>, 30 videos · 23.4 GB) and the order. The value the list is sorted by is <b>brightened in each row</b> (the size here), so the order reads without a column header. Coloured pixel pips beside the duration say which collections a video is in.</p>`,
+        sortmenu: `<h2>Sort menu</h2><p>Six orders: <b>Newest saved</b> (default), Oldest saved, Name A–Z, Largest first, Longest first and Site A–Z. Each place remembers its own: Saved, All and every collection keep separate orders across launches. In <b>All</b> the order applies to saved videos; downloads in progress stay on top. <b>Downloading</b> shows <i>Queue order</i> (drag waiting rows to reorder), so it has no menu.</p><p>Keyboard: ↑/↓, Home/End, Enter; Esc returns to the button.</p>`,
+        create: `<h2>New collection</h2><p><b>+</b> in the sidebar (or ⌘K ▸ New collection) adds a name field in place. Enter creates it and opens it; Esc cancels. Each collection gets the next pixel colour, changeable from its ⋯ menu. Choosing <b>New collection…</b> from Add to… also adds the selected videos.</p>`,
+        drag: `<h2>Drag onto a collection</h2><p>Drag any saved row (or a multi-selection) onto a collection. The target lights in the accent and the chip says <b>+ Road trips</b>: dragging <b>adds</b>, it never removes the video from anywhere. Waiting rows keep their existing drag-to-reorder; only saved rows drag to collections.</p><p>Try it live: drag a row onto the sidebar.</p>`,
+        moveto: `<h2>Add to… for 3 selected videos</h2><p>⌘-click or Shift-click selects rows (Shift+↑/↓ on the keyboard); the footer becomes a selection bar. <b>Add to collection…</b> lists checkboxes: ticked = all selected are in it, a dash = some are. Ticking keeps the menu open so you can file into several at once. Single rows get the same menu from ⋯ (or press <kbd>M</kbd>).</p>`,
+        folder: `<h2>Inside a collection</h2><p>The sidebar marks the open collection; the header gains its colour, size and ⋯ (Rename, Colour, Delete). The collection has its own order (Oldest saved here). ⋯ on a row adds <b>Remove from “Road trips”</b>, which only takes it out of the collection.</p>`,
+        delete: `<h2>Delete a collection</h2><p>A popover beside the collection (keyboard: Delete on a focused collection). Only the grouping goes: <b>videos stay in Saved and on disk</b> and in other collections, so there is no Trash choice here and Undo is offered afterwards.</p>`,
+        empty: `<h2>Empty collection</h2><p>The Saved-shelf mascot with one line on how to fill it. The empty area is itself a drop target. With no collections at all, the sidebar shows a dashed hint with <b>New collection</b>; the sidebar stays hidden until the library has a video, like the tabs.</p>`,
+      };
+      return N[state] + `<div class="trade"><h3>Trade-offs</h3><ul>
+        <li><b>Virtual:</b> collections are SnagThis data (a <code>collections</code> map by history id in the library index). Finder / Explorer never sees them; the files stay flat in ~/Downloads/SnagThis.</li>
+        <li><b>Many-to-many</b> is the most flexible and never risks a file move, but it adds the most new UI (a permanent sidebar, pips, a list header).</li>
+        <li><b>Outside changes:</b> a file renamed or moved in Finder becomes <i>File was moved or deleted</i>; <b>Locate</b> keeps its collections. Deleting a file drops it from every collection.</li>
+        <li><b>Chrome:</b> the extension has no Saved library today, so nothing changes there. If one is added later it can list collections from <code>/v1</code>.</li>
+        <li>The spec lists folders and multi-select as out of scope for v1 (§13), so either needs an owner revision.</li></ul></div>`;
+    },
+  });
+  document.getElementById('shots').innerHTML = STATES.map(([id, l]) => `<a class="dir" href="state-${id}.png" style="text-decoration:none"><b style="font-size:12.5px">${l}</b><img src="state-${id}.png" alt="${l}" style="width:100%;border-radius:6px" loading="lazy"></a>`).join('');
+})();
+</script>
+</body>
+</html>

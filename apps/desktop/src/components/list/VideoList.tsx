@@ -1,6 +1,8 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type MutableRefObject } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type MutableRefObject, type ReactNode } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { RowModel } from '@m3u8/contracts/src/rows.mjs';
-import { VideoRow } from './VideoRow';
+import { libraryText } from '@m3u8/contracts/src/library.mjs';
+import { VideoRow, type SelectMode } from './VideoRow';
 import type { RowCommand } from './RowDetails';
 import { ui } from '@/lib/strings';
 import type { RequestThumbnailPreview } from './FillThumb';
@@ -11,6 +13,8 @@ interface RowHandlers {
   onRename: (row: RowModel, title: string | null) => Promise<void>;
   onRefreshLink: (row: RowModel, url: string) => Promise<void>;
   onMoveTo: (sourceId: string, targetId: string) => void;
+  onSelect: (row: RowModel, mode: SelectMode, from?: RowModel) => void;
+  dragIds: (row: RowModel) => string[];
 }
 type StableRowProps = Omit<ComponentProps<typeof VideoRow>, keyof RowHandlers> & { handlers: MutableRefObject<RowHandlers> };
 
@@ -18,7 +22,8 @@ const StableVideoRow = memo(function StableVideoRow({ row, handlers, ...props }:
   return <VideoRow {...props} row={row}
     onToggle={() => handlers.current.onToggle(row)} onCommand={(command) => handlers.current.onCommand(row, command)}
     onRename={(title) => handlers.current.onRename(row, title)} onRefreshLink={(url) => handlers.current.onRefreshLink(row, url)}
-    onMoveTo={(sourceId, targetId) => handlers.current.onMoveTo(sourceId, targetId)} />;
+    onMoveTo={(sourceId, targetId) => handlers.current.onMoveTo(sourceId, targetId)}
+    onSelect={(mode) => handlers.current.onSelect(row, mode)} dragIds={() => handlers.current.dragIds(row)} />;
 }, (previous, next) => {
   // Queue ticks rebuild row models, but the immutable saved history stays the
   // same. Check its date-dependent text too, so "Saved today" can still change.
@@ -43,14 +48,29 @@ function withLeaving(rows: RowModel[], leaving: Leaving[]) {
   return result;
 }
 
-export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyIds, hasMore, loadingMore, onLoadMore, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview, motionScope = '' }: {
+/** A group of saved videos under a collapsible header (Sort & group ▸ Group by). No label: no header. */
+export interface ListSection { key: string; label: string; meta: string; collapsed: boolean; rows: RowModel[] }
+const noSelection: ReadonlySet<string> = new Set();
+const noSelect = () => {};
+const ownId = (row: RowModel) => [String(row.source.id)];
+
+export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyIds, hasMore, loadingMore, onLoadMore, onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onRequestPreview, motionScope = '',
+  prefix, sections, onToggleSection, selectedIds = noSelection, onSelect = noSelect, dragIds = ownId, showLocation = false }: {
   motionScope?: string;
+  /** Rows before the videos: the folders of the folder being shown. */
+  prefix?: ReactNode;
+  /** Grouped videos; `rows` then lists the visible ones in order. */
+  sections?: ListSection[]; onToggleSection?: (key: string) => void;
+  selectedIds?: ReadonlySet<string>; onSelect?: (row: RowModel, mode: SelectMode, from?: RowModel) => void; dragIds?: (row: RowModel) => string[];
+  /** Name each saved video's folder in its status line (All, search results). */
+  showLocation?: boolean;
   rows: RowModel[]; apiBase: string; folder: string; expandedId: string | null; renamingId: string | null; busyIds: ReadonlySet<string>;
   hasMore: boolean; loadingMore: boolean; onLoadMore: () => void; onToggle: (row: RowModel) => void;
   onCommand: (row: RowModel, command: RowCommand) => void; onRename: (row: RowModel, title: string | null) => Promise<void>;
   onRefreshLink: (row: RowModel, url: string) => Promise<void>; onMoveTo: (sourceId: string, targetId: string) => void;
   onRequestPreview: RequestThumbnailPreview;
 }) {
+  const grouped = !!sections;
   const sentinel = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const [leaving, setLeaving] = useState<Leaving[]>([]);
@@ -91,7 +111,8 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
           { height: `${element.offsetHeight}px`, opacity: 1, transform: 'none', overflow: 'hidden' },
         ], { duration: 220, easing: EASE_OUT });
       }
-      if (left.length) setLeaving((items) => [...items.filter((entry) => !current.has(entry.row.id)), ...left]);
+      // Grouped lists re-place rows under headers, so removed rows leave at once.
+      if (left.length && !grouped) setLeaving((items) => [...items.filter((entry) => !current.has(entry.row.id)), ...left]);
       return;
     }
     // Reorders and completions: each row glides from where it was (FLIP).
@@ -100,7 +121,7 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
       const offset = before === undefined ? 0 : before - element.getBoundingClientRect().top;
       if (Math.abs(offset) > .5) element.animate([{ transform: `translateY(${offset}px)` }, { transform: 'none' }], { duration: 280, easing: EASE_OUT });
     }
-  }, [order, motionScope, rows]);
+  }, [order, motionScope, rows, grouped]);
   useLayoutEffect(() => {
     const container = list.current;
     if (!container) return;
@@ -119,10 +140,10 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
       animation.finished.then(done, done);
     }
   }, [leaving]);
-  const shown = leaving.length ? withLeaving(rows, leaving) : rows;
-  const handlers = useRef<RowHandlers>({ onToggle, onCommand, onRename, onRefreshLink, onMoveTo });
+  const shown = leaving.length && !grouped ? withLeaving(rows, leaving) : rows;
+  const handlers = useRef<RowHandlers>({ onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onSelect, dragIds });
   // Events from a memoized row must use the latest committed App callbacks.
-  useLayoutEffect(() => { handlers.current = { onToggle, onCommand, onRename, onRefreshLink, onMoveTo }; });
+  useLayoutEffect(() => { handlers.current = { onToggle, onCommand, onRename, onRefreshLink, onMoveTo, onSelect, dragIds }; });
   const [inputMode, setInputMode] = useState<'pointer' | 'keyboard'>('keyboard');
   useEffect(() => {
     const pointerInput = () => setInputMode('pointer');
@@ -145,15 +166,37 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
     return () => observer.disconnect();
   }, [hasMore, loadingMore, onLoadMore]);
   return <div ref={list} role="list" aria-label="Videos" className="video-list" data-input-mode={inputMode} onKeyDown={(event) => {
-    if (!['ArrowUp', 'ArrowDown'].includes(event.key) || (event.target as HTMLElement).matches('input,select,textarea,[role="menuitem"]')) return;
+    // ⌘↑ / Alt+↑ is the app's "up one folder".
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key) || event.metaKey || event.altKey || (event.target as HTMLElement).matches('input,select,textarea,[role="menuitem"]')) return;
     const rowElements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-row-key]'));
     const active = (event.target as HTMLElement).closest('[data-row-key]');
     const current = rowElements.findIndex((element) => element === active);
     const next = Math.max(0, Math.min(rowElements.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
-    if (rowElements[next]) { event.preventDefault(); rowElements[next].focus(); }
+    if (rowElements[next]) {
+      event.preventDefault(); rowElements[next].focus();
+      // Shift+↑/↓ extends the selection over saved videos.
+      if (event.shiftKey) {
+        const byKey = (element: Element | null | undefined) => shown.find((row) => row.id === (element as HTMLElement | null)?.dataset.rowKey);
+        const target = byKey(rowElements[next]);
+        if (target?.state === 'saved') onSelect(target, 'range', byKey(rowElements[current]));
+      }
+    }
   }}>
-    {shown.map((row) => <StableVideoRow key={row.id} row={row} inputMode={inputMode} apiBase={apiBase} folder={folder} expanded={expandedId === row.id} renaming={renamingId === row.id} busy={busyIds.has(row.id)}
-      handlers={handlers} onRequestPreview={onRequestPreview} />)}
+    {prefix}
+    {(() => {
+      const render = (row: RowModel) => <StableVideoRow key={row.id} row={row} inputMode={inputMode} apiBase={apiBase} folder={folder} expanded={expandedId === row.id} renaming={renamingId === row.id} busy={busyIds.has(row.id)}
+        selected={selectedIds.has(row.id)} location={showLocation && row.isHistory ? String(row.source.folder || '') : ''}
+        handlers={handlers} onRequestPreview={onRequestPreview} />;
+      if (!sections) return shown.map(render);
+      return sections.map((section) => <Fragment key={`section:${section.key}`}>
+        {section.label && <div role="listitem" className="group-item" data-item-key={`group:${section.key}`}>
+          <button type="button" className="group-header" data-row-key={`group:${section.key}`} aria-expanded={!section.collapsed}
+            aria-label={libraryText(section.collapsed ? 'expandGroup' : 'collapseGroup', { label: `${section.label}, ${section.meta}` })}
+            onClick={() => onToggleSection?.(section.key)}><ChevronDown className="chev" aria-hidden="true" /><b>{section.label}</b><span className="group-meta">{section.meta}</span></button>
+        </div>}
+        {!section.collapsed && section.rows.map(render)}
+      </Fragment>);
+    })()}
     {hasMore && <div ref={sentinel} className="load-more"><button className="row-action" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? ui.loading : ui.loadMore}</button></div>}
   </div>;
 }

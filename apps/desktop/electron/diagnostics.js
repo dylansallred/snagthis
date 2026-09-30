@@ -1,4 +1,4 @@
-const PRIVATE_KEY = /auth|cookie|token|secret|password|api.?key|credential|referer|origin|source|url|path|directory|filename|title|headers|signature|customFilename/i;
+const PRIVATE_KEY = /auth|cookie|token|secret|password|api.?key|credential|referer|origin|source|url|path|directory|filename|title|headers|signature|customFilename|libraryViews/i;
 
 function redact(value, secrets = [], key = '', depth = 0) {
   if (PRIVATE_KEY.test(key)) return '[redacted]';

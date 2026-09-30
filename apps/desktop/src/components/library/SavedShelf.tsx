@@ -6,6 +6,8 @@ import { FillThumb, type RequestThumbnailPreview } from '@/components/list/FillT
 import { QualityLabel } from '@/components/list/QualityLabel';
 import type { RowCommand } from '@/components/list/RowDetails';
 import { ui } from '@/lib/strings';
+import { resolveThumbnailUrl } from '@/lib/utils';
+import { endSavedDrag, startSavedDrag } from './savedDrag';
 import './SavedShelf.css';
 
 export type SavedView = 'list' | 'shelf';
@@ -79,10 +81,15 @@ function ShelfTile({ row, apiBase, busy, inputMode, onCommand, onRequestPreview 
     }).catch(() => { /* An unavailable preview keeps the existing poster. */ });
     return () => { stopped = true; };
   }, [previewActive, previewUrl, previewId, previewKind, previewKey, row.thumbnailUrl, onRequestPreview]);
+  // A saved video drags onto a folder chip, as rows do in the list.
+  const [dragging, setDragging] = useState(false);
   const command = (action: RowCommand) => { setMenuOpen(false); onCommand(action); };
   const primary = () => { if (row.action) command(row.action.id as RowCommand); };
   return <div role="listitem" className="shelf-item">
-    <div className="shelf-tile" data-row-key={row.id} data-state={row.state} role="group" tabIndex={0} aria-label={`${row.title}. ${row.statusLine}`}
+    <div className={`shelf-tile${dragging ? ' dragging' : ''}`} data-row-key={row.id} data-state={row.state} role="group" tabIndex={0} aria-label={`${row.title}. ${row.statusLine}`}
+      draggable={row.state === 'saved'}
+      onDragStart={(event) => { if (row.state !== 'saved') return; setDragging(true); startSavedDrag(event, [String(row.source.id)], { title: row.title, thumbnailUrl: resolveThumbnailUrl(row.thumbnailUrl, apiBase) }); }}
+      onDragEnd={() => { setDragging(false); endSavedDrag(); }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}
       onPointerDownCapture={() => { pointerMenu.current = true; }}
@@ -129,12 +136,12 @@ function ShelfTile({ row, apiBase, busy, inputMode, onCommand, onRequestPreview 
   </div>;
 }
 
-/** Arrow keys move through the grid by column and row; Home/End jump to the ends. */
-function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
+/** Arrow keys move through a grid of `selector` items by column and row; Home/End jump to the ends. */
+export function moveGridFocus(event: KeyboardEvent<HTMLElement>, selector: string) {
   const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
   const target = event.target as HTMLElement;
-  if (!keys.includes(event.key) || !target.matches('.shelf-tile')) return;
-  const tiles = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('.shelf-tile'));
+  if (!keys.includes(event.key) || event.metaKey || event.altKey || !target.matches(selector)) return;
+  const tiles = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(selector));
   const index = tiles.indexOf(target);
   if (index < 0) return;
   const firstTop = tiles[0].offsetTop;
@@ -174,7 +181,7 @@ export function SavedShelf({ rows, apiBase, busyIds, hasMore, loadingMore, onLoa
     return () => observer.disconnect();
   }, [hasMore, loadingMore, onLoadMore]);
   return <div className="shelf-view">
-    <div className="shelf-grid" role="list" aria-label={ui.savedShelf} data-input-mode={inputMode} onKeyDown={moveFocus}>
+    <div className="shelf-grid" role="list" aria-label={ui.savedShelf} data-input-mode={inputMode} onKeyDown={(event) => moveGridFocus(event, '.shelf-tile')}>
       {rows.map((row) => <ShelfTile key={row.id} row={row} apiBase={apiBase} busy={busyIds.has(row.id)} inputMode={inputMode}
         onCommand={(action) => onCommand(row, action)} onRequestPreview={onRequestPreview} />)}
     </div>

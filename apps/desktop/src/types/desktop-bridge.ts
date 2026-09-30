@@ -90,6 +90,8 @@ export interface DesktopBridge {
   onPairingState(cb: (request: PairingRequest | null) => void): () => void;
   onExtensionsChange(cb: (extensions: ConnectedExtension[]) => void): () => void;
   openSaveFolder(): Promise<DesktopActionResult>;
+  /** Opens a folder of Saved (a path below the save folder; '' is the save folder) in Finder or Explorer. */
+  openLibraryFolder(folderPath: string): Promise<DesktopActionResult>;
   openSettings(): Promise<DesktopActionResult>;
   openExternal(url: string): Promise<DesktopActionResult>;
   onAppInfoUpdate(cb: (info: AppInfo) => void): () => void;

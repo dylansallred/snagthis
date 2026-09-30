@@ -1,0 +1,61 @@
+/* Path-bar options: shared pieces on top of ../shared.css (tokens, window, VideoRow) and ../folder-rows/common.css
+   (1200×800 window, pixel folder glyph). Folder rows use the owner-chosen folder-rows option C, "Sections". */
+.win { transition: none; }
+.hub { max-width: 1260px; }
+
+/* ── Folder rows: C · Sections ── */
+.sec { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; background: hsl(215 22% 5.5%); border-bottom: 1px solid var(--color-border-subtle); color: var(--color-foreground-subtle); font: 400 16px/1 var(--font-pixel); letter-spacing: .08em; text-transform: uppercase; }
+.sec b { font-weight: 400; color: var(--color-primary-hover); }
+.sec .r { margin-left: auto; font: 11.5px/1 var(--font-sans); letter-spacing: 0; text-transform: none; }
+.fblock + .sec { border-top: 1px solid var(--color-border-subtle); }
+.frow { position: relative; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 14px 0 18px; border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent); background: hsl(215 22% 6.5%); transition: background 140ms; cursor: pointer; outline: none; }
+.frow::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-primary-hover); transform: scaleY(0); transition: transform 300ms; }
+.frow .ico { position: relative; width: 32px; height: 26px; flex: none; }
+.frow .ico .pxf { position: absolute; inset: 0; }
+.frow .ico .k-open { visibility: hidden; }
+.frow .nm { min-width: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frow .fm { flex: none; font-size: 12px; color: var(--color-foreground-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.frow .fm::before { content: "·"; margin-right: 8px; color: var(--color-foreground-subtle); }
+.frow .sp { flex: 1; }
+.frow.is-empty .nm { color: var(--color-foreground-muted); font-weight: 520; }
+.frow:is(:hover, :focus-visible, .drop-hot) { background: var(--color-surface-row-hover); }
+.frow:is(:hover, :focus-visible, .drop-hot)::before { transform: none; }
+.frow:not(.is-empty):is(:hover, :focus-visible, .drop-hot) .ico .k-closed { visibility: hidden; }
+.frow:not(.is-empty):is(:hover, :focus-visible, .drop-hot) .ico .k-open { visibility: visible; }
+.frow:focus-visible, .frow.drop-hot { box-shadow: inset 0 0 0 2px var(--color-primary-hover); outline: none; }
+
+/* ── Bar basics every option shares ── */
+.pbar { position: relative; z-index: 5; display: flex; align-items: center; gap: 6px; flex: none; min-width: 0; padding: 0 8px 0 10px; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; }
+.pbar [data-fit] { display: flex; align-items: center; min-width: 0; flex: 1 1 auto; overflow: hidden; padding: 4px; margin: -4px; }
+.pb-tools { display: flex; align-items: center; gap: 2px; flex: none; margin-left: auto; }
+.pb-tools .iconbtn { width: 28px; height: 28px; }
+.win.narrow .sortbtn b { max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+.pbar .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* While measuring for collapse, nothing may shrink, so real overflow shows. */
+.win.measure .pbar [data-fit] > *, .win.measure .pbar [data-fit] .nm { flex-shrink: 0 !important; }
+.pxm { display: block; flex: none; fill: currentColor; shape-rendering: crispEdges; }
+.pbar button { outline: none; }
+
+/* Drag chip with its hint. */
+.pb-ghost .hint { margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--color-border); color: var(--color-primary-hover); font-weight: 600; }
+
+/* The collapsed-middle menu. */
+.pb-more { min-width: 280px; max-width: 420px; }
+.pb-more .mi { gap: 8px; }
+.pb-more .mi .pxf { width: 16px; height: 13px; }
+.pb-more .mi .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-more .mi.drop-hot { background: var(--color-primary-muted); box-shadow: inset 0 0 0 1px var(--color-primary-hover); }
+
+/* A path card: mono path and Copy path, for tooltips and menus. */
+.pb-pathcard { display: flex; align-items: center; gap: 10px; }
+.pb-pathcard .mono { color: var(--color-foreground); overflow: hidden; text-overflow: ellipsis; }
+.pb-pathcard .btn { gap: 7px; height: 24px; padding: 0 8px; font-size: 12px; }
+.pb-pathcard .btn .pxm { color: var(--color-foreground-muted); }
+.pop.pb-tip { min-width: 0; padding: 7px 8px 7px 11px; font-size: 12px; animation: none; }
+.pop.pb-tip .k { color: var(--color-foreground-subtle); font-size: 11px; margin-left: 2px; }
+.pop .caret { top: -5px; }
+
+/* The notes column sits under the window. */
+.stage { flex-direction: column; }
+.notes { max-width: 1200px; columns: 2 380px; column-gap: 32px; }
+.notes > * { break-inside: avoid; }

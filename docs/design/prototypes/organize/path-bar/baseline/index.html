@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SnagThis · Path bar 0 · Current</title>
+<link rel="stylesheet" href="../../shared.css">
+<link rel="stylesheet" href="../../folder-rows/common.css">
+<link rel="stylesheet" href="../common.css">
+<style>
+/* Today's PathBar.tsx + organize.css, reproduced: back chevron, lucide folder, chevron separators, current bold,
+   then the full path in grey mono. No collapse: the row just clips. */
+.bl { height: 42px; gap: 4px; }
+.bl .bl-crumbs { gap: 2px; flex: 0 1 auto; }
+.bl .crumb { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--color-foreground); font-size: 13px; font-weight: 620; min-width: 0; flex-shrink: 1; }
+.bl .crumb svg.i { width: 14px; height: 14px; color: var(--color-foreground-muted); }
+.bl .crumb.up { color: var(--color-foreground-muted); font-weight: 500; }
+.bl .crumb.up:is(:hover, .is-hover) { background: var(--color-background-active); color: var(--color-foreground); }
+.bl .crumb.up:is(:focus-visible, .is-focus) { background: var(--color-background-active); color: var(--color-foreground); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 50%, transparent); }
+.bl .crumb.drop-hot { background: var(--color-primary-muted); color: var(--color-foreground); }
+.bl .sep svg.i { width: 13px; height: 13px; color: var(--color-foreground-subtle); }
+.bl .back { width: 28px; height: 28px; margin-right: 2px; }
+.bl .ptext { min-width: 0; flex: 0 1 auto; margin-left: 6px; overflow: hidden; text-overflow: ellipsis; color: var(--color-foreground-subtle); font: 11.5px/1 var(--font-mono); }
+.bl .pb-tools { margin-left: auto; }
+</style>
+</head>
+<body>
+<main class="hub">
+  <div class="intro">
+    <div class="eyebrow"><a href="../index.html">Path bar</a> · <span>0</span>Current</div>
+    <h1>0 · Current (baseline)</h1>
+    <p>Today's bar, reproduced with the same sample so the options compare fairly: <b>back chevron</b>, <b>breadcrumb with “›”</b>, <b>current folder bold</b>, then the <b>full path in grey mono</b>. Long paths are not collapsed: the crumbs and path simply clip.</p>
+  </div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="stage"><div id="window"></div><aside class="notes" id="state-notes"></aside></div>
+</main>
+<script src="../../brand.js"></script>
+<script src="../../shared.js"></script>
+<script src="../../folder-rows/shared.js"></script>
+<script src="../shared.js"></script>
+<script>
+(() => {
+  const P = window.Org, B = window.PB;
+  PB.mount({
+    fit: false,
+    bar: (m) => {
+      const segs = B.segs(m);
+      const crumbs = segs.map((s, n) => `${n ? `<span class="sep">${P.icon('chevronRight')}</span>` : ''}<button class="crumb${s.cur ? '' : ' up'}${B.st(m, s.i)}" ${B.at(s)}>${s.root ? P.icon('folder') : ''}<span class="nm">${P.esc(s.name)}</span></button>`).join('');
+      return `<nav class="pbar bl" aria-label="Folder">${m.path.length ? `<button class="iconbtn back" data-go="${P.esc(m.path.slice(0, -1).join('/'))}" aria-label="Back to ${P.esc(B.parentName(m))}" title="Back">${P.icon('chevronRight')}</button>` : ''}
+        <span class="bl-crumbs" data-fit>${crumbs}</span><span class="ptext" title="${P.esc(B.disp(m.path))}">${P.esc(B.disp(m.path))}</span>${B.tools(m)}</nav>`;
+    },
+    notes: () => `<h2>What looks off</h2><ul>
+      <li>The <b>path repeats the breadcrumb</b> right next to it, in a different font and colour, so the bar reads as two competing lines of the same thing.</li>
+      <li>Everything is the same <b>flat grey text</b>: nothing says “you are here” beyond weight, and nothing of the pixel/bevel style.</li>
+      <li>At <b>960px</b> with long names, crumbs and the path clip with no way to reach the hidden middle folders.</li>
+      <li>Drop targets only tint the segment faintly.</li></ul>`,
+  });
+  // The real back button is a left chevron.
+  const css = document.createElement('style'); css.textContent = '.bl .back svg.i { transform: scaleX(-1); }'; document.head.append(css);
+})();
+</script>
+</body>
+</html>

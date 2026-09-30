@@ -29,4 +29,5 @@ module.exports = {
   ...require('./audioTracks'),
   ...require('./selection'),
   ...require('./accents'),
+  ...require('./library'),
 };

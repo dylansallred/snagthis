@@ -15,4 +15,6 @@ export interface DesktopSettings {
   accent?: 'orange' | 'cobalt' | 'violet' | 'mint' | 'magenta';
   /** When the accent was last chosen, in ms; the later change between desktop and Chrome wins. */
   accentChangedAt?: number;
+  /** Saved's sort and grouping per place (`all`, `saved:<folder>`). */
+  libraryViews?: Record<string, { sort: import('@m3u8/contracts/src/library.mjs').SortId; group: import('@m3u8/contracts/src/library.mjs').GroupId }>;
 }
