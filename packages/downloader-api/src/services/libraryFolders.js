@@ -183,6 +183,8 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
           const map = await moveVideo(item, destination);
           if (map) jobsChanged = follow(map) || jobsChanged;
           item.folder = to;
+          // A folder videos were moved into stays in Saved after they leave it again.
+          if (to) historyIndex.keepFolder(destination);
           outcome.push({ id, ok: true, item: { ...item } });
         } catch (error) {
           const code = error instanceof LibraryError ? error.code : failureCode(error);
@@ -208,6 +210,9 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       const parentAbs = resolveFolder(parent);
       checkName(parentAbs, name);
       try { fs.mkdirSync(path.join(parentAbs, name)); } catch (error) { throw new LibraryError(409, failureCode(error)); }
+      // Saved shows a folder that holds no video only when it was made (or filled) here.
+      historyIndex.keepFolder(path.join(parentAbs, name));
+      await historyIndex.persistIndex();
       return { path: joinFolder(parent, name.normalize('NFC')) };
     });
     await rescan();
@@ -225,6 +230,8 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       if (to === from) return { path: nextPath };
       try { fs.renameSync(from, to); } catch (error) { throw new LibraryError(409, failureCode(error)); }
       const jobsChanged = follow(prefixMap(from, to));
+      historyIndex.moveKeptFolders(from, to);
+      historyIndex.keepFolder(to);
       for (const item of historyIndex.items) {
         if (item.folder === folderPath) item.folder = nextPath;
         else if (typeof item.folder === 'string' && item.folder.startsWith(`${folderPath}/`)) item.folder = nextPath + item.folder.slice(folderPath.length);
@@ -254,6 +261,8 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       };
       if (!contents.length) {
         try { removeEmpty(); } catch (error) { throw new LibraryError(409, failureCode(error)); }
+        historyIndex.forgetKeptFolders(folder);
+        await historyIndex.persistIndex();
         return { deleted: 'empty', moved: 0 };
       }
       if (mode === 'trash') {
@@ -261,6 +270,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
         const trashed = historyIndex.items.filter(inside);
         try { await onTrashFile(folder); } catch (error) { throw new LibraryError(409, failureCode(error)); }
         historyIndex.items = historyIndex.items.filter((item) => !inside(item));
+        historyIndex.forgetKeptFolders(folder);
         for (const item of trashed) {
           historyIndex.removedPaths.set(path.resolve(item.absolutePath || path.join(downloadDir, item.relativePath)), Date.now());
           if (typeof onRemoveItem === 'function') await onRemoveItem(item).catch(() => {});
@@ -289,6 +299,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
           if (fs.lstatSync(from).isDirectory()) {
             await moveDirectory(from, to);
             jobsChanged = follow(prefixMap(from, to)) || jobsChanged;
+            historyIndex.moveKeptFolders(from, to);
             const oldPath = joinFolder(folderPath, name);
             const newPath = joinFolder(parentPath, free);
             for (const item of historyIndex.items) {
@@ -300,6 +311,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
           }
         }
         removeEmpty();
+        historyIndex.forgetKeptFolders(folder);
       } catch (error) {
         await finish('folders', jobsChanged);
         const code = error instanceof LibraryError ? error.code : failureCode(error);

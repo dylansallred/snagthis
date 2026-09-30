@@ -9,8 +9,10 @@ const { isInternalName } = require('@m3u8/contracts/src/library');
  * - A *video folder* holds one saved video and its side files. New downloads get one each,
  *   named after the video and marked with `.snagthis-job.json`; older versions used the job ID
  *   (`mf3k2x1a-ab12cd`) or the title without a marker. A video folder moves as a unit.
- * - A *user folder* is any other folder the person made, here or in Finder/Explorer. Saved shows
- *   them as folders; a video lives in exactly one.
+ * - A *user folder* is any other folder the person made, here or in Finder/Explorer; a video
+ *   lives in exactly one. Saved shows those with a video somewhere inside and those made, renamed
+ *   or filled in SnagThis (HistoryIndexService.collectFolders), not every folder of a general
+ *   save folder such as Downloads.
  * - A *loose video* sits straight in a user folder (or the save folder). It moves together with
  *   the files that share its name (subtitles, poster) and its job's `{id}-…` side files.
  */
@@ -24,9 +26,38 @@ const isJunkName = (name) => JUNK.test(name);
 const stemOf = (name) => name.slice(0, name.length - path.extname(name).length);
 const normalizeStem = (value) => String(value).normalize('NFC').toLowerCase().replace(/ \(\d+\)$/, '').replace(/[^\p{L}\p{N}]+/gu, '');
 
-/** Folders SnagThis never shows: hidden ones, its own scratch space and previews. */
+// Folders that hold thousands of files and never a saved video: package and build caches, and
+// macOS bundles (apps, frameworks, photo and editing libraries) that look like folders.
+const HEAVY_DIR = /^(?:node_modules|bower_components|__pycache__|site-packages|\$RECYCLE\.BIN|System Volume Information)$|\.(?:app|bundle|framework|plugin|kext|photoslibrary|fcpbundle|imovielibrary|musiclibrary|tvlibrary|xcodeproj|xcworkspace|lrdata)$/i;
+
+/**
+ * Folders SnagThis never shows or scans: hidden ones, its own scratch space and previews, and
+ * the package, cache and bundle folders a general folder such as Downloads collects.
+ */
 function isSkippedDirName(name) {
-  return !name || name.startsWith('.') || isInternalName(name) || /^\$RECYCLE\.BIN$|^System Volume Information$/i.test(name);
+  return !name || name.startsWith('.') || isInternalName(name) || HEAVY_DIR.test(name);
+}
+
+/**
+ * `.ts` is both a video (MPEG transport stream, HLS's format) and TypeScript source. A transport
+ * stream is made of 188-byte packets that each start with the sync byte 0x47 (192-byte packets,
+ * with a 4-byte timestamp first, for M2TS), so the first three packets tell them apart.
+ */
+async function isTransportStream(fsPromises, filePath, size) {
+  if (!(size >= 3 * 192)) return false;
+  let handle;
+  try {
+    handle = await fsPromises.open(filePath, 'r');
+    const head = Buffer.alloc(3 * 192);
+    const { bytesRead } = await handle.read(head, 0, head.length, 0);
+    const synced = (offset, stride) => bytesRead >= offset + 2 * stride + 1
+      && head[offset] === 0x47 && head[offset + stride] === 0x47 && head[offset + 2 * stride] === 0x47;
+    return synced(0, 188) || synced(4, 192);
+  } catch {
+    return false;
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+  }
 }
 
 /** Job IDs are a base-36 timestamp and a short random part (createJobId). */
@@ -104,6 +135,6 @@ function folderSegments(value) {
 }
 
 module.exports = {
-  MEDIA_EXTENSIONS, isMediaName, isJunkName, isSkippedDirName, looksLikeJobId, readDirInfo, isVideoFolder,
+  MEDIA_EXTENSIONS, isMediaName, isJunkName, isSkippedDirName, isTransportStream, looksLikeJobId, readDirInfo, isVideoFolder,
   sideFilesOf, freeSuffix, suffixed, stemOf, toPosix, folderSegments,
 };

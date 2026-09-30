@@ -77,7 +77,7 @@ test('folders are real subfolders: create, rename, move a video with its side fi
 
   let info = (await request('/api/library')).body;
   assert.equal(info.root.name, 'SnagThis');
-  assert.deepEqual(info.folders.map((folder) => folder.path), ['Road trips'], 'video folders (marked, job-ID and legacy) are part of their video, not user folders');
+  assert.deepEqual(info.folders.map((folder) => folder.path), [], 'video folders (marked, job-ID and legacy) are part of their video, and an empty folder made outside SnagThis is not shown');
   const ember = await byTitle(/Ember Tide/);
   assert.equal(ember.folder, '');
   assert.equal((await byTitle(/Night bus/)).folder, '', 'a legacy job-ID folder is the video, so it sits at the top level');
@@ -300,7 +300,8 @@ test('changes made in Finder or Explorer are picked up by a rescan', async (t) =
   library.write(path.join(saveDir, 'Coast', 'Dropped in.webm'), Buffer.alloc(300, 5));
   await nextRescan();
   const info = (await request('/api/library')).body;
-  assert.deepEqual(info.folders.map((folder) => folder.path).sort(), ['Coast', 'Made in Finder', 'Made in Finder/Inside']);
+  // Folders holding a video show; an empty one made outside SnagThis does not.
+  assert.deepEqual(info.folders.map((folder) => folder.path).sort(), ['Coast', 'Made in Finder']);
   const coast = info.folders.find((folder) => folder.path === 'Coast');
   assert.equal(coast.videoCount, 1);
   const dropped = await byTitle(/Dropped in/);
