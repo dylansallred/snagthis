@@ -2,7 +2,7 @@
 
 /* Path bar (owner choice D · Minimal): plain folder names with a pixel "/" between, the current one in the accent.
    No back button and no path text: the path is in ⋯ ▸ Copy path. Middle folders fold into "…" when it doesn't fit. */
-.path-bar { display: flex; align-items: center; gap: 4px; height: 42px; padding: 0 8px 0 10px; flex-shrink: 0; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; min-width: 0; }
+.path-bar { display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 8px 0 10px; flex-shrink: 0; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-background-raised); white-space: nowrap; min-width: 0; }
 .saved-path-bar { gap: 6px; padding-left: 14px; }
 /* Room for the focus ring inside the clipped trail. */
 .path-bar .crumbs { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; margin: -4px; padding: 4px; list-style: none; overflow: hidden; }
@@ -60,8 +60,8 @@
 /* Saved's sections (owner choice C · Sections): FOLDERS n above compact folder rows, then VIDEOS n with their size.
    Only a place with subfolders has them. The labels stay pinned while the list scrolls. */
 .list-section { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; border-bottom: 1px solid var(--color-border-subtle); background: hsl(215 22% 5.5%); }
-.list-section-title { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--color-foreground-subtle); font: 400 16px/1 var(--font-pixel, var(--font-sans)); letter-spacing: .08em; text-transform: uppercase; }
-.list-section-title b { font-weight: 400; color: var(--color-primary-hover); }
+.list-section-title { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--color-foreground-subtle); font: 600 11px/1 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; }
+.list-section-title b { font-weight: 650; color: var(--color-primary-hover); }
 .list-section-meta { margin-left: auto; color: var(--color-foreground-subtle); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .list-section + :is(.video-item, .group-item) { border-top: 0; }
 .list-section + .group-item .group-header { border-top: 0; }
@@ -106,8 +106,8 @@
 /* The shelf: FOLDERS chips in a grid above the posters. */
 .folder-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); gap: 10px; padding: 14px 16px 18px; }
 .folder-chip-item { min-width: 0; }
-.saved-folder-chip { display: flex; align-items: center; gap: 11px; min-height: 54px; padding: 0 8px 0 12px; background: hsl(215 20% 9.5%); box-shadow: inset 1px 1px 0 #ffffff12, inset -1px -1px 0 #0008, 0 0 0 1px var(--color-border-subtle); cursor: pointer; outline: none; transition: background-color 140ms ease; }
-.saved-folder-chip:is(:hover, :focus-visible, :has(:focus-visible), .menu-open) { background: hsl(215 20% 12.5%); }
+.saved-folder-chip { display: flex; align-items: center; gap: 11px; min-height: 52px; padding: 0 8px 0 12px; border-radius: 8px; background: hsl(215 20% 9.5%); box-shadow: 0 0 0 1px var(--color-border-subtle); cursor: pointer; outline: none; transition: background-color 140ms ease, box-shadow 140ms ease; }
+.saved-folder-chip:is(:hover, :focus-visible, :has(:focus-visible), .menu-open) { background: hsl(215 20% 12.5%); box-shadow: 0 0 0 1px var(--color-border); }
 .saved-folder-chip:focus-visible { box-shadow: 0 0 0 2px var(--color-primary-hover); }
 .saved-folder-chip .folder-text { flex-direction: column; align-items: stretch; gap: 2px; }
 .saved-folder-chip .folder-name { font-size: 13px; }

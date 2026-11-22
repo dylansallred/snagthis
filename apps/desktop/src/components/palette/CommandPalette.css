@@ -11,16 +11,13 @@
 @keyframes palette-fade-in { from { opacity: 0; } }
 @keyframes palette-fade-out { to { opacity: 0; } }
 
-.palette-input { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--color-border-subtle); font-family: var(--palette-mono); }
+.palette-input { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--color-border-subtle); font-family: var(--font-sans); }
 .palette-prompt { color: var(--color-primary-hover); font-weight: 600; }
-.palette-field { position: relative; flex: 1; min-width: 0; height: 20px; overflow: hidden; display: flex; align-items: center; }
-.palette-field input { position: absolute; inset: 0; width: 100%; padding: 0; border: 0; background: none; color: var(--color-foreground); font: 13px/20px var(--palette-mono); caret-color: transparent; outline: none; }
+.palette-field { position: relative; flex: 1; min-width: 0; height: 22px; overflow: hidden; display: flex; align-items: center; }
+.palette-field input { position: absolute; inset: 0; width: 100%; padding: 0; border: 0; background: none; color: var(--color-foreground); font: 13.5px/22px var(--font-sans); caret-color: var(--color-primary-hover); outline: none; }
 .palette-field input::placeholder { color: var(--color-foreground-subtle); font-family: var(--font-sans); }
-.palette-field input:placeholder-shown { text-indent: 14px; }
 .palette-field input:focus-visible { outline: none; }
-/* The mirror measures the typed text so the block cursor sits right after it. */
-.palette-mirror { visibility: hidden; white-space: pre; font: 13px/20px var(--palette-mono); max-width: calc(100% - 8px); overflow: hidden; }
-.palette-cursor { flex-shrink: 0; width: 8px; height: 16px; background: var(--color-primary-hover); animation: palette-blink 1.06s steps(1) infinite; }
+.palette-mirror, .palette-cursor { display: none; }
 @keyframes palette-blink { 50% { opacity: 0; } }
 .palette-input kbd { margin-left: auto; padding: 0 5px; border-radius: 4px; background: var(--color-background-active); color: var(--color-foreground-muted); font: 500 10.5px/16px var(--font-sans); }
 
