@@ -114,25 +114,24 @@ export function UpdatedNotice({ updater, actions, initialNotesOpen = false }: { 
   const content = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!updated?.version || toasted.current === updated.version) return;
+    const snapshot = noteSnapshot(updated);
     let timer = 0;
     const show = () => {
+      window.clearTimeout(timer);
       if (toasted.current === updated.version || document.visibilityState === 'hidden') return;
-      toasted.current = updated.version;
-      const snapshot = noteSnapshot(updated);
       // After this render, so the Toaster (mounted beside the app) is listening.
-      timer = window.setTimeout(() => toast(ui.updatedToast.replace('{version}', snapshot.version), {
-        id: 'update-updated', className: 'update-toast', icon: <PixelButton size={16} />, duration: 8000,
-        action: snapshot.notes.length ? { label: ui.updateWhatsNew, onClick: () => setShown(snapshot) } : undefined,
-      }), 0);
-      // Shown once: main forgets it, so later windows and launches don't repeat it.
-      actions.markUpdatedSeen();
+      timer = window.setTimeout(() => {
+        toasted.current = snapshot.version;
+        toast(ui.updatedToast.replace('{version}', snapshot.version), {
+          id: 'update-updated', className: 'update-toast', icon: <PixelButton size={16} />, duration: 8000,
+          action: snapshot.notes.length ? { label: ui.updateWhatsNew, onClick: () => setShown(snapshot) } : undefined,
+        });
+        actions.markUpdatedSeen();
+      }, 0);
     };
-    if (document.visibilityState === 'hidden') {
-      document.addEventListener('visibilitychange', show);
-      return () => { document.removeEventListener('visibilitychange', show); window.clearTimeout(timer); };
-    }
+    document.addEventListener('visibilitychange', show);
     show();
-    return () => window.clearTimeout(timer);
+    return () => { document.removeEventListener('visibilitychange', show); window.clearTimeout(timer); };
   }, [updated, actions]);
   if (!shown || !shown.notes.length) return null;
   return <Popover.Root open onOpenChange={(open) => { if (!open) setShown(null); }}>

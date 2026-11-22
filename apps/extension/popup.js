@@ -1104,7 +1104,7 @@
    * (docs/design/prototypes/popup-settings option 3). The last tab is kept while the popup is open. ── */
   const SETTINGS_TABS = [['downloads', 'Downloads', 'section'], ['appearance', 'Appearance', 'palette'], ['connection', 'Connection', 'plug'], ['about', 'About', 'info']];
   const CONNECTION_STATES = { paired: ['ok', 'Connected'], offline: ['amber', 'SnagThis not open'], unpaired: ['grey', 'Not connected'] };
-  let settingsTab = 'downloads'; let settingsHeight = 0; let settingsState = '';
+  let settingsTab = 'downloads'; let settingsHeight = 0; let settingsState = ''; let settingsFallback = false;
   function settingsConnection() { return !appToken ? 'unpaired' : !reachable ? 'offline' : 'paired'; }
   function settingsOpen() { return $('sheet').open && $('sheet').dataset.view === 'settings'; }
   function settingIcon(glyph, tone = '') { const badge = el('span', `setting-icon${tone ? ` ${tone}` : ''}`); badge.setAttribute('aria-hidden', 'true'); badge.append(icon(glyph)); return badge; }
@@ -1201,16 +1201,18 @@
     const content = openSheet('Settings'); $('sheet').dataset.view = 'settings'; $('sheet-link').hidden = false;
     if (SETTINGS_TABS.some(([id]) => id === tab)) settingsTab = tab;
     settingsState = settingsConnection();
+    settingsFallback = getAppFallback;
     const pane = el('div', 'settings-pane'); pane.id = 'settings-panel'; pane.setAttribute('role', 'tabpanel'); pane.tabIndex = 0;
     content.append(renderSettingsTabs(), pane);
     measureSettings(); selectSettingsTab(settingsTab, true);
   }
   // A connection change while Settings is open redraws it in place, keeping the tab and tab focus.
   function syncSettings() {
-    const nextState = `${settingsConnection()}|${getAppFallback ? 'fallback' : ''}`;
-    if (!settingsOpen() || nextState === settingsState) return;
+    const nextState = settingsConnection();
+    if (!settingsOpen() || (nextState === settingsState && settingsFallback === getAppFallback)) return;
     const tabFocused = document.activeElement?.getAttribute('role') === 'tab'; const paneFocused = $('settings-panel')?.contains(document.activeElement);
     settingsState = nextState;
+    settingsFallback = getAppFallback;
     const list = $('sheet-content').querySelector('.settings-tabs'); list.replaceWith(renderSettingsTabs());
     measureSettings(); selectSettingsTab(settingsTab, tabFocused);
     if (paneFocused) $('settings-panel').focus({ preventScroll: true });

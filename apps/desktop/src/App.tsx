@@ -289,34 +289,35 @@ function App() {
   // Any open dialog owns the keyboard: app shortcuts never open something behind or on top of it.
   const [pairingOpen, setPairingOpen] = useState(false);
   const showNavigation = !emptyLibrary || filter !== 'all';
-  const modalOpen = settingsOpen || pairingOpen || !!pending || !!confirm || !!renameVideoRow || !!chromeSessionRow || !!galleryVideo || !!organize.deleteRequest || !!organize.nameDialog;
+  const modalOpen = settingsOpen || pairingOpen || !!confirm || !!renameVideoRow || !!chromeSessionRow || !!galleryVideo || !!organize.deleteRequest || !!organize.nameDialog;
+  const inputBlocked = modalOpen || !!pending;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k' && !modalOpen) { event.preventDefault(); setPaletteOpen((open) => !open); return; }
+      if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k' && !inputBlocked) { event.preventDefault(); setPaletteOpen((open) => !open); return; }
       if (paletteOpen) return;
-      if (mod && event.key.toLowerCase() === 'f' && !modalOpen && showNavigation) { event.preventDefault(); setSearchOpen(true); searchRef.current?.focus(); }
+      if (mod && event.key.toLowerCase() === 'f' && !inputBlocked && showNavigation) { event.preventDefault(); setSearchOpen(true); searchRef.current?.focus(); }
       if (mod && event.key === ',' && !modalOpen) { event.preventDefault(); setSettingsOpen(true); }
       // Escape that closes a dialog or menu (or that a panel already handled) closes only that.
       const layer = event.target instanceof Element && event.target.closest('[role="dialog"],[role="alertdialog"],[role="menu"]');
-      if (event.key === 'ArrowUp' && (event.metaKey || event.altKey) && !event.ctrlKey && !event.shiftKey && !event.defaultPrevented && !layer && !modalOpen && !editable(event.target)) {
+      if (event.key === 'ArrowUp' && (event.metaKey || event.altKey) && !event.ctrlKey && !event.shiftKey && !event.defaultPrevented && !layer && !inputBlocked && !editable(event.target)) {
         if (goUp.current()) event.preventDefault();
         return;
       }
-      if (event.key === 'Escape' && !event.defaultPrevented && !layer && !modalOpen && !editable(event.target)) {
+      if (event.key === 'Escape' && !event.defaultPrevented && !layer && !inputBlocked && !editable(event.target)) {
         // Esc clears a selection first, then collapses details.
         if (selectionSize.current) { clearSelection(); return; }
         setExpandedId(null); setPending(null);
       }
     };
     const onPaste = (event: ClipboardEvent) => {
-      if (editable(event.target) || modalOpen) return;
+      if (editable(event.target) || inputBlocked) return;
       const value = event.clipboardData?.getData('text/plain')?.trim();
       if (value && /^https?:\/\//i.test(value)) { event.preventDefault(); setPaste(value); pasteRef.current?.focus(); }
     };
     document.addEventListener('keydown', onKeyDown); document.addEventListener('paste', onPaste);
     return () => { document.removeEventListener('keydown', onKeyDown); document.removeEventListener('paste', onPaste); };
-  }, [modalOpen, paletteOpen, showNavigation, clearSelection]);
+  }, [modalOpen, inputBlocked, paletteOpen, showNavigation, clearSelection]);
   useEffect(() => {
     setDetail(null);
     if (!api || !expandedJobId) return;
@@ -594,8 +595,8 @@ function App() {
         updateChip={chipKind ? <UpdateChip updater={updater} kind={chipKind} blocking={updateBlocking.length} currentVersion={appInfo?.version || 'development'} actions={updateActions} open={updatePopoverOpen} onOpenChange={setUpdatePopoverOpen} /> : undefined} />
       <StartupLogo targetRef={brandRef} />
       <SnagMoment rows={baseRows} onQuietCompletion={() => { if (filter !== 'saved') setSavedDot(true); }} />
-      <DropOverlay disabled={modalOpen || paletteOpen} onDropLinks={(text) => { setPaste(text); return submitPaste(text); }} />
-      {pending && <QualityPicker key={pending.url} apiBase={gallery ? window.location.origin : apiBase} inspection={pending.inspection} initial={pending.selection} anchorRef={pasteRef} onDownload={finishSelection} onCancel={() => { setPending(null); requestAnimationFrame(() => pasteRef.current?.focus()); }} busy={checking} loadSample={loadSample} />}
+      <DropOverlay disabled={inputBlocked || paletteOpen} onDropLinks={(text) => { setPaste(text); return submitPaste(text); }} />
+      {pending && <QualityPicker key={pending.url} apiBase={gallery ? window.location.origin : apiBase} inspection={pending.inspection} initial={pending.selection} anchorRef={pasteRef} onDownload={finishSelection} onCancel={() => { setPending(null); requestAnimationFrame(() => pasteRef.current?.focus()); }} busy={checking} covered={modalOpen} loadSample={loadSample} />}
       {failure && <div className="connection-banner" role="alert"><span>{ui.unavailable}</span><button className="row-action labelled" onClick={() => { initialize(); library.refresh(); }}>{ui.tryAgain}</button><button className="row-action" onClick={() => openSettings('about')}>{ui.settings}</button></div>}
       {ready && !failure && !emptyLibrary && <PathBar tab={filter} searching={!!query} rootName={organize.rootName} rootDisplayPath={organize.rootDisplayPath} folder={folder} view={view}
         onView={(next) => { if (placeKey) organize.setView(placeKey, next); }} onNavigate={navigate}
@@ -611,7 +612,7 @@ function App() {
           selectedIds={organize.selected} onSelect={(row, mode, from) => organize.select(row, mode, rows, from)}
           dragIds={(row) => (organize.selected.has(row.id) ? selectedSources : [String(row.source.id)])} showLocation={filter === 'all' || !!query} savedContext={savedContext}
           onRefreshLink={async (row, url) => { await run(row.id, async () => { if (gallery) mutateDemo(row, { queueStatus: 'downloading', error: null }); else await api?.refreshSource(row.jobId || row.id, url); }); }}
-          onMoveTo={(sourceId, targetId) => { if (gallery) { setDemoRows((current) => { const moving = current.find((row) => row.id === sourceId); const target = current.findIndex((row) => row.id === targetId); if (!moving || target < 0) return current; const next = current.filter((row) => row !== moving); next.splice(target, 0, moving); return next; }); return; } const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><PixelMascot variant="first" /><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{(!connectedOnce || firstLaunchCelebrating) && <ChromeConnectCard variant="first" active={!modalOpen} gallery={gallery} demo={gallery ? params.get('pair') : null} onApproved={() => setFirstLaunchCelebrating(true)} onConnected={() => setFirstLaunchCelebrating(false)} onInstall={() => run('chrome', () => openExternal(chromeInstallUrl))} />}</div> : !failure && (query ? <p className="empty-note">{ui.noMatches}</p>
+          onMoveTo={(sourceId, targetId) => { if (gallery) { setDemoRows((current) => { const moving = current.find((row) => row.id === sourceId); const target = current.findIndex((row) => row.id === targetId); if (!moving || target < 0) return current; const next = current.filter((row) => row !== moving); next.splice(target, 0, moving); return next; }); return; } const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><PixelMascot variant="first" /><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{(!connectedOnce || firstLaunchCelebrating) && <ChromeConnectCard variant="first" active={!inputBlocked} gallery={gallery} demo={gallery ? params.get('pair') : null} onApproved={() => setFirstLaunchCelebrating(true)} onConnected={() => setFirstLaunchCelebrating(false)} onInstall={() => run('chrome', () => openExternal(chromeInstallUrl))} />}</div> : !failure && (query ? <p className="empty-note">{ui.noMatches}</p>
           : inFolderView && folder ? <div className="empty-state-quiet folder-empty"><PixelMascot variant="shelf" /><p className="empty-note">{libraryText('emptyFolderTitle', { name: organize.nameOf(folder) })}</p><p className="folder-empty-body">{libraryStrings.emptyFolderBody}</p></div>
             : <div className="empty-state-quiet"><PixelMascot variant={filter === 'downloading' ? 'dozing' : 'shelf'} /><p className="empty-note">{filter === 'downloading' ? ui.nothingDownloading : ui.noSaved}</p></div>)}
       </main>

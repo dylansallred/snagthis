@@ -116,8 +116,9 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
     return () => clearTimeout(timer);
   }, [justSaved]);
   useEffect(() => {
+    if (!expanded && !detailsMounted) return;
     if (expanded) {
-      setDetailsMounted(true);
+      if (!detailsMounted) setDetailsMounted(true);
       let frame1 = 0;
       let frame2 = 0;
       frame1 = requestAnimationFrame(() => {
@@ -135,7 +136,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
     // The saved spec sheet folds faster than the drawer (see globals.css).
     const timer = setTimeout(() => setDetailsMounted(false), reducedMotion ? 0 : saved ? 300 : 360);
     return () => clearTimeout(timer);
-  }, [expanded, reducedMotion, saved]);
+  }, [expanded, reducedMotion, detailsMounted, saved]);
   useEffect(() => { if (renaming) { setTitle(row.title); input.current?.focus(); input.current?.select(); } }, [renaming, row.title]);
   const command = (action: RowCommand) => { setMenuOpen(false); onCommand(action); };
   const menuCommand = (action: RowCommand) => {

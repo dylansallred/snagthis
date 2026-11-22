@@ -29,9 +29,9 @@ function Speaker() {
 
 type SampleState = { key: string; phase: 'loading' | 'playing'; progress: number } | null;
 
-export function QualityPicker({ inspection, initial, onDownload, onCancel, busy, apiBase, loadSample, anchorRef }: {
+export function QualityPicker({ inspection, initial, onDownload, onCancel, busy, covered = false, apiBase, loadSample, anchorRef }: {
   inspection: MediaInspection; initial: MediaSelection; onDownload: (selection: MediaSelection) => void; onCancel: () => void; busy: boolean; apiBase: string;
-  loadSample?: AudioSampleLoader; anchorRef?: RefObject<HTMLElement | null>;
+  loadSample?: AudioSampleLoader; anchorRef?: RefObject<HTMLElement | null>; covered?: boolean;
 }) {
   const variants = [...(inspection.variants || [])].sort((a, b) => (b.height || 0) - (a.height || 0));
   const tracks = useMemo(() => selectableTracks(inspection), [inspection]);
@@ -140,6 +140,7 @@ export function QualityPicker({ inspection, initial, onDownload, onCancel, busy,
     return () => window.removeEventListener('resize', place);
   }, [anchorRef, tracks.length]);
   useEffect(() => {
+    if (covered) { stopRef.current('close'); return; }
     const onPointerDown = (event: PointerEvent) => {
       if (busyRef.current) return;
       const target = event.target as Node | null;
@@ -150,7 +151,7 @@ export function QualityPicker({ inspection, initial, onDownload, onCancel, busy,
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [anchorRef]);
+  }, [anchorRef, covered]);
   useEffect(() => {
     const hidden = () => { if (document.hidden) stopRef.current('hidden'); };
     document.addEventListener('visibilitychange', hidden);

@@ -11,7 +11,7 @@ import { flushSync } from 'react-dom';
 import { mergeRows } from '@m3u8/contracts/src/rows.mjs';
 import { VideoList } from '@/components/list/VideoList';
 import { SpeedChart } from '@/components/list/SpeedChart';
-import { recordSpeeds, subscribeSpeedSamples } from '@/lib/speedHistory';
+import { SPEED_STEP_MS, recordSpeeds, subscribeSpeedSamples } from '@/lib/speedHistory';
 
 const root = createRoot(document.getElementById('root'));
 const noop = () => {};
@@ -20,6 +20,7 @@ const noPreview = async () => null;
 const job = { id: 'active', title: 'Download fixture', queueStatus: 'downloading', status: 'downloading', progress: 10, speedBps: 1000000 };
 window.rowRenders = {};
 window.commands = [];
+window.speedStepMs = SPEED_STEP_MS;
 
 function ListFixture() {
   const [progress, setProgress] = useState(10);
@@ -130,6 +131,7 @@ test('queue updates skip unchanged saved rows while keeping actions, focus and m
 
 test('reduced-motion charts follow samples without RAF and stop hidden or unmounted work', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.clock.install();
   await openFixture(page);
   await page.evaluate(() => window.mountChart());
   try {
@@ -143,11 +145,9 @@ test('reduced-motion charts follow samples without RAF and stop hidden or unmoun
     await expect.poll(() => page.evaluate(() => window.chartCounts().frames)).toBeGreaterThan(0);
     await page.evaluate(() => window.chartVisible(false));
     const hidden = await page.evaluate(() => window.chartCounts());
-    await expect.poll(() => page.evaluate(() => window.chartCounts().samples)).toBeGreaterThan(hidden.samples);
+    await page.clock.runFor(2 * await page.evaluate(() => window.speedStepMs));
     counts = await page.evaluate(() => window.chartCounts());
-    expect(counts.frames).toBe(hidden.frames);
-    expect(counts.scheduledFrames).toBe(hidden.scheduledFrames);
-    expect(counts.pathWrites).toBe(hidden.pathWrites);
+    expect(counts).toEqual(hidden);
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.evaluate(() => window.chartVisible(true));
