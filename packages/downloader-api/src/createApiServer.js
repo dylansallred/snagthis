@@ -907,14 +907,15 @@ function createApiServer(options = {}) {
   let tmdbCacheLoaded = false;
   let tmdbCacheLoadPromise = null;
 
-  function buildTmdbCacheKey(title, type) {
+  function buildTmdbCacheKey(title, type, year = null) {
     const normalizedTitle = String(title || '')
       .trim()
       .toLowerCase()
       .replace(/\s+/g, ' ')
       .slice(0, 200);
     const normalizedType = type === 'tv' ? 'tv' : 'movie';
-    return `${normalizedType}:${normalizedTitle}`;
+    const yearSuffix = Number.isFinite(Number(year)) && Number(year) >= 1920 ? `:${Math.floor(Number(year))}` : '';
+    return `${normalizedType}:${normalizedTitle}${yearSuffix}`;
   }
 
   function sanitizeTmdbResult(result) {
@@ -1078,7 +1079,8 @@ function createApiServer(options = {}) {
       });
       const lookupTitle = hints.lookupTitle || job.title || job.downloadName;
       const type = hints.isTvCandidate ? 'tv' : 'movie';
-      const cacheKey = buildTmdbCacheKey(lookupTitle, type);
+      const releaseYear = Number.isFinite(hints.releaseYear) ? hints.releaseYear : null;
+      const cacheKey = buildTmdbCacheKey(lookupTitle, type, releaseYear);
       let result = await getCachedTmdbResult(cacheKey);
       const usedCache = !!result;
 
@@ -1087,6 +1089,7 @@ function createApiServer(options = {}) {
           jobId: job.id,
           title: lookupTitle,
           type,
+          releaseYear,
           seasonNumber: hints.seasonNumber,
           episodeNumber: hints.episodeNumber,
           matchedPattern: hints.matchedPattern,
@@ -1096,6 +1099,8 @@ function createApiServer(options = {}) {
           apiKey: appConfig.tmdbApiKey,
           title: lookupTitle,
           type,
+          year: releaseYear,
+          durationSeconds: job.durationSeconds,
         });
         if (result) {
           await cacheTmdbResult(cacheKey, result);

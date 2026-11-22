@@ -286,7 +286,13 @@ function registerJobRoutes(
           matchedField: mediaHints.matchedField,
         });
         try {
-          const tmdbResult = await lookupPoster({ apiKey: config.tmdbApiKey, title, type });
+          const tmdbResult = await lookupPoster({
+            apiKey: config.tmdbApiKey,
+            title,
+            type,
+            year: Number.isFinite(mediaHints.releaseYear) ? mediaHints.releaseYear : null,
+            durationSeconds: job.durationSeconds,
+          });
           if (tmdbResult) {
             job.thumbnailUrls = Array.isArray(tmdbResult.imageUrls)
               ? tmdbResult.imageUrls.filter(Boolean)

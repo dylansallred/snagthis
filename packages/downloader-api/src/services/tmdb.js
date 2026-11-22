@@ -20,10 +20,84 @@ function fetchJson(url) {
   });
 }
 
-async function lookupPoster({ apiKey, title, type }) {
+function normalizeTitleForMatch(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function extractEntityYear(entity) {
+  const dateStr = String(entity?.release_date || entity?.first_air_date || '').trim();
+  const match = dateStr.match(/^(\d{4})/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function scoreTmdbCandidate(entity, index, { title, year, today }) {
+  const queryNorm = normalizeTitleForMatch(title);
+  const candidateNames = [entity?.title, entity?.original_title, entity?.name, entity?.original_name]
+    .map(normalizeTitleForMatch)
+    .filter(Boolean);
+
+  let score = 0;
+  if (queryNorm) {
+    if (candidateNames.includes(queryNorm)) score += 100;
+    else if (candidateNames.some((name) => name.includes(queryNorm) || queryNorm.includes(name))) score += 35;
+  }
+
+  const candidateYear = extractEntityYear(entity);
+  if (Number.isFinite(year) && candidateYear) {
+    const diff = Math.abs(candidateYear - year);
+    if (diff === 0) score += 80;
+    else if (diff === 1) score += 20;
+    else score -= 25;
+  }
+
+  const releaseDate = String(entity?.release_date || entity?.first_air_date || '').slice(0, 10);
+  if (releaseDate && today) {
+    if (releaseDate > today) score -= 30;
+    else score += 15;
+  }
+
+  if (entity?.poster_path) score += 10;
+  if (Number(entity?.vote_count) >= 50) score += 10;
+  score -= index * 2;
+  return score;
+}
+
+function selectBestTmdbCandidate(results, { title, year = null, today = new Date().toISOString().slice(0, 10) } = {}) {
+  const list = Array.isArray(results) ? results.filter(Boolean) : [];
+  if (list.length === 0) return null;
+
+  const ranked = list
+    .map((entity, index) => ({
+      entity,
+      index,
+      score: scoreTmdbCandidate(entity, index, { title, year, today }),
+    }))
+    .sort((a, b) => (b.score - a.score) || (a.index - b.index));
+
+  return ranked[0].entity;
+}
+
+function scoreRuntimeDelta(runtimeMinutes, durationSeconds) {
+  if (!Number.isFinite(runtimeMinutes) || runtimeMinutes <= 0) return 0;
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 600) return 0;
+  const fileMinutes = durationSeconds / 60;
+  const delta = Math.abs(runtimeMinutes - fileMinutes);
+  if (delta <= 4) return 70;
+  if (delta <= 8) return 45;
+  if (delta <= 14) return 15;
+  if (delta >= 20) return -45;
+  return 0;
+}
+
+async function lookupPoster({ apiKey, title, type, year = null, durationSeconds = null }) {
   if (!apiKey || !title) return null;
 
   const baseImg = 'https://image.tmdb.org/t/p/w500';
+  const parsedYear = Number.isFinite(Number(year)) && Number(year) >= 1920 ? Math.floor(Number(year)) : null;
+  const today = new Date().toISOString().slice(0, 10);
 
   const pickImages = (images) => {
     const posterList = Array.isArray(images?.posters) ? images.posters : [];
@@ -60,18 +134,26 @@ async function lookupPoster({ apiKey, title, type }) {
 
   const searchTv = async (query) => {
     try {
-      const tvResult = await fetchJson(`https://api.themoviedb.org/3/search/tv?api_key=${apiKey}&query=${query}`);
-      const tvFirst = Array.isArray(tvResult?.results) && tvResult.results[0];
-      if (!tvFirst) return null;
+      let tvResults = [];
+      if (parsedYear) {
+        const filtered = await fetchJson(`https://api.themoviedb.org/3/search/tv?api_key=${apiKey}&query=${query}&first_air_date_year=${parsedYear}`);
+        tvResults = Array.isArray(filtered?.results) ? filtered.results : [];
+      }
+      if (tvResults.length === 0) {
+        const tvResult = await fetchJson(`https://api.themoviedb.org/3/search/tv?api_key=${apiKey}&query=${query}`);
+        tvResults = Array.isArray(tvResult?.results) ? tvResult.results : [];
+      }
+      const tvBest = selectBestTmdbCandidate(tvResults, { title, year: parsedYear, today });
+      if (!tvBest) return null;
       let tvDetails = {};
       let tvImages = {};
       try {
-        tvDetails = await fetchJson(`https://api.themoviedb.org/3/tv/${tvFirst.id}?api_key=${apiKey}`);
+        tvDetails = await fetchJson(`https://api.themoviedb.org/3/tv/${tvBest.id}?api_key=${apiKey}`);
       } catch (_) {}
       try {
-        tvImages = await fetchJson(`https://api.themoviedb.org/3/tv/${tvFirst.id}/images?api_key=${apiKey}`);
+        tvImages = await fetchJson(`https://api.themoviedb.org/3/tv/${tvBest.id}/images?api_key=${apiKey}`);
       } catch (_) {}
-      const result = buildResult(tvFirst, tvDetails, tvImages);
+      const result = buildResult(tvBest, tvDetails, tvImages);
       return result ? { ...result, mediaType: 'tv' } : null;
     } catch (_) {
       return null;
@@ -80,18 +162,65 @@ async function lookupPoster({ apiKey, title, type }) {
 
   const searchMovie = async (query) => {
     try {
-      const movieResult = await fetchJson(`https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${query}`);
-      const movieFirst = Array.isArray(movieResult?.results) && movieResult.results[0];
-      if (!movieFirst) return null;
+      let movieResults = [];
+      if (parsedYear) {
+        const filtered = await fetchJson(`https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${query}&year=${parsedYear}`);
+        movieResults = Array.isArray(filtered?.results) ? filtered.results : [];
+      }
+      if (movieResults.length === 0) {
+        const movieResult = await fetchJson(`https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${query}`);
+        movieResults = Array.isArray(movieResult?.results) ? movieResult.results : [];
+      }
+      if (movieResults.length === 0) return null;
+
+      const ranked = movieResults
+        .map((entity, index) => ({
+          entity,
+          index,
+          score: scoreTmdbCandidate(entity, index, { title, year: parsedYear, today }),
+        }))
+        .sort((a, b) => (b.score - a.score) || (a.index - b.index));
+
+      let chosen = ranked[0].entity;
       let movieDetails = {};
+
+      // When no year is known and multiple remakes score closely, check runtime against durationSeconds.
+      const close = !parsedYear && Number.isFinite(durationSeconds) && durationSeconds >= 600
+        ? ranked.filter((item) => item.score >= ranked[0].score - 25).slice(0, 3)
+        : [];
+      if (close.length >= 2) {
+        const detailsByIndex = await Promise.all(
+          close.map(async (item) => {
+            try {
+              return await fetchJson(`https://api.themoviedb.org/3/movie/${item.entity.id}?api_key=${apiKey}`);
+            } catch (_) {
+              return {};
+            }
+          }),
+        );
+        let bestClose = null;
+        close.forEach((item, idx) => {
+          const details = detailsByIndex[idx] || {};
+          const totalScore = item.score + scoreRuntimeDelta(Number(details.runtime), durationSeconds);
+          if (!bestClose || totalScore > bestClose.totalScore) {
+            bestClose = { entity: item.entity, details, totalScore };
+          }
+        });
+        if (bestClose) {
+          chosen = bestClose.entity;
+          movieDetails = bestClose.details;
+        }
+      } else {
+        try {
+          movieDetails = await fetchJson(`https://api.themoviedb.org/3/movie/${chosen.id}?api_key=${apiKey}`);
+        } catch (_) {}
+      }
+
       let movieImages = {};
       try {
-        movieDetails = await fetchJson(`https://api.themoviedb.org/3/movie/${movieFirst.id}?api_key=${apiKey}`);
+        movieImages = await fetchJson(`https://api.themoviedb.org/3/movie/${chosen.id}/images?api_key=${apiKey}`);
       } catch (_) {}
-      try {
-        movieImages = await fetchJson(`https://api.themoviedb.org/3/movie/${movieFirst.id}/images?api_key=${apiKey}`);
-      } catch (_) {}
-      const result = buildResult(movieFirst, movieDetails, movieImages);
+      const result = buildResult(chosen, movieDetails, movieImages);
       return result ? { ...result, mediaType: 'movie' } : null;
     } catch (_) {
       return null;
@@ -117,4 +246,6 @@ async function lookupPoster({ apiKey, title, type }) {
 
 module.exports = {
   lookupPoster,
+  selectBestTmdbCandidate,
+  scoreRuntimeDelta,
 };

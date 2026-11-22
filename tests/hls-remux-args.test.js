@@ -74,7 +74,7 @@ test('remux args enable timestamp regeneration for concat inputs', () => {
   assert.ok(args.includes('-max_interleave_delta'));
   assert.ok(args.includes('0'));
   assert.ok(args.includes('-movflags'));
-  assert.ok(args.includes('+faststart'));
+  assert.ok(args.includes('+faststart+use_metadata_tags'));
 });
 
 test('remux args exclude timed_id3-style data streams even when subtitles are embedded separately', () => {
@@ -116,7 +116,8 @@ test('playback compatibility args re-encode HLS outputs with audio resync', () =
   assert.ok(args.includes('high'));
   assert.ok(args.includes('-level:v'));
   assert.ok(args.includes('4.1'));
-  assert.ok(args.includes('-vsync'));
+  assert.ok(args.includes('-fps_mode'));
+  assert.equal(args.includes('-vsync'), false);
   assert.ok(args.includes('cfr'));
   assert.ok(args.includes('-video_track_timescale'));
   assert.ok(args.includes('90000'));

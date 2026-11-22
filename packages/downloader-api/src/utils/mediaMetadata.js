@@ -148,6 +148,28 @@ function extractSeasonOnly(text, field) {
   return null;
 }
 
+const RELEASE_YEAR_RE = /(?:^|[\s([._-])((?:19[2-9]\d|20[0-3]\d))(?=[\s)\]._,-]|$)/g;
+
+function extractReleaseYear(text) {
+  const cleaned = stripFilenameExtension(text);
+  if (!cleaned) return null;
+  const maxYear = new Date().getUTCFullYear() + 2;
+  let lastYear = null;
+  let match;
+  RELEASE_YEAR_RE.lastIndex = 0;
+  while ((match = RELEASE_YEAR_RE.exec(cleaned)) !== null) {
+    // Only treat a 4-digit number as a release year when something precedes it
+    // (so movies titled "1917" or "2012" keep their title intact).
+    const before = cleaned.slice(0, match.index).replace(/[^a-z0-9]+/gi, '').trim();
+    if (!before) continue;
+    const year = Number.parseInt(match[1], 10);
+    if (Number.isFinite(year) && year >= 1920 && year <= maxYear) {
+      lastYear = year;
+    }
+  }
+  return lastYear;
+}
+
 function cleanLookupTitle(text) {
   let value = normalizeText(stripFilenameExtension(text));
   if (!value) return '';
@@ -160,6 +182,13 @@ function cleanLookupTitle(text) {
     .replace(/[()[\]{}]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Strip a trailing release year (e.g. "The Cat in the Hat 2003" -> "The Cat in the Hat")
+  // while leaving numeric titles like "1917" or "2012" untouched.
+  const trailingYear = value.match(/^(.+?)\s+((?:19[2-9]\d|20[0-3]\d))$/);
+  if (trailingYear && trailingYear[1].trim().length >= 2) {
+    value = trailingYear[1].trim();
+  }
 
   if (!value || GENERIC_TITLE_RE.test(value)) return '';
   return value;
@@ -225,8 +254,15 @@ function inferMediaMetadata({
     )
   );
 
+  let releaseYear = null;
+  for (const source of preferredLookupSources) {
+    releaseYear = extractReleaseYear(source);
+    if (releaseYear) break;
+  }
+
   return {
     lookupTitle: lookupTitle || cleanLookupTitle(title) || cleanLookupTitle(resourceName) || '',
+    releaseYear,
     seasonNumber: match && Number.isFinite(match.seasonNumber) ? match.seasonNumber : null,
     episodeNumber: match && Number.isFinite(match.episodeNumber) ? match.episodeNumber : null,
     isTvCandidate,
@@ -239,4 +275,5 @@ function inferMediaMetadata({
 module.exports = {
   inferMediaMetadata,
   cleanLookupTitle,
+  extractReleaseYear,
 };
