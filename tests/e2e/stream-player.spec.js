@@ -1,18 +1,23 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
+const { startFixtureServer } = require('../fixtures/server');
 
 const extension = path.resolve(__dirname, '../../apps/extension');
 
 // The popup's Preview opens player.html with a worker session. Load the shipped
 // page with only chrome.runtime stubbed; media requests never leave the test.
-async function openPlayer(page, session) {
+async function openPlayer(page, session, mediaOrigin) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   const html = fs.readFileSync(path.join(extension, 'player.html'), 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
-  await page.route('**/*', route => (route.request().url().startsWith('https://player.test/')
-    ? route.fulfill({ contentType: 'text/html', body: html }) : route.abort()));
-  await page.goto('https://player.test/player.html?session=fixture-session');
+  const pageUrl = `${mediaOrigin || 'https://player.test'}/player.html?session=fixture-session`;
+  await page.route('**/*', route => {
+    const url = route.request().url();
+    if (url === pageUrl) return route.fulfill({ contentType: 'text/html', body: html });
+    return new URL(url).origin === mediaOrigin ? route.continue() : route.abort();
+  });
+  await page.goto(pageUrl);
   await page.evaluate(value => {
     window.chrome = { runtime: { sendMessage: async message => (message.cmd === 'GET_STREAM_SESSION' ? { ok: true, session: value } : { ok: false }) } };
   }, session);
@@ -50,4 +55,24 @@ test('a DASH preview says to open the page instead of failing to load', async ({
   await expect(page.locator('#status')).toHaveText('This video can only be previewed on its page. Open the page to play it.');
   expect(await page.locator('video').getAttribute('src')).toBeNull();
   expect(errors).toEqual([]);
+});
+
+test('the HLS preview plays video and loads its WebVTT captions', async ({ page }) => {
+  const fixture = await startFixtureServer();
+  try {
+    const errors = await openPlayer(page, {
+      title: 'Captioned fixture', declaredType: 'hls', credentialed: false,
+      sourceUrl: `${fixture.baseUrl}/media/master.m3u8`,
+    }, fixture.baseUrl);
+    const video = page.locator('video');
+    await video.evaluate(element => { element.muted = true; });
+    await expect.poll(() => video.evaluate(element => element.currentTime)).toBeGreaterThan(0);
+    await expect.poll(() => video.evaluate(element => element.textTracks.length)).toBe(1);
+    await video.evaluate(element => { element.textTracks[0].mode = 'showing'; });
+    await expect.poll(() => video.evaluate(element => element.textTracks[0].cues?.[0]?.text))
+      .toBe('SnagThis fixture: first half');
+    expect(errors).toEqual([]);
+  } finally {
+    await fixture.close();
+  }
 });

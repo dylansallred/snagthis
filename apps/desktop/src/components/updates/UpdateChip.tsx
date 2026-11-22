@@ -82,7 +82,7 @@ export function UpdateChip({ updater, kind, blocking, currentVersion, actions, o
       <Popover.Content className="update-popover" data-kind={kind} side="bottom" align="end" sideOffset={8} collisionPadding={12} aria-labelledby="update-popover-title" tabIndex={-1}
         // Like Settings: focus the popover itself, so Tab and Escape work without lighting up a button.
         ref={content} onOpenAutoFocus={(event) => { event.preventDefault(); content.current?.focus({ preventScroll: true }); }}>
-        {failed ? <UpdateErrorBody updater={updater} currentVersion={currentVersion} actions={actions} titleId="update-popover-title" /> : <>
+        {failed ? <UpdateErrorBody updater={updater} currentVersion={currentVersion} actions={{ ...actions, check: () => { onOpenChange(false); actions.check(); } }} titleId="update-popover-title" /> : <>
           <h2 id="update-popover-title" className="update-pop-title">SnagThis <span className="update-pixel">{version}</span> is ready</h2>
           {notes.length > 0 && <>
             <NotesList notes={notes.slice(0, 3)} />
@@ -114,15 +114,25 @@ export function UpdatedNotice({ updater, actions, initialNotesOpen = false }: { 
   const content = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!updated?.version || toasted.current === updated.version) return;
-    toasted.current = updated.version;
-    const snapshot = noteSnapshot(updated);
-    // After this render, so the Toaster (mounted beside the app) is listening.
-    window.setTimeout(() => toast(ui.updatedToast.replace('{version}', snapshot.version), {
-      id: 'update-updated', className: 'update-toast', icon: <PixelButton size={16} />, duration: 8000,
-      action: snapshot.notes.length ? { label: ui.updateWhatsNew, onClick: () => setShown(snapshot) } : undefined,
-    }), 0);
-    // Shown once: main forgets it, so later windows and launches don't repeat it.
-    actions.markUpdatedSeen();
+    let timer = 0;
+    const show = () => {
+      if (toasted.current === updated.version || document.visibilityState === 'hidden') return;
+      toasted.current = updated.version;
+      const snapshot = noteSnapshot(updated);
+      // After this render, so the Toaster (mounted beside the app) is listening.
+      timer = window.setTimeout(() => toast(ui.updatedToast.replace('{version}', snapshot.version), {
+        id: 'update-updated', className: 'update-toast', icon: <PixelButton size={16} />, duration: 8000,
+        action: snapshot.notes.length ? { label: ui.updateWhatsNew, onClick: () => setShown(snapshot) } : undefined,
+      }), 0);
+      // Shown once: main forgets it, so later windows and launches don't repeat it.
+      actions.markUpdatedSeen();
+    };
+    if (document.visibilityState === 'hidden') {
+      document.addEventListener('visibilitychange', show);
+      return () => { document.removeEventListener('visibilitychange', show); window.clearTimeout(timer); };
+    }
+    show();
+    return () => window.clearTimeout(timer);
   }, [updated, actions]);
   if (!shown || !shown.notes.length) return null;
   return <Popover.Root open onOpenChange={(open) => { if (!open) setShown(null); }}>

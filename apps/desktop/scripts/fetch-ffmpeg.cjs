@@ -11,8 +11,15 @@ const releaseBuild = process.env.SNAGTHIS_RELEASE === '1';
 function resolveDownloads() {
   const explicit = [process.env.FFMPEG_DOWNLOAD_URL, process.env.FFPROBE_DOWNLOAD_URL];
   if (explicit.some(Boolean)) {
-    if (!explicit.every(Boolean) || !process.env.FFMPEG_SOURCE_URL) throw new Error('Custom tools require FFMPEG_DOWNLOAD_URL, FFPROBE_DOWNLOAD_URL and FFMPEG_SOURCE_URL');
-    return { urls: explicit, sourceUrl: process.env.FFMPEG_SOURCE_URL, buildSourceUrl: process.env.FFMPEG_BUILD_SOURCE_URL || process.env.FFMPEG_SOURCE_URL };
+    if (!explicit.every(Boolean) || !process.env.FFMPEG_SOURCE_URL || !process.env.FFMPEG_SHA256 || !process.env.FFPROBE_SHA256) {
+      throw new Error('Custom tools require FFMPEG_DOWNLOAD_URL, FFPROBE_DOWNLOAD_URL, FFMPEG_SOURCE_URL, FFMPEG_SHA256, and FFPROBE_SHA256');
+    }
+    return {
+      urls: explicit,
+      sha256: [process.env.FFMPEG_SHA256, process.env.FFPROBE_SHA256],
+      sourceUrl: process.env.FFMPEG_SOURCE_URL,
+      buildSourceUrl: process.env.FFMPEG_BUILD_SOURCE_URL || process.env.FFMPEG_SOURCE_URL,
+    };
   }
   if (!['x64', 'arm64'].includes(process.arch)) throw new Error(`Unsupported architecture: ${process.arch}. Supply explicit portable binaries and source URL.`);
   if (process.platform === 'darwin') {
@@ -50,7 +57,14 @@ function download(url, destination, redirects = 5) {
     const req = https.get(url, { headers: { 'User-Agent': 'SnagThis-Build/1.0' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         res.resume();
-        download(new URL(res.headers.location, url).href, destination, redirects - 1).then(resolve, reject);
+        let nextUrl;
+        try {
+          nextUrl = new URL(res.headers.location, url).href;
+        } catch (err) {
+          reject(err);
+          return;
+        }
+        download(nextUrl, destination, redirects - 1).then(resolve, reject);
         return;
       }
       if (res.statusCode !== 200) { res.resume(); reject(new Error(`Download returned HTTP ${res.statusCode}: ${url}`)); return; }

@@ -25,6 +25,7 @@ export interface MediaInspection {
   audio?: AudioRendition[];
   subtitles?: { language?: string; name?: string; url?: string }[];
   durationSeconds?: number;
+  manifestText?: string;
 }
 export class MediaInspectionError extends Error {}
 /** A refused bridge request; `code` names the reason (such as `nameDuplicate` or `folder-missing`). */
@@ -42,7 +43,9 @@ export function createApiClient(baseUrl: string, authToken = '') {
     headers.set('Content-Type', 'application/json');
     headers.set('X-Client', 'snagthis-desktop');
     if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
-    const response = await fetch(`${base}${path}`, { ...options, headers });
+    const timeoutMs = path === '/api/media/inspect' ? 60_000 : 30_000;
+    const signal = options.signal ?? (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined);
+    const response = await fetch(`${base}${path}`, { ...options, headers, signal });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       const message = typeof data?.error === 'string' ? data.error : data?.error?.message || data?.message;
@@ -76,7 +79,7 @@ export function createApiClient(baseUrl: string, authToken = '') {
       url: inspection?.mediaUrl || url, selection, mediaType: inspection?.mediaType,
       title: inspection?.title, sourcePageUrl: inspection?.sourcePageUrl || url,
       sourcePageTitle: inspection?.pageTitle, siteName: inspection?.siteName, uploader: inspection?.uploader,
-      thumbnailUrl: inspection?.thumbnailUrl, headers: inspection?.headers,
+      thumbnailUrl: inspection?.thumbnailUrl, headers: inspection?.headers, manifestText: inspection?.manifestText,
     } }),
     inspectMedia: async (url: string) => {
       try { return await post<MediaInspection>('/api/media/inspect', { mediaUrl: url }); }

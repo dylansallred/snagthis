@@ -30,8 +30,9 @@
   }
   const blockedHeaders = /^(?:origin|referer|host|user-agent|cookie|content-length|connection|range|sec-|proxy-)/i;
   function sourceFor(item) {
-    // DRM-protected media is never fetched or played for a preview.
+    // DRM-protected and YouTube media are never fetched directly for a preview.
     if (!item || item.drm || item.mediaKind === 'protected' || item.mediaKind === 'youtube-page' || item.mediaKind === 'dash-manifest' || /^audio\//i.test(item.contentType || '')) return null;
+    if (typeof SnagThisDetection === 'object' && (SnagThisDetection.isYoutubeMediaHost?.(item.url) || SnagThisDetection.youtubeId?.(item.url))) return null;
     try {
       const primary = new URL(item.url);
       if (!/^https?:$/.test(primary.protocol) || primary.username || primary.password) return null;
@@ -421,7 +422,8 @@
       hls.on(Hls.Events.MANIFEST_PARSED, () => hls.startLoad(start));
       hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
         const total = data.details?.totalduration;
-        if (data.details?.live !== false || !(total > 0) || end < Infinity && Math.abs(total - source.duration) < 1) return;
+        if (data.details?.live === true || (!(total > 0) && end === Infinity)) { fail(); return; }
+        if (!(total > 0) || (end < Infinity && Math.abs(total - source.duration) < 1)) return;
         // The rendition's own playlist is authoritative for where 25% falls.
         source.duration = total; start = total * fractions[attempt]; end = Math.min(start + seconds, total - .05);
         hls.startLoad(start); audio.currentTime = start;

@@ -131,12 +131,13 @@
   function selectionAudioLabel(selection) {
     const value = selection || {};
     if (typeof value.audioTrack === 'string' && value.audioTrack) {
+      const ordinalMatch = /#(\d+)$/.exec(value.audioTrack);
       const parts = value.audioTrack.replace(/#\d+$/, '').split('|');
       if (parts.length >= 4) {
         const characteristics = parts.pop(); const channels = parts.pop(); const language = parts.shift();
         const name = parts.join('|');
         const track = describeAudioTracks([{ language: language, name: name, channels: channels, characteristics: characteristics }])[0];
-        const base = track.unknown ? (name || null) : track.primary;
+        const base = track.unknown ? (name || (ordinalMatch ? 'Track ' + ordinalMatch[1] : null)) : track.primary;
         if (base) return base + (track.ad ? ' (AD)' : track.commentary && !track.unknown ? ' (commentary)' : '');
       }
     }
@@ -150,8 +151,14 @@
   }
   function decodeXml(value) {
     return String(value || '').replace(/&(?:lt|gt|quot|apos|amp|#(\d+)|#x([0-9a-f]+));/gi, function (entity, dec, hex) {
-      if (dec) return String.fromCodePoint(Number(dec));
-      if (hex) return String.fromCodePoint(Number.parseInt(hex, 16));
+      if (dec) {
+        const cp = Number(dec);
+        return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : entity;
+      }
+      if (hex) {
+        const cp = Number.parseInt(hex, 16);
+        return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : entity;
+      }
       return ({ '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' })[entity.toLowerCase()];
     });
   }

@@ -98,7 +98,7 @@
 .spec-action:hover { color: var(--color-foreground); background: var(--color-background-active); }
 .spec-action:hover > svg { transform: scale(1.06); }
 .spec-action.danger:hover { color: hsl(0 72% 76%); background: hsl(0 40% 18% / .55); }
-.spec-play:hover, .spec-locate:hover { background: var(--color-primary-hover); }
+.spec-play:hover, .spec-locate:hover { background: var(--color-primary-strong); }
 .spec-poster:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary-hover) 65%, transparent); }
 /* Pointer clicks leave no ring behind (keyboard focus keeps it). */
 .video-list[data-input-mode="pointer"] :is(.spec-action, .spec-play, .spec-locate, .spec-crumb):focus:not(:hover) { box-shadow: none; }

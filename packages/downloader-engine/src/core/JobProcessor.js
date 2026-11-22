@@ -370,10 +370,17 @@ function createJobProcessor({
     if (raw) {
       const fullPath = path.isAbsolute(raw) ? raw : path.resolve(storageDir, raw);
       try {
-        await fsPromises.access(fullPath);
-        return fullPath;
+        const [realDir, realFile] = await Promise.all([
+          fsPromises.realpath(storageDir),
+          fsPromises.realpath(fullPath),
+        ]);
+        const relative = path.relative(realDir, realFile);
+        const stat = await fsPromises.lstat(realFile);
+        if (relative && !relative.startsWith('..') && !path.isAbsolute(relative) && stat.isFile()) {
+          return realFile;
+        }
       } catch {
-        // Fall back to scanning known outputs if reported path is stale/missing.
+        // Fall back to scanning known outputs if reported path is stale/missing/outside storageDir.
       }
     }
 
@@ -477,6 +484,8 @@ function createJobProcessor({
     }
     let cookieJarPath = null;
     let cookieJarDirectory = null;
+    let trustOptions = null;
+    try {
     // The browser-session flow lets yt-dlp load its own cookies. Do not combine
     // them with a captured Cookie header or create a second cookie file.
     if (rawHeaders.cookie && browserSessionArgs.length === 0) {
@@ -491,8 +500,6 @@ function createJobProcessor({
       await fsPromises.writeFile(cookieJarPath, '# Netscape HTTP Cookie File\n' + cookies.join('\n') + '\n', { mode: 0o600 });
       args.push('--cookies', cookieJarPath);
     }
-    let trustOptions = null;
-    try {
     trustOptions = await createYtDlpTrustOptions(runtimeOptions.env, fsPromises);
     if (job.selection && job.selection.audioOnly) args.push('--extract-audio', '--audio-format', 'm4a');
     const subtitleArgs = buildYtDlpSubtitleArgs(job.selection);
@@ -1283,6 +1290,9 @@ function createJobProcessor({
     let totalBytesWritten = 0;
     const missingSegments = [];
 
+    let currentStreamError = null;
+    const mergedTempPaths = [];
+
     function openNextPartStream() {
       const basePath = job.filePath.replace(/\.ts$/i, '');
       const partPath = partIndex === 0
@@ -1290,9 +1300,11 @@ function createJobProcessor({
         : `${basePath}-part${partIndex}.ts`;
       partIndex += 1;
       currentPartBytes = 0;
+      currentStreamError = null;
       currentStream = fs.createWriteStream(partPath);
       currentStream.on('error', (err) => {
-        console.error('TS part file stream error during concat', {
+        currentStreamError = err;
+        logger.error('TS part file stream error during concat', {
           jobId: job.id,
           partPath,
           partIndex: partIndex - 1,
@@ -1300,10 +1312,27 @@ function createJobProcessor({
           totalBytesWritten,
           message: err && err.message,
           code: err && err.code,
-          info: err && err.info,
         });
       });
       tsParts.push(partPath);
+    }
+
+    function finishPartStream(stream) {
+      if (currentStreamError) return Promise.reject(currentStreamError);
+      return new Promise((resolve, reject) => {
+        const onError = (err) => {
+          stream.off('finish', onFinish);
+          reject(err);
+        };
+        const onFinish = () => {
+          stream.off('error', onError);
+          if (currentStreamError) reject(currentStreamError);
+          else resolve();
+        };
+        stream.once('error', onError);
+        stream.once('finish', onFinish);
+        stream.end();
+      });
     }
 
     try {
@@ -1320,7 +1349,7 @@ function createJobProcessor({
         try {
           stats = await fsPromises.stat(tempSegmentPath);
         } catch (err) {
-          console.warn('Failed to stat temp segment during concat', {
+          logger.warn('Failed to stat temp segment during concat', {
             jobId: job.id,
             tempSegmentPath,
             message: err && err.message,
@@ -1341,37 +1370,57 @@ function createJobProcessor({
 
         if (!currentStream || (currentPartBytes + stats.size) > maxPartBytes) {
           if (currentStream) {
-            await new Promise((resolve) => {
-              currentStream.once('finish', resolve);
-              currentStream.end();
-            });
+            await finishPartStream(currentStream);
           }
           openNextPartStream();
         }
 
+        if (currentStreamError) throw currentStreamError;
+
         await new Promise((resolve, reject) => {
           const readStream = fs.createReadStream(tempSegmentPath);
-          readStream.on('error', (err) => {
-            console.error('TS segment read error during concat', {
+          let settled = false;
+          const cleanup = () => {
+            readStream.off('error', onReadError);
+            readStream.off('end', onReadEnd);
+            currentStream.off('error', onWriteError);
+            currentStream.off('close', onWriteClose);
+          };
+          const fail = (err) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            readStream.unpipe(currentStream);
+            readStream.destroy();
+            reject(err);
+          };
+          const onReadError = (err) => {
+            logger.error('TS segment read error during concat', {
               jobId: job.id,
               tempSegmentPath,
               message: err && err.message,
             });
-            reject(err);
-          });
-          readStream.on('end', resolve);
+            fail(err);
+          };
+          const onWriteError = (err) => fail(err);
+          const onWriteClose = () => fail(currentStreamError || new Error('Output stream closed while merging segments'));
+          const onReadEnd = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            if (currentStreamError) reject(currentStreamError);
+            else resolve();
+          };
+          readStream.on('error', onReadError);
+          readStream.on('end', onReadEnd);
+          currentStream.once('error', onWriteError);
+          currentStream.once('close', onWriteClose);
           readStream.pipe(currentStream, { end: false });
         });
 
         currentPartBytes += stats.size;
         totalBytesWritten += stats.size;
-
-        if (deleteTempSegments) {
-          try {
-            await fsPromises.unlink(tempSegmentPath);
-          } catch (_) {
-          }
-        }
+        if (deleteTempSegments) mergedTempPaths.push(tempSegmentPath);
       }
 
       if (missingSegments.length > 0) {
@@ -1382,22 +1431,16 @@ function createJobProcessor({
         return tsParts;
       }
 
-      await new Promise((resolve, reject) => {
-        currentStream.once('finish', resolve);
-        currentStream.once('error', (err) => {
-          console.error('TS part file stream error on finish', {
-            jobId: job.id,
-            partIndex: partIndex - 1,
-            currentPartBytes,
-            totalBytesWritten,
-            message: err && err.message,
-            code: err && err.code,
-            info: err && err.info,
-          });
-          reject(err);
-        });
-        currentStream.end();
-      });
+      await finishPartStream(currentStream);
+
+      // Delete temp segments only after every merged part has flushed cleanly,
+      // so a mid-merge disk-full failure keeps the download resumable.
+      for (const tempSegmentPath of mergedTempPaths) {
+        try {
+          await fsPromises.unlink(tempSegmentPath);
+        } catch (_) {
+        }
+      }
     } catch (err) {
       if (currentStream) {
         currentStream.destroy();
@@ -1462,6 +1505,12 @@ function createJobProcessor({
 
           await requestWithRedirects(job.url, requestHeaders, (res, _finalUrl, req) => {
             return new Promise((resolve, reject) => {
+              if (res.statusCode === 416 && keptBytes > 0) {
+                res.resume();
+                const rangeErr = Object.assign(new Error('Request failed with status 416'), { statusCode: 416, resetPartial: true });
+                reject(rangeErr);
+                return;
+              }
               if (res.statusCode < 200 || res.statusCode >= 300) {
                 reject(new Error(`Request failed with status ${res.statusCode}`));
                 res.resume();
@@ -1488,8 +1537,13 @@ function createJobProcessor({
 
               const outStream = fs.createWriteStream(tempFilePath, { flags: resumed ? 'a' : 'w' });
               directWriteStream = outStream;
+              let aborted = false;
+              res.on('aborted', () => {
+                aborted = true;
+                outStream.destroy(new Error('The download connection ended early'));
+              });
               outStream.on('error', (err) => {
-                console.error('Direct job file stream error', {
+                logger.error('Direct job file stream error', {
                   jobId: job.id,
                   message: err && err.message,
                 });
@@ -1497,7 +1551,8 @@ function createJobProcessor({
               });
               outStream.on('finish', () => {
                 // A connection that closes early must not be saved as the file.
-                if (expectedBytes > 0 && job.bytesDownloaded !== expectedBytes) reject(new Error('The download ended before the whole file arrived'));
+                if (aborted || !res.complete) reject(new Error('The download ended before the whole file arrived'));
+                else if (expectedBytes > 0 && job.bytesDownloaded !== expectedBytes) reject(new Error('The download ended before the whole file arrived'));
                 else resolve();
               });
 
@@ -1529,6 +1584,10 @@ function createJobProcessor({
         } catch (err) {
           await closeWriteStream(directWriteStream);
           lastErr = err;
+          if (err && err.resetPartial) {
+            job.directValidator = null;
+            await unlinkIfExists(tempFilePath, { jobId: job.id, reason: 'direct-416-reset' });
+          }
           if (job.cancelled || isLocalWriteError(err) || attempt >= DIRECT_MAX_ATTEMPTS) {
             break;
           }
@@ -2000,6 +2059,7 @@ function createJobProcessor({
           // Check if segment already exists from previous download
           if (existingSegments.has(i)) {
             const probeResult = await probeSegmentFile(canonicalSegmentPath, { FFPROBE_PATH });
+            let resumedValid = true;
             if (!probeResult.skipped) {
               if (probeResult.ok) {
                 const analysis = analyzeSegmentProbe(probeResult.probeData, expectedSegmentProfile);
@@ -2017,6 +2077,9 @@ function createJobProcessor({
                 if (promoteObservedProfile) {
                   expectedSegmentProfile = analysis.observedProfile;
                 }
+                if (analysis.shouldRetry) {
+                  resumedValid = false;
+                }
               } else {
                 recordSegmentDiagnostic(job, {
                   index: i,
@@ -2027,29 +2090,35 @@ function createJobProcessor({
                   validatedAt: Date.now(),
                   promoteObservedProfile: false,
                 });
+                resumedValid = false;
               }
             }
-            success = true;
-            job.completedSegments += 1;
-            
-            // Mark segment as completed immediately
-            job.segmentStates[i] = {
-              status: 'completed',
-              attempt: 1,
-              completedAt: Date.now(),
-              resumed: true,
-            };
-            
-            // Update progress
-            const actuallyCompleted = Object.values(job.segmentStates).filter(
-              s => s && s.status === 'completed'
-            ).length;
-            job.progress = job.totalSegments
-              ? Math.round((actuallyCompleted / job.totalSegments) * 100)
-              : 0;
-            job.updatedAt = Date.now();
-            
-            continue; // Skip to next segment
+            if (resumedValid) {
+              success = true;
+              job.completedSegments += 1;
+
+              // Mark segment as completed immediately
+              job.segmentStates[i] = {
+                status: 'completed',
+                attempt: 1,
+                completedAt: Date.now(),
+                resumed: true,
+              };
+
+              // Update progress
+              const actuallyCompleted = Object.values(job.segmentStates).filter(
+                s => s && s.status === 'completed'
+              ).length;
+              job.progress = job.totalSegments
+                ? Math.round((actuallyCompleted / job.totalSegments) * 100)
+                : 0;
+              job.updatedAt = Date.now();
+
+              continue; // Skip to next segment
+            }
+            // Corrupt/incomplete resumed piece: drop it and re-download below.
+            existingSegments.delete(i);
+            await unlinkIfExists(canonicalSegmentPath, { jobId: job.id, segmentIndex: i, reason: 'corrupt-resumed-segment' });
           }
 
           // Check if another racing thread already completed this segment
@@ -2367,6 +2436,13 @@ function createJobProcessor({
         }
         job.updatedAt = Date.now();
       }
+      if (job.cancelled) {
+        const preserveSegmentsForPause = !!job.pauseRequested && !job.cleanupOnCancel;
+        await cleanupCancelledHlsArtifacts(job, jobTempDir, { preserveSegments: preserveSegmentsForPause });
+        job.status = 'cancelled';
+        job.updatedAt = Date.now();
+        return;
+      }
 
       const segmentFiles = segments.map((_, index) => path.join(jobTempDir, `seg-${index}.ts`));
       job.segmentFiles = segmentFiles;
@@ -2455,7 +2531,7 @@ function createJobProcessor({
         job.status = 'completed';
         job.error = null;
       }
-      if (job.status === 'completed' || job.status === 'completed-with-errors' || job.status === 'error') {
+      if (job.status === 'completed' || job.status === 'completed-with-errors') {
         if (job.totalSegments && job.completedSegments > 0) {
           job.progress = 100;
         }

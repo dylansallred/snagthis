@@ -67,24 +67,30 @@ export function SwitchRow({ id, label, hint, checked, onChange }: { id: string; 
     onClick={(event) => { if (!(event.target as Element).closest('button, a, input, select, label')) onChange(!checked); }} />;
 }
 
-function useDraftField(id: string, value: string, validate: (draft: string) => string, save: (draft: string) => Promise<boolean>) {
+function useDraftField(id: string, value: string, validate: (draft: string) => string, save: (draft: string) => Promise<boolean>, normalize: (draft: string) => string = (draft) => draft) {
   const { register } = useForm();
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState('');
   const focused = useRef(false);
-  const state = useRef({ draft, value, validate, save });
-  state.current = { draft, value, validate, save };
+  const state = useRef({ draft, value, validate, save, normalize });
+  state.current = { draft, value, validate, save, normalize };
   // Follow saved values (reset to defaults, another window) unless the person is typing.
   useEffect(() => { if (!focused.current) { setDraft(value); setError(''); } }, [value]);
   const commit = async (next = state.current.draft) => {
-    if (next === state.current.value) { setError(''); return; }
-    const problem = state.current.validate(next);
+    const normalized = state.current.normalize(next);
+    if (normalized === state.current.value) {
+      if (next !== state.current.value) setDraft(state.current.value);
+      setError('');
+      return;
+    }
+    const problem = state.current.validate(normalized);
     setError(problem);
     if (problem) return;
-    if (!await state.current.save(next)) setDraft(state.current.value);
+    if (!await state.current.save(normalized)) setDraft(state.current.value);
+    else if (normalized !== next) setDraft(normalized);
   };
   const revert = () => { setDraft(state.current.value); setError(''); };
-  useEffect(() => register(id, { dirty: () => state.current.draft !== state.current.value, commit: () => { void commit(); }, revert }), [id, register]);
+  useEffect(() => register(id, { dirty: () => state.current.normalize(state.current.draft) !== state.current.value, commit: () => { void commit(); }, revert }), [id, register]);
   return {
     draft, error, setDraft, commit, revert,
     inputProps: {
@@ -104,9 +110,9 @@ export function NumberSetting({ id, settingKey, label, hint, value, min, max }: 
   const { commit: save } = useForm();
   const rangeError = ui.numberRange.replace('{min}', String(min)).replace('{max}', String(max));
   const field = useDraftField(id, String(value), (draft) => /^\d+$/.test(draft.trim()) && Number(draft) >= min && Number(draft) <= max ? '' : rangeError,
-    (draft) => save({ [settingKey]: Number(draft) }, id, label));
+    (draft) => save({ [settingKey]: Number(draft) }, id, label), (draft) => draft.trim());
   const step = (delta: number) => {
-    const current = /^\d+$/.test(field.draft) ? Number(field.draft) : value;
+    const current = /^\d+$/.test(field.draft.trim()) ? Number(field.draft.trim()) : value;
     const next = String(Math.max(min, Math.min(max, current + delta)));
     field.setDraft(next);
     void field.commit(next);
@@ -115,9 +121,9 @@ export function NumberSetting({ id, settingKey, label, hint, value, min, max }: 
   return <SettingRow id={id} htmlFor={id} label={label} hint={field.error || hint} hintId={`${id}-hint`} error={!!field.error}
     control={<div className="settings-stepper">
       <div className="stepper">
-        <button type="button" aria-label={ui.decrease.replace('{label}', label)} disabled={current <= min} onClick={() => step(-1)}><Minus /></button>
+        <button type="button" aria-label={ui.decrease.replace('{label}', label)} disabled={current <= min} onMouseDown={(event) => event.preventDefault()} onClick={() => step(-1)}><Minus /></button>
         <input {...field.inputProps} type="number" inputMode="numeric" min={min} max={max} step={1} aria-describedby={`${id}-hint`} />
-        <button type="button" aria-label={ui.increase.replace('{label}', label)} disabled={current >= max} onClick={() => step(1)}><Plus /></button>
+        <button type="button" aria-label={ui.increase.replace('{label}', label)} disabled={current >= max} onMouseDown={(event) => event.preventDefault()} onClick={() => step(1)}><Plus /></button>
       </div>
       <span className="settings-range" aria-hidden="true">{ui.numberBounds.replace('{min}', String(min)).replace('{max}', String(max))}</span>
     </div>} />;
@@ -129,7 +135,7 @@ export function TextSetting({ id, settingKey, label, hint, value, secret, placeh
 }) {
   const { commit: save } = useForm();
   const [visible, setVisible] = useState(false);
-  const field = useDraftField(id, value, validate || (() => ''), (draft) => save({ [settingKey]: draft.trim() }, id, label));
+  const field = useDraftField(id, value, validate || (() => ''), (draft) => save({ [settingKey]: draft }, id, label), (draft) => draft.trim());
   return <SettingRow id={id} htmlFor={id} label={label} hint={field.error || hint} hintId={`${id}-hint`} error={!!field.error}
     control={<div className="key-field">
       <input {...field.inputProps} ref={inputRef} type={secret && !visible ? 'password' : 'text'} placeholder={placeholder} aria-describedby={`${id}-hint`} autoComplete="off" spellCheck={false} />

@@ -17,8 +17,14 @@ async function cleanupOldSegmentFiles({ fsPromises, downloadDir, maxAgeHours, pr
       const owner = linkedJobId(item.name);
       if (!owner || protectedIds.has(owner)) continue;
       const target = path.join(downloadDir, item.name);
-      const stats = await fsPromises.stat(target);
-      if (stats.mtimeMs < oldest) await fsPromises.rm(target, { recursive: true, force: true });
+      try {
+        const stats = await fsPromises.stat(target);
+        if (stats.mtimeMs < oldest) await fsPromises.rm(target, { recursive: true, force: true });
+      } catch (entryError) {
+        if (entryError && entryError.code !== 'ENOENT') {
+          logger.warn('Could not clean abandoned temporary download directory', { error: entryError.message });
+        }
+      }
     }
   } catch (error) {
     logger.warn('Could not clean abandoned temporary downloads', { error: error.message });

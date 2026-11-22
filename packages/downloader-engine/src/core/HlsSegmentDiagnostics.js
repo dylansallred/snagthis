@@ -230,6 +230,8 @@ function ensureSegmentDiagnostics(job) {
   return job.segmentDiagnostics;
 }
 
+const { redactUrl } = require('../utils/redact');
+
 function recordSegmentDiagnostic(job, entry) {
   const diagnostics = ensureSegmentDiagnostics(job);
   diagnostics.validatedSegments += 1;
@@ -246,8 +248,8 @@ function recordSegmentDiagnostic(job, entry) {
   diagnostics.issueCount += entry.issues.length;
   diagnostics.segmentsWithIssues.push({
     index: entry.index,
-    url: entry.url,
-    path: entry.path,
+    url: typeof entry.url === 'string' ? redactUrl(entry.url) : null,
+    path: typeof entry.path === 'string' ? path.basename(entry.path) : null,
     observedProfile: entry.observedProfile || null,
     issues: entry.issues,
     validatedAt: entry.validatedAt || Date.now(),
@@ -265,7 +267,7 @@ async function writeSegmentDiagnosticsReport(job, outputDir) {
   const payload = {
     jobId: job.id,
     title: job.title,
-    sourceUrl: job.url,
+    sourceUrl: typeof job.url === 'string' ? redactUrl(job.url) : null,
     validatedSegments: diagnostics.validatedSegments,
     issueCount: diagnostics.issueCount,
     expectedProfile: diagnostics.expectedProfile || null,
@@ -274,7 +276,7 @@ async function writeSegmentDiagnosticsReport(job, outputDir) {
   };
 
   try {
-    await fs.promises.writeFile(reportPath, JSON.stringify(payload, null, 2), 'utf8');
+    await fs.promises.writeFile(reportPath, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 });
     diagnostics.reportPath = reportPath;
     return reportPath;
   } catch (err) {

@@ -34,6 +34,8 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
   const containerRef = useRef<HTMLDivElement>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const layoutRef = useRef<{ cellW: number; cellH: number; cols: number; gap: number; piecesPerCell: number } | null>(null);
+  const canvasSizeRef = useRef<{ width: number; height: number; dpr: number } | null>(null);
+  const hoveredCellRef = useRef<number | null>(null);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -60,13 +62,17 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
 
     layoutRef.current = { cellW: cellSize, cellH: cellSize, cols, gap, piecesPerCell };
 
-    canvas.width = containerWidth * dpr;
-    canvas.height = canvasHeight * dpr;
-    canvas.style.width = `${containerWidth}px`;
-    canvas.style.height = `${canvasHeight}px`;
+    const prev = canvasSizeRef.current;
+    if (!prev || prev.width !== containerWidth || prev.height !== canvasHeight || prev.dpr !== dpr) {
+      canvas.width = containerWidth * dpr;
+      canvas.height = canvasHeight * dpr;
+      canvas.style.width = `${containerWidth}px`;
+      canvas.style.height = `${canvasHeight}px`;
+      canvasSizeRef.current = { width: containerWidth, height: canvasHeight, dpr };
+    }
     canvas.dataset.piecesPerCell = String(piecesPerCell);
     canvas.setAttribute('aria-label', `${totalSegments} download segments${piecesPerCell > 1 ? `, grouped in sets of up to ${piecesPerCell}` : ''}; status is summarized above`);
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, containerWidth, canvasHeight);
 
     // Resolve CSS variable colors once
@@ -75,20 +81,30 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
       resolvedColors[status] = resolveCssColor(cssVar);
     }
     const retryInterior = resolveCssColor('var(--color-surface-row)');
+    const statusOrder = ['pending', 'downloading', 'completed', 'retrying', 'failed'] as const;
+    const counts = [0, 0, 0, 0, 0];
 
     for (let cell = 0; cell < cells; cell++) {
       const first = cell * piecesPerCell;
       const last = Math.min(totalSegments, first + piecesPerCell);
-      const counts = new Map<string, number>();
+      counts[0] = 0; counts[1] = 0; counts[2] = 0; counts[3] = 0; counts[4] = 0;
       for (let index = first; index < last; index++) {
         const status = segmentStates?.[String(index)]?.status || 'pending';
-        counts.set(status, (counts.get(status) || 0) + 1);
+        if (status === 'completed') counts[2] += 1;
+        else if (status === 'downloading') counts[1] += 1;
+        else if (status === 'retrying') counts[3] += 1;
+        else if (status === 'failed') counts[4] += 1;
+        else counts[0] += 1;
       }
       const x = (cell % cols) * step;
       const y = Math.floor(cell / cols) * step;
       let offset = 0;
-      for (const [status, count] of counts) {
-        const width = cellSize * count / (last - first);
+      const span = last - first;
+      for (let s = 0; s < statusOrder.length; s++) {
+        const count = counts[s];
+        if (count === 0) continue;
+        const status = statusOrder[s];
+        const width = cellSize * count / span;
         ctx.globalAlpha = status === 'pending' ? 0.25 : status === 'retrying' ? 0.75 : 1;
         ctx.fillStyle = resolvedColors[status] || resolvedColors.pending;
         if (status === 'retrying' && width > 2) {
@@ -110,6 +126,9 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     ctx.globalAlpha = 1;
   }, [totalSegments, segmentStates]);
 
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+
   useEffect(() => {
     draw();
   }, [draw]);
@@ -117,10 +136,10 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const observer = new ResizeObserver(() => draw());
+    const observer = new ResizeObserver(() => drawRef.current());
     observer.observe(container);
     return () => observer.disconnect();
-  }, [draw]);
+  }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -135,8 +154,11 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
     const row = Math.floor(y / step);
     const idx = (row * layout.cols + col) * layout.piecesPerCell;
 
-    if (col >= layout.cols || idx < 0 || idx >= totalSegments || x % step > layout.cellW || y % step > layout.cellH) {
-      setTooltip(null);
+    if (col < 0 || row < 0 || col >= layout.cols || idx < 0 || idx >= totalSegments || x % step > layout.cellW || y % step > layout.cellH) {
+      if (hoveredCellRef.current !== null) {
+        hoveredCellRef.current = null;
+        setTooltip(null);
+      }
       return;
     }
 
@@ -156,10 +178,18 @@ export const SegmentHeatmap = memo(function SegmentHeatmap({ totalSegments, segm
 
     const containerRect = containerRef.current?.getBoundingClientRect();
     const tooltipX = containerRect ? e.clientX - containerRect.left : x;
+    if (hoveredCellRef.current === idx) {
+      setTooltip((prev) => (prev && prev.text === text && Math.abs(prev.x - tooltipX) < 2 ? prev : { x: tooltipX, y: -24, text }));
+      return;
+    }
+    hoveredCellRef.current = idx;
     setTooltip({ x: tooltipX, y: -24, text });
   }, [totalSegments, segmentStates]);
 
-  const handleMouseLeave = useCallback(() => setTooltip(null), []);
+  const handleMouseLeave = useCallback(() => {
+    hoveredCellRef.current = null;
+    setTooltip(null);
+  }, []);
 
   if (totalSegments <= 0) return null;
 

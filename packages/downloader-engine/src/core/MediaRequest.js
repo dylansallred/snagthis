@@ -315,10 +315,13 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
       }
       if (splitPieces && /^#EXT-X-BYTERANGE:/i.test(trimmed)) return null;
       if (splitPieces && /^#EXT-X-MAP:/i.test(trimmed)) {
-        const range = trimmed.match(/\bBYTERANGE="(\d+)@(\d+)"/i);
+        const range = trimmed.match(/\bBYTERANGE="(\d+)(?:@(\d+))?"/i);
         if (range && Number(range[1]) > 0) {
-          const start = Number(range[2]);
-          return line.replace(/,?\s*BYTERANGE="[^"]*"/i, '')
+          const start = range[2] !== undefined ? Number(range[2]) : 0;
+          const withoutRange = line
+            .replace(/,\s*BYTERANGE="[^"]*"/i, '')
+            .replace(/#EXT-X-MAP:\s*BYTERANGE="[^"]*",\s*/i, '#EXT-X-MAP:');
+          return withoutRange
             .replace(/\bURI="([^"]+)"/, (_match, uri) => `URI="${mapPieceUrl(mediaUrl(uri, finalUrl).href, { start, end: start + Number(range[1]) - 1 })}"`);
         }
       }
@@ -372,7 +375,28 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           const part = chunk.subarray(0, expected - event.bytesTransferred);
           if (part.length) {
             if (response.destroyed) throw Object.assign(new Error('Media client disconnected.'), { code: 'ECONNRESET' });
-            if (!response.write(part)) await new Promise((resolve) => response.once('drain', resolve));
+            if (!response.write(part)) {
+              await new Promise((resolve, reject) => {
+                const onDrain = () => {
+                  response.off('close', onAbort);
+                  response.off('error', onError);
+                  resolve();
+                };
+                const onAbort = () => {
+                  response.off('drain', onDrain);
+                  response.off('error', onError);
+                  reject(Object.assign(new Error('Media client disconnected.'), { code: 'ECONNRESET' }));
+                };
+                const onError = (err) => {
+                  response.off('drain', onDrain);
+                  response.off('close', onAbort);
+                  reject(err);
+                };
+                response.once('drain', onDrain);
+                response.once('close', onAbort);
+                response.once('error', onError);
+              });
+            }
             event.bytesTransferred += part.length;
             notify({ ...event, type: 'progress', bytesDelta: part.length });
           }
@@ -383,7 +407,32 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
           error.code = 'INCOMPLETE_MEDIA_RESPONSE';
           throw error;
         }
-        await new Promise((resolve) => response.end(resolve));
+        await new Promise((resolve, reject) => {
+          if (response.destroyed) {
+            reject(Object.assign(new Error('Media client disconnected.'), { code: 'ECONNRESET' }));
+            return;
+          }
+          const onFinish = () => {
+            response.off('close', onAbort);
+            response.off('error', onError);
+            resolve();
+          };
+          const onAbort = () => {
+            response.off('finish', onFinish);
+            response.off('error', onError);
+            if (response.writableFinished) resolve();
+            else reject(Object.assign(new Error('Media client disconnected.'), { code: 'ECONNRESET' }));
+          };
+          const onError = (err) => {
+            response.off('finish', onFinish);
+            response.off('close', onAbort);
+            reject(err);
+          };
+          response.once('finish', onFinish);
+          response.once('close', onAbort);
+          response.once('error', onError);
+          response.end();
+        });
         if (consumer === 'download') recordDelivered(remoteUrl, { completeResource: false, range: event.range });
         notify({ ...event, type: 'complete', bytesDelta: 0 });
       }, { credentialOrigin: credentialOrigin || root.origin, sourcePageUrl, timeoutMs: 30_000, signal: controller.signal, headerPolicy });
@@ -413,7 +462,16 @@ async function startScopedMediaProxy({ rootUrl, headers = {}, sourcePageUrl, cre
       await servePiece(request, response, controller, remoteUrl, piece, consumer);
       return;
     }
-    const snapshot = Object.hasOwn(playlistSnapshots, remoteUrl) ? playlistSnapshots[remoteUrl] : null;
+    const normalizedSnapshotKey = (() => {
+      if (Object.hasOwn(playlistSnapshots, remoteUrl)) return remoteUrl;
+      for (const key of Object.keys(playlistSnapshots)) {
+        try {
+          if (new URL(key).href === remoteUrl) return key;
+        } catch { /* ignore invalid key */ }
+      }
+      return null;
+    })();
+    const snapshot = normalizedSnapshotKey ? playlistSnapshots[normalizedSnapshotKey] : null;
     if (snapshot) {
       // A playlist the page received from a POST or blob cannot be fetched
       // again; serve the text the page itself played, resolved to its URL.

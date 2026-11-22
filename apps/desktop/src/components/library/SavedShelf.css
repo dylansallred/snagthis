@@ -11,7 +11,9 @@
 .shelf-item { min-width: 0; }
 .shelf-tile { position: relative; display: flex; flex-direction: column; min-width: 0; border-radius: 8px; outline: none; }
 .shelf-tile:focus-visible { outline: none; }
-.shelf-tile:focus-visible .shelf-poster { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.shelf-tile:focus-visible .shelf-poster, .shelf-tile.selected .shelf-poster { box-shadow: 0 0 0 2px var(--color-primary-hover); }
+.shelf-group-item { margin: 0 -16px 12px; }
+.shelf-group-grid + .shelf-group-item { margin-top: 18px; }
 
 .shelf-poster { position: relative; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--color-background); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08); cursor: pointer; }
 .shelf-tile[data-state="missing"] .shelf-poster { cursor: default; }

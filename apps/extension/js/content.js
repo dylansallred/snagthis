@@ -238,7 +238,7 @@
       return null;
     }
   }
-  function collectPageContext(mediaUrl = '') {
+  function collectPageContext(mediaUrl = '', forceFrame = false) {
     const videos = Array.from(document.querySelectorAll('video'));
     // A response can belong to a trailer or another player. Only the page-wide
     // context may use the sole video; request metadata needs its exact source.
@@ -251,7 +251,7 @@
       { source: 'dom.h1', value: document.querySelector('h1')?.textContent || '' },
     ].map(item => ({ source: item.source, value: String(item.value || '').trim().slice(0, 255) })).filter(item => item.value);
     const url = new URL(location.href);
-    const id = /(^|\.)youtube\.com$/.test(url.hostname) ? url.searchParams.get('v') || /^\/(?:shorts|live|embed)\/([^/]+)/.exec(url.pathname)?.[1] : url.hostname === 'youtu.be' ? url.pathname.slice(1) : '';
+    const id = /(^|\.)youtube(?:-nocookie)?\.com$/.test(url.hostname) ? url.searchParams.get('v') || /^\/(?:shorts|live|embed)\/([^/]+)/.exec(url.pathname)?.[1] : url.hostname === 'youtu.be' ? url.pathname.slice(1) : '';
     // YouTube keeps the first page's share tags (or its generic logo card)
     // after in-page navigation, so trust them only when they name this video.
     const shareTagsCurrent = Boolean(id) && String(meta('meta[property="og:url"]') || '').includes(id);
@@ -264,7 +264,7 @@
     } : null;
     // Social artwork often describes the site rather than this video. Only
     // YouTube has page artwork tied to a known video identity.
-    const frame = !youtube && representativeFrameAvailable(video) ? frameGrab(video) : '';
+    const frame = !youtube && video && (forceFrame || !videoState(video).prepared) && representativeFrameAvailable(video) ? frameGrab(video) : '';
     if (frame) videoState(video).prepared = true;
     const thumbnailUrl = youtube?.thumbnailUrl || frame || absolute(video?.poster);
     let pageEpisodeHint = null;
@@ -311,9 +311,22 @@
       resourceObserver.observe({ type: 'resource' });
     } catch { /* Resource timing is unavailable in this frame. */ }
   }
+  function fragmentOnlyChange(previous, next) {
+    try {
+      const before = new URL(previous); const after = new URL(next);
+      if (before.hash === after.hash || [before.hash, after.hash].some(hash => /^#[/!]/.test(hash))) return false;
+      before.hash = ''; after.hash = '';
+      return before.href === after.href;
+    } catch { return false; }
+  }
   function navigation() {
     if (retired) return;
     if (lastPage === location.href) return;
+    if (fragmentOnlyChange(lastPage, location.href)) {
+      // Keep DRM signals and active previews intact across in-page anchors (#comments, #t=90).
+      lastPage = location.href;
+      return;
+    }
     cancelPagePreview();
     reportedWorkerMedia.clear();
     // DRM signals describe the previous page; a reused player element must not
@@ -325,7 +338,7 @@
     send({ cmd: 'PAGE_NAVIGATED', pageUrl: lastPage });
     scheduleScan();
   }
-  function scan() {
+  function scan({ forceFrame = false } = {}) {
     if (retired) return;
     navigation();
     if (retired) return;
@@ -333,12 +346,18 @@
     scanTimer = undefined;
     const updates = [];
     const publish = message => { const pending = send(message); if (pending) updates.push(pending); return pending; };
-    const context = collectPageContext();
+    const videos = Array.from(document.querySelectorAll('video')).slice(0, 20);
+    const context = collectPageContext('', forceFrame);
+    // Skip empty child iframes (ads/trackers) to avoid N-frame storage write storms.
+    const isTopFrame = (() => { try { return window === window.top; } catch { return false; } })();
+    if (!isTopFrame && !videos.length && !context.youtubeMetadata && !context.protection) {
+      return Promise.resolve({ ok: true });
+    }
     if (!publish({ cmd: 'PAGE_CONTEXT', context })) return;
     if (context.youtubeMetadata) {
       if (!publish({ cmd: 'STORE_DETECTED_MEDIA', media: { ...context, url: `https://www.youtube.com/watch?v=${context.youtubeMetadata.videoId}`, type: 'youtube', mediaKind: 'youtube-page', contentType: 'video/youtube' } })) return;
     }
-    for (const video of Array.from(document.querySelectorAll('video')).slice(0, 20)) {
+    for (const video of videos) {
       const state = videoState(video);
       if (!state.watching) {
         state.watching = true;
@@ -347,7 +366,7 @@
       }
       const sources = [video.currentSrc, video.getAttribute('src'), ...Array.from(video.querySelectorAll('source')).map(source => source.src)];
       for (const candidate of new Set(sources.map(absolute).filter(Boolean))) {
-        if (!publish({ cmd: 'STORE_DETECTED_MEDIA', media: { ...collectPageContext(candidate), url: candidate, delivery: 'element', contentType: video.querySelector('source')?.type || 'video/unknown', detectedAt: Date.now() } })) return;
+        if (!publish({ cmd: 'STORE_DETECTED_MEDIA', media: { ...collectPageContext(candidate, forceFrame), url: candidate, delivery: 'element', contentType: video.querySelector('source')?.type || 'video/unknown', detectedAt: Date.now() } })) return;
       }
     }
     return Promise.all(updates).then(results => ({ ok: !retired && results.every(result => result?.ok !== false) }));
@@ -391,7 +410,7 @@
   }, { signal: events.signal });
   function onRuntimeMessage(message, sender, respond) {
     if (message?.cmd === 'SCAN_PAGE') {
-      Promise.resolve(scan()).then(result => respond?.(result || { ok: false }));
+      Promise.resolve(scan({ forceFrame: true })).then(result => respond?.(result || { ok: false }));
       return true;
     }
     if (!['GET_PAGE_VIDEO_PREVIEW', 'CANCEL_PAGE_VIDEO_PREVIEW'].includes(message?.cmd)) return;

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ChevronRight, Folder, FolderOpen, MoreHorizontal } from 'lucide-react';
 import { formatSize } from '@m3u8/contracts/src/rows.mjs';
-import { countLabel, libraryStrings as copy, libraryText } from '@m3u8/contracts/src/library.mjs';
+import { countLabel, folderNameProblem, libraryStrings as copy, libraryText } from '@m3u8/contracts/src/library.mjs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { revealLabel } from '@/lib/libraryBackend';
 import type { LibraryFolder } from '@/types/library';
@@ -52,26 +52,42 @@ export function FolderNameField({ initial, label, hint, onSubmit, onCancel }: {
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const done = useRef(false);
+  const refocusOnError = useRef(false);
+  const hintId = useId();
   useEffect(() => { input.current?.focus(); input.current?.select(); }, []);
+  useEffect(() => {
+    if (!busy && refocusOnError.current) {
+      refocusOnError.current = false;
+      input.current?.focus();
+    }
+  }, [busy]);
   const submit = async () => {
     if (busy || done.current) return;
     if (value === initial && initial) { done.current = true; onCancel(); return; }
+    const localProblem = folderNameProblem(value);
+    if (localProblem) { setProblem(localProblem.message); input.current?.focus(); return; }
     setBusy(true);
     const result = await onSubmit(value);
-    setBusy(false);
-    if (result) { setProblem(result); input.current?.focus(); } else done.current = true;
+    if (result) {
+      refocusOnError.current = true;
+      setProblem(result);
+      setBusy(false);
+    } else {
+      done.current = true;
+      setBusy(false);
+    }
   };
   return <div className="folder-name-field">
     <input ref={input} className="inline-rename" value={value} aria-label={label} placeholder={copy.folderNamePlaceholder} disabled={busy}
-      aria-invalid={!!problem || undefined} aria-describedby="folder-name-hint"
+      aria-invalid={!!problem || undefined} aria-describedby={hintId}
       onChange={(event) => { setValue(event.target.value); setProblem(''); }}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === 'Enter') { event.preventDefault(); void submit(); }
         if (event.key === 'Escape') { event.preventDefault(); done.current = true; onCancel(); }
       }}
-      onBlur={() => { if (!done.current && !busy) { if (!value.trim() || value === initial) { done.current = true; onCancel(); } else void submit(); } }} />
-    <div id="folder-name-hint" className={`row-status${problem ? ' tone-attention' : ' folder-hint'}`} role={problem ? 'alert' : undefined}>{problem || hint}</div>
+      onBlur={() => { if (!done.current && !busy && !problem) { if (!value.trim() || value === initial) { done.current = true; onCancel(); } else void submit(); } }} />
+    <div id={hintId} className={`row-status${problem ? ' tone-attention' : ' folder-hint'}`} role={problem ? 'alert' : undefined}>{problem || hint}</div>
   </div>;
 }
 

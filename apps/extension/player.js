@@ -146,6 +146,26 @@
     return /\.mpd(\?|$)/i.test(String(url || ''));
   }
 
+  // Progressive Fetch delivers WebVTT through onProgress, but hls.js 1.5
+  // parses subtitles from the completed fragment. Load subtitle fragments whole.
+  class WholeSubtitleLoader {
+    constructor(config) {
+      this.loader = new config.loader(config);
+    }
+
+    get stats() { return this.loader.stats; }
+    get context() { return this.loader.context; }
+    abort() { this.loader.abort(); }
+    destroy() { this.loader.destroy(); }
+    getCacheAge() { return this.loader.getCacheAge?.() ?? null; }
+    getResponseHeader(name) { return this.loader.getResponseHeader?.(name) ?? null; }
+
+    load(context, config, callbacks) {
+      const options = context.frag?.type === 'subtitle' ? { ...config, highWaterMark: undefined } : config;
+      this.loader.load(context, options, callbacks);
+    }
+  }
+
   function loadCurrentSource() {
     const url = primaryUrl;
     if (!url) {
@@ -188,6 +208,7 @@
         throw new Error('Safe HLS preview requires the Fetch loader. Open the source page.');
       },
       fetchSetup: (context, initParams) => new Request(context.url, buildFetchOptions(context.url, initParams || {})),
+      fLoader: WholeSubtitleLoader,
     });
 
     hls.on(window.Hls.Events.MEDIA_ATTACHED, () => {

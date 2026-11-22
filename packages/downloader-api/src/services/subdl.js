@@ -4,17 +4,35 @@ const https = require('https');
 const { URL } = require('url');
 const unzipper = require('unzipper');
 
+const MAX_JSON_BYTES = 2 * 1024 * 1024;
+const MAX_ZIP_BYTES = 15 * 1024 * 1024;
+const MAX_SRT_ENTRY_BYTES = 5 * 1024 * 1024;
+const MAX_SRT_TOTAL_BYTES = 10 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 100;
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
-    https
-      .get(url, { headers: { Accept: 'application/json' } }, (res) => {
-        let data = '';
+    const req = https
+      .get(url, { headers: { Accept: 'application/json' }, timeout: 15_000 }, (res) => {
+        if ((res.statusCode || 0) < 200 || (res.statusCode || 0) >= 300) {
+          res.resume();
+          reject(new Error(`SubDL request failed with status ${res.statusCode}`));
+          return;
+        }
+        const chunks = [];
+        let bytes = 0;
         res.on('data', (chunk) => {
-          data += chunk;
+          bytes += chunk.length;
+          if (bytes > MAX_JSON_BYTES) {
+            res.destroy(new Error('SubDL response exceeded size limit'));
+            return;
+          }
+          chunks.push(chunk);
         });
+        res.on('error', reject);
         res.on('end', () => {
           try {
-            const parsed = JSON.parse(data || '{}');
+            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
             resolve(parsed);
           } catch (err) {
             reject(new Error(`Failed to parse JSON: ${err.message}`));
@@ -22,6 +40,7 @@ function fetchJson(url) {
         });
       })
       .on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('SubDL request timed out')));
   });
 }
 
@@ -31,29 +50,62 @@ async function extractFirstSrt(zipPath, destDir, jobId, logger = console, { seas
 
   return new Promise((resolve, reject) => {
     const srtFiles = [];
-    
-    fs.createReadStream(zipPath)
-      .pipe(unzipper.Parse())
+    let entriesSeen = 0;
+    let totalBytes = 0;
+    let settled = false;
+    const readStream = fs.createReadStream(zipPath);
+    const parser = unzipper.Parse();
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      readStream.destroy();
+      parser.destroy();
+      reject(err);
+    };
+
+    readStream.on('error', fail);
+    parser.on('error', fail);
+    readStream
+      .pipe(parser)
       .on('entry', (entry) => {
+        entriesSeen += 1;
+        if (entriesSeen > MAX_ZIP_ENTRIES) {
+          entry.autodrain();
+          fail(new Error('SubDL archive contains too many entries'));
+          return;
+        }
         const ext = path.extname(entry.path || '').toLowerCase();
         if (ext !== '.srt') {
           entry.autodrain();
           return;
         }
-        
-        // Collect all .srt files
+
         const chunks = [];
-        entry.on('data', (chunk) => chunks.push(chunk));
+        let entryBytes = 0;
+        entry.on('error', fail);
+        entry.on('data', (chunk) => {
+          entryBytes += chunk.length;
+          totalBytes += chunk.length;
+          if (entryBytes > MAX_SRT_ENTRY_BYTES || totalBytes > MAX_SRT_TOTAL_BYTES) {
+            entry.destroy();
+            fail(new Error('SubDL subtitle exceeded size limit'));
+            return;
+          }
+          chunks.push(chunk);
+        });
         entry.on('end', () => {
+          if (settled) return;
           srtFiles.push({
             path: entry.path,
-            data: Buffer.concat(chunks)
+            data: Buffer.concat(chunks),
           });
         });
       })
       .on('close', () => {
+        if (settled) return;
         if (srtFiles.length === 0) {
           logger.warn('SubDL: no .srt file found in zip', { jobId, zipPath });
+          settled = true;
           resolve(null);
           return;
         }
@@ -63,29 +115,31 @@ async function extractFirstSrt(zipPath, destDir, jobId, logger = console, { seas
         if (seasonNumber && episodeNumber) {
           const episodePattern = new RegExp(`s0*${seasonNumber}e0*${episodeNumber}`, 'i');
           selectedFile = srtFiles.find(f => episodePattern.test(f.path));
-          
+
           if (selectedFile) {
-            logger.info('SubDL: found matching episode file in zip', { 
-              jobId, 
-              season: seasonNumber, 
-              episode: episodeNumber, 
-              file: selectedFile.path 
+            logger.info('SubDL: found matching episode file in zip', {
+              jobId,
+              season: seasonNumber,
+              episode: episodeNumber,
+              file: selectedFile.path,
             });
           }
         }
-        
+
         // Fallback to first .srt file
         if (!selectedFile) {
           selectedFile = srtFiles[0];
-          logger.info('SubDL: using first .srt file from zip', { 
-            jobId, 
+          logger.info('SubDL: using first .srt file from zip', {
+            jobId,
             file: selectedFile.path,
-            totalFiles: srtFiles.length
+            totalFiles: srtFiles.length,
           });
         }
-        
+
         // Write the selected file
         fs.writeFile(targetPath, selectedFile.data, (err) => {
+          if (settled) return;
+          settled = true;
           if (err) {
             reject(err);
           } else {
@@ -93,8 +147,7 @@ async function extractFirstSrt(zipPath, destDir, jobId, logger = console, { seas
             resolve(targetPath);
           }
         });
-      })
-      .on('error', reject);
+      });
   });
 }
 
@@ -116,19 +169,40 @@ function selectDownloadUrl(sub) {
 
 function downloadToFile(url, dest) {
   return new Promise((resolve, reject) => {
-    const out = fs.createWriteStream(dest);
-    https
-      .get(url, (res) => {
-        if (res.statusCode >= 300) {
+    let settled = false;
+    let out = null;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      if (out) out.destroy();
+      fs.unlink(dest, () => reject(err));
+    };
+    const req = https
+      .get(url, { timeout: 20_000 }, (res) => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
           res.resume();
-          return reject(new Error(`Download failed with status ${res.statusCode}`));
+          fail(new Error(`Download failed with status ${res.statusCode}`));
+          return;
         }
+        out = fs.createWriteStream(dest);
+        let bytes = 0;
+        out.on('error', fail);
+        res.on('error', fail);
+        res.on('data', (chunk) => {
+          bytes += chunk.length;
+          if (bytes > MAX_ZIP_BYTES) {
+            res.destroy(new Error('SubDL archive exceeded size limit'));
+          }
+        });
+        out.on('finish', () => {
+          if (settled) return;
+          settled = true;
+          out.close(() => resolve(dest));
+        });
         res.pipe(out);
-        out.on('finish', () => out.close(() => resolve(dest)));
       })
-      .on('error', (err) => {
-        fs.unlink(dest, () => reject(err));
-      });
+      .on('error', fail);
+    req.on('timeout', () => req.destroy(new Error('SubDL download timed out')));
   });
 }
 
@@ -199,9 +273,18 @@ async function fetchAndSaveSubtitles({ apiKey, title, tmdbId, imdbId, downloadDi
 
   const trySearch = async (opts) => {
     const url = buildUrl(opts);
+    const safeLogUrl = (() => {
+      try {
+        const parsed = new URL(url);
+        parsed.searchParams.delete('api_key');
+        return parsed.toString();
+      } catch {
+        return 'https://api.subdl.com/api/v1/subtitles';
+      }
+    })();
     logger.info('SubDL: request', {
       jobId,
-      url,
+      url: safeLogUrl,
       tmdbId,
       title: lookupTitle || title,
       type,

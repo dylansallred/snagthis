@@ -155,7 +155,7 @@ class QueueManager {
           queuedJob.etaSeconds = null;
         }
         // Session credentials are deliberately absent after restart.
-        if (queuedJob.requiresSourceRefresh && !['completed', 'cancelled'].includes(queuedJob.queueStatus)) {
+        if (queuedJob.requiresSourceRefresh && !['completed', 'cancelled', 'failed'].includes(queuedJob.queueStatus)) {
           queuedJob.queueStatus = 'paused';
           queuedJob.status = 'paused';
           queuedJob.errorCode = 'SOURCE_EXPIRED';
@@ -720,7 +720,7 @@ class QueueManager {
     const directory = path.resolve(this.downloadDir, '__previews');
     const allowInterim = !['completed', 'completed-with-errors'].includes(job.queueStatus || job.status);
     if (path.dirname(candidate) !== directory || !isCurrentPreviewClipPath(candidate, { allowInterim })) return null;
-    return `/downloads/__previews/${path.basename(candidate)}`;
+    return `/downloads/__previews/${encodeURIComponent(path.basename(candidate))}`;
   }
 
   buildThumbnailUrls(job) {
@@ -734,7 +734,8 @@ class QueueManager {
       const relative = path.relative(resolvedRoot, resolvedPath);
 
       if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
-        return `/downloads/${relative.replace(/\\/g, '/')}`;
+        const encoded = relative.replace(/\\/g, '/').split('/').map((seg) => encodeURIComponent(seg)).join('/');
+        return `/downloads/${encoded}`;
       }
 
       return null;
@@ -847,23 +848,76 @@ class QueueManager {
     const job = this.queue.find((j) => j.id === jobId);
     if (!job) return false;
     if (job.queueStatus !== 'queued' && job.queueStatus !== 'paused') return false;
+    const trimmed = String(newTitle || '').trim();
+    if (!trimmed) return false;
 
-    job.title = newTitle;
-    job.downloadName = newTitle;
-    job.manualTitleOverride = true;
-    
-    // Ensure downloadNameMp4 has .mp4 extension
-    let mp4Name = newTitle;
-    if (!/\.mp4$/i.test(mp4Name)) {
-      // Remove other extensions if present
-      mp4Name = mp4Name.replace(/\.[a-z0-9]{2,4}$/i, '');
-      mp4Name = `${mp4Name}.mp4`;
+    const cleanBase = this.sanitizeFinalFileName(trimmed, 'Download');
+    // Keep `${job.id}-${cleanBase}.mp4` safely below 255-byte filesystem limits (e.g. CJK titles).
+    const prefixBytes = Buffer.byteLength(`${job.id}-`, 'utf8') + 10;
+    const maxBaseBytes = Math.max(24, 240 - prefixBytes);
+    let boundedBase = cleanBase;
+    while (Buffer.byteLength(boundedBase, 'utf8') > maxBaseBytes && boundedBase.length > 1) {
+      boundedBase = boundedBase.slice(0, -1).trim();
     }
-    job.downloadNameMp4 = mp4Name;
-    
+    const safeBase = boundedBase || 'Download';
+
+    job.title = trimmed;
+    job.manualTitleOverride = true;
+
+    const isDirect = job.mediaType !== 'hls' && !/\.m3u8(\?|$)/i.test(job.url || '');
+    if (isDirect) {
+      const currentExt = path.extname(job.filePath || job.downloadNameMp4 || job.downloadName || '') || '.mp4';
+      const directName = safeBase.toLowerCase().endsWith(currentExt.toLowerCase()) ? safeBase : `${safeBase}${currentExt}`;
+      job.downloadName = directName;
+      job.downloadNameMp4 = directName;
+      if (typeof job.filePath === 'string' && job.filePath.trim()) {
+        job.filePath = path.join(path.dirname(job.filePath), `${job.id}-${directName}`);
+      }
+    } else {
+      job.downloadName = safeBase;
+      const mp4Name = /\.mp4$/i.test(safeBase) ? safeBase : `${safeBase}.mp4`;
+      job.downloadNameMp4 = mp4Name;
+    }
+
     job.updatedAt = Date.now();
     this.saveQueue();
     return true;
+  }
+
+  // Clean up partial/temp files for a queued or paused job cancelled without an active runner.
+  cleanupCancelledJobArtifacts(job) {
+    if (!job || !job.id) return;
+    try {
+      const storageDir = (typeof job.storageDir === 'string' && job.storageDir.trim())
+        ? job.storageDir
+        : (typeof job.filePath === 'string' && job.filePath.trim() ? path.dirname(job.filePath) : null);
+      if (storageDir && fs.existsSync(storageDir) && isOwnedJobStorageDir(this.downloadDir, job.id, storageDir)) {
+        const entries = fs.readdirSync(storageDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isFile()) continue;
+          const name = entry.name;
+          if (name.endsWith('.part') || name.endsWith('.tmp') || /^ts-parts-.*[.]txt$/i.test(name)
+            || (name.startsWith(`${job.id}-`) && (/\.f[\w-]+\.[a-z0-9]+$/i.test(name) || /\.ytdl$|-Frag\d+$/i.test(name)))) {
+            try { fs.unlinkSync(path.join(storageDir, name)); } catch {}
+          }
+        }
+        const remaining = fs.readdirSync(storageDir);
+        if (remaining.every((name) => name === JOB_STORAGE_MARKER)) {
+          if (remaining.length) try { fs.unlinkSync(path.join(storageDir, JOB_STORAGE_MARKER)); } catch {}
+          try { fs.rmdirSync(storageDir); } catch {}
+        }
+      }
+      if (fs.existsSync(this.downloadDir)) {
+        for (const entry of fs.readdirSync(this.downloadDir, { withFileTypes: true })) {
+          if (!entry.isDirectory() || !entry.name.startsWith('temp-')) continue;
+          if (this.extractJobIdFromTempDirName(entry.name) === String(job.id)) {
+            fs.rmSync(path.join(this.downloadDir, entry.name), { recursive: true, force: true });
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to cleanup cancelled job artifacts', { jobId: job.id, error: err && err.message });
+    }
   }
 
   // Called when a job's run ends. A finished file is moved into the save folder first, which
@@ -1001,6 +1055,8 @@ class QueueManager {
   async refreshJobSource(jobId, { url, headers = {}, sourcePageUrl, selection, manifestText } = {}) {
     const job = this.jobs.get(jobId);
     if (!job || this.activeJobs.has(jobId)) return { ok: false, resumable: false, reason: 'Download is still running' };
+    const isRefreshable = (candidate) => !['completed', 'completed-with-errors', 'cancelled'].includes(candidate.queueStatus || candidate.status);
+    if (!isRefreshable(job)) return { ok: false, resumable: false, reason: 'This download is already finished' };
     let parsed;
     try { parsed = new URL(url); } catch { return { ok: false, resumable: false, reason: 'Invalid source URL' }; }
     if (!['http:', 'https:'].includes(parsed.protocol)) return { ok: false, resumable: false, reason: 'Unsupported source URL' };
@@ -1010,7 +1066,9 @@ class QueueManager {
     if (hasPartial) {
       const candidate = { ...job, url, headers, manifestText, sourcePageUrl: sourcePageUrl || job.sourcePageUrl, selection: selection || job.selection, credentialOrigin: parsed.origin };
       const { playlistInfo: info } = await resolveHlsSelection(candidate);
-      if (this.activeJobs.has(jobId) || this.jobs.get(jobId) !== job) return { ok: false, resumable: false, reason: 'Download is still running' };
+      if (this.activeJobs.has(jobId) || this.jobs.get(jobId) !== job || !isRefreshable(job)) {
+        return { ok: false, resumable: false, reason: 'Download is no longer eligible to refresh' };
+      }
       if (info.unsupportedReason || info.topologyFingerprint !== job.playlistTopology) {
         return { ok: false, resumable: false, reason: 'The refreshed video has changed. Start a new download to keep the existing pieces safe.' };
       }

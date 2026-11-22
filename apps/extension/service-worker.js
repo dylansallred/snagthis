@@ -44,9 +44,10 @@ async function readPage(tabId, slot = '') {
   const key = getStorageKey(tabId, slot); const data = await chrome.storage.session.get(key);
   return data[key] || emptyPage();
 }
-function trimSegmentLists(page) {
-  // Snapshots are the largest values and go first.
-  for (const item of page.items) delete item.manifestSnapshot;
+function trimSegmentLists(page, { dropSnapshots = true } = {}) {
+  if (dropSnapshots) {
+    for (const item of page.items) delete item.manifestSnapshot;
+  }
   for (const item of page.items) {
     const manifest = item.manifest;
     if (!manifest || (manifest.segmentUrls || []).length <= TRIMMED_SEGMENT_LIST) continue;
@@ -59,15 +60,16 @@ function trimSegmentLists(page) {
   }
 }
 async function freeSessionSpace(key, page) {
-  trimSegmentLists(page);
-  // storage.session has one quota for every tab. Evict the least recently
-  // updated half of the other pages and expired player sessions.
+  // storage.session has one quota for every tab. Trim oversized segment lists (preserving POST
+  // manifest snapshots on the first pass) and evict older tabs and expired preview sessions.
+  trimSegmentLists(page, { dropSnapshots: false });
   const all = await chrome.storage.session.get(null);
   const others = Object.entries(all).filter(([name]) => name !== key && name.startsWith(PREFIX))
     .sort((first, second) => (first[1]?.updatedAt || 0) - (second[1]?.updatedAt || 0));
   const evicted = others.slice(0, Math.ceil(others.length / 2)).map(([name]) => name);
   const expired = Object.entries(all).filter(([name, value]) => name.startsWith('snagthis:preview:') && !(Date.now() - value?.createdAt <= 600000)).map(([name]) => name);
   if (evicted.length || expired.length) await chrome.storage.session.remove([...evicted, ...expired]);
+  else trimSegmentLists(page, { dropSnapshots: true });
   for (const name of evicted) {
     const tabId = Number(/^snagthis:tab:(\d+)$/.exec(name)?.[1]);
     if (tabId) chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
@@ -84,12 +86,17 @@ async function writePage(tabId, page, slot = '') {
     console.warn('SnagThis session storage is full; trimming older detections and retrying.', error);
     await freeSessionSpace(key, page);
     if (removedTabs.has(tabId)) return;
-    await chrome.storage.session.set({ [key]: page });
+    try { await chrome.storage.session.set({ [key]: page }); }
+    catch (retryError) {
+      if (!/quota/i.test(String(retryError?.message || retryError))) throw retryError;
+      trimSegmentLists(page);
+      await chrome.storage.session.set({ [key]: page });
+    }
   }
   if (slot) { if (!prerenderKeys.has(tabId)) prerenderKeys.set(tabId, new Set()); prerenderKeys.get(tabId).add(key); return; }
   const count = listedItems(page).length;
   await chrome.action.setBadgeText({ tabId, text: count ? String(count) : '' });
-  await chrome.action.setBadgeBackgroundColor({ tabId, color: SnagThisAccentIcon.badgeColor() });
+  await chrome.action.setBadgeBackgroundColor({ color: SnagThisAccentIcon.badgeColor() }).catch(() => {});
 }
 // An in-page anchor or media-time fragment (#comments, #t=90) stays on the
 // same video. Hash routes (#/watch/2, #!/2) are navigations.
@@ -347,7 +354,7 @@ async function storeMedia(tabId, incoming, frameId = 0, topUrl = '', observed = 
       streamType: type === 'hls' || type === 'dash' ? type : null,
       filename: (() => { try { return decodeURIComponent(new URL(url).pathname.split('/').pop() || ''); } catch { return ''; } })(),
       contentType,
-      contentLength: rangeTotal || (Number(incoming.contentLength) > 0 ? Number(incoming.contentLength) : existing?.contentLength || 0),
+      contentLength: range ? (rangeTotal || existing?.contentLength || 0) : (Number(incoming.contentLength) > 0 ? Number(incoming.contentLength) : existing?.contentLength || 0),
       ...(delivery ? { delivery } : {}),
       ...(range && delivery === 'script' ? { rangeRequested: true } : {}),
       requestHeaders: { ...(existing?.requestHeaders || {}), ...D.sanitizeHeaders(network?.headers) },
@@ -426,7 +433,7 @@ async function autoMemory() { return (await chrome.storage.session.get(PAIRING_A
 async function rememberAuto(patch) { await chrome.storage.session.set({ [PAIRING_AUTO_KEY]: { ...(await autoMemory()), ...patch } }); }
 async function refreshTabBadge(tabId) {
   if (!Number.isInteger(tabId) || tabId < 0) return;
-  const count = SnagThisHls.collapseDetections(visibleItems(await readPage(tabId))).length;
+  const count = listedItems(await readPage(tabId)).length;
   await chrome.action.setBadgeText({ tabId, text: count ? String(count) : '' }).catch(() => {});
 }
 // While waiting, the toolbar badge repeats the four digits, so they stay visible if the popup closes.
@@ -575,16 +582,18 @@ pairingState().then(state => { if (state?.status === 'waiting') resumePairingPol
 // only ask from their popup, which knows which local app it talks to.
 function autoPairOnStartup() { if (chrome.runtime.getManifest().update_url) autoPair({}).catch(() => {}); }
 chrome.runtime.onStartup?.addListener(autoPairOnStartup);
+function isProtectedMedia(page, mediaId) {
+  return Boolean(listedItems({ ...page, showAll: false }, D.markProtected(D.withoutManifestSegments(page.items), page.contexts))
+    .find(row => row.drm && (row.id === mediaId || (row.detectedStreams || []).some(stream => stream.id === mediaId))));
+}
 async function downloadMedia(message) {
-  const key = `${message.tabId}:${message.mediaId}:${message.backend || 'auto'}`;
+  const key = `${message.tabId}:${message.mediaId}`;
   if (pendingDownloads.has(key)) return pendingDownloads.get(key);
   const task = (async () => {
     const page = await readPage(message.tabId);
     // DRM-protected media is never downloaded, handed to the desktop app or
     // saved by Chrome, whatever the popup asks for.
-    const locked = listedItems({ ...page, showAll: false }, D.markProtected(D.withoutManifestSegments(page.items), page.contexts))
-      .find(row => row.drm && (row.id === message.mediaId || (row.detectedStreams || []).some(stream => stream.id === message.mediaId)));
-    if (locked) throw new Error(DRM_MESSAGE);
+    if (isProtectedMedia(page, message.mediaId)) throw new Error(DRM_MESSAGE);
     const observed = D.withoutManifestSegments(page.items);
     const item = observed.find(value => value.id === message.mediaId);
     if (!item) throw new Error('This video is no longer on the page.');
@@ -613,6 +622,7 @@ async function downloadMedia(message) {
       if (current.visit === page.visit) {
         current.mappings[message.mediaId] = result.jobId;
         if (useBrowser) current.mappings[source.id] = result.jobId;
+        else if (source && String(current.mappings[source.id] || '').startsWith('browser:')) delete current.mappings[source.id];
         await writePage(message.tabId, current);
       }
     });
@@ -744,13 +754,16 @@ async function handleMessage(message, sender) {
     const browser = await browserDownloads.snapshot(rawItems, page.mappings);
     return { ok: true, items: listedItems(page, rawItems), rawItems, mappings: browser.mappings, browserQueue: browser.queue, visit: page.visit, showAll: Boolean(page.showAll), titles: page.titles || {} };
   }
-  if (['HIDE_MEDIA', 'SHOW_ALL_MEDIA', 'RENAME_MEDIA'].includes(message.cmd)) return serializeTab(message.tabId, async () => {
-    const page = await readPage(message.tabId);
-    if (message.cmd === 'HIDE_MEDIA') page.hidden = [...new Set([...page.hidden, ...(message.mediaIds || [message.mediaId])])];
-    if (message.cmd === 'SHOW_ALL_MEDIA') { page.showAll = true; page.hidden = []; }
-    if (message.cmd === 'RENAME_MEDIA') { page.titles ||= {}; page.titles[message.mediaId] = String(message.title || '').trim().slice(0, 255); }
-    await writePage(message.tabId, page); return { ok: true };
-  });
+  if (['HIDE_MEDIA', 'SHOW_ALL_MEDIA', 'RENAME_MEDIA'].includes(message.cmd)) {
+    if (!Number.isInteger(message.tabId)) return { ok: false };
+    return serializeTab(message.tabId, async () => {
+      const page = await readPage(message.tabId);
+      if (message.cmd === 'HIDE_MEDIA') page.hidden = [...new Set([...page.hidden, ...(message.mediaIds || [message.mediaId])])];
+      if (message.cmd === 'SHOW_ALL_MEDIA') { page.showAll = true; page.hidden = []; }
+      if (message.cmd === 'RENAME_MEDIA') { page.titles ||= {}; page.titles[message.mediaId] = String(message.title || '').trim().slice(0, 255); }
+      await writePage(message.tabId, page); return { ok: true };
+    });
+  }
   if (message.cmd === 'DOWNLOAD_MEDIA') return downloadMedia(message);
   if (message.cmd === 'PREPARE_PAGE') {
     if (!Number.isInteger(message.tabId)) return { ok: false };
@@ -767,9 +780,10 @@ async function handleMessage(message, sender) {
   }
   if (message.cmd === 'RETRY_MEDIA' || message.cmd === 'REFRESH_MEDIA_SOURCE') {
     const page = await readPage(message.tabId);
+    if (isProtectedMedia(page, message.mediaId)) return { ok: false, error: DRM_MESSAGE };
     const item = page.items.find(value => value.id === message.mediaId);
     if (!item) return { ok: false, error: 'The video is no longer on this page.' };
-    if (message.cmd === 'REFRESH_MEDIA_SOURCE' && youtubeBlocked(item, message.payload)) return { ok: false, error: YOUTUBE_STORE_MESSAGE };
+    if (youtubeBlocked(item, message.payload)) return { ok: false, error: YOUTUBE_STORE_MESSAGE };
     const action = message.cmd === 'RETRY_MEDIA' ? 'retry' : 'refresh-source';
     const result = await appRequest(`/v1/jobs/${encodeURIComponent(message.jobId)}/${action}`, action === 'retry' ? {} : withManifestSnapshot(message.payload, page.items), !chrome.runtime.getManifest().update_url ? localApiBase(message.apiBase) : API_BASE);
     const jobId = result.jobId || result.id || message.jobId;

@@ -36,26 +36,43 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
   const caseInsensitive = true;
   const root = () => historyIndex.libraryRootPath();
 
-  /** The absolute path of a user folder ('' is the save folder), refusing anything that could escape it. */
-  function resolveFolder(folderPath, { allowRoot = true } = {}) {
+  /** The absolute path and canonical on-disk relative path of a user folder ('' is the save folder). */
+  function resolveFolderInfo(folderPath, { allowRoot = true } = {}) {
     const segments = folderSegments(folderPath);
     if (!segments) throw new LibraryError(400, 'invalid-path', 'Choose a folder in the save folder');
     const base = root();
     if (!segments.length) {
       if (!allowRoot) throw new LibraryError(400, 'invalid-path', 'The save folder itself can’t be changed here');
       fs.mkdirSync(base, { recursive: true });
-      return base;
+      return { abs: base, canonical: '' };
     }
     let current = base;
+    const canonicalSegments = [];
     for (const segment of segments) {
       if (isSkippedDirName(segment)) throw new LibraryError(404, 'folder-missing');
-      current = path.join(current, segment);
+      let matched = segment;
+      if (platform === 'darwin' || platform === 'win32') {
+        try {
+          const entries = fs.readdirSync(current);
+          const exact = entries.find((entry) => entry === segment);
+          const ci = exact || entries.find((entry) => entry.normalize('NFC').toLowerCase() === segment.normalize('NFC').toLowerCase());
+          if (ci) matched = ci;
+        } catch {
+          throw new LibraryError(404, 'folder-missing');
+        }
+      }
+      current = path.join(current, matched);
       let stat;
       try { stat = fs.lstatSync(current); } catch { throw new LibraryError(404, 'folder-missing'); }
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new LibraryError(404, 'folder-missing');
-      if (isVideoFolder(segment, readDirInfo(current))) throw new LibraryError(400, 'invalid-path', 'That is a video, not a folder');
+      if (isVideoFolder(matched, readDirInfo(current))) throw new LibraryError(400, 'invalid-path', 'That is a video, not a folder');
+      canonicalSegments.push(matched.normalize('NFC'));
     }
-    return current;
+    return { abs: current, canonical: canonicalSegments.join('/') };
+  }
+
+  function resolveFolder(folderPath, options = {}) {
+    return resolveFolderInfo(folderPath, options).abs;
   }
 
   function assetPath(url) {
@@ -173,7 +190,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       throw new LibraryError(400, 'invalid-request', 'Choose the videos to move');
     }
     const results = await historyIndex.runExclusive(async () => {
-      const destination = resolveFolder(to);
+      const { abs: destination, canonical: canonicalTo } = resolveFolderInfo(to);
       const outcome = [];
       let jobsChanged = false;
       for (const id of ids) {
@@ -182,9 +199,9 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
         try {
           const map = await moveVideo(item, destination);
           if (map) jobsChanged = follow(map) || jobsChanged;
-          item.folder = to;
+          item.folder = canonicalTo;
           // A folder videos were moved into stays in Saved after they leave it again.
-          if (to) historyIndex.keepFolder(destination);
+          if (canonicalTo) historyIndex.keepFolder(destination);
           outcome.push({ id, ok: true, item: { ...item } });
         } catch (error) {
           const code = error instanceof LibraryError ? error.code : failureCode(error);
@@ -207,13 +224,13 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
 
   async function createFolder(parent, name) {
     const created = await historyIndex.runExclusive(async () => {
-      const parentAbs = resolveFolder(parent);
+      const { abs: parentAbs, canonical: canonicalParent } = resolveFolderInfo(parent);
       checkName(parentAbs, name);
       try { fs.mkdirSync(path.join(parentAbs, name)); } catch (error) { throw new LibraryError(409, failureCode(error)); }
       // Saved shows a folder that holds no video only when it was made (or filled) here.
       historyIndex.keepFolder(path.join(parentAbs, name));
       await historyIndex.persistIndex();
-      return { path: joinFolder(parent, name.normalize('NFC')) };
+      return { path: joinFolder(canonicalParent, name.normalize('NFC')) };
     });
     await rescan();
     historyIndex.emitChange('folders');
@@ -222,19 +239,19 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
 
   async function renameFolder(folderPath, name) {
     const renamed = await historyIndex.runExclusive(async () => {
-      const from = resolveFolder(folderPath, { allowRoot: false });
+      const { abs: from, canonical } = resolveFolderInfo(folderPath, { allowRoot: false });
       const parentAbs = path.dirname(from);
       checkName(parentAbs, name, path.basename(from));
       const to = path.join(parentAbs, name);
-      const nextPath = joinFolder(parentFolder(folderPath), name.normalize('NFC'));
+      const nextPath = joinFolder(parentFolder(canonical), name.normalize('NFC'));
       if (to === from) return { path: nextPath };
       try { fs.renameSync(from, to); } catch (error) { throw new LibraryError(409, failureCode(error)); }
       const jobsChanged = follow(prefixMap(from, to));
       historyIndex.moveKeptFolders(from, to);
       historyIndex.keepFolder(to);
       for (const item of historyIndex.items) {
-        if (item.folder === folderPath) item.folder = nextPath;
-        else if (typeof item.folder === 'string' && item.folder.startsWith(`${folderPath}/`)) item.folder = nextPath + item.folder.slice(folderPath.length);
+        if (item.folder === canonical) item.folder = nextPath;
+        else if (typeof item.folder === 'string' && item.folder.startsWith(`${canonical}/`)) item.folder = nextPath + item.folder.slice(canonical.length);
       }
       await finish('folders', jobsChanged);
       return { path: nextPath };
@@ -250,10 +267,10 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
    */
   async function deleteFolder(folderPath, mode) {
     const result = await historyIndex.runExclusive(async () => {
-      const folder = resolveFolder(folderPath, { allowRoot: false });
+      const { abs: folder, canonical } = resolveFolderInfo(folderPath, { allowRoot: false });
       const parentAbs = path.dirname(folder);
-      const parentPath = parentFolder(folderPath);
-      const inside = (item) => item.folder === folderPath || (typeof item.folder === 'string' && item.folder.startsWith(`${folderPath}/`));
+      const parentPath = parentFolder(canonical);
+      const inside = (item) => item.folder === canonical || (typeof item.folder === 'string' && item.folder.startsWith(`${canonical}/`));
       const contents = fs.readdirSync(folder).filter((name) => !isJunkName(name));
       const removeEmpty = () => {
         for (const name of fs.readdirSync(folder)) if (isJunkName(name)) fs.rmSync(path.join(folder, name), { force: true, recursive: true });
@@ -283,7 +300,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
       let moved = 0;
       try {
         // Videos first, so each keeps its subtitles and poster beside it.
-        for (const item of historyIndex.items.filter((entry) => entry.folder === folderPath)) {
+        for (const item of historyIndex.items.filter((entry) => entry.folder === canonical)) {
           if (item.missing) { item.folder = parentPath; continue; }
           const map = await moveVideo(item, parentAbs);
           if (map) jobsChanged = follow(map) || jobsChanged;
@@ -300,7 +317,7 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
             await moveDirectory(from, to);
             jobsChanged = follow(prefixMap(from, to)) || jobsChanged;
             historyIndex.moveKeptFolders(from, to);
-            const oldPath = joinFolder(folderPath, name);
+            const oldPath = joinFolder(canonical, name);
             const newPath = joinFolder(parentPath, free);
             for (const item of historyIndex.items) {
               if (item.folder === oldPath) item.folder = newPath;
@@ -382,11 +399,15 @@ function createLibraryFolders({ historyIndex, jobs, saveQueue, downloadDir, onTr
           // The folder first (it may need a suffix), then the files inside it take the same name.
           const container = path.dirname(parent);
           const ownName = new Set([path.basename(parent).toLowerCase()]);
-          let folderName = wanted;
+          let folderName = null;
           for (let number = 1; number <= 10_000; number += 1) {
-            folderName = number === 1 ? wanted : `${wanted} (${number})`;
-            if (freeIn(container, [folderName], ownName)) break;
+            const candidate = number === 1 ? wanted : `${wanted} (${number})`;
+            if (freeIn(container, [candidate], ownName)) {
+              folderName = candidate;
+              break;
+            }
           }
+          if (!folderName) throw Object.assign(new Error('Too many folders with this name'), { code: 'EEXIST' });
           const inside = named.map((entry) => [entry, renamed(entry, 1)]);
           const moved = renameSet(parent, inside);
           let target = parent;

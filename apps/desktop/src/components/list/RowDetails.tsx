@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ExternalLink, Folder, FolderOpen, Link2, Trash2, X } from 'lucide-react';
 import { formatSize, type RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { selectionAudioLabel } from '@m3u8/contracts/src/audioTracks.mjs';
@@ -50,17 +50,24 @@ export function RowDetails({ row, folder, onCommand, onRefreshLink }: {
     ? (maxConnections ? ui.connectionsUsage.replace('{limit}', String(maxConnections)) : ui.connectionsUsageWithoutLimit).replace('{active}', String(Math.floor(source.activeConnections)))
     : [ui.connectionsUnavailable, maxConnections && ui.connectionsLimit.replace('{limit}', String(maxConnections))].filter(Boolean).join(' · ');
   const pieces = !saved && source.totalSegments > 0 && source.downloadMode !== 'native-file';
-  const pieceStates = Object.values(source.segmentStates || {}) as { status: string }[];
+  const { pieceCount, completed, retrying } = useMemo(() => {
+    const entries = Object.values(source.segmentStates || {}) as { status: string }[];
+    let done = 0;
+    let retry = 0;
+    for (const item of entries) {
+      if (item.status === 'completed') done += 1;
+      else if (item.status === 'retrying') retry += 1;
+    }
+    return { pieceCount: entries.length, completed: done, retrying: retry };
+  }, [source.segmentStates]);
   const pieceProgressAvailable = source.segmentProgressAvailable !== false
-    && (source.segmentProgressAvailable === true || pieceStates.length > 0);
-  const completed = pieceStates.filter((item) => item.status === 'completed').length;
-  const retrying = pieceStates.filter((item) => item.status === 'retrying').length;
+    && (source.segmentProgressAvailable === true || pieceCount > 0);
   const speed = row.state === 'downloading' && Number.isFinite(source.speedBps) ? formatBytesPerSecond(source.speedBps) : '';
   const chartId = String(row.jobId || row.id);
   const [speedValue, speedUnit] = speed.split(' ');
   const sizeFact = speed ? `${downloaded} / ${total}` : size;
   return (
-    <div className="row-details" id={`details-${row.id}`}>
+    <div className="row-details" id={`details-${row.id}`} role="region" aria-label={`${row.title} ${ui.details.toLowerCase()}`}>
       <div className="detail-card">
         <button type="button" className="detail-location" title={`${ui.openFolder}: ${directory}`} onClick={() => onCommand('show-folder')}><span className="detail-folder-mark" aria-hidden="true"><Folder className="detail-folder-closed" /><FolderOpen className="detail-folder-open" /></span><span className="detail-location-copy"><span className="detail-location-label">{saved ? ui.savedIn : ui.savingTo}</span>{' '}<span className="detail-folder-name">{folderSplit ? <>{folderSplit[1]}<strong>{folderSplit[2]}</strong></> : shownDirectory}</span></span><ChevronRight className="detail-location-arrow" aria-hidden="true" /></button>
         <div className={`detail-body${speed ? ' has-chart' : ''}`}>

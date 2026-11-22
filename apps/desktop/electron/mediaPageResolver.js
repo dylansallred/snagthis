@@ -298,6 +298,7 @@ async function resolveWithSession(pageSession, { url, timeoutMs = 25_000, onStag
   };
   const onDebugMessage = async (_event, method, params, sessionId) => {
     if (settled) return;
+    try {
     const requestKey = `${sessionId || ''}:${params?.requestId}`;
     if (method === 'Target.attachedToTarget') {
       await attachChild(params);
@@ -342,6 +343,7 @@ async function resolveWithSession(pageSession, { url, timeoutMs = 25_000, onStag
         scheduleCandidate(manifest.isMaster);
       } catch { /* Evicted, oversized, or non-playlist responses are not media evidence. */ }
     }
+    } catch { /* Ignore debugger events racing teardown. */ }
   };
 
   try {
@@ -376,9 +378,9 @@ async function resolveWithSession(pageSession, { url, timeoutMs = 25_000, onStag
     pageSession.webRequest.onBeforeRequest(null);
     pageSession.webRequest.onBeforeSendHeaders(null);
     if (!contents.isDestroyed()) {
-      contents.debugger.removeListener('message', onDebugMessage);
-      if (contents.debugger.isAttached()) contents.debugger.detach();
-      window.destroy();
+      try { contents.debugger.removeListener('message', onDebugMessage); } catch {}
+      try { if (contents.debugger.isAttached()) contents.debugger.detach(); } catch {}
+      try { window.destroy(); } catch {}
     }
     pageSession.removeListener('will-download', denyDownload);
     let cleanupTimer;

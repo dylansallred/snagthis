@@ -227,7 +227,7 @@ export const galleryPairingRequest = galleryRequest;
  * an unpaired Chrome starts the request by itself, and the card turns into the digits with Deny and
  * Allow in place. Allow shows "Connected" briefly and the card folds away.
  */
-export function ChromeConnectCard({ variant, active = true, gallery = false, demo, onInstall, onConnected, onUseCode }: {
+export function ChromeConnectCard({ variant, active = true, gallery = false, demo, onInstall, onApproved, onConnected, onUseCode }: {
   variant: 'first' | 'settings' | 'another';
   /** False while something covers the card (a sheet or dialog); it then neither listens nor answers. */
   active?: boolean;
@@ -235,6 +235,7 @@ export function ChromeConnectCard({ variant, active = true, gallery = false, dem
   /** Gallery previews: 'waiting' (default), 'request' or 'connected'. */
   demo?: string | null;
   onInstall?: () => void;
+  onApproved?: () => void;
   onConnected?: () => void;
   onUseCode?: () => void;
 }) {
@@ -242,13 +243,16 @@ export function ChromeConnectCard({ variant, active = true, gallery = false, dem
   const [phase, setPhase] = useState<'waiting' | 'connected' | 'closed'>(gallery && demo === 'connected' ? 'connected' : 'waiting');
   const current = useRef<PairingRequest | null>(null);
   current.current = request;
+  const approvedRef = useRef(onApproved);
+  approvedRef.current = onApproved;
   const connectedRef = useRef(onConnected);
   connectedRef.current = onConnected;
   const live = active && !gallery && phase !== 'closed' && Boolean(window.desktop?.onPairingState);
+  const hasRequest = Boolean(request);
 
-  // Listening: renewed while the card is on screen and the window is visible; dropped when it goes.
+  // Listening: renewed while the card is waiting and visible; pauses once a request is pending.
   useEffect(() => {
-    if (!live || phase !== 'waiting' || !window.desktop.setPairingListening) return undefined;
+    if (!live || phase !== 'waiting' || hasRequest || !window.desktop.setPairingListening) return undefined;
     const listen = window.desktop.setPairingListening;
     const renew = () => { void listen(document.visibilityState === 'visible').catch(() => {}); };
     renew();
@@ -259,7 +263,7 @@ export function ChromeConnectCard({ variant, active = true, gallery = false, dem
       window.clearInterval(timer); document.removeEventListener('visibilitychange', renew); window.removeEventListener('focus', renew);
       void listen(false).catch(() => {});
     };
-  }, [live, phase]);
+  }, [live, phase, hasRequest]);
 
   useEffect(() => {
     if (!live) return undefined;
@@ -271,7 +275,7 @@ export function ChromeConnectCard({ variant, active = true, gallery = false, dem
       const shown = current.current;
       if (!shown || (next && next.requestId !== shown.requestId && next.status !== 'conflict')) return;
       setRequest(null);
-      if (next?.status === 'approved' || next?.status === 'collected') setPhase('connected');
+      if (next?.status === 'approved' || next?.status === 'collected') { approvedRef.current?.(); setPhase('connected'); }
       else if (next && next.status !== 'denied') announceEnded(next.status);
     });
     return () => {
@@ -290,7 +294,7 @@ export function ChromeConnectCard({ variant, active = true, gallery = false, dem
 
   const onDecided = useCallback((decision: Decision) => {
     setRequest(null); current.current = null;
-    if (decision.result === 'approved') { setPhase('connected'); return; }
+    if (decision.result === 'approved') { approvedRef.current?.(); setPhase('connected'); return; }
     announceEnded(decision.status);
   }, []);
 

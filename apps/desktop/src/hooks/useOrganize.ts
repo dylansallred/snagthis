@@ -36,10 +36,16 @@ export function useOrganize({ backend, folder, setFolder, settings, saveSettings
   const [renaming, setRenaming] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const requests = useRef(0);
+  const reloadSeq = useRef(0);
+  const deleteInFlight = useRef(false);
 
   const reload = useCallback(async () => {
     if (!backend) return;
-    try { setInfo(await backend.info()); } catch { /* The list keeps working without its folders. */ }
+    const seq = ++reloadSeq.current;
+    try {
+      const next = await backend.info();
+      if (seq === reloadSeq.current) setInfo(next);
+    } catch { /* The list keeps working without its folders. */ }
   }, [backend]);
   useEffect(() => { void reload(); }, [reload, revision]);
   // A folder removed or renamed outside SnagThis: go up to the nearest one that still exists.
@@ -128,6 +134,25 @@ export function useOrganize({ backend, folder, setFolder, settings, saveSettings
       for (const [entry, value] of moved) { delete nextViews[entry]; nextViews[`saved:${next}${entry.slice(key.length)}`] = value; }
       void saveSettings({ libraryViews: nextViews });
     }
+    // Optimistically reflect the renamed path in `info` before updating `folder`, so the
+    // missing-folder fallback effect does not eject the user to the parent before reload completes.
+    setInfo((current) => {
+      if (!current) return current;
+      const remap = (value: string) => (value === path || value.startsWith(`${path}/`) ? `${next}${value.slice(path.length)}` : value);
+      return {
+        ...current,
+        folders: current.folders.map((entry) => {
+          const updatedPath = remap(entry.path);
+          if (updatedPath === entry.path) return entry;
+          return {
+            ...entry,
+            path: updatedPath,
+            parent: remap(entry.parent),
+            name: updatedPath === next ? next.split('/').pop() || entry.name : entry.name,
+          };
+        }),
+      };
+    });
     if (folder === path || folder.startsWith(`${path}/`)) setFolder(next + folder.slice(path.length));
     await after();
     return null;
@@ -140,7 +165,8 @@ export function useOrganize({ backend, folder, setFolder, settings, saveSettings
     setDeleteRequest({ folder: entry, anchor: element.getBoundingClientRect(), parentName: nameOf(entry.parent) });
   };
   const runDelete = async (entry: LibraryFolder, mode: DeleteMode | undefined) => {
-    if (!backend) return;
+    if (!backend || deleteInFlight.current) return;
+    deleteInFlight.current = true;
     setDeleting(true);
     try {
       const result = await backend.deleteFolder(entry.path, mode);
@@ -153,6 +179,7 @@ export function useOrganize({ backend, folder, setFolder, settings, saveSettings
     } catch (error) {
       toast.error(libraryText('folderFailed', { name: entry.name, reason: problemText(error) }));
     } finally {
+      deleteInFlight.current = false;
       setDeleting(false);
       await after();
     }

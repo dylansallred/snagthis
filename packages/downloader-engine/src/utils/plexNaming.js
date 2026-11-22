@@ -99,7 +99,7 @@ function resolvePreferredMediaTitle(job) {
   const isTv = getMediaType(job) === 'tv';
 
   if (job && job.manualTitleOverride) {
-    const picked = hintedTitle || manualTitle || 'Download';
+    const picked = manualTitle || hintedTitle || 'Download';
     return isTv ? stripEpisodeMarker(picked) : picked;
   }
 

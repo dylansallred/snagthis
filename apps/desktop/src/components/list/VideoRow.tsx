@@ -53,6 +53,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
   const [drop, setDrop] = useState<'before' | 'after' | null>(null);
   const [dragging, setDragging] = useState(false);
   const pointerMenu = useRef(false);
+  const pendingMenuCommand = useRef<RowCommand | null>(null);
   const saved = row.state === 'saved' || row.state === 'missing';
   // A saved video that couldn't move keeps its file where it was; its row says so instead of the saved facts.
   const moveFailed = row.state === 'saved' && row.tone === 'attention';
@@ -94,7 +95,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
     // At most one spark every 250ms, on the newest finished cell.
     const before = previousCells.current;
     previousCells.current = completedCells;
-    if (before === null || !activeProgress || completedCells <= before || completedCells - before > 3) return;
+    if (reducedMotion || before === null || !activeProgress || completedCells <= before || completedCells - before > 3) return;
     const now = performance.now();
     if (now - lastSpark.current < 250) return;
     lastSpark.current = now;
@@ -102,7 +103,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
     if (!cell) return;
     cell.classList.add('spark');
     cell.addEventListener('animationend', () => cell.classList.remove('spark'), { once: true });
-  }, [completedCells, activeProgress]);
+  }, [completedCells, activeProgress, reducedMotion]);
   useEffect(() => {
     // Completion moment: only a download finishing in view, never a saved row appearing.
     const before = previousState.current;
@@ -115,22 +116,38 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
     return () => clearTimeout(timer);
   }, [justSaved]);
   useEffect(() => {
-    if (!expanded && !detailsMounted) return;
     if (expanded) {
-      if (!detailsMounted) setDetailsMounted(true);
-      const frame = requestAnimationFrame(() => requestAnimationFrame(() => {
-        setDetailsOpen(true);
-        itemRef.current?.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
-      }));
-      return () => cancelAnimationFrame(frame);
+      setDetailsMounted(true);
+      let frame1 = 0;
+      let frame2 = 0;
+      frame1 = requestAnimationFrame(() => {
+        frame2 = requestAnimationFrame(() => {
+          setDetailsOpen(true);
+          itemRef.current?.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
+        });
+      });
+      return () => {
+        cancelAnimationFrame(frame1);
+        cancelAnimationFrame(frame2);
+      };
     }
     setDetailsOpen(false);
     // The saved spec sheet folds faster than the drawer (see globals.css).
     const timer = setTimeout(() => setDetailsMounted(false), reducedMotion ? 0 : saved ? 300 : 360);
     return () => clearTimeout(timer);
-  }, [expanded, reducedMotion, detailsMounted, saved]);
+  }, [expanded, reducedMotion, saved]);
   useEffect(() => { if (renaming) { setTitle(row.title); input.current?.focus(); input.current?.select(); } }, [renaming, row.title]);
   const command = (action: RowCommand) => { setMenuOpen(false); onCommand(action); };
+  const menuCommand = (action: RowCommand) => {
+    // Commands that move focus (inline rename, modal/popover prompts, details) run after the menu closes
+    // so Radix's close auto-focus does not steal focus back to the trigger and blur the new target.
+    if (action === 'rename' || action === 'remove' || action === 'move-to' || action === 'cancel' || action === 'details') {
+      pendingMenuCommand.current = action;
+      setMenuOpen(false);
+      return;
+    }
+    command(action);
+  };
   // Resume keeps its own glyph and name so it never reads as Play on a saved file.
   const actionLabel = row.action?.id === 'resume' ? ui.resumeDownload : row.action?.label;
   return (
@@ -139,7 +156,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
         data-progress={progress} data-progress-active={progressMotion}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         onFocusCapture={() => setFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}
-        aria-label={`${row.title}. ${row.statusLine}${selected ? `. ${libraryStrings.selected}` : ''}`} aria-controls={expanded ? `details-${row.id}` : undefined}
+        aria-label={`${row.title}. ${row.statusLine}${selected ? `. ${libraryStrings.selected}` : ''}`} aria-expanded={expanded} aria-controls={expanded ? `details-${row.id}` : undefined}
         onClick={(event) => {
           if ((event.target as HTMLElement).closest('button,input,a,[role="menuitem"]')) return;
           if (onSelect && row.state === 'saved' && (event.metaKey || event.ctrlKey || event.shiftKey)) { event.preventDefault(); onSelect(event.shiftKey ? 'range' : 'toggle'); return; }
@@ -151,6 +168,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
         onKeyDown={(event) => {
           pointerMenu.current = false;
           if (event.target !== event.currentTarget) return;
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); setMenuOpen(true); return; }
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggle(); }
           if (event.key.toLowerCase() === 'p' && (row.state === 'downloading' || row.state === 'paused')) { event.preventDefault(); command(row.state === 'paused' ? 'resume' : 'pause'); }
           if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); command(saved ? 'remove' : 'cancel'); }
@@ -184,7 +202,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
             aria-label={['downloading', 'finishing', 'paused'].includes(row.state) ? `${row.title} download` : undefined}
             aria-valuemin={['downloading', 'finishing', 'paused'].includes(row.state) ? 0 : undefined} aria-valuemax={['downloading', 'finishing', 'paused'].includes(row.state) ? 100 : undefined} aria-valuenow={['downloading', 'finishing', 'paused'].includes(row.state) ? row.percent : undefined}
             aria-valuetext={['downloading', 'finishing', 'paused'].includes(row.state) ? row.statusLine : undefined}>{row.state === 'saved' && !moveFailed ? <>
-              {row.qualityLabel && <><QualityLabel label={row.qualityLabel} /><span className="meta-dot" aria-hidden="true">·</span></>}
+              {row.qualityLabel && <><QualityLabel label={row.qualityLabel} />{row.qualityNote && row.qualityNote !== row.qualityLabel && <span className="quality-note">{row.qualityNote.startsWith(row.qualityLabel) ? row.qualityNote.slice(row.qualityLabel.length).trim() : row.qualityNote}</span>}<span className="meta-dot" aria-hidden="true">·</span></>}
               {row.sizeLabel && <><span className="file-size">{row.sizeLabel}</span><span className="meta-dot" aria-hidden="true">·</span></>}
               <span className="saved-badge"><Check aria-hidden="true" />{row.statusLine.split(' · ')[0]}</span>
               {location && <><span className="meta-dot" aria-hidden="true">·</span><span className="row-location" title={location}><Folder aria-hidden="true" />{location.split('/').pop()}</span></>}
@@ -194,21 +212,30 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
         <div className="row-actions">
           {row.state === 'waiting' && !renaming && <span className="drag-grip hover-action" aria-hidden="true" title={ui.dragToReorder}><GripVertical /></span>}
           {row.state === 'saved' && <button className="row-action hover-action folder-action" aria-label={`${ui.showFolder}: ${row.title}`} title={ui.showFolder} onClick={() => command('show-folder')}><Folder className="icon-rest" /><FolderOpen className="icon-hover" /></button>}
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild><button className={`row-action hover-action more-action${menuOpen ? ' menu-open' : ''}`} aria-label={`${ui.more}: ${row.title}`} title={ui.more}><MoreHorizontal /></button></DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="video-menu"
               onPointerDownCapture={() => { pointerMenu.current = true; }}
               onKeyDownCapture={() => { pointerMenu.current = false; }}
-              onCloseAutoFocus={(event) => { if (pointerMenu.current) event.preventDefault(); }}>
-              <DropdownMenuItem onSelect={() => command('details')}>{ui.details}</DropdownMenuItem>
-              {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('move-to')}>{libraryStrings.moveTo}<span className="menu-hint" aria-hidden="true">M</span></DropdownMenuItem>}
-              {['waiting', 'paused'].includes(row.state) && <DropdownMenuItem onSelect={() => command('rename')}>{ui.rename}</DropdownMenuItem>}
-              {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('rename')}>{libraryStrings.detailRename}</DropdownMenuItem>}
-              {row.state === 'waiting' && <><DropdownMenuItem onSelect={() => command('start')}>{ui.startNow}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('move-up')}>{ui.moveUp}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('move-down')}>{ui.moveDown}</DropdownMenuItem></>}
-              {(row.source.url || row.source.sourcePageUrl) && <><DropdownMenuItem onSelect={() => command('copy-link')}>{ui.copyLink}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('open-page')}>{ui.openPage}</DropdownMenuItem></>}
-              {saved && row.state !== 'missing' && <DropdownMenuItem onSelect={() => command('show-folder')}>{ui.showFolder}</DropdownMenuItem>}
+              onCloseAutoFocus={(event) => {
+                const pending = pendingMenuCommand.current;
+                pendingMenuCommand.current = null;
+                if (pending) {
+                  event.preventDefault();
+                  onCommand(pending);
+                  return;
+                }
+                if (pointerMenu.current) event.preventDefault();
+              }}>
+              <DropdownMenuItem onSelect={() => menuCommand('details')}>{ui.details}</DropdownMenuItem>
+              {row.state === 'saved' && <DropdownMenuItem onSelect={() => menuCommand('move-to')}>{libraryStrings.moveTo}<span className="menu-hint" aria-hidden="true">M</span></DropdownMenuItem>}
+              {['waiting', 'paused'].includes(row.state) && <DropdownMenuItem onSelect={() => menuCommand('rename')}>{ui.rename}</DropdownMenuItem>}
+              {row.state === 'saved' && <DropdownMenuItem onSelect={() => menuCommand('rename')}>{libraryStrings.detailRename}</DropdownMenuItem>}
+              {row.state === 'waiting' && <><DropdownMenuItem onSelect={() => menuCommand('start')}>{ui.startNow}</DropdownMenuItem><DropdownMenuItem onSelect={() => menuCommand('move-up')}>{ui.moveUp}</DropdownMenuItem><DropdownMenuItem onSelect={() => menuCommand('move-down')}>{ui.moveDown}</DropdownMenuItem></>}
+              {(row.source.url || row.source.sourcePageUrl) && <><DropdownMenuItem onSelect={() => menuCommand('copy-link')}>{ui.copyLink}</DropdownMenuItem><DropdownMenuItem onSelect={() => menuCommand('open-page')}>{ui.openPage}</DropdownMenuItem></>}
+              {saved && row.state !== 'missing' && <DropdownMenuItem onSelect={() => menuCommand('show-folder')}>{ui.showFolder}</DropdownMenuItem>}
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="destructive-text" onSelect={() => command(saved ? 'remove' : 'cancel')}>{saved ? ui.remove : row.state === 'problem' ? ui.removeList : ui.cancelDownload}</DropdownMenuItem>
+              <DropdownMenuItem className="destructive-text" onSelect={() => menuCommand(saved ? 'remove' : 'cancel')}>{saved ? ui.remove : row.state === 'problem' ? ui.removeList : ui.cancelDownload}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           {traceState && !row.action && <span className="row-action-spacer" aria-hidden="true" />}
@@ -217,9 +244,9 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
           </button>}
         </div>
       </div>
-      {detailsMounted && <div className={`details-drawer${saved && savedContext ? ' spec' : ''}${detailsOpen ? ' open' : ''}`}><div className="details-drawer-clip">
+      {detailsMounted && <div className={`details-drawer${saved && savedContext ? ' spec' : ''}${detailsOpen ? ' open' : ''}`} inert={detailsOpen ? undefined : true}><div className="details-drawer-clip">
         {saved && savedContext
-          ? <SavedDetails row={row} apiBase={apiBase} context={savedContext} previewUrl={previewUrl} onPosterActive={setPosterActive} onCommand={command} />
+          ? <SavedDetails row={row} apiBase={apiBase} context={savedContext} previewUrl={previewUrl} allowPreview={!reducedMotion && visible} onPosterActive={setPosterActive} onCommand={command} />
           : <RowDetails row={row} folder={folder} onCommand={command} onRefreshLink={onRefreshLink} />}
       </div></div>}
     </div>

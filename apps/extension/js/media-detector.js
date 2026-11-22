@@ -65,23 +65,86 @@
   function reportProtection(signal, keySystem) {
     window.postMessage({ source: CHANNEL, pageUrl: location.href, protection: { signal, keySystem: String(keySystem || '').slice(0, 100) } }, '*');
   }
-  // An fMP4 init segment of encrypted media carries 'pssh', 'tenc' or 'encv'/'enca' boxes.
+  // Walk ISO BMFF box headers structurally so ordinary text containing "tenc" or
+  // "enca" (e.g. "sentence", "latency") never triggers false-positive DRM locks.
+  const TOP_BOXES = new Set(['ftyp', 'styp', 'moov', 'moof', 'sidx', 'free', 'skip', 'mdat', 'pssh', 'emsg']);
+  const CONTAINER_BOXES = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'dinf', 'edts', 'sinf', 'schi', 'moof', 'traf', 'mvex', 'udta']);
+  const FULL_CONTAINERS = new Set(['stsd']);
+  const SAMPLE_ENTRY_OFFSETS = { encv: 78, enca: 28 };
+  function readBoxType(bytes, offset) {
+    return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+  }
+  function readU32(bytes, offset) {
+    return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+  }
   function encryptedInit(buffer) {
-    const bytes = new Uint8Array(buffer); let found = false; let system = '';
-    for (let index = 4; index + 4 <= bytes.length; index++) {
-      const a = bytes[index]; const b = bytes[index + 1]; const c = bytes[index + 2]; const d = bytes[index + 3];
-      const name = String.fromCharCode(a, b, c, d);
-      if (name === 'tenc' || name === 'encv' || name === 'enca') found = true;
-      else if (name === 'pssh' && index + 24 <= bytes.length) {
-        found = true;
-        if (!system) for (let offset = index + 8; offset < index + 24; offset++) system += bytes[offset].toString(16).padStart(2, '0');
+    const bytes = new Uint8Array(buffer);
+    if (bytes.length < 8) return null;
+    const firstType = readBoxType(bytes, 4);
+    if (!TOP_BOXES.has(firstType)) return null;
+    let found = false; let system = '';
+    const walk = (start, end, depth) => {
+      if (depth > 8) return;
+      let offset = start;
+      let count = 0;
+      while (offset + 8 <= end && count < 256) {
+        count += 1;
+        let size = readU32(bytes, offset);
+        const type = readBoxType(bytes, offset + 4);
+        let headerSize = 8;
+        if (size === 1) {
+          if (offset + 16 > end) break;
+          const hi = readU32(bytes, offset + 8);
+          const lo = readU32(bytes, offset + 12);
+          size = hi * 0x100000000 + lo;
+          headerSize = 16;
+        } else if (size === 0) {
+          size = end - offset;
+        }
+        if (size < headerSize || offset + size > end) break;
+        const payloadStart = offset + headerSize;
+        const boxEnd = offset + size;
+        if (type === 'tenc' || type === 'encv' || type === 'enca') {
+          found = true;
+          const skip = SAMPLE_ENTRY_OFFSETS[type];
+          if (skip && payloadStart + skip + 8 <= boxEnd) walk(payloadStart + skip, boxEnd, depth + 1);
+        } else if (type === 'pssh') {
+          found = true;
+          if (!system && payloadStart + 20 <= boxEnd) {
+            for (let i = payloadStart + 4; i < payloadStart + 20; i++) system += bytes[i].toString(16).padStart(2, '0');
+          }
+        } else if (FULL_CONTAINERS.has(type)) {
+          if (payloadStart + 8 <= boxEnd) walk(payloadStart + 8, boxEnd, depth + 1);
+        } else if (CONTAINER_BOXES.has(type)) {
+          walk(payloadStart, boxEnd, depth + 1);
+        }
+        offset = boxEnd;
       }
-    }
+    };
+    walk(0, bytes.length, 0);
     return found ? { system } : null;
   }
   let initReported = false;
-  const initCandidate = (url, contentType) => !initReported
-    && (/\.(?:mp4|m4s|m4v|m4a|m4f|cmfv|cmfa|init)(?:[?#]|$)/i.test(url) || /^(?:video|audio)\/mp4|octet-stream/i.test(contentType));
+  let lastInitUrl = location.href;
+  function sameDocumentWithoutHash(before, after) {
+    try {
+      const a = new URL(before); const b = new URL(after);
+      if (a.hash !== b.hash && ([a.hash, b.hash].some(hash => /^#[/!]/.test(hash)))) return false;
+      a.hash = ''; b.hash = '';
+      return a.href === b.href;
+    } catch { return before === after; }
+  }
+  function maybeResetInitForNav() {
+    if (!sameDocumentWithoutHash(lastInitUrl, location.href)) {
+      initReported = false;
+    }
+    lastInitUrl = location.href;
+  }
+  const initCandidate = (url, contentType) => {
+    maybeResetInitForNav();
+    return !initReported
+      && (/\.(?:mp4|m4s|m4v|m4a|m4f|cmfv|cmfa|init)(?:[?#]|$)/i.test(url) || /^(?:video|audio)\/mp4/i.test(contentType));
+  };
   function inspectInit(buffer, url, contentType) {
     if (!buffer || buffer.byteLength > MAX_INIT_SEGMENT || buffer.byteLength < 8 || !initCandidate(url, contentType)) return;
     const found = encryptedInit(buffer);
@@ -112,7 +175,9 @@
       const size = response.headers.get('content-length');
       emit(url, type, size, '', method);
       void inspectInitResponse(response, url, type);
-      if (/mpegurl|dash\+xml|xml/i.test(type) || /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(url) || !type || /^(?:text\/|image\/|application\/octet-stream)/i.test(type)) {
+      const nonManifestMime = /^(?:text\/(?:event-stream|html|css|javascript)|application\/(?:javascript|json)|image\/svg\+xml)/i.test(type);
+      const manifestMimeCandidate = !nonManifestMime && (/mpegurl|dash\+xml|xml/i.test(type) || /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(url) || !type || /^(?:text\/plain|application\/octet-stream|image\/)/i.test(type));
+      if (manifestMimeCandidate && !(Number(size) > MAX_MANIFEST)) {
         const body = await inspectBody(response);
         if (pageUrl === location.href && body) emit(url, type, size, body, method);
       }
@@ -164,8 +229,15 @@
     const original = history[name];
     history[name] = function(...args) {
       const before = location.href; const result = original.apply(this, args);
-      if (location.href !== before) window.postMessage({ source: CHANNEL, navigation: true }, '*');
+      if (location.href !== before) {
+        maybeResetInitForNav();
+        window.postMessage({ source: CHANNEL, navigation: true }, '*');
+      }
       return result;
     };
+  }
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('popstate', maybeResetInitForNav);
+    window.addEventListener('hashchange', maybeResetInitForNav);
   }
 })();

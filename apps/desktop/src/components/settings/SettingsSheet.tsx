@@ -54,6 +54,8 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
   const [disconnected, setDisconnected] = useState(false);
   // "Connect another browser" / "Connect Chrome" after a disconnect: show the waiting card on request.
   const [listenAgain, setListenAgain] = useState(() => gallery && new URLSearchParams(window.location.search).has('pair'));
+  // Keeps ChromeConnectCard mounted through its 1.4s "Connected" celebration after extensions updates.
+  const [cardCelebrating, setCardCelebrating] = useState(false);
   const [saved, setSaved] = useState({ key: '', announcement: '' });
   const savedTimer = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -84,10 +86,24 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     return () => { live = false; offState(); offList(); };
   }, [open, gallery, apiReady]);
   useEffect(() => {
-    if (!pendingRequest) return undefined;
-    const timer = window.setInterval(() => setPairingNow(Date.now()), 1000);
+    if (!open) {
+      setPendingRequest(null);
+      setConfirmDisconnect('');
+      setListenAgain(false);
+      setCardCelebrating(false);
+      setUpdateDetails(false);
+    }
+  }, [open]);
+  useEffect(() => {
+    if (!open || !pendingRequest) return undefined;
+    setPairingNow(Date.now());
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setPairingNow(now);
+      if (now >= pendingRequest.expiresAt) window.clearInterval(timer);
+    }, 1000);
     return () => window.clearInterval(timer);
-  }, [pendingRequest]);
+  }, [open, pendingRequest]);
   useEffect(() => () => window.clearTimeout(savedTimer.current), []);
   useEffect(() => {
     if (!focusCustomName.current || settings.fileNaming !== 'custom') return;
@@ -142,7 +158,8 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
     if (!result.ok) throw new Error(result.error);
   });
   const diagnostics = async (copyOnly = false) => {
-    const data = gallery ? { app: 'SnagThis', mode: 'design gallery', credentials: '[redacted]' } : await api?.getDiagnostics();
+    if (!gallery && !api) throw new Error(ui.unavailable);
+    const data = gallery ? { app: 'SnagThis', mode: 'design gallery', credentials: '[redacted]' } : await api!.getDiagnostics();
     if (copyOnly) { await navigator.clipboard.writeText(JSON.stringify(data, null, 2)); toast.success('Diagnostics copied'); return; }
     if (gallery) { toast.success('Support bundle preview ready'); return; }
     const result = await window.desktop.exportSupportBundle(data);
@@ -194,7 +211,7 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
       const legacyConnected = !connected && !disconnected && !!appInfo?.extensionConnected;
       const codeLive = pairing && pairingSeconds > 0;
       // Nothing connected: SnagThis waits for Chrome here. Otherwise it waits only when asked to.
-      const showCard = (!connected && !legacyConnected && !disconnected) || listenAgain;
+      const showCard = (!connected && !legacyConnected && !disconnected) || listenAgain || cardCelebrating;
       return <section className="settings-chrome" aria-label="Chrome extension setup">
         <SettingsGroup id="chrome-status" title={ui.chromeStatus} list={connected} listLabel="Connected browsers" footer={connected ? ui.chromeKeysNote : undefined}>
           {waiting && !showCard && <SettingRow as={connected ? 'li' : 'div'} id="chrome-waiting" className="settings-pairing-waiting" label={<><span className="pairing-spinner" aria-hidden="true" />{ui.pairingWaiting}</>} hintRole="status"
@@ -213,7 +230,8 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
         <SettingsGroup id="chrome-connect" title={connected || legacyConnected ? ui.chromeConnectAnother : ui.chromeConnectGroup}>
           {showCard
             ? <div className="settings-row settings-connect-card"><ChromeConnectCard variant={connected || legacyConnected ? 'another' : 'settings'} gallery={gallery} demo={gallery ? new URLSearchParams(window.location.search).get('pair') : null}
-              onConnected={() => { setListenAgain(false); setDisconnected(false); }} /></div>
+              onApproved={() => setCardCelebrating(true)}
+              onConnected={() => { setCardCelebrating(false); setListenAgain(false); setDisconnected(false); }} /></div>
             : <SettingRow id="chrome-listen" label={connected || legacyConnected ? ui.chromeConnectAnother : ui.chromeConnectButton} hint={ui.chromeListenHint}
               control={button(connected || legacyConnected ? ui.chromeConnectAnother : ui.chromeConnectButton, () => setListenAgain(true), { className: 'primary' })} />}
           <SettingRow id="chrome-code" label={ui.chromeUseCode} hint={pairing && !codeLive ? ui.chromeCodeExpired : ui.chromeUseCodeHint} error={!!pairing && !codeLive} hintRole={pairing && !codeLive ? 'status' : undefined}
@@ -283,11 +301,11 @@ export function SettingsSheet({ open, onOpenChange, section, onSectionChange, se
       </SettingsGroup>
       <SettingsGroup id="about-support" title={ui.diagnostics}>
         <SettingRow id="support-bundle" label={ui.supportBundle} hint={ui.supportBundleHint}
-          control={<>{button(ui.exportDiagnostics, () => run('diagnostics', () => diagnostics()), { label: ui.exportDiagnosticsLabel })}{button(ui.copyDiagnostics, () => run('copy', () => diagnostics(true)), { label: ui.copyDiagnosticsLabel })}</>} />
+          control={<>{button(ui.exportDiagnostics, () => run('diagnostics', () => diagnostics()), { label: ui.exportDiagnosticsLabel, disabled: !!busy || (!gallery && !api) })}{button(ui.copyDiagnostics, () => run('copy', () => diagnostics(true)), { label: ui.copyDiagnosticsLabel, disabled: !!busy || (!gallery && !api) })}</>} />
         <SettingRow id="report-site" label={ui.reportSiteTitle} hint={ui.reportSiteHint}
-          control={button(<>{ui.reportSite}<ExternalLink aria-hidden="true" /></>, () => run('report', reportSite), { label: ui.reportSiteLabel })} />
+          control={button(<>{ui.reportSite}<ExternalLink aria-hidden="true" /></>, () => run('report', reportSite), { label: ui.reportSiteLabel, disabled: !!busy })} />
         <SettingRow id="temporary-data" label={ui.tempData} hint={ui.tempDataHint}
-          control={button(ui.clearTemp, () => run('temporary', async () => { if (!gallery) await api?.clearTempDownloads(); toast.success('Stale temporary download data cleared'); }), { label: ui.clearTempLabel })} />
+          control={button(ui.clearTemp, () => run('temporary', async () => { if (!gallery && !api) throw new Error(ui.unavailable); if (!gallery) await api!.clearTempDownloads(); toast.success('Stale temporary download data cleared'); }), { label: ui.clearTempLabel, disabled: !!busy || (!gallery && !api) })} />
       </SettingsGroup>
     </>,
   };

@@ -40,7 +40,8 @@ function redact(value, key = '', depth = 0) {
   if (SECRET_KEY.test(key)) return '[redacted]';
   if (typeof value === 'string') {
     return value.replace(/https?:\/\/[^\s"'<>]+/g, redactUrl)
-      .replace(/(?:Bearer\s+)[A-Za-z0-9._~-]+/gi, 'Bearer [redacted]');
+      .replace(/(?:Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+      .replace(/(?:Basic\s+)[A-Za-z0-9+/=]+/gi, 'Basic [redacted]');
   }
   if (depth >= MAX_DEPTH) return '[truncated]';
   // Error fields are not enumerable; keep the useful parts instead of {}.

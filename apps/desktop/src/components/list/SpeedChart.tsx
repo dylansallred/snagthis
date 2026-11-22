@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { SPEED_STEP_MS, speedSeries, subscribeSpeedSamples } from '@/lib/speedHistory';
 
 // A line through a handful of zeros reads as a crash, so the chart stays hidden until it has real history.
@@ -10,10 +10,14 @@ export function SpeedChart({ jobId }: { jobId: string }) {
   const area = useRef<SVGPathElement>(null);
   const dot = useRef<HTMLElement>(null);
   const chart = useRef<HTMLDivElement>(null);
+  const rawId = useId().replace(/:/g, '');
+  const fadeId = `speed-chart-fade-${rawId}`;
+  const maskId = `speed-chart-mask-${rawId}`;
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     let frame = 0;
     let scale = 0;
+    let onScreen = true;
     const draw = (now: number) => {
       const data = speedSeries(jobId);
       if (!data || !line.current || !area.current) return;
@@ -34,6 +38,7 @@ export function SpeedChart({ jobId }: { jobId: string }) {
         : points[count - 2][1] + (points[count - 1][1] - points[count - 2][1]) * (along - 1);
       if (dot.current) dot.current.style.top = `${edge}%`;
     };
+    const active = () => onScreen && document.visibilityState !== 'hidden';
     const animate = (now: number) => {
       draw(now);
       frame = requestAnimationFrame(animate);
@@ -41,20 +46,26 @@ export function SpeedChart({ jobId }: { jobId: string }) {
     const updateMotion = () => {
       cancelAnimationFrame(frame);
       frame = 0;
-      if (document.visibilityState === 'hidden') return;
+      if (!active()) return;
       draw(performance.now());
       if (!preference.matches) frame = requestAnimationFrame(animate);
     };
     // Reduced motion changes only when a real sample arrives, not every frame.
     const stopSamples = subscribeSpeedSamples(() => {
-      if (preference.matches && document.visibilityState !== 'hidden') draw(performance.now());
+      if (preference.matches && active()) draw(performance.now());
     });
+    const observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver((entries) => {
+      const next = entries[entries.length - 1].isIntersecting;
+      if (next !== onScreen) { onScreen = next; updateMotion(); }
+    }) : null;
+    if (chart.current) observer?.observe(chart.current);
     preference.addEventListener('change', updateMotion);
     document.addEventListener('visibilitychange', updateMotion);
     updateMotion();
     return () => {
       cancelAnimationFrame(frame);
       stopSamples();
+      observer?.disconnect();
       preference.removeEventListener('change', updateMotion);
       document.removeEventListener('visibilitychange', updateMotion);
     };
@@ -62,10 +73,10 @@ export function SpeedChart({ jobId }: { jobId: string }) {
   return <div ref={chart} className="speed-chart" aria-hidden="true">
     <svg viewBox="0 0 600 100" preserveAspectRatio="none">
       <defs>
-        <linearGradient id="speed-chart-fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" stopOpacity=".85" /><stop offset="1" stopColor="#fff" stopOpacity="0" /></linearGradient>
-        <mask id="speed-chart-mask"><rect width="600" height="100" fill="url(#speed-chart-fade)" /></mask>
+        <linearGradient id={fadeId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" stopOpacity=".85" /><stop offset="1" stopColor="#fff" stopOpacity="0" /></linearGradient>
+        <mask id={maskId}><rect width="600" height="100" fill={`url(#${fadeId})`} /></mask>
       </defs>
-      <path ref={area} style={{ fill: 'var(--speed-chart-fill)' }} mask="url(#speed-chart-mask)" />
+      <path ref={area} style={{ fill: 'var(--speed-chart-fill)' }} mask={`url(#${maskId})`} />
       <path ref={line} fill="none" stroke="var(--speed-chart-line)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
     <i ref={dot} className="speed-chart-dot" />

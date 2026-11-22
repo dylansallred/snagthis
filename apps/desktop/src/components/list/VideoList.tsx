@@ -81,7 +81,7 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
   const order = rows.map((row) => row.id).join('\n');
   const motion = useRef<{ order: string | null; scope: string; rows: RowModel[]; tops: Map<string, number> | null }>({ order: null, scope: motionScope, rows, tops: null });
   // Row motion needs the old positions, which only exist before React commits a new order.
-  if (motion.current.order !== null && motion.current.order !== order && !motion.current.tops && list.current) {
+  if (motion.current.order !== null && motion.current.order !== order && motion.current.scope === motionScope && !motion.current.tops && list.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     motion.current.tops = new Map(Array.from(list.current.querySelectorAll<HTMLElement>(':scope > [data-item-key]'), (element) => [element.dataset.itemKey!, element.getBoundingClientRect().top]));
   }
   useLayoutEffect(() => {
@@ -174,6 +174,7 @@ export function VideoList({ rows, apiBase, folder, expandedId, renamingId, busyI
     const rowElements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-row-key]'));
     const active = (event.target as HTMLElement).closest('[data-row-key]');
     const current = rowElements.findIndex((element) => element === active);
+    if (current < 0) return;
     const next = Math.max(0, Math.min(rowElements.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
     if (rowElements[next]) {
       event.preventDefault(); rowElements[next].focus();

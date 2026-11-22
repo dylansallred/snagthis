@@ -67,9 +67,10 @@ export function fuzzyScore(query: string, text: string): number | null {
   return total - haystack.length * .05;
 }
 
-function useItems(query: string, actions: PaletteActions, videos: RowModel[], apiBase: string): Item[] {
+function useItems(open: boolean, query: string, actions: PaletteActions, videos: RowModel[], apiBase: string): Item[] {
   const [accent, setAccent] = useAccent();
   return useMemo(() => {
+    if (!open) return [];
     const trimmed = query.trim();
     if (looksLikeLink(trimmed)) {
       return [{ id: 'snag', group: ui.paletteGroupLink, label: ui.paletteSnagLink, icon: <Download />, hint: '↵', run: () => actions.snagLink(/^https?:/i.test(trimmed) ? trimmed : `https://${trimmed}`) }];
@@ -97,7 +98,7 @@ function useItems(query: string, actions: PaletteActions, videos: RowModel[], ap
     const ranked = rank(commands);
     const groups = [...new Set(commands.map((item) => item.group))];
     return [...groups.flatMap((group) => ranked.filter((item) => item.group === group)), ...rank(videoItems).slice(0, 6)];
-  }, [query, actions, videos, apiBase, accent, setAccent]);
+  }, [open, query, actions, videos, apiBase, accent, setAccent]);
 }
 
 /**
@@ -119,7 +120,8 @@ export function CommandPalette({ open, onOpenChange, actions, videos, apiBase }:
     if (open && focused instanceof HTMLElement && !focused.closest('.command-palette')) returnTo.current = focused;
   }, [open]);
   const list = useRef<HTMLDivElement>(null);
-  const items = useItems(query, actions, videos, apiBase);
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const items = useItems(open, query, actions, videos, apiBase);
   const active = Math.min(selected, Math.max(0, items.length - 1));
   const choose = (item: Item | undefined) => {
     if (!item) return;
@@ -170,7 +172,12 @@ export function CommandPalette({ open, onOpenChange, actions, videos, apiBase }:
             return <div key={item.id} role="presentation">
               {heading && <div className="palette-group" role="presentation">{heading}</div>}
               <div id={`palette-option-${index}`} role="option" aria-selected={index === active} className={`palette-option${index === active ? ' selected' : ''}`}
-                onPointerMove={() => { if (index !== active) setSelected(index); }} onPointerDown={(event) => event.preventDefault()} onClick={() => choose(item)}>
+                onPointerMove={(event) => {
+                  const prev = lastPointer.current;
+                  if (prev && prev.x === event.clientX && prev.y === event.clientY) return;
+                  lastPointer.current = { x: event.clientX, y: event.clientY };
+                  if (index !== active) setSelected(index);
+                }} onPointerDown={(event) => event.preventDefault()} onClick={() => choose(item)}>
                 {item.poster !== undefined ? <span className="palette-poster">{item.poster && <img src={item.poster} alt="" draggable={false} />}</span> : item.icon}
                 <span className="palette-label">{item.label}</span>
                 {item.current ? <><Check className="palette-current" aria-hidden="true" /><span className="sr-only">(current)</span></> : item.hint && <span className="palette-hint">{item.hint}</span>}

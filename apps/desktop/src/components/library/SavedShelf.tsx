@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Check, LayoutGrid, List, LoaderCircle, MoreHorizontal, Play } from 'lucide-react';
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Check, ChevronDown, LayoutGrid, List, LoaderCircle, MoreHorizontal, Play } from 'lucide-react';
 import type { RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { FillThumb, type RequestThumbnailPreview } from '@/components/list/FillThumb';
 import { QualityLabel } from '@/components/list/QualityLabel';
 import type { RowCommand } from '@/components/list/RowDetails';
+import type { ListSection } from '@/components/list/VideoList';
+import type { SelectMode } from '@/components/list/VideoRow';
 import { ui } from '@/lib/strings';
-import { libraryStrings } from '@m3u8/contracts/src/library.mjs';
+import { libraryStrings, libraryText } from '@m3u8/contracts/src/library.mjs';
 import { resolveThumbnailUrl } from '@/lib/utils';
 import { endSavedDrag, startSavedDrag } from './savedDrag';
 import './SavedShelf.css';
@@ -47,9 +49,10 @@ type InputMode = 'pointer' | 'keyboard';
 // Tiles are narrow, so "Saved today" becomes "Today" beside the check (the prototype's shelf copy).
 const savedWhen = (statusLine: string) => { const when = statusLine.split(' · ')[0].replace(/^Saved\s+/i, ''); return when.charAt(0).toUpperCase() + when.slice(1); };
 
-function ShelfTile({ row, apiBase, busy, inputMode, onCommand, onRequestPreview }: {
-  row: RowModel; apiBase: string; busy: boolean; inputMode: InputMode;
+function ShelfTile({ row, apiBase, busy, selected = false, inputMode, onCommand, onRequestPreview, onSelect, dragIds }: {
+  row: RowModel; apiBase: string; busy: boolean; selected?: boolean; inputMode: InputMode;
   onCommand: (command: RowCommand) => void; onRequestPreview: RequestThumbnailPreview;
+  onSelect?: (mode: SelectMode) => void; dragIds?: () => string[];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -58,7 +61,9 @@ function ShelfTile({ row, apiBase, busy, inputMode, onCommand, onRequestPreview 
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden');
   const [requestedPreview, setRequestedPreview] = useState<{ key: string; url: string } | null>(null);
   const pointerMenu = useRef(false);
+  const pendingMenuCommand = useRef<RowCommand | null>(null);
   const missing = row.state === 'missing';
+  const moveFailed = row.state === 'saved' && row.tone === 'attention';
   // The hover/focus loop behaves exactly as it does in rows.
   const previewKind = row.isHistory ? 'history' : 'job';
   const previewId = String(row.isHistory ? row.source.id : row.jobId || row.id);
@@ -85,11 +90,19 @@ function ShelfTile({ row, apiBase, busy, inputMode, onCommand, onRequestPreview 
   // A saved video drags onto a folder chip, as rows do in the list.
   const [dragging, setDragging] = useState(false);
   const command = (action: RowCommand) => { setMenuOpen(false); onCommand(action); };
+  const menuCommand = (action: RowCommand) => {
+    if (action === 'rename' || action === 'remove' || action === 'move-to' || action === 'details') {
+      pendingMenuCommand.current = action;
+      setMenuOpen(false);
+      return;
+    }
+    command(action);
+  };
   const primary = () => { if (row.action) command(row.action.id as RowCommand); };
   return <div role="listitem" className="shelf-item">
-    <div className={`shelf-tile${dragging ? ' dragging' : ''}`} data-row-key={row.id} data-state={row.state} role="group" tabIndex={0} aria-label={`${row.title}. ${row.statusLine}`}
+    <div className={`shelf-tile${dragging ? ' dragging' : ''}${selected ? ' selected' : ''}`} data-row-key={row.id} data-state={row.state} data-selected={selected || undefined} role="group" tabIndex={0} aria-label={`${row.title}. ${row.statusLine}${selected ? `. ${libraryStrings.selected}` : ''}`}
       draggable={row.state === 'saved'}
-      onDragStart={(event) => { if (row.state !== 'saved') return; setDragging(true); startSavedDrag(event, [String(row.source.id)], { title: row.title, thumbnailUrl: resolveThumbnailUrl(row.thumbnailUrl, apiBase) }); }}
+      onDragStart={(event) => { if (row.state !== 'saved') return; setDragging(true); startSavedDrag(event, dragIds ? dragIds() : [String(row.source.id)], { title: row.title, thumbnailUrl: resolveThumbnailUrl(row.thumbnailUrl, apiBase) }); }}
       onDragEnd={() => { setDragging(false); endSavedDrag(); }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}
@@ -98,37 +111,51 @@ function ShelfTile({ row, apiBase, busy, inputMode, onCommand, onRequestPreview 
       onKeyDown={(event) => {
         pointerMenu.current = false;
         if (event.target !== event.currentTarget) return;
+        if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); setMenuOpen(true); return; }
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); primary(); }
         if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); command('remove'); }
+        if (event.key.toLowerCase() === 'm' && !event.metaKey && !event.ctrlKey && !event.altKey && row.state === 'saved') { event.preventDefault(); command('move-to'); }
       }}>
-      {/* Clicking the poster plays it; nothing is ever drawn over the image. */}
-      <div className="shelf-poster" onClick={() => { if (!missing) primary(); }}>
+      {/* Clicking the poster plays it (or selects with modifier keys); nothing is ever drawn over the image. */}
+      <div className="shelf-poster" onClick={(event) => {
+        if (onSelect && row.state === 'saved' && (event.metaKey || event.ctrlKey || event.shiftKey)) { event.preventDefault(); onSelect(event.shiftKey ? 'range' : 'toggle'); return; }
+        if (!missing) command('play');
+      }}>
         <FillThumb row={row} apiBase={apiBase} previewUrl={previewUrl} previewActive={previewActive} />
       </div>
       <div className="shelf-ledge" aria-hidden="true" />
       <div className="shelf-heading">
         <span className="shelf-title" title={row.title}>{row.title}</span>
         {row.durationLabel && <span className="row-duration">{row.durationLabel}</span>}
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild><button className={`row-action hover-action more-action${menuOpen ? ' menu-open' : ''}`} aria-label={`${ui.more}: ${row.title}`} title={ui.more}><MoreHorizontal /></button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="video-menu"
             onPointerDownCapture={() => { pointerMenu.current = true; }}
             onKeyDownCapture={() => { pointerMenu.current = false; }}
-            onCloseAutoFocus={(event) => { if (pointerMenu.current) event.preventDefault(); }}>
-            <DropdownMenuItem onSelect={() => command('details')}>{ui.details}</DropdownMenuItem>
-            {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('move-to')}>{libraryStrings.moveTo}<span className="menu-hint" aria-hidden="true">M</span></DropdownMenuItem>}
-            {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('rename')}>{libraryStrings.detailRename}</DropdownMenuItem>}
-            {(row.source.url || row.source.sourcePageUrl) && <><DropdownMenuItem onSelect={() => command('copy-link')}>{ui.copyLink}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('open-page')}>{ui.openPage}</DropdownMenuItem></>}
-            {!missing && <DropdownMenuItem onSelect={() => command('show-folder')}>{ui.showFolder}</DropdownMenuItem>}
+            onCloseAutoFocus={(event) => {
+              const pending = pendingMenuCommand.current;
+              pendingMenuCommand.current = null;
+              if (pending) {
+                event.preventDefault();
+                onCommand(pending);
+                return;
+              }
+              if (pointerMenu.current) event.preventDefault();
+            }}>
+            <DropdownMenuItem onSelect={() => menuCommand('details')}>{ui.details}</DropdownMenuItem>
+            {row.state === 'saved' && <DropdownMenuItem onSelect={() => menuCommand('move-to')}>{libraryStrings.moveTo}<span className="menu-hint" aria-hidden="true">M</span></DropdownMenuItem>}
+            {row.state === 'saved' && <DropdownMenuItem onSelect={() => menuCommand('rename')}>{libraryStrings.detailRename}</DropdownMenuItem>}
+            {(row.source.url || row.source.sourcePageUrl) && <><DropdownMenuItem onSelect={() => menuCommand('copy-link')}>{ui.copyLink}</DropdownMenuItem><DropdownMenuItem onSelect={() => menuCommand('open-page')}>{ui.openPage}</DropdownMenuItem></>}
+            {!missing && <DropdownMenuItem onSelect={() => menuCommand('show-folder')}>{ui.showFolder}</DropdownMenuItem>}
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="destructive-text" onSelect={() => command('remove')}>{ui.remove}</DropdownMenuItem>
+            <DropdownMenuItem className="destructive-text" onSelect={() => menuCommand('remove')}>{ui.remove}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         {row.action?.style === 'icon' && <button className="row-action hover-action play-action" disabled={busy} aria-label={`${row.action.label || ui.play}: ${row.title}`} title={row.action.label || ui.play} onClick={() => command(row.action!.id as RowCommand)}>
           {busy ? <LoaderCircle className="spin" /> : <Play />}
         </button>}
       </div>
-      <div className={`row-status shelf-status tone-${row.tone}${row.state === 'saved' ? ' saved-meta' : ''}`} title={row.statusLine}>{row.state === 'saved' ? <>
+      <div className={`row-status shelf-status tone-${row.tone}${row.state === 'saved' && !moveFailed ? ' saved-meta' : ''}`} title={row.statusLine}>{row.state === 'saved' && !moveFailed ? <>
         {row.qualityLabel && <><QualityLabel label={row.qualityLabel} /><span className="meta-dot" aria-hidden="true">·</span></>}
         {row.sizeLabel && <><span className="file-size">{row.sizeLabel}</span><span className="meta-dot" aria-hidden="true">·</span></>}
         <span className="saved-badge"><Check aria-hidden="true" />{savedWhen(row.statusLine)}</span>
@@ -159,8 +186,10 @@ export function moveGridFocus(event: KeyboardEvent<HTMLElement>, selector: strin
   tiles[next]?.scrollIntoView({ block: 'nearest' });
 }
 
-export function SavedShelf({ rows, apiBase, busyIds, hasMore, loadingMore, onLoadMore, onCommand, onRequestPreview }: {
-  rows: RowModel[]; apiBase: string; busyIds: ReadonlySet<string>; hasMore: boolean; loadingMore: boolean; onLoadMore: () => void;
+export function SavedShelf({ rows, sections, onToggleSection, selectedIds, onSelect, dragIds, apiBase, busyIds, hasMore, loadingMore, onLoadMore, onCommand, onRequestPreview }: {
+  rows: RowModel[]; sections?: ListSection[]; onToggleSection?: (key: string) => void;
+  selectedIds?: ReadonlySet<string>; onSelect?: (row: RowModel, mode: SelectMode) => void; dragIds?: (row: RowModel) => string[];
+  apiBase: string; busyIds: ReadonlySet<string>; hasMore: boolean; loadingMore: boolean; onLoadMore: () => void;
   onCommand: (row: RowModel, command: RowCommand) => void; onRequestPreview: RequestThumbnailPreview;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
@@ -183,11 +212,27 @@ export function SavedShelf({ rows, apiBase, busyIds, hasMore, loadingMore, onLoa
     observer.observe(sentinel.current);
     return () => observer.disconnect();
   }, [hasMore, loadingMore, onLoadMore]);
-  return <div className="shelf-view">
-    <div className="shelf-grid" role="list" aria-label={ui.savedShelf} data-input-mode={inputMode} onKeyDown={(event) => moveGridFocus(event, '.shelf-tile')}>
-      {rows.map((row) => <ShelfTile key={row.id} row={row} apiBase={apiBase} busy={busyIds.has(row.id)} inputMode={inputMode}
-        onCommand={(action) => onCommand(row, action)} onRequestPreview={onRequestPreview} />)}
-    </div>
+  const renderTile = (row: RowModel) => <ShelfTile key={row.id} row={row} apiBase={apiBase} busy={busyIds.has(row.id)}
+    selected={!!selectedIds?.has(row.id)} inputMode={inputMode}
+    onCommand={(action) => onCommand(row, action)} onRequestPreview={onRequestPreview}
+    onSelect={onSelect ? (mode) => onSelect(row, mode) : undefined}
+    dragIds={dragIds ? () => dragIds(row) : undefined} />;
+  return <div className="shelf-view" data-input-mode={inputMode}>
+    {sections ? sections.map((section) => {
+      if (!section.label && !section.rows.length) return null;
+      return <Fragment key={`section:${section.key}`}>
+        {section.label && <div className="group-item shelf-group-item">
+          <button type="button" className="group-header" data-row-key={`group:${section.key}`} aria-expanded={!section.collapsed}
+            aria-label={libraryText(section.collapsed ? 'expandGroup' : 'collapseGroup', { label: `${section.label}, ${section.meta}` })}
+            onClick={() => onToggleSection?.(section.key)}><ChevronDown className="chev" aria-hidden="true" /><b>{section.label}</b><span className="group-meta">{section.meta}</span></button>
+        </div>}
+        {!section.collapsed && section.rows.length > 0 && <div className="shelf-grid shelf-group-grid" role="list" aria-label={section.label || ui.savedShelf} data-input-mode={inputMode} onKeyDown={(event) => moveGridFocus(event, '.shelf-tile')}>
+          {section.rows.map(renderTile)}
+        </div>}
+      </Fragment>;
+    }) : <div className="shelf-grid" role="list" aria-label={ui.savedShelf} data-input-mode={inputMode} onKeyDown={(event) => moveGridFocus(event, '.shelf-tile')}>
+      {rows.map(renderTile)}
+    </div>}
     {hasMore && <div ref={sentinel} className="load-more"><button className="row-action" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? ui.loading : ui.loadMore}</button></div>}
   </div>;
 }

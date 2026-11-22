@@ -74,7 +74,7 @@ export function TopBar({ brandRef, pasteRef, searchRef, value, onValue, onSubmit
       {searchOpen ? <div className="search-field"><Search /><input ref={searchRef} value={search} onChange={(event) => onSearch(event.target.value)} placeholder={ui.searchPlaceholder} aria-label={ui.searchPlaceholder} onKeyDown={(event) => { if (event.key === 'Escape') { onSearch(''); onSearchOpen(false); } }} /><button className="row-action" aria-label={ui.closeSearch} onClick={() => { onSearch(''); onSearchOpen(false); }}><X /></button></div> : <>
         <nav className="list-tabs" aria-label="Filter videos" ref={tabs} {...tabsDrag} onPointerOver={followPointer} onPointerLeave={(event) => event.currentTarget.classList.remove('hovering')}><i className="tab-hover" aria-hidden="true" /><i className="tab-indicator" aria-hidden="true" />{(['all', 'downloading', 'saved'] as const).map((item) => <button key={item} data-tab={item} aria-current={filter === item ? 'page' : undefined} className={filter === item ? 'selected' : ''} onClick={() => onFilter(item)}>{ui[item]}{item === 'saved' && savedDot && <i className="snag-pip" aria-hidden="true" />}</button>)}</nav>
         {viewToggle}
-        <button className="row-action" aria-label={ui.search} title="Search (⌘F)" onClick={() => onSearchOpen(true)}><Search /></button>
+        <button className="row-action" aria-label={ui.search} title={`Search (${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘F' : 'Ctrl+F'})`} onClick={() => onSearchOpen(true)}><Search /></button>
       </>}
     </div>}
   </header>;

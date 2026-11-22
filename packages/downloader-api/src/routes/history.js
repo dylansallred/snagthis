@@ -40,6 +40,7 @@ function registerHistoryRoutes(app, historyIndex, fsPromises, downloadDir, optio
     let removed = 0;
     try {
       for (const item of [...historyIndex.items]) {
+        if (!historyIndex.findById(item.id)) continue;
         await trash(item);
         removed += 1;
       }
@@ -54,9 +55,9 @@ function registerHistoryRoutes(app, historyIndex, fsPromises, downloadDir, optio
       if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: 'File moved or deleted', code: 'FILE_MISSING' });
       const contentType = MEDIA_TYPES[path.extname(filePath).toLowerCase()];
       if (!contentType) return res.sendStatus(404);
-      if (action === 'file') return res.download(filePath, item.title ? `${item.title}${path.extname(filePath)}` : item.fileName);
+      if (action === 'file') return res.download(filePath, item.title ? `${item.title}${path.extname(filePath)}` : item.fileName, { dotfiles: 'allow' });
       res.setHeader('Content-Type', contentType);
-      return res.sendFile(filePath);
+      return res.sendFile(path.basename(filePath), { root: path.dirname(filePath) });
     });
   }
 

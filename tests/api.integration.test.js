@@ -464,7 +464,8 @@ test('media metadata inference detects common TV episode patterns', () => {
   assert.equal(movieLike.isTvCandidate, false);
   assert.equal(movieLike.seasonNumber, null);
   assert.equal(movieLike.episodeNumber, null);
-  assert.equal(movieLike.lookupTitle, 'Dune Part Two 2024');
+  assert.equal(movieLike.lookupTitle, 'Dune Part Two');
+  assert.equal(movieLike.releaseYear, 2024);
 
   const tvRouteHint = inferMediaMetadata({
     title: 'Scrubs',
