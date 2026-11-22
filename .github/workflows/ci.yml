@@ -107,7 +107,17 @@ jobs:
       # separate pinned binaries that match the corresponding source packet.
       - name: Install FFmpeg on Linux
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: |
+          # Ubuntu 24.04's FFmpeg 6 does not support the app's HLS demuxer options.
+          archive="$RUNNER_TEMP/jellyfin-ffmpeg.tar.xz"
+          media_tools="$RUNNER_TEMP/ffmpeg"
+          curl --fail --show-error --silent --location --retry 3 \
+            https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.3-2/jellyfin-ffmpeg_8.1.3-2_portable_linux64-gpl.tar.xz \
+            --output "$archive"
+          printf '%s  %s\n' '1df84d04c4322902dba81c290508cdf3d89524d210b9fe03154bea6c4e3bfbb6' "$archive" | sha256sum -c -
+          mkdir -p "$media_tools"
+          tar -xJf "$archive" -C "$media_tools"
+          printf '%s\n' "$media_tools" >> "$GITHUB_PATH"
       - name: Install FFmpeg on Windows
         if: runner.os == 'Windows'
         run: choco install ffmpeg --version=9.0.2 --yes --no-progress
@@ -123,6 +133,7 @@ jobs:
         shell: bash
         run: |
           ffmpeg -version
+          ffmpeg -hide_banner -h demuxer=hls | grep -F allowed_segment_extensions
           ffprobe -version
           yt-dlp --version
       - name: Install browser and Electron display dependencies
