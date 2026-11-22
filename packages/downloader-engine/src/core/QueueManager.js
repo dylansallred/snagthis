@@ -851,28 +851,27 @@ class QueueManager {
     const trimmed = String(newTitle || '').trim();
     if (!trimmed) return false;
 
-    const cleanBase = this.sanitizeFinalFileName(trimmed, 'Download');
+    const cleanBase = this.sanitizeFinalFileName(trimmed);
     // Keep `${job.id}-${cleanBase}.mp4` safely below 255-byte filesystem limits (e.g. CJK titles).
     const prefixBytes = Buffer.byteLength(`${job.id}-`, 'utf8') + 10;
     const maxBaseBytes = Math.max(24, 240 - prefixBytes);
-    let boundedBase = cleanBase;
-    while (Buffer.byteLength(boundedBase, 'utf8') > maxBaseBytes && boundedBase.length > 1) {
-      boundedBase = boundedBase.slice(0, -1).trim();
+    let boundedBase = '';
+    for (const character of cleanBase) {
+      if (Buffer.byteLength(boundedBase + character, 'utf8') > maxBaseBytes) break;
+      boundedBase += character;
     }
-    const safeBase = boundedBase || 'Download';
+    const safeBase = boundedBase.trimEnd() || 'Download';
 
     job.title = trimmed;
     job.manualTitleOverride = true;
 
+    // Keep the working paths stable for resume. Completion applies the new title.
     const isDirect = job.mediaType !== 'hls' && !/\.m3u8(\?|$)/i.test(job.url || '');
     if (isDirect) {
       const currentExt = path.extname(job.filePath || job.downloadNameMp4 || job.downloadName || '') || '.mp4';
       const directName = safeBase.toLowerCase().endsWith(currentExt.toLowerCase()) ? safeBase : `${safeBase}${currentExt}`;
       job.downloadName = directName;
       job.downloadNameMp4 = directName;
-      if (typeof job.filePath === 'string' && job.filePath.trim()) {
-        job.filePath = path.join(path.dirname(job.filePath), `${job.id}-${directName}`);
-      }
     } else {
       job.downloadName = safeBase;
       const mp4Name = /\.mp4$/i.test(safeBase) ? safeBase : `${safeBase}.mp4`;

@@ -883,14 +883,31 @@ function watchIdleInstall() {
   }, UPDATER_IDLE_POLL_MS);
 }
 
-function failUpdateInstall(error) {
+let updateBridgeStop = null;
+
+async function failUpdateInstall(error) {
+  clearUpdaterInstallTimer();
   updaterInstallRequested = false;
   clearUpdaterInstallState();
   updaterState.phase = 'error';
   updaterState.errorKind = 'install';
   updaterState.message = 'Update install failed';
   updaterState.error = error;
+  updaterState.currentVersion = app.getVersion();
   sendToRenderer('updater:event', updaterState);
+
+  const stopping = updateBridgeStop;
+  updateBridgeStop = null;
+  if (!stopping) return;
+  try {
+    await stopping;
+    const address = await apiServer.start();
+    apiPort = Number(address?.port || apiPort);
+    apiShutdownComplete = false;
+    sendToRenderer('app:info-update', appInfo());
+  } catch (err) {
+    console.error('[desktop] Could not restart the local bridge after an update failure', err);
+  }
 }
 
 function recordInstallAttempt(reopen) {
@@ -960,7 +977,7 @@ async function installDownloadedUpdate({ reason = 'restart' } = {}) {
     if (!staged || blocked()) {
       updaterInstallRequested = false;
       if (!staged && !idle) {
-        failUpdateInstall('SnagThis couldn’t get the update ready to install. Try again, or download the installer from snagthisvid.com.');
+        await failUpdateInstall('SnagThis couldn’t get the update ready to install. Try again, or download the installer from snagthisvid.com.');
         return { ok: false, error: updaterState.error };
       }
       // Idle installs try again later; a download that just started keeps the update waiting.
@@ -971,29 +988,32 @@ async function installDownloadedUpdate({ reason = 'restart' } = {}) {
       return { ok: false, error: staged ? 'A download started, so the update waits.' : 'The update is still being prepared.' };
     }
     recordInstallAttempt(reopen);
-    if (apiServer && typeof apiServer.stop === 'function' && (typeof apiShutdownComplete === 'undefined' || !apiShutdownComplete)) {
+    if (apiServer && !apiShutdownComplete) {
       let stopTimer;
-      const timeoutMs = typeof SHUTDOWN_TIMEOUT_MS === 'number' ? SHUTDOWN_TIMEOUT_MS : 15_000;
+      updateBridgeStop = apiServer.stop().catch((err) => {
+        console.error('[desktop] Could not stop the local bridge before updating', err);
+      });
       try {
         await Promise.race([
-          apiServer.stop(),
-          new Promise((resolve) => { stopTimer = setTimeout(resolve, timeoutMs); }),
+          updateBridgeStop,
+          new Promise((resolve) => { stopTimer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS); }),
         ]);
-      } catch { /* Proceed with update install. */ }
-      finally { clearTimeout(stopTimer); }
-      if (typeof apiShutdownComplete !== 'undefined') apiShutdownComplete = true;
+      } finally { clearTimeout(stopTimer); }
+      if (updaterState.phase !== 'installing') return { ok: false, error: updaterState.error };
+      apiShutdownComplete = true;
     }
     // Silent (NSIS /S) and relaunch. On macOS the staged update installs and SnagThis reopens.
     autoUpdater.quitAndInstall(true, true);
+    if (updaterState.phase !== 'installing') return { ok: false, error: updaterState.error };
     updaterInstallTimer = setTimeout(() => {
       updaterInstallTimer = null;
       if (updaterState.phase !== 'installing') return;
-      failUpdateInstall('SnagThis didn’t restart to install the update. Try again, or download the installer from snagthisvid.com.');
+      void failUpdateInstall('SnagThis didn’t restart to install the update. Try again, or download the installer from snagthisvid.com.');
       console.error('[desktop] update install did not restart the app');
     }, UPDATER_INSTALL_TIMEOUT_MS);
     return { ok: true };
   } catch (err) {
-    failUpdateInstall(String((err && err.message) || err || 'Unknown updater error'));
+    await failUpdateInstall(String((err && err.message) || err || 'Unknown updater error'));
     console.error('[desktop] quitAndInstall failed', err);
     return { ok: false, error: updaterState.error };
   }
@@ -1134,9 +1154,13 @@ function configureAutoUpdater() {
     clearUpdaterInstallTimer();
     updaterInstallRequested = false;
     clearIdleInstall();
+    if (failedPhase === 'installing') {
+      void failUpdateInstall(String(error?.message || error || 'Unknown updater error'));
+      return;
+    }
     updaterState.phase = 'error';
     // A downloaded update only fails while Squirrel.Mac stages or installs it.
-    const kind = ['installing', 'downloaded'].includes(failedPhase) ? 'install' : failedPhase === 'downloading' ? 'download' : 'check';
+    const kind = failedPhase === 'downloaded' ? 'install' : failedPhase === 'downloading' ? 'download' : 'check';
     updaterState.errorKind = kind;
     updaterState.message = kind === 'install' ? 'Update install failed'
       : kind === 'download' ? 'Update download failed' : 'Update check failed';

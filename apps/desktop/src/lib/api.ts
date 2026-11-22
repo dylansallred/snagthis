@@ -43,8 +43,9 @@ export function createApiClient(baseUrl: string, authToken = '') {
     headers.set('Content-Type', 'application/json');
     headers.set('X-Client', 'snagthis-desktop');
     if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
-    const timeoutMs = path === '/api/media/inspect' ? 60_000 : 30_000;
-    const signal = options.signal ?? (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined);
+    // Mutations can keep running on the bridge after fetch is aborted.
+    const timeoutMs = path === '/api/media/inspect' ? 60_000 : !options.method || options.method === 'GET' ? 30_000 : null;
+    const signal = options.signal ?? (timeoutMs && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined);
     const response = await fetch(`${base}${path}`, { ...options, headers, signal });
     const data = await response.json().catch(() => null);
     if (!response.ok) {

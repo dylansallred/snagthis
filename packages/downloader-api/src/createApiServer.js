@@ -1943,7 +1943,7 @@ function createApiServer(options = {}) {
     });
   });
 
-  const mediaInfoService = createMediaInfoService({ dataDir, getFfprobePath: () => FFPROBE_PATH, signal: previewAbort.signal });
+  const mediaInfoService = createMediaInfoService({ dataDir, getFfprobePath: () => FFPROBE_PATH, getSignal: () => previewAbort.signal });
   registerHistoryRoutes(app, historyIndex, fsPromises, resolvedDownloadDir, {
     onTrashFile, onOpenFile, onLocateFile, mediaInfo: mediaInfoService.mediaInfo,
     onRemoveItem: async (item) => {
@@ -2328,33 +2328,17 @@ function createApiServer(options = {}) {
     });
   }
 
-  // Lightweight in-memory change detector so completely idle 500 ms ticks avoid
-  // synchronous disk checks (fs.existsSync) and repeated JSON.stringify passes.
-  let lastTickFingerprint = '';
-  function getIdleQueueFingerprint() {
-    const settings = queueManager.getSettings();
-    let fingerprint = `${jobs.size}|${settings.maxConcurrent}|${settings.autoStart}|${queueManager.queue.length}`;
-    for (const job of jobs.values()) {
-      fingerprint += `|${job.id}:${job.updatedAt || 0}:${job.title || ''}:${job.queueStatus || ''}:${job.status || ''}:${job.progress || 0}:${job.bytesDownloaded || 0}:${job.totalBytes || 0}:${job.speedBps || 0}:${job.etaSeconds ?? ''}:${job.durationSeconds ?? ''}:${job.selection?.height ?? ''}:${job.completedSegments || 0}:${job.error || ''}:${job.filePath || ''}:${job.mp4Path || ''}:${job.previewClipPath || ''}:${job.thumbnailPath || ''}`;
-    }
-    return fingerprint;
-  }
-
   // Runs only while the server is started, and only after start() has marked
   // earlier sessions' completed jobs as already announced.
   function broadcastTick() {
-    const fingerprint = getIdleQueueFingerprint();
-    if (fingerprint !== lastTickFingerprint) {
-      lastTickFingerprint = fingerprint;
-      const payload = getQueuePayload();
-      broadcastQueueUpdate(payload);
-      const historySignature = getHistoryQueueSignature(payload);
-      if (historySignature !== lastHistoryQueueSignature) {
-        lastHistoryQueueSignature = historySignature;
-        historyIndex.refreshFromDisk({ force: true }).catch((err) => {
-          logger.warn('History index refresh failed after queue update', { error: err && err.message });
-        });
-      }
+    const payload = getQueuePayload();
+    broadcastQueueUpdate(payload);
+    const historySignature = getHistoryQueueSignature(payload);
+    if (historySignature !== lastHistoryQueueSignature) {
+      lastHistoryQueueSignature = historySignature;
+      historyIndex.refreshFromDisk({ force: true }).catch((err) => {
+        logger.warn('History index refresh failed after queue update', { error: err && err.message });
+      });
     }
 
     jobSubscriptions.forEach((subscribers, jobId) => {
@@ -2399,10 +2383,8 @@ function createApiServer(options = {}) {
     for (const job of jobs.values()) if (['completed', 'completed-with-errors'].includes(job.queueStatus || job.status)) notifiedCompletedJobs.add(job.id);
     await historyIndex.init();
     lastQueueSignature = '';
-    lastTickFingerprint = '';
     const initialQueue = getQueuePayload();
     lastHistoryQueueSignature = getHistoryQueueSignature(initialQueue);
-    lastTickFingerprint = getIdleQueueFingerprint();
     broadcastQueueUpdate(initialQueue);
     broadcastCompatibilityUpdate();
     if (webSocketServerClosed) {
@@ -2441,6 +2423,7 @@ function createApiServer(options = {}) {
       server.once('error', fail);
       server.listen(port, host, () => {
         server.off('error', fail);
+        queueManager.processQueue();
         logger.info('Downloader API listening', { host, port });
         resolve({ host, port: server.address().port });
       });

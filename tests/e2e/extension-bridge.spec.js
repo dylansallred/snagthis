@@ -433,7 +433,7 @@ test('popup prepares a verified poster without hover and keeps it across reopen'
     await expect(row().locator('img.thumb-poster')).toHaveAttribute('src', poster);
     await expect.poll(() => row().locator('img.thumb-poster').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
     await expect(row().locator('video.thumb-preview')).toHaveCount(0);
-    const quality = row().getByRole('button', { name: 'Choose quality', exact: true });
+    const quality = row().getByRole('button', { name: /^Choose quality\b/ });
     await expect(quality).toContainText('1080p');
     await expect(popup.locator('#popup')).toHaveCSS('transform', 'none');
     const closedBounds = await quality.boundingBox();
@@ -530,7 +530,7 @@ test('quality menu overlays the popup without shifting layout and selection appl
   const opened = await openFixture('variants');
   const { popup } = opened;
   try {
-    const quality = popup.getByRole('button', { name: 'Choose quality', exact: true });
+    const quality = popup.getByRole('button', { name: /^Choose quality\b/ });
     await expect(quality).toBeVisible();
     await expect(quality.locator('.resolution')).toHaveText('1080p');
     await popup.evaluate(() => document.fonts.ready);
@@ -574,7 +574,7 @@ test('master variants collapse, unrelated videos remain separate, SPA clears det
   const master = await openFixture('variants');
   try {
     await expect(master.popup.locator('.video-row')).toHaveCount(1);
-    await expect(master.popup.getByRole('button', { name: 'Choose quality', exact: true })).toBeVisible();
+    await expect(master.popup.getByRole('button', { name: /^Choose quality\b/ })).toBeVisible();
     // Quality, size and duration each draw a 3px separator before themselves; a separator
     // that would start a line falls in the list's clipped 13px strip.
     const metadataItems = master.popup.locator('.row-meta .meta-item:visible');

@@ -526,7 +526,7 @@ function registerJobRoutes(
     job._downloadAbort?.abort();
     job.updatedAt = Date.now();
     job.completedAt = job.updatedAt;
-    if (!queueManager.activeDownloads?.has(job.id) && typeof queueManager.cleanupCancelledJobArtifacts === 'function') {
+    if (!queueManager.activeJobs.has(job.id)) {
       queueManager.cleanupCancelledJobArtifacts(job);
     }
     await queueManager.saveQueue();

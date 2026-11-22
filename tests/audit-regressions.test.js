@@ -11,7 +11,39 @@ const { buildDownloadAssetUrl, resolveDownloadPath } = require('../packages/down
 const { HistoryIndexService } = require('../packages/downloader-api/src/services/historyIndex');
 const { createApiServer } = require('../packages/downloader-api/src/createApiServer');
 const { recordSegmentDiagnostic, writeSegmentDiagnosticsReport } = require('../packages/downloader-engine/src/core/HlsSegmentDiagnostics');
+const QueueManager = require('../packages/downloader-engine/src/core/QueueManager');
 const { parseHlsManifest } = require('../packages/contracts/src/hls');
+
+test('renaming a paused download preserves its working path and uses the requested filename', () => {
+  const job = { id: 'rename1-direct', title: 'Original', mediaType: 'file', queueStatus: 'paused', filePath: path.join(os.tmpdir(), 'Original.webm') };
+  const workingPath = job.filePath;
+  const queue = Object.assign(Object.create(QueueManager.prototype), { queue: [job], saveQueue() {} });
+  assert.equal(queue.renameJob(job.id, 'Trip.2024'), true);
+  assert.equal(job.filePath, workingPath);
+  assert.equal(job.downloadName, 'Trip.2024.webm');
+  assert.equal(job.downloadNameMp4, 'Trip.2024.webm');
+});
+
+test('Saved forces one rescan for a newly completed job whose file cannot be indexed', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'] });
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'snagthis-hist-scan-'));
+  const jobs = new Map();
+  const history = new HistoryIndexService({ downloadDir: path.join(dir, 'downloads'), indexDir: dir, fsPromises: fsp, jobs });
+  try {
+    await history.init();
+    let scans = 0;
+    const walk = history.walkMediaFiles.bind(history);
+    history.walkMediaFiles = (...args) => { scans += 1; return walk(...args); };
+    t.mock.timers.tick(1);
+    const job = { id: 'missing1-complete', queueStatus: 'completed', completedAt: Date.now() };
+    jobs.set(job.id, job);
+    await history.list();
+    await history.list();
+    assert.equal(scans, 1);
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
 
 test('isPublicAddress blocks IPv6 NAT64, 6to4, site-local, IPv4-compatible, and hex IPv4-mapped private addresses', () => {
   for (const blocked of [

@@ -1086,19 +1086,22 @@ class HistoryIndexService {
     }
   }
 
-  hasUnindexedCompletedJob() {
+  hasNewUnindexedCompletedJob() {
     if (!this.jobs || typeof this.jobs.values !== 'function') return false;
+    // A completed job with no indexable file should only force a rescan once.
+    const lastScanStartedAt = this.lastRefreshAt - this.lastScanMs;
     const indexedJobIds = new Set(this.items.map((item) => item.jobId).filter(Boolean));
     for (const job of this.jobs.values()) {
       if (!job || !job.id) continue;
       const done = job.queueStatus === 'completed' || job.status === 'completed' || job.status === 'completed-with-errors';
-      if (done && !indexedJobIds.has(job.id)) return true;
+      const completedAt = Number(job.completedAt || job.updatedAt || 0);
+      if (done && completedAt > lastScanStartedAt && !indexedJobIds.has(job.id)) return true;
     }
     return false;
   }
 
   async list(options = {}) {
-    await this.refreshFromDisk({ force: !this.hasScannedOnce || this.hasUnindexedCompletedJob() });
+    await this.refreshFromDisk({ force: !this.hasScannedOnce || this.hasNewUnindexedCompletedJob() });
 
     const limit = safeParsePositiveInt(options.limit, DEFAULT_LIMIT, { min: 1, max: 1_000 });
     const offset = decodeCursor(options.cursor);
