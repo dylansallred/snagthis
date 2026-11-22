@@ -42,6 +42,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
   const [requestedPreview, setRequestedPreview] = useState<{ key: string; url: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const pieces = useRef<HTMLDivElement>(null);
+  const itemRef = useRef<HTMLDivElement>(null);
   // Drawer motion: details stay mounted while they slide shut, then unmount.
   const [detailsMounted, setDetailsMounted] = useState(expanded);
   const [detailsOpen, setDetailsOpen] = useState(expanded);
@@ -117,7 +118,10 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
     if (!expanded && !detailsMounted) return;
     if (expanded) {
       if (!detailsMounted) setDetailsMounted(true);
-      const frame = requestAnimationFrame(() => requestAnimationFrame(() => setDetailsOpen(true)));
+      const frame = requestAnimationFrame(() => requestAnimationFrame(() => {
+        setDetailsOpen(true);
+        itemRef.current?.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
+      }));
       return () => cancelAnimationFrame(frame);
     }
     setDetailsOpen(false);
@@ -130,7 +134,7 @@ export function VideoRow({ row, inputMode, apiBase, folder, expanded, renaming, 
   // Resume keeps its own glyph and name so it never reads as Play on a saved file.
   const actionLabel = row.action?.id === 'resume' ? ui.resumeDownload : row.action?.label;
   return (
-    <div role="listitem" data-item-key={row.id} className={`video-item${expanded ? ' expanded' : ''}${drop ? ` drop-${drop}` : ''}${dragging ? ' dragging' : ''}${selected ? ' selected' : ''}`}>
+    <div ref={itemRef} role="listitem" data-item-key={row.id} className={`video-item${expanded ? ' expanded' : ''}${drop ? ` drop-${drop}` : ''}${dragging ? ' dragging' : ''}${selected ? ' selected' : ''}`}>
       <div className={`video-row${justSaved ? ' just-saved' : ''}`} data-row-key={row.id} data-state={row.state} data-selected={selected || undefined} role="group" tabIndex={0}
         data-progress={progress} data-progress-active={progressMotion}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}

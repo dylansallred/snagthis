@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Film } from 'lucide-react';
 import type { RowModel } from '@m3u8/contracts/src/rows.mjs';
 import { resolveThumbnailUrl } from '@/lib/utils';
 
@@ -34,8 +35,10 @@ export function FillThumb({ row, apiBase, previewUrl, previewActive = false }: {
   const loaded = showImage && loadedUrl === url;
   return (
     <div className="fill-thumb thumb" aria-hidden="true">
-      {/* The dots stay underneath until the poster has decoded, then the two crossfade. */}
-      {!(loaded && settledUrl === url) && <div className={`thumb-fill thumb-placeholder${loaded ? ' done' : ''}`}><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /></div>}
+      {/* Show loading dots only while decoding an actual poster; show a quiet film mark when none exists. */}
+      {showImage
+        ? !(loaded && settledUrl === url) && <div className={`thumb-fill thumb-placeholder${loaded ? ' done' : ''}`}><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /></div>
+        : <div className="thumb-fill thumb-placeholder thumb-empty"><Film className="thumb-empty-icon" /></div>}
       {/* Lazy: a long library only fetches and decodes the posters near the viewport. */}
       {showImage && <img loading="lazy" decoding="async" className={`thumb-fill thumb-poster${loaded ? ' ready' : ''}`} src={url!} alt="" draggable={false} onLoad={() => setLoadedUrl(url)} onTransitionEnd={() => setSettledUrl(url)} onError={() => setFailedUrl(url)} />}
       {previewActive && resolvedPreview && <MotionPreview key={resolvedPreview.split(/[?#]/, 1)[0]} url={resolvedPreview} />}

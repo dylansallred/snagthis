@@ -6,6 +6,7 @@ import { FillThumb, type RequestThumbnailPreview } from '@/components/list/FillT
 import { QualityLabel } from '@/components/list/QualityLabel';
 import type { RowCommand } from '@/components/list/RowDetails';
 import { ui } from '@/lib/strings';
+import { libraryStrings } from '@m3u8/contracts/src/library.mjs';
 import { resolveThumbnailUrl } from '@/lib/utils';
 import { endSavedDrag, startSavedDrag } from './savedDrag';
 import './SavedShelf.css';
@@ -115,6 +116,8 @@ function ShelfTile({ row, apiBase, busy, inputMode, onCommand, onRequestPreview 
             onKeyDownCapture={() => { pointerMenu.current = false; }}
             onCloseAutoFocus={(event) => { if (pointerMenu.current) event.preventDefault(); }}>
             <DropdownMenuItem onSelect={() => command('details')}>{ui.details}</DropdownMenuItem>
+            {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('move-to')}>{libraryStrings.moveTo}<span className="menu-hint" aria-hidden="true">M</span></DropdownMenuItem>}
+            {row.state === 'saved' && <DropdownMenuItem onSelect={() => command('rename')}>{libraryStrings.detailRename}</DropdownMenuItem>}
             {(row.source.url || row.source.sourcePageUrl) && <><DropdownMenuItem onSelect={() => command('copy-link')}>{ui.copyLink}</DropdownMenuItem><DropdownMenuItem onSelect={() => command('open-page')}>{ui.openPage}</DropdownMenuItem></>}
             {!missing && <DropdownMenuItem onSelect={() => command('show-folder')}>{ui.showFolder}</DropdownMenuItem>}
             <DropdownMenuSeparator />

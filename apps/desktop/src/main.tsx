@@ -1,9 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import './globals.css';
 import App from './App';
 import { AppErrorBoundary } from '@/components/layout/AppErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
-import './globals.css';
 import { installAccentTheme } from '@/lib/accentTheme';
 import { installWindowChrome } from '@/lib/windowChrome';
 

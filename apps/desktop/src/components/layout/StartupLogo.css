@@ -45,6 +45,7 @@
 
 /* The first launch types the capitals and pops the button in; animations reveal each piece. */
 .startup-logo-overlay[data-mode="full"] :is(.startup-logo-letter, .startup-logo-cursor, .startup-logo-button) { opacity: 0; }
+.startup-logo-overlay[data-mode="short"] { pointer-events: none; }
 .startup-logo-overlay[data-mode="short"] .startup-logo-cursor { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
