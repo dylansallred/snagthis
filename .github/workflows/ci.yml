@@ -98,13 +98,31 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Fetch portable media tools
-        run: |
-          npm run fetch:ffmpeg --workspace @m3u8/desktop
-          npm run fetch:yt-dlp --workspace @m3u8/desktop
-      - name: Use the bundled tools for media fixtures
+      - name: Prepare Electron before Windows tests
+        if: runner.os == 'Windows'
+        run: node -e "require('electron')"
+      # The tests need FFmpeg and ffprobe on PATH. Release workflows fetch the
+      # separate pinned binaries that match the corresponding source packet.
+      - name: Install FFmpeg on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install FFmpeg on Windows
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --version=9.0.2 --yes --no-progress
+      - name: Fetch portable FFmpeg on macOS
+        if: runner.os == 'macOS'
+        run: npm run fetch:ffmpeg --workspace @m3u8/desktop
+      - name: Fetch pinned yt-dlp
+        run: npm run fetch:yt-dlp --workspace @m3u8/desktop
+      - name: Add repository media tools to PATH
         shell: bash
         run: node -p "require('path').resolve('apps/desktop/bin')" >> "$GITHUB_PATH"
+      - name: Check media tools before running fixtures
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffprobe -version
+          yt-dlp --version
       - name: Install browser and Electron display dependencies
         if: runner.os == 'Linux'
         run: npx playwright install --with-deps chromium
