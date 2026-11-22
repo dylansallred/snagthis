@@ -117,8 +117,10 @@ body {
 /* Workbench, simplified — the approved desktop surface. */
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; height: 100%; overflow: hidden; }
-/* No rubber-band bounce past the ends of any scrolling area (macOS elastic scrolling). */
-* { overscroll-behavior: none; }
+/* No rubber-band bounce past the ends of scrolling areas (macOS elastic scrolling).
+   Avoid `*`: in Chromium, `overflow: hidden` descendants (e.g. `.video-row`) are scroll
+   containers, so `overscroll-behavior: none` on them blocks wheel/trackpad scroll chaining. */
+html, body, .workbench-content, .settings-rail, .settings-pane, .palette-results, .quality-picker.wide, .update-notes-scroll, .update-details pre, .workbench-menu { overscroll-behavior: none; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .5; }
