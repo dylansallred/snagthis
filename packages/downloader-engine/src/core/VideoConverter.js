@@ -361,6 +361,88 @@ async function replaceFileWithTempOutput(targetPath, tempOutputPath) {
   }
 }
 
+const COMPATIBLE_H264_PIX_FMTS = new Set(['yuv420p', 'yuvj420p']);
+
+function assessPlaybackCompatibility(streams) {
+  const list = Array.isArray(streams) ? streams.filter(Boolean) : [];
+  const video = list.find((stream) => String(stream.codec_type || '').toLowerCase() === 'video') || null;
+  const audioStreams = list.filter((stream) => String(stream.codec_type || '').toLowerCase() === 'audio');
+  const videoCodec = video ? String(video.codec_name || '').toLowerCase() : null;
+  const pixFmt = video ? String(video.pix_fmt || '').toLowerCase() : null;
+  const audioCodecs = audioStreams.map((stream) => String(stream.codec_name || '').toLowerCase()).filter(Boolean);
+
+  const videoCompatible = !video
+    || (videoCodec === 'h264' && (!pixFmt || COMPATIBLE_H264_PIX_FMTS.has(pixFmt)))
+    || videoCodec === 'hevc'
+    || videoCodec === 'h265';
+
+  const audioCompatible = audioStreams.length === 0
+    || (audioCodecs.length === audioStreams.length && audioCodecs.every((codec) => codec === 'aac'));
+
+  return {
+    videoCompatible,
+    audioCompatible,
+    videoCodec,
+    audioCodecs,
+    pixFmt: pixFmt || null,
+  };
+}
+
+async function probeMediaStreams(filePath, {
+  FFPROBE_PATH,
+  timeoutMs = 15000,
+} = {}) {
+  if (!filePath || !FFPROBE_PATH) {
+    return { ok: false, skipped: true, streams: [] };
+  }
+
+  return new Promise((resolve) => {
+    const args = [
+      '-v', 'error',
+      '-show_entries', 'stream=codec_type,codec_name,pix_fmt,color_transfer,width,height',
+      '-of', 'json',
+      filePath,
+    ];
+    const child = spawn(FFPROBE_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const killTimer = setTimeout(() => {
+      child.kill('SIGKILL');
+      settle({ ok: false, skipped: false, streams: [], error: `ffprobe timed out after ${timeoutMs}ms` });
+    }, timeoutMs);
+
+    if (child.stdout) child.stdout.on('data', (chunk) => { stdout += Buffer.from(chunk).toString('utf8'); });
+    if (child.stderr) child.stderr.on('data', (chunk) => { stderr += Buffer.from(chunk).toString('utf8'); });
+
+    child.on('error', (err) => {
+      clearTimeout(killTimer);
+      settle({ ok: false, skipped: false, streams: [], error: err && err.message ? err.message : 'ffprobe failed to start' });
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(killTimer);
+      if (code !== 0) {
+        settle({ ok: false, skipped: false, streams: [], error: stderr.trim() || `ffprobe exited with code ${code}` });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout || '{}');
+        const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+        settle({ ok: true, skipped: false, streams });
+      } catch (err) {
+        settle({ ok: false, skipped: false, streams: [], error: err && err.message ? err.message : 'Invalid ffprobe JSON' });
+      }
+    });
+  });
+}
+
 async function normalizeMp4ForPlayback(job, mp4Path, {
   FFMPEG_PATH,
   FFPROBE_PATH,
@@ -421,6 +503,87 @@ async function normalizeMp4ForPlayback(job, mp4Path, {
       ));
     });
   });
+
+  // Probe the downloaded MP4 before launching an expensive full-video libx264 re-encode.
+  // When video is already compatible (e.g. H.264 yuv420p or 4K/HDR10 HEVC), keep the
+  // original video stream untouched and only repair audio if codec/timestamps need it.
+  if (job.forcePlaybackCompatibility !== true) {
+    const streamProbe = await probeMediaStreams(mp4Path, { FFPROBE_PATH });
+    if (streamProbe.ok) {
+      const assessment = assessPlaybackCompatibility(streamProbe.streams);
+      if (assessment.videoCompatible) {
+        const timelineProbe = await probeAudioPacketTimeline(mp4Path, { FFPROBE_PATH });
+        if (!timelineProbe.skipped) {
+          job.playbackDiagnostics = {
+            ...(job.playbackDiagnostics || {}),
+            audioTimeline: {
+              detectedAt: Date.now(),
+              analysis: timelineProbe.analysis,
+              probeOk: !!timelineProbe.ok,
+              probeError: timelineProbe.error || null,
+              aggressiveRepairAttempted: false,
+              aggressiveRepairApplied: false,
+              aggressiveRepairImproved: false,
+              aggressiveRepairProbeOk: null,
+              aggressiveRepairError: null,
+            },
+          };
+        }
+
+        const needsAudioTimelineRepair = timelineProbe.ok && timelineProbe.analysis.shouldRepair;
+        if (assessment.audioCompatible && !needsAudioTimelineRepair) {
+          logger.info('Skipping playback compatibility normalization (streams already compatible)', {
+            jobId: job.id,
+            mp4Path,
+            videoCodec: assessment.videoCodec,
+            audioCodecs: assessment.audioCodecs,
+            pixFmt: assessment.pixFmt,
+          });
+          return { ok: true, skipped: true, reason: 'already_compatible' };
+        }
+
+        logger.info('Repairing audio stream while preserving original video', {
+          jobId: job.id,
+          mp4Path,
+          videoCodec: assessment.videoCodec,
+          audioCodecs: assessment.audioCodecs,
+          gapCount: needsAudioTimelineRepair ? timelineProbe.analysis.gapCount : 0,
+        });
+        try {
+          try {
+            await runFfmpeg({
+              withSubs: true,
+              inputPath: mp4Path,
+              outputPath: aggressiveTempOutputPath,
+              aggressiveAudioRepair: true,
+            });
+          } catch (_) {
+            try { fs.unlinkSync(aggressiveTempOutputPath); } catch (_) {}
+            await runFfmpeg({
+              withSubs: false,
+              inputPath: mp4Path,
+              outputPath: aggressiveTempOutputPath,
+              aggressiveAudioRepair: true,
+            });
+          }
+          await replaceFileWithTempOutput(mp4Path, aggressiveTempOutputPath);
+          if (job.playbackDiagnostics && job.playbackDiagnostics.audioTimeline) {
+            job.playbackDiagnostics.audioTimeline.aggressiveRepairAttempted = true;
+            job.playbackDiagnostics.audioTimeline.aggressiveRepairApplied = true;
+          }
+          return { ok: true, skipped: false, audioOnlyRepair: true };
+        } catch (err) {
+          try { fs.unlinkSync(aggressiveTempOutputPath); } catch (_) {}
+          logger.warn('Audio-only playback repair failed; keeping original MP4', {
+            jobId: job.id,
+            mp4Path,
+            message: err && err.message,
+          });
+          return { ok: false, skipped: false, error: err && err.message };
+        }
+      }
+    }
+  }
 
   logger.info('Starting playback compatibility normalization', {
     jobId: job.id,
@@ -890,9 +1053,11 @@ module.exports = {
   remuxAndGenerateThumbnails,
   __test: {
     analyzeAudioPacketTimeline,
+    assessPlaybackCompatibility,
     buildPlaybackCompatibilityArgs,
     buildRemuxArgs,
     probeAudioPacketTimeline,
+    probeMediaStreams,
     resolveRemuxInput,
   },
 };
