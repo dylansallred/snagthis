@@ -60,7 +60,9 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           PLATFORMS: ${{ inputs.platforms }}
         run: |
-          all='["ubuntu-latest","macos-15","windows-latest"]'
+          # The pinned Playwright version supports Ubuntu 24.04 for browser tests.
+          linux='["ubuntu-24.04"]'
+          all='["ubuntu-24.04","macos-15","windows-latest"]'
           if [ "$EVENT" = pull_request ]; then
             labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name')
             if ! grep -qxE 'run-ci|run-ci-all' <<< "$labels"; then
@@ -75,9 +77,9 @@ jobs:
               echo "Only docs or site files changed, so the suite is skipped." >> "$GITHUB_STEP_SUMMARY"
               echo 'os=[]' >> "$GITHUB_OUTPUT"
             elif grep -qx 'run-ci-all' <<< "$labels"; then echo "os=$all" >> "$GITHUB_OUTPUT"
-            else echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"; fi
+            else echo "os=$linux" >> "$GITHUB_OUTPUT"; fi
           elif [ "$EVENT" = workflow_dispatch ] && [ "$PLATFORMS" != all ]; then
-            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            echo "os=$linux" >> "$GITHUB_OUTPUT"
           else
             echo "os=$all" >> "$GITHUB_OUTPUT"
           fi
