@@ -1881,7 +1881,7 @@ function createApiServer(options = {}) {
     });
   });
 
-  app.post(['/api/jobs/:id/retry', '/v1/jobs/:id/retry'], (req, res) => {
+  app.post(['/api/jobs/:id/retry', '/v1/jobs/:id/retry'], async (req, res) => {
     const sourceJob = jobs.get(req.params.id);
     if (!sourceJob) {
       res.status(404).json({ error: 'Job not found' });
@@ -1902,6 +1902,7 @@ function createApiServer(options = {}) {
     // A repeated retry (for example a double-clicked Undo) returns the first.
     const duplicate = findDuplicateQueuedJob(retryUrl);
     if (duplicate) {
+      await queueManager.persistence;
       res.json({ id: duplicate.id, jobId: duplicate.id, queuePosition: duplicate.queuePosition || 0, retryOf: sourceJob.id, duplicate: true });
       return;
     }
@@ -1935,6 +1936,7 @@ function createApiServer(options = {}) {
       : engineConfig.defaultMaxConcurrent;
 
     const { id, queuePosition } = enqueueLegacyRequest({ queue, threads, settings });
+    await queueManager.persistence;
     res.json({
       id,
       jobId: id,

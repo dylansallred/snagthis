@@ -3,14 +3,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { setTimeout: delay } = require('node:timers/promises');
 
 process.env.NODE_ENV = 'test';
 process.env.DISABLE_FILE_LOGS = '1';
 const { createApiServer } = require('../packages/downloader-api/src');
 const { toRowModel } = require('../packages/contracts/src/rows');
 
-test('cancelling failed and waiting jobs hides and persists them, supports Undo, and preserves saved files', async () => {
+test('cancelling failed and waiting jobs hides and persists them, supports Undo, and preserves saved files', async (t) => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snagthis-cancel-'));
   const downloadDir = path.join(dataDir, 'downloads');
   await fs.mkdir(downloadDir);
@@ -22,7 +21,8 @@ test('cancelling failed and waiting jobs hides and persists them, supports Undo,
     { id: 'waiting-video', queueStatus: 'queued', status: 'pending' },
     { id: 'saved-video', queueStatus: 'completed', status: 'completed', filePath: savedPath },
   ].map((job) => ({ url: 'https://example.org/video.mp4', mediaType: 'file', title: job.id, completedAt: Date.now(), ...job }));
-  await fs.writeFile(path.join(dataDir, 'queue.json'), JSON.stringify({ queue: seed, settings: { autoStart: false, maxConcurrent: 1 } }));
+  const queueFile = path.join(dataDir, 'queue.json');
+  await fs.writeFile(queueFile, JSON.stringify({ queue: seed, settings: { autoStart: false, maxConcurrent: 1 } }));
   const api = createApiServer({ dataDir, downloadDir, port: 0, ffmpegPath: process.execPath, ffprobePath: process.execPath, ytDlpPath: process.execPath, trustBinaryPaths: true });
   const address = await api.start();
   const base = `http://127.0.0.1:${address.port}`;
@@ -38,7 +38,7 @@ test('cancelling failed and waiting jobs hides and persists them, supports Undo,
       assert.equal(current.queueStatus, 'cancelled');
       assert.equal(current.status, 'cancelled');
       assert.equal(toRowModel(current), null, 'cancelled jobs leave the visible list');
-      const stored = JSON.parse(await fs.readFile(path.join(dataDir, 'queue.json'), 'utf8')).queue.find((job) => job.id === jobId);
+      const stored = JSON.parse(await fs.readFile(queueFile, 'utf8')).queue.find((job) => job.id === jobId);
       assert.equal(stored.queueStatus, 'cancelled');
       assert.equal(stored.pauseRequested, false);
       assert.equal(stored.resumeRequested, false);
@@ -46,11 +46,25 @@ test('cancelling failed and waiting jobs hides and persists them, supports Undo,
     assert.equal((await request('/api/jobs/saved-video/cancel', 'POST')).status, 409);
     assert.equal(api.getState().queue.find((job) => job.id === 'saved-video').queueStatus, 'completed');
     assert.equal(await fs.readFile(savedPath, 'utf8'), 'saved video fixture');
+
+    // A short Windows-style file lock can interrupt the atomic replacement.
+    let blocked = false;
+    const rename = fs.rename;
+    t.mock.method(fs, 'rename', async (source, target) => {
+      if (target === queueFile && !blocked) {
+        blocked = true;
+        throw Object.assign(new Error('Queue file is temporarily locked'), { code: 'EPERM' });
+      }
+      return rename(source, target);
+    });
     const undo = await request('/api/jobs/failed-video/retry', 'POST');
     assert.equal(undo.status, 200);
     const retried = await undo.json();
     assert.equal(retried.retryOf, 'failed-video');
     assert.notEqual(retried.jobId, 'failed-video');
+    assert.equal(blocked, true);
+    const storedQueue = JSON.parse(await fs.readFile(queueFile, 'utf8')).queue;
+    assert.equal(storedQueue.find((job) => job.id === retried.jobId)?.queueStatus, 'queued', 'Undo is persisted before the response');
     const restored = api.getState().queue.find((job) => job.id === retried.jobId);
     assert.equal(restored.queueStatus, 'queued');
     assert.ok(toRowModel(restored));
@@ -66,17 +80,6 @@ test('cancelling failed and waiting jobs hides and persists them, supports Undo,
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ queue: { url: 'https://example.org/other.mp4', title: 'Other', mediaType: 'file' } }) })).json();
     assert.equal(api.getState().queue.find((job) => job.id === immediate.id)?.queueStatus, 'queued');
-    // Retry acknowledges enqueueing before its atomic queue write finishes.
-    // Wait for that required write before removing this isolated profile.
-    let persistedRetry;
-    const persistDeadline = Date.now() + 2_000;
-    do {
-      const storedQueue = JSON.parse(await fs.readFile(path.join(dataDir, 'queue.json'), 'utf8')).queue;
-      persistedRetry = storedQueue.find((job) => job.id === retried.jobId);
-      if (persistedRetry || Date.now() >= persistDeadline) break;
-      await delay(10);
-    } while (true);
-    assert.equal(persistedRetry?.queueStatus, 'queued', 'Undo must be persisted before shutdown');
   } finally {
     await api.stop();
     await fs.rm(dataDir, { recursive: true, force: true });
