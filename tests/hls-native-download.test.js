@@ -66,6 +66,7 @@ test('buildNativeHlsArgs forwards headers and uses ffmpeg native HLS demuxing op
   assert.ok(joinedArgs.includes('-allowed_extensions ALL'));
   assert.ok(joinedArgs.includes('-protocol_whitelist file,http,https,tcp,tls,crypto,data'));
   assert.ok(joinedArgs.includes('-c copy'));
+  assert.ok(joinedArgs.includes('-movflags +faststart+use_metadata_tags'));
   assert.ok(joinedArgs.includes('/tmp/job-123.mp4.part'));
   const headerBlob = buildFfmpegHeaderBlob({
     Authorization: 'Bearer abc',

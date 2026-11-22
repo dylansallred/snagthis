@@ -77,7 +77,7 @@ function buildRemuxArgs({ job, input, mp4Path, withSubs }) {
   }
 
   args.push(
-    '-movflags', '+faststart',
+    '-movflags', '+faststart+use_metadata_tags',
     '-max_interleave_delta', '0',
     ...metadataArgs,
     '-f', 'mp4',
@@ -120,7 +120,7 @@ function buildPlaybackCompatibilityArgs({ job, inputPath, outputPath, withSubs =
       '-pix_fmt', 'yuv420p',
       '-profile:v', 'high',
       '-level:v', '4.1',
-      '-vsync', 'cfr',
+      '-fps_mode', 'cfr',
       '-video_track_timescale', '90000',
       '-c:a', 'aac',
       '-b:a', '192k',

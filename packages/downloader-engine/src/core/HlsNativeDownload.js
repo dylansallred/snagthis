@@ -304,7 +304,7 @@ function buildNativeHlsArgs({ job = {}, playlistUrl, outputPath, headers, select
   const probeSeconds = Number(job.probe && job.probe.seconds);
   if (Number.isFinite(probeSeconds) && probeSeconds > 0) args.push('-t', String(Math.min(30, Math.max(1, probeSeconds))));
   args.push(
-    '-movflags', '+faststart',
+    '-movflags', '+faststart+use_metadata_tags',
     '-max_interleave_delta', '0',
     ...metadataArgs,
     // The temporary suffix is intentionally .mp4.part, so select its muxer.
