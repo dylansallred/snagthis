@@ -225,3 +225,33 @@ test('segment diagnostics mark empty probe results as retryable', () => {
   assert.ok(result.issues.some((issue) => issue.code === 'no_streams'));
   assert.equal(result.shouldRetry, true);
 });
+
+test('assessPlaybackCompatibility skips re-encoding for standard H.264 and 4K HDR HEVC + AAC', () => {
+  const h264Aac = __test.assessPlaybackCompatibility([
+    { codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p', width: 1920, height: 1080 },
+    { codec_type: 'audio', codec_name: 'aac' },
+  ]);
+  assert.equal(h264Aac.videoCompatible, true);
+  assert.equal(h264Aac.audioCompatible, true);
+
+  const hdrHevc = __test.assessPlaybackCompatibility([
+    { codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p10le', color_transfer: 'smpte2084', width: 3840, height: 1600 },
+    { codec_type: 'audio', codec_name: 'aac' },
+  ]);
+  assert.equal(hdrHevc.videoCompatible, true);
+  assert.equal(hdrHevc.audioCompatible, true);
+
+  const h264Opus = __test.assessPlaybackCompatibility([
+    { codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p' },
+    { codec_type: 'audio', codec_name: 'opus' },
+  ]);
+  assert.equal(h264Opus.videoCompatible, true);
+  assert.equal(h264Opus.audioCompatible, false);
+
+  const vp9Aac = __test.assessPlaybackCompatibility([
+    { codec_type: 'video', codec_name: 'vp9', pix_fmt: 'yuv420p' },
+    { codec_type: 'audio', codec_name: 'aac' },
+  ]);
+  assert.equal(vp9Aac.videoCompatible, false);
+  assert.equal(vp9Aac.audioCompatible, true);
+});
