@@ -505,9 +505,9 @@ async function normalizeMp4ForPlayback(job, mp4Path, {
   });
 
   // Probe the downloaded MP4 before launching an expensive full-video libx264 re-encode.
-  // When video is already compatible (e.g. H.264 yuv420p or 4K/HDR10 HEVC), keep the
-  // original video stream untouched and only repair audio if codec/timestamps need it.
-  if (job.forcePlaybackCompatibility !== true) {
+  // HLS jobs set forcePlaybackCompatibility: true to opt into this check, so only skip
+  // probing when a caller explicitly requests forceFullVideoReencode: true.
+  if (job.forceFullVideoReencode !== true) {
     const streamProbe = await probeMediaStreams(mp4Path, { FFPROBE_PATH });
     if (streamProbe.ok) {
       const assessment = assessPlaybackCompatibility(streamProbe.streams);
