@@ -107,7 +107,7 @@ function sideSubtitles(filePath, jobId) {
     });
 }
 
-function createMediaInfoService({ dataDir, getFfprobePath, probe = probeMediaFile, signal }) {
+function createMediaInfoService({ dataDir, getFfprobePath, probe = probeMediaFile, getSignal }) {
   const cachePath = path.join(dataDir, 'media-info-cache.json');
   let entries = null;
   let loading = null;
@@ -151,7 +151,7 @@ function createMediaInfoService({ dataDir, getFfprobePath, probe = probeMediaFil
         const ffprobe = getFfprobePath();
         if (!ffprobe) throw Object.assign(new Error('ffprobe is not available'), { code: 'NO_PROBE' });
         task = (async () => {
-          const summary = summarizeProbe(await probe(filePath, { FFPROBE_PATH: ffprobe, signal }));
+          const summary = summarizeProbe(await probe(filePath, { FFPROBE_PATH: ffprobe, signal: getSignal?.() }));
           const next = { ...summary, probedAt: Date.now() };
           cache.delete(key);
           cache.set(key, next);

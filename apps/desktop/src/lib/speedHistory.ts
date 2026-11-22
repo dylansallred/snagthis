@@ -10,6 +10,7 @@ const sampleListeners = new Set<() => void>();
 let timer: ReturnType<typeof setInterval> | null = null;
 
 function tick() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
   const now = performance.now();
   for (const item of series.values()) {
     item.samples.push(item.latest);
@@ -25,10 +26,14 @@ function tick() {
 export function recordSpeeds(jobs: { id: string; speedBps?: number }[]) {
   const seen = new Set<string>();
   for (const job of jobs) {
-    if (!Number.isFinite(job.speedBps)) continue;
     seen.add(job.id);
+    const existing = series.get(job.id);
+    if (!Number.isFinite(job.speedBps)) {
+      if (existing) existing.latest = 0;
+      continue;
+    }
     const speed = Math.max(0, job.speedBps || 0);
-    const item = series.get(job.id) || { samples: Array<number>(LENGTH).fill(0), trail: [], latest: 0, tickAt: performance.now(), recorded: 0 };
+    const item = existing || { samples: Array<number>(LENGTH).fill(0), trail: [], latest: 0, tickAt: performance.now(), recorded: 0 };
     item.latest = speed;
     series.set(job.id, item);
   }

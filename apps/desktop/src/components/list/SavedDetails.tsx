@@ -51,8 +51,9 @@ function FolderTrail({ folder, rootName, onOpen }: { folder: string; rootName: s
  * Play under it, the full title, a two-column grid of pixel-labelled facts (unknown facts are left
  * out) and one quiet action bar. Facts from inside the file come from a one-time probe.
  */
-export function SavedDetails({ row, apiBase, context, previewUrl, onPosterActive, onCommand }: {
+export function SavedDetails({ row, apiBase, context, previewUrl, allowPreview = true, onPosterActive, onCommand }: {
   row: RowModel; apiBase: string; context: SavedDetailsContext; previewUrl: string | null;
+  allowPreview?: boolean;
   /** The poster wants its loop (pointer over it, or keyboard focus on Play). */
   onPosterActive: (active: boolean) => void;
   onCommand: (command: RowCommand) => void;
@@ -147,7 +148,7 @@ export function SavedDetails({ row, apiBase, context, previewUrl, onPosterActive
         <div className="spec-top">
           <div className="spec-media">
             <div className="spec-poster px-shine" onMouseEnter={() => setPosterHot(true)} onMouseLeave={() => setPosterHot(false)} role="img" aria-label={libraryText('detailPoster', { title: row.title })}>
-              <FillThumb row={row} apiBase={apiBase} previewUrl={previewUrl} previewActive={!missing && (posterHot || playFocused)} />
+              <FillThumb row={row} apiBase={apiBase} previewUrl={previewUrl} previewActive={allowPreview && !missing && (posterHot || playFocused)} />
             </div>
             {!missing && <button type="button" className="spec-play px-shine" onClick={() => onCommand('play')} onFocus={(event) => setPlayFocused(event.currentTarget.matches(':focus-visible'))} onBlur={() => setPlayFocused(false)}>
               <Play aria-hidden="true" />{copy.detailPlay}

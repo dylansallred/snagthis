@@ -12,7 +12,9 @@ const { API, HEADER, CLIENT, validateSelection, classifyProblem, isAccent, isAcc
 const { createBridgeSecurity, redact, EXTENSION_ORIGIN } = require('./utils/security');
 const { generatePreviewAssets, PREVIEW_CLIP_SUFFIX } = require('@m3u8/downloader-engine/src/core/PreviewClip');
 const { isMediaFilePath, normalizeMediaExtension, withMediaExtension } = require('@m3u8/downloader-engine/src/utils/mediaFiles');
+const { writeFileDurable } = require('@m3u8/downloader-engine/src/utils/durableJson');
 const { redactPaths } = require('@m3u8/downloader-engine/src/utils/redact');
+const { looksLikeJobId } = require('./services/libraryLayout');
 const { isHttpUrl } = require('./utils/urls');
 const { downloadRemoteImage } = require('./utils/remoteImage');
 const {
@@ -148,7 +150,8 @@ function isYouTubeUrl(value) {
 function isJobStorageDirectoryName(name) {
   const value = String(name || '').trim();
   if (!value) return false;
-  return /^[a-z0-9]+-[a-z0-9]+$/i.test(value);
+  if (looksLikeJobId(value)) return true;
+  return /^[a-z0-9]{3,16}-[a-z0-9]{1,12}$/i.test(value) && /\d/.test(value) && !/^(?:19|20)\d{2}-/.test(value);
 }
 
 function createApiServer(options = {}) {
@@ -257,6 +260,8 @@ function createApiServer(options = {}) {
     next();
   });
 
+  const manifestJsonParser = express.json({ limit: '5mb' });
+  app.post(['/v1/jobs', '/api/jobs', '/v1/jobs/:id/refresh-source', '/api/jobs/:id/refresh-source'], manifestJsonParser);
   app.use(express.json({ limit: '1mb' }));
   const mediaAssetExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.webm', '.mkv', '.mov', '.m4v', '.ts', '.avi', '.srt', '.vtt']);
   app.get('/downloads/*asset', (req, res, next) => {
@@ -267,7 +272,7 @@ function createApiServer(options = {}) {
     try {
       if (!isInsideDirectory(fs.realpathSync(resolvedDownloadDir), fs.realpathSync(candidate))) return res.sendStatus(404);
     } catch { return res.sendStatus(404); }
-    return res.sendFile(candidate);
+    return res.sendFile(path.basename(candidate), { root: path.dirname(candidate) });
   });
 
   const apiLimiter = rateLimit({
@@ -275,6 +280,18 @@ function createApiServer(options = {}) {
     max: 600,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => {
+      if (req.bridgeClient?.kind === 'desktop') return 'desktop';
+      if (req.bridgeClient?.kind === 'extension' && req.bridgeClient.entry?.id) return `ext:${req.bridgeClient.entry.id}`;
+      return `origin:${String(req.headers.origin || '')}`;
+    },
+  });
+  const healthLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => `health:${String(req.headers.origin || '')}`,
   });
 
   const jobLimitResponse = { error: 'Too many downloads were added at once. Wait a minute and try again.', code: 'RATE_LIMITED' };
@@ -296,8 +313,9 @@ function createApiServer(options = {}) {
     legacyHeaders: false,
   });
 
+  app.get('/v1/health', healthLimiter);
   app.use('/api', apiLimiter);
-  app.use('/v1', apiLimiter);
+  app.use('/v1', (req, res, next) => (req.path === '/health' ? next() : apiLimiter(req, res, next)));
   app.post('/api/jobs', desktopJobCreationLimiter);
   app.post('/v1/jobs', jobCreationLimiter);
 
@@ -452,6 +470,7 @@ function createApiServer(options = {}) {
 
       if (
         entry.isFile()
+        && activeJobIds.size === 0
         && (entry.name.endsWith('.part') || entry.name.endsWith('.tmp') || /^ts-parts-.*[.]txt$/i.test(entry.name))
       ) {
         await fsPromises.rm(fullPath, { force: true });
@@ -477,8 +496,8 @@ function createApiServer(options = {}) {
   });
 
   const previewTasks = new Map();
-  const previewAbort = new AbortController();
-  const audioSampler = createAudioSampler({ ffmpegPath: FFMPEG_PATH, logger });
+  let previewAbort = new AbortController();
+  let audioSampler = createAudioSampler({ ffmpegPath: FFMPEG_PATH, logger });
   let previewWork = Promise.resolve();
   const keepYouTubeArtwork = (item) => Boolean(item
     && (isYouTubeUrl(item.url || item.sourcePageUrl) || item.youtubeMetadata?.videoId)
@@ -624,7 +643,7 @@ function createApiServer(options = {}) {
       next();
       return;
     }
-    res.sendFile(resolvedAssetPath, (err) => {
+    res.sendFile(path.basename(resolvedAssetPath), { root: path.dirname(resolvedAssetPath) }, (err) => {
       if (err && !res.headersSent) {
         next(err);
       }
@@ -970,20 +989,22 @@ function createApiServer(options = {}) {
     await tmdbCacheLoadPromise;
   }
 
-  async function persistTmdbCache() {
-    try {
-      await fsPromises.mkdir(path.dirname(tmdbCacheFilePath), { recursive: true });
-      const payload = {
-        version: TMDB_CACHE_VERSION,
-        updatedAt: Date.now(),
-        entries: Object.fromEntries(tmdbCache.entries()),
-      };
-      const tempPath = `${tmdbCacheFilePath}.tmp`;
-      await fsPromises.writeFile(tempPath, JSON.stringify(payload, null, 2), 'utf8');
-      await fsPromises.rename(tempPath, tmdbCacheFilePath);
-    } catch (err) {
-      logger.warn('Failed to persist TMDB cache file', { error: err.message });
-    }
+  let tmdbCachePersistence = Promise.resolve();
+
+  function persistTmdbCache() {
+    tmdbCachePersistence = tmdbCachePersistence.then(async () => {
+      try {
+        const payload = {
+          version: TMDB_CACHE_VERSION,
+          updatedAt: Date.now(),
+          entries: Object.fromEntries(tmdbCache.entries()),
+        };
+        await writeFileDurable(fsPromises, tmdbCacheFilePath, JSON.stringify(payload, null, 2));
+      } catch (err) {
+        logger.warn('Failed to persist TMDB cache file', { error: err.message });
+      }
+    });
+    return tmdbCachePersistence;
   }
 
   async function getCachedTmdbResult(cacheKey) {
@@ -1782,7 +1803,11 @@ function createApiServer(options = {}) {
     const source = req.body || {};
     const selectionResult = validateSelection(source.selection);
     if (!isValidHttpUrl(source.mediaUrl || source.url) || !selectionResult.ok || (source.sourcePageUrl && !isValidHttpUrl(source.sourcePageUrl))) return res.status(400).json({ error: 'Provide a valid refreshed video URL and selection' });
-    if (!jobs.has(req.params.id)) return res.status(404).json({ error: 'Download not found' });
+    const existingJob = jobs.get(req.params.id);
+    if (!existingJob) return res.status(404).json({ error: 'Download not found' });
+    if (['completed', 'completed-with-errors', 'cancelled'].includes(existingJob.queueStatus || existingJob.status)) {
+      return res.status(409).json({ ok: false, error: 'This download cannot refresh its link anymore' });
+    }
     try {
       const result = await queueManager.refreshJobSource(req.params.id, {
         url: source.mediaUrl || source.url,
@@ -1848,14 +1873,15 @@ function createApiServer(options = {}) {
       ? sourceJob.maxConcurrent
       : engineConfig.defaultMaxConcurrent;
 
-    const result = enqueueLegacyRequest({ queue, threads, settings });
+    const { id, queuePosition } = enqueueLegacyRequest({ queue, threads, settings });
     res.json({
-      ...result,
+      id,
+      queuePosition,
       retryOf: sourceJob.id,
     });
   });
 
-  app.post(['/api/jobs/:id/retry', '/v1/jobs/:id/retry'], (req, res) => {
+  app.post(['/api/jobs/:id/retry', '/v1/jobs/:id/retry'], async (req, res) => {
     const sourceJob = jobs.get(req.params.id);
     if (!sourceJob) {
       res.status(404).json({ error: 'Job not found' });
@@ -1876,6 +1902,7 @@ function createApiServer(options = {}) {
     // A repeated retry (for example a double-clicked Undo) returns the first.
     const duplicate = findDuplicateQueuedJob(retryUrl);
     if (duplicate) {
+      await queueManager.persistence;
       res.json({ id: duplicate.id, jobId: duplicate.id, queuePosition: duplicate.queuePosition || 0, retryOf: sourceJob.id, duplicate: true });
       return;
     }
@@ -1908,15 +1935,17 @@ function createApiServer(options = {}) {
       ? sourceJob.maxConcurrent
       : engineConfig.defaultMaxConcurrent;
 
-    const result = enqueueLegacyRequest({ queue, threads, settings });
+    const { id, queuePosition } = enqueueLegacyRequest({ queue, threads, settings });
+    await queueManager.persistence;
     res.json({
-      ...result,
-      jobId: result.id,
+      id,
+      jobId: id,
+      queuePosition,
       retryOf: sourceJob.id,
     });
   });
 
-  const mediaInfoService = createMediaInfoService({ dataDir, getFfprobePath: () => FFPROBE_PATH, signal: previewAbort.signal });
+  const mediaInfoService = createMediaInfoService({ dataDir, getFfprobePath: () => FFPROBE_PATH, getSignal: () => previewAbort.signal });
   registerHistoryRoutes(app, historyIndex, fsPromises, resolvedDownloadDir, {
     onTrashFile, onOpenFile, onLocateFile, mediaInfo: mediaInfoService.mediaInfo,
     onRemoveItem: async (item) => {
@@ -1990,7 +2019,14 @@ function createApiServer(options = {}) {
         ...source, mediaUrl: source.url, resourceName: source.name,
         selection: source.selection === undefined ? req.body && req.body.selection : source.selection, settings: req.body && req.body.settings,
       }));
-      req.body.queue = { ...source, headers: normalized.headers, mediaType: normalized.mediaType, selection: normalized.selection, thumbnailUrl: normalized.thumbnailUrl };
+      req.body.queue = {
+        ...source,
+        headers: normalized.headers,
+        mediaType: normalized.mediaType,
+        selection: normalized.selection,
+        thumbnailUrl: normalized.thumbnailUrl,
+        ...(normalized.manifestText ? { manifestText: normalized.manifestText } : {}),
+      };
       req.body.settings = normalized.settings;
       next();
     } catch (error) { res.status(error.statusCode || 400).json({ error: error.message }); }
@@ -2018,7 +2054,7 @@ function createApiServer(options = {}) {
   });
 
   const webSocketServerOptions = {
-    server, path: '/ws',
+    server, path: '/ws', maxPayload: 64 * 1024,
     handleProtocols: (protocols) => protocols.has('snagthis') ? 'snagthis' : false,
     verifyClient: ({ req }, done) => {
       const allowedHosts = new Set([`127.0.0.1:${server.address()?.port}`, `localhost:${server.address()?.port}`, `[::1]:${server.address()?.port}`]);
@@ -2130,6 +2166,11 @@ function createApiServer(options = {}) {
     for (const ws of wss.clients) socketCurrent(ws);
   };
 
+  function sendRawWsMessage(ws, encoded) {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !socketCurrent(ws)) return;
+    ws.send(encoded);
+  }
+
   function sendWsMessage(ws, type, payload) {
     if (!ws || ws.readyState !== WebSocket.OPEN || !socketCurrent(ws)) return;
     ws.send(JSON.stringify({ type, data: security.publicPayload(payload) }));
@@ -2138,7 +2179,8 @@ function createApiServer(options = {}) {
   function sendChannelMessage(channel, type, payload) {
     const subscribers = channelSubscriptions.get(channel);
     if (!subscribers || subscribers.size === 0) return;
-    subscribers.forEach((ws) => sendWsMessage(ws, type, payload));
+    const encoded = JSON.stringify({ type, data: security.publicPayload(payload) });
+    subscribers.forEach((ws) => sendRawWsMessage(ws, encoded));
   }
 
   function getQueuePayload() {
@@ -2219,7 +2261,8 @@ function createApiServer(options = {}) {
     const payload = buildJobStatusPayload(job);
     if (!payload) return;
 
-    subscribers.forEach((ws) => sendWsMessage(ws, 'job:update', payload));
+    const encoded = JSON.stringify({ type: 'job:update', data: security.publicPayload(payload) });
+    subscribers.forEach((ws) => sendRawWsMessage(ws, encoded));
   }
 
   function handleWebSocketConnection(ws, req) {
@@ -2332,6 +2375,10 @@ function createApiServer(options = {}) {
     if (started) return Promise.resolve({ host, port: server.address()?.port || port });
 
     started = true;
+    if (previewAbort.signal.aborted) {
+      previewAbort = new AbortController();
+      audioSampler = createAudioSampler({ ffmpegPath: FFMPEG_PATH, logger });
+    }
     await queueManager.ready;
     queueManager.suspending = false;
     await queueManager.saveQueue();
@@ -2378,6 +2425,7 @@ function createApiServer(options = {}) {
       server.once('error', fail);
       server.listen(port, host, () => {
         server.off('error', fail);
+        queueManager.processQueue();
         logger.info('Downloader API listening', { host, port });
         resolve({ host, port: server.address().port });
       });
@@ -2402,14 +2450,14 @@ function createApiServer(options = {}) {
     audioSampler.close();
     // Quitting must not leave yt-dlp/ffmpeg writing into a folder the next
     // launch will resume from; pause active downloads and keep them queued.
-    await queueManager.suspendActiveJobs();
-    await previewWork;
-    await queueManager.persistence;
+    await queueManager.suspendActiveJobs().catch(() => {});
+    await previewWork.catch(() => {});
+    await queueManager.persistence.catch(() => {});
     // A scan can still enqueue an index write after the current persistence
     // promise settles. Finish that scan before draining its final write.
-    await historyIndex.refreshInFlight;
-    await historyIndex.refreshFollowUp;
-    await historyIndex.persistence;
+    await Promise.resolve(historyIndex.refreshInFlight).catch(() => {});
+    await Promise.resolve(historyIndex.refreshFollowUp).catch(() => {});
+    await Promise.resolve(historyIndex.persistence).catch(() => {});
 
     return new Promise((resolve, reject) => {
       for (const client of wss.clients) client.terminate();

@@ -22,6 +22,7 @@ function fixture({ platform = 'darwin', window = 'focused', notices = {}, instal
   const writes = [];
   let queue = [];
   let pairing = null;
+  let bridgeRunning = true;
   let timerId = 0;
   const clock = { now: Date.UTC(2026, 8, 29, 12) };
   const updater = new EventEmitter();
@@ -59,7 +60,13 @@ function fixture({ platform = 'darwin', window = 'focused', notices = {}, instal
     updaterIdleTimer: null, updaterAwaySince: null, updaterStaged: false, updaterStaging: null,
     UPDATER_CHECK_TIMEOUT_MS: 45_000, UPDATER_INSTALL_TIMEOUT_MS: 180_000, UPDATER_IDLE_POLL_MS: 30_000,
     UPDATER_IDLE_INSTALL_MS: 10 * MINUTE, UPDATER_STAGE_TIMEOUT_MS: 15_000, UPDATER_QUIT_EXIT_TIMEOUT_MS: 10_000,
-    apiServer: { getState: () => ({ queue }), getPendingPairing: () => pairing },
+    apiPort: 49732, apiShutdownComplete: false, SHUTDOWN_TIMEOUT_MS: 15_000,
+    apiServer: {
+      getState: () => ({ queue }), getPendingPairing: () => pairing,
+      async stop() { bridgeRunning = false; },
+      async start() { bridgeRunning = true; return { port: 49732 }; },
+    },
+    appInfo: () => ({ apiBaseUrl: 'http://127.0.0.1:49732' }),
     Notification: FakeNotification,
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, delay, due: clock.now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
@@ -102,6 +109,7 @@ function fixture({ platform = 'darwin', window = 'focused', notices = {}, instal
     check: () => sandbox.checkForUpdatesNow(),
     checkNow: () => handlers.get('updater:check-now')(),
     install: () => handlers.get('updater:install-now')(),
+    bridgeRunning: () => bridgeRunning,
     queue(value) { queue = value; },
     pairing(value) { pairing = value; },
     /** An update found, downloaded and (on macOS) staged by Squirrel.Mac. */
@@ -290,6 +298,19 @@ test('a failed install found at launch is shown with its version and survives th
   }
 });
 
+test('a failed installer start restores the local bridge', async () => {
+  const f = fixture();
+  await f.ready();
+  f.updater.quitAndInstall = () => {
+    assert.equal(f.bridgeRunning(), false);
+    throw new Error('Installer failed to start');
+  };
+  assert.equal((await f.install()).ok, false);
+  assert.equal(f.state.error, 'Installer failed to start');
+  assert.equal(f.bridgeRunning(), true);
+  assert.equal(f.sandbox.apiShutdownComplete, false);
+});
+
 test('after relaunching into the new version, the "Updated to" note is set once and cleared when shown', async () => {
   const notes = ['What’s new', '• New: Faster downloads.'];
   const f = fixture({ installState: { fromVersion: '2.0.43', targetVersion: '2.0.44', releaseNotes: notes, reopen: 'hidden' } });
@@ -344,10 +365,12 @@ test('checks keep a ready or installing update, recover from download errors, an
   const stall = [...f.timers.values()].find((timer) => timer.delay === 180_000);
   assert.ok(stall, 'installing arms a stall timeout');
   stall.callback();
+  await flush();
   assert.equal(f.state.phase, 'error');
   assert.equal(f.state.message, 'Update install failed');
   assert.match(f.state.error, /didn’t restart/);
   assert.equal(f.sandbox.updaterInstallRequested, false);
+  assert.equal(f.bridgeRunning(), true);
 
   // Squirrel.Mac failing to stage is an install failure the chip can show.
   const g = fixture();

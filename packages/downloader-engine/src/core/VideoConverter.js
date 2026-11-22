@@ -944,12 +944,15 @@ async function remuxAndGenerateThumbnails(job, filePathFinal, {
       });
     });
 
+    let subtitlesEmbedded = false;
     try {
       await runFfmpeg(hasSubtitle, null);
+      subtitlesEmbedded = Boolean(hasSubtitle);
     } catch (err) {
       if (hasSubtitle) {
         logger.warn('Retrying remux without subtitles due to previous failure', { jobId: job.id, message: err && err.message });
         await runFfmpeg(false, null);
+        subtitlesEmbedded = false;
       } else {
         throw err;
       }
@@ -993,12 +996,14 @@ async function remuxAndGenerateThumbnails(job, filePathFinal, {
       });
     }
     
-    // Add subtitle files
-    if (job.subtitlePath && fs.existsSync(job.subtitlePath)) {
-      filesToCleanup.push(job.subtitlePath);
-    }
-    if (job.subtitleZipPath && fs.existsSync(job.subtitleZipPath)) {
-      filesToCleanup.push(job.subtitleZipPath);
+    // Only delete sidecar subtitle files when they were actually embedded into the MP4.
+    if (subtitlesEmbedded) {
+      if (job.subtitlePath && fs.existsSync(job.subtitlePath)) {
+        filesToCleanup.push(job.subtitlePath);
+      }
+      if (job.subtitleZipPath && fs.existsSync(job.subtitleZipPath)) {
+        filesToCleanup.push(job.subtitleZipPath);
+      }
     }
     
     // Delete all temporary files

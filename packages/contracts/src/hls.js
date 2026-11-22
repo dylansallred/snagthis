@@ -296,7 +296,7 @@
       durationSeconds: durationSeconds, isLive: isMaster ? null : !endList && playlistType !== 'VOD',
       isDrm: encryption.some(function (key) { return key.method !== 'AES-128' || key.keyFormat !== 'identity'; }),
       keySystems: uniqueKeySystems(encryption.filter(function (key) { return key.method !== 'AES-128' || key.keyFormat !== 'identity'; }).map(function (key) { return key.keyFormat + ' ' + (key.url || ''); })),
-      encryption: encryption, referencedUrls: referencedUrls, segmentUrls: segmentUrls, initializationUrls: initializationUrls,
+      encryption: encryption, referencedUrls: referencedUrls, segmentUrls: Array.from(new Set(segmentUrls)), initializationUrls: initializationUrls,
     };
   }
 

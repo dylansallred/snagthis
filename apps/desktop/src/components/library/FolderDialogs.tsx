@@ -1,36 +1,50 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { FolderInput, ListX, X } from 'lucide-react';
 import { formatSize } from '@m3u8/contracts/src/rows.mjs';
-import { countLabel, fileCountLabel, libraryStrings as copy, libraryText } from '@m3u8/contracts/src/library.mjs';
+import { countLabel, fileCountLabel, folderNameProblem, libraryStrings as copy, libraryText, videoNameProblem } from '@m3u8/contracts/src/library.mjs';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { DeleteMode, LibraryFolder } from '@/types/library';
 
 /** Names a folder in a small dialog: New folder… from Move to…, or Rename from the path bar. */
-export function FolderNameDialog({ open, title, body, initial = '', confirm, placeholder = copy.folderNamePlaceholder, onSubmit, onClose }: {
+export function FolderNameDialog({ open, title, body, initial = '', confirm, placeholder = copy.folderNamePlaceholder, kind = 'folder', onSubmit, onClose }: {
   open: boolean; title: string; body: string; initial?: string; confirm: string;
   /** The field's name: a folder's by default, or a video's when renaming one. */
-  placeholder?: string;
+  placeholder?: string; kind?: 'folder' | 'video';
   onSubmit: (name: string) => Promise<string | null>; onClose: () => void;
 }) {
   const [value, setValue] = useState(initial);
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const refocusOnError = useRef(false);
+  const problemId = useId();
   useEffect(() => { if (open) { setValue(initial); setProblem(''); } }, [open, initial]);
+  useEffect(() => {
+    if (!busy && refocusOnError.current) {
+      refocusOnError.current = false;
+      input.current?.focus();
+    }
+  }, [busy]);
   const submit = async () => {
     if (busy) return;
+    const localProblem = kind === 'video' ? videoNameProblem(value) : folderNameProblem(value);
+    if (localProblem) { setProblem(localProblem.message); input.current?.focus(); return; }
     setBusy(true);
     const result = await onSubmit(value);
+    if (result) {
+      refocusOnError.current = true;
+      setProblem(result);
+    }
     setBusy(false);
-    if (result) setProblem(result);
   };
   return <Dialog open={open} onOpenChange={(next) => { if (!next && !busy) onClose(); }}>
     <DialogContent className="remove-dialog folder-dialog" showCloseButton={false}>
       <DialogTitle>{title}</DialogTitle>
       <DialogDescription>{body}</DialogDescription>
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-        <input className="inline-rename" autoFocus value={value} placeholder={placeholder} aria-label={placeholder} disabled={busy}
-          aria-invalid={!!problem || undefined} onChange={(event) => { setValue(event.target.value); setProblem(''); }} />
-        <p className="folder-dialog-problem tone-attention" role={problem ? 'alert' : undefined}>{problem}</p>
+        <input ref={input} className="inline-rename" autoFocus value={value} placeholder={placeholder} aria-label={placeholder} disabled={busy}
+          aria-invalid={!!problem || undefined} aria-describedby={problem ? problemId : undefined} onChange={(event) => { setValue(event.target.value); setProblem(''); }} />
+        <p id={problemId} className="folder-dialog-problem tone-attention" role={problem ? 'alert' : undefined}>{problem}</p>
         <div className="folder-dialog-actions">
           <button type="button" className="row-action" disabled={busy} onClick={onClose}>{copy.cancel}</button>
           <button type="submit" className="row-action primary-action" disabled={busy}>{confirm}</button>

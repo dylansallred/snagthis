@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { FolderOpen, MoreHorizontal, Settings, ListX, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { classifyProblem, formatSize, mergeRows, toRowModel, type RowModel } from '@m3u8/contracts/src/rows.mjs';
-import { compareSaved, countLabel, DEFAULT_VIEW, failureReason, groupSaved, libraryStrings, libraryText, normalizeView, parentFolder, viewKey } from '@m3u8/contracts/src/library.mjs';
+import { compareSaved, countLabel, DEFAULT_VIEW, failureReason, folderName, groupSaved, libraryStrings, libraryText, normalizeView, parentFolder, viewKey } from '@m3u8/contracts/src/library.mjs';
 import { useOrganize } from '@/hooks/useOrganize';
 import { createApiLibraryBackend } from '@/lib/libraryBackend';
 import { GALLERY_DEEP_FOLDERS, GALLERY_SAVED_DETAILS, GalleryLibrary } from '@/dev/galleryLibrary';
@@ -114,6 +114,7 @@ function App() {
   useEffect(() => { if (!viewFade) return; const timer = setTimeout(() => setViewFade(false), 200); return () => clearTimeout(timer); }, [viewFade]);
   const [paletteOpen, setPaletteOpen] = useState(gallery && params.has('palette'));
   const [updatePopoverOpen, setUpdatePopoverOpen] = useState(!!galleryUpdateState && params.get('updatePopover') === '1');
+  const [firstLaunchCelebrating, setFirstLaunchCelebrating] = useState(false);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
   const brandRef = useRef<SVGSVGElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -138,7 +139,7 @@ function App() {
     // The gallery library changes in place; its version says when.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [demoRows, galleryLibrary, galleryVersion]);
-  const baseRows = gallery ? galleryAll.filter((row) => row.title.toLowerCase().includes(query.toLowerCase())) : library.rows;
+  const baseRows = useMemo(() => (gallery ? galleryAll.filter((row) => row.title.toLowerCase().includes(query.toLowerCase())) : library.rows), [galleryAll, library.rows, query]);
   const libraryBackend = useMemo(() => (galleryLibrary || (api ? createApiLibraryBackend(api) : null)), [api, galleryLibrary]);
   const organize = useOrganize({
     backend: libraryBackend, folder, setFolder, settings, saveSettings, revision: gallery ? galleryVersion : library.revision,
@@ -146,37 +147,41 @@ function App() {
     titleOf: (id) => baseRows.find((row) => row.isHistory && String(row.source.id) === id)?.title || libraryStrings.oneVideo,
   });
   const inFolderView = filter === 'saved' && !query;
-  const subfolders = inFolderView ? organize.folders.filter((entry) => entry.parent === folder) : [];
-  const filteredRows = baseRows.filter((row) => filter === 'all' || (filter === 'saved' ? ['saved', 'missing'].includes(row.state) : !['saved', 'missing'].includes(row.state)))
+  const subfolders = useMemo(() => (inFolderView ? organize.folders.filter((entry) => entry.parent === folder) : []), [inFolderView, organize.folders, folder]);
+  const filteredRows = useMemo(() => baseRows.filter((row) => filter === 'all' || (filter === 'saved' ? ['saved', 'missing'].includes(row.state) : !['saved', 'missing'].includes(row.state)))
     // Saved shows one folder at a time; search looks through all of them.
     .filter((row) => !inFolderView || (row.isHistory ? String(row.source.folder || '') : '') === folder)
     .map((row) => {
       const reopened = row.problem?.code === 'expired' && pageOpened.has(row.id) ? { ...row, statusLine: ui.expiredPageOpened.replace('{percent}', String(row.percent)) } : row;
       const failure = row.isHistory && row.state === 'saved' ? organize.failed.get(String(row.source.id)) : undefined;
       // A video that couldn't move is still where it was: one amber sentence and Try again.
-      if (failure) return { ...row, tone: 'attention', statusLine: libraryText('moveFailed', { folder: organize.nameOf(failure.to), reason: failureReason(failure.code) }), action: { id: 'retry-move', label: libraryStrings.retryMove, style: 'bordered' } } as unknown as RowModel;
+      if (failure) return { ...row, tone: 'attention', statusLine: libraryText('moveFailed', { folder: folderName(failure.to, organize.rootName), reason: failureReason(failure.code) }), action: { id: 'retry-move', label: libraryStrings.retryMove, style: 'bordered' } } as unknown as RowModel;
       if (row.id !== expandedId || !detail || detail.id !== row.jobId) return reopened;
       const live = toRowModel({ ...row.source, ...detail, progress: row.source.progress, queueStatus: row.source.queueStatus, status: row.source.status }, { surface: 'desktop', folder: saveFolder }) || row;
       return reopened === row ? live : { ...live, statusLine: reopened.statusLine };
-    });
+    }), [baseRows, filter, inFolderView, folder, pageOpened, organize.failed, organize.rootName, expandedId, detail, saveFolder]);
   // Downloads in progress (and anything that needs the person) stay on top; saved videos follow the chosen order.
   const sortable = filter !== 'downloading';
-  const activeRows = sortable ? filteredRows.filter((row) => row.state !== 'saved') : filteredRows;
-  const savedRows = sortable ? filteredRows.filter((row) => row.state === 'saved').sort((a, b) => compareSaved(view.sort)(a.source, b.source)) : [];
-  const groups = sortable && view.group !== 'none' && savedRows.length ? groupSaved(savedRows, view.group, { sort: view.sort, read: (row) => row.source }) : null;
-  const sections: ListSection[] | undefined = groups ? [
-    { key: '__active', label: '', meta: '', collapsed: false, rows: activeRows },
-    ...groups.map((group) => ({ key: group.key, label: group.label, meta: libraryText('countAndSize', { count: countLabel(group.count), size: formatSize(group.sizeBytes) || '0 MB' }), collapsed: organize.collapsed.has(`${placeKey}|${group.key}`), rows: group.items })),
-  ] : undefined;
-  const rows = sections ? sections.flatMap((section) => (section.collapsed ? [] : section.rows)) : [...activeRows, ...savedRows];
-  const selectedSources = baseRows.filter((row) => organize.selected.has(row.id)).map((row) => String(row.source.id));
+  const activeRows = useMemo(() => (sortable ? filteredRows.filter((row) => row.state !== 'saved') : filteredRows), [sortable, filteredRows]);
+  const savedRows = useMemo(() => (sortable ? filteredRows.filter((row) => row.state === 'saved').sort((a, b) => compareSaved(view.sort)(a.source, b.source)) : []), [sortable, filteredRows, view.sort]);
+  const sections = useMemo<ListSection[] | undefined>(() => {
+    const groups = sortable && view.group !== 'none' && savedRows.length ? groupSaved(savedRows, view.group, { sort: view.sort, read: (row) => row.source }) : null;
+    if (!groups) return undefined;
+    return [
+      { key: '__active', label: '', meta: '', collapsed: false, rows: activeRows },
+      ...groups.map((group) => ({ key: group.key, label: group.label, meta: libraryText('countAndSize', { count: countLabel(group.count), size: formatSize(group.sizeBytes) || '0 MB' }), collapsed: organize.collapsed.has(`${placeKey}|${group.key}`), rows: group.items })),
+    ];
+  }, [sortable, view.group, view.sort, savedRows, activeRows, organize.collapsed, placeKey]);
+  const rows = useMemo(() => (sections ? sections.flatMap((section) => (section.collapsed ? [] : section.rows)) : [...activeRows, ...savedRows]), [sections, activeRows, savedRows]);
+  const selectedSources = useMemo(() => baseRows.filter((row) => organize.selected.has(row.id)).map((row) => String(row.source.id)), [baseRows, organize.selected]);
   const sharedFolder = (ids: string[]) => {
     const places = new Set(baseRows.filter((row) => row.isHistory && ids.includes(String(row.source.id))).map((row) => String(row.source.folder || '')));
     return places.size === 1 ? [...places][0] : null;
   };
   const navigate = (path: string) => { setFolder(path); setExpandedId(null); };
-  // A saved video's details: what is inside its file (read once per file version), and its folder's segments open that folder in Saved.
+  // A saved video's details: what is inside its file (read once per library refresh), and its folder's segments open that folder in Saved.
   const mediaInfoTasks = useRef(new Map<string, Promise<MediaInfo | null>>());
+  useEffect(() => { mediaInfoTasks.current.clear(); }, [library.revision]);
   const loadMediaInfo = useCallback((row: RowModel) => {
     const id = String(row.source.id);
     const key = [id, row.source.absolutePath, row.source.sizeBytes, row.source.modifiedAt].join('\n');
@@ -205,12 +210,13 @@ function App() {
   const selectionSize = useRef(0);
   selectionSize.current = organize.selected.size;
   // The gallery footer follows the sample rows, so an empty or edited gallery never reports phantom downloads.
-  const allQueue = gallery ? demoRows.filter((row) => !row.isHistory).map((row) => row.source as QueueJob) : library.queue.queue;
-  const active = allQueue.filter((job) => job.queueStatus === 'downloading' && !/finaliz|convert|remux/.test(job.status));
+  const allQueue = useMemo(() => (gallery ? demoRows.filter((row) => !row.isHistory).map((row) => row.source as QueueJob) : library.queue.queue), [demoRows, library.queue.queue]);
+  const active = useMemo(() => allQueue.filter((job) => job.queueStatus === 'downloading' && !/finaliz|convert|remux/.test(job.status)), [allQueue]);
   const totalSpeed = active.reduce((total, job) => total + (job.speedBps || 0), 0);
   // Downloads a restart would interrupt. The gallery shows them only in its blocked preview.
-  const updateBlocking = gallery && galleryUpdate !== 'blocked' ? [] : allQueue.filter(blocksUpdate);
+  const updateBlocking = useMemo(() => (gallery && galleryUpdate !== 'blocked' ? [] : allQueue.filter(blocksUpdate)), [allQueue]);
   const chipKind = updateChipKind(updater);
+  useEffect(() => { if (!chipKind) setUpdatePopoverOpen(false); }, [chipKind]);
   const updateActions = useMemo<UpdateActions>(() => {
     const preview = previewUpdater;
     const call = async (action: () => Promise<{ ok: boolean; error?: string }>) => {
@@ -282,34 +288,36 @@ function App() {
   }, []);
   // Any open dialog owns the keyboard: app shortcuts never open something behind or on top of it.
   const [pairingOpen, setPairingOpen] = useState(false);
+  const showNavigation = !emptyLibrary || filter !== 'all';
   const modalOpen = settingsOpen || pairingOpen || !!confirm || !!renameVideoRow || !!chromeSessionRow || !!galleryVideo || !!organize.deleteRequest || !!organize.nameDialog;
+  const inputBlocked = modalOpen || !!pending;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k' && !modalOpen) { event.preventDefault(); setPaletteOpen((open) => !open); return; }
+      if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k' && !inputBlocked) { event.preventDefault(); setPaletteOpen((open) => !open); return; }
       if (paletteOpen) return;
-      if (mod && event.key.toLowerCase() === 'f') { event.preventDefault(); if (!modalOpen) { setSearchOpen(true); searchRef.current?.focus(); } }
-      if (mod && event.key === ',') { event.preventDefault(); if (!modalOpen) setSettingsOpen(true); }
+      if (mod && event.key.toLowerCase() === 'f' && !inputBlocked && showNavigation) { event.preventDefault(); setSearchOpen(true); searchRef.current?.focus(); }
+      if (mod && event.key === ',' && !modalOpen) { event.preventDefault(); setSettingsOpen(true); }
       // Escape that closes a dialog or menu (or that a panel already handled) closes only that.
       const layer = event.target instanceof Element && event.target.closest('[role="dialog"],[role="alertdialog"],[role="menu"]');
-      if (event.key === 'ArrowUp' && (event.metaKey || event.altKey) && !event.ctrlKey && !event.shiftKey && !event.defaultPrevented && !layer && !modalOpen && !editable(event.target)) {
+      if (event.key === 'ArrowUp' && (event.metaKey || event.altKey) && !event.ctrlKey && !event.shiftKey && !event.defaultPrevented && !layer && !inputBlocked && !editable(event.target)) {
         if (goUp.current()) event.preventDefault();
         return;
       }
-      if (event.key === 'Escape' && !event.defaultPrevented && !layer && !modalOpen && !editable(event.target)) {
+      if (event.key === 'Escape' && !event.defaultPrevented && !layer && !inputBlocked && !editable(event.target)) {
         // Esc clears a selection first, then collapses details.
         if (selectionSize.current) { clearSelection(); return; }
         setExpandedId(null); setPending(null);
       }
     };
     const onPaste = (event: ClipboardEvent) => {
-      if (editable(event.target) || modalOpen) return;
+      if (editable(event.target) || inputBlocked) return;
       const value = event.clipboardData?.getData('text/plain')?.trim();
       if (value && /^https?:\/\//i.test(value)) { event.preventDefault(); setPaste(value); pasteRef.current?.focus(); }
     };
     document.addEventListener('keydown', onKeyDown); document.addEventListener('paste', onPaste);
     return () => { document.removeEventListener('keydown', onKeyDown); document.removeEventListener('paste', onPaste); };
-  }, [modalOpen, paletteOpen, clearSelection]);
+  }, [modalOpen, inputBlocked, paletteOpen, showNavigation, clearSelection]);
   useEffect(() => {
     setDetail(null);
     if (!api || !expandedJobId) return;
@@ -335,7 +343,7 @@ function App() {
     const result = await window.desktop.openExternal(url);
     if (!result.ok) throw new Error(result.error || 'Could not open this page');
   };
-  const save = async (patch: Parameters<typeof saveSettings>[0]) => { await saveSettings(patch); if (api) await library.refresh(); };
+  const save = async (patch: Parameters<typeof saveSettings>[0]) => { await saveSettings(patch); if (api && 'outputDirectory' in patch) await library.refresh(); };
   const mutateDemo = (row: RowModel, patch: Record<string, unknown>) => row.isHistory ? galleryLibrary?.patch(String(row.source.id), patch) : setDemoRows((current) => current.flatMap((item) => {
     if (item.id !== row.id) return [item];
     const next = toRowModel({ ...item.source, ...patch }, { surface: 'desktop' });
@@ -385,9 +393,10 @@ function App() {
       const rowElement = document.querySelector(`[data-row-key="${CSS.escape(row.id)}"]`);
       const rect = (focused || rowElement?.querySelector('.more-action') || rowElement)?.getBoundingClientRect();
       const height = row.state === 'missing' ? 98 : 160;
-      const above = !!rect && !!focused && rect.top - height - 10 > 56;
-      const left = rect ? Math.max(8, Math.min(window.innerWidth - 288, rect.right - 280)) : 0;
-      setConfirmPlace(rect ? { left, top: above ? rect.top - height - 10 : Math.min(window.innerHeight - height - 52, rect.bottom + 8), above, caret: Math.max(16, Math.min(264, rect.left + rect.width / 2 - left)) } : null);
+      const above = !!rect && (!!focused || rect.bottom + height + 12 > window.innerHeight - 44) && rect.top - height - 10 > 56;
+      const left = rect ? Math.max(8, Math.min(window.innerWidth - 288, rect.right - 280)) : Math.max(8, Math.round((window.innerWidth - 280) / 2));
+      const top = rect ? (above ? rect.top - height - 10 : Math.min(window.innerHeight - height - 52, rect.bottom + 8)) : Math.max(56, Math.round((window.innerHeight - height) / 2));
+      setConfirmPlace({ left, top, above, caret: rect ? Math.max(16, Math.min(264, rect.left + rect.width / 2 - left)) : 140 });
       setConfirm({ row, mode: 'remove' });
       return;
     }
@@ -536,7 +545,7 @@ function App() {
     {organize.creating && <NewFolderRow variant={variant} parentDisplayPath={folder ? `${organize.rootDisplayPath}/${folder}` : organize.rootDisplayPath} onCreate={(name) => organize.createFolder(folder, name)} onCancel={() => organize.setCreating(false)} />}
     {subfolders.map((entry) => <FolderRow key={entry.path} folder={entry} variant={variant} rootDisplayPath={organize.rootDisplayPath}
       renaming={organize.renaming === entry.path} previewHot={organizePreview === 'drag' && entry.path === 'Road trips'}
-      onOpen={() => navigate(entry.path)} onReveal={() => { void organize.reveal(entry.path); }} onStartRename={() => organize.setRenaming(entry.path)}
+      onOpen={() => navigate(entry.path)} onReveal={() => { void organize.reveal(entry.path); }} onStartRename={() => { organize.setCreating(false); organize.setRenaming(entry.path); }}
       onRename={(name) => organize.renameFolder(entry.path, name)} onCancelRename={() => organize.setRenaming(null)}
       onDelete={(anchor) => { void organize.requestDelete(entry, anchor); }} onDropVideos={(ids) => { void organize.move(ids, entry.path); }} />)}
   </>;
@@ -581,13 +590,13 @@ function App() {
   return (
     <div className="workbench" data-gallery={gallery || undefined}>
       <h1 className="sr-only">SnagThis</h1>
-      <TopBar brandRef={brandRef} pasteRef={pasteRef} searchRef={searchRef} value={paste} onValue={setPaste} onSubmit={() => { void submitPaste(); }} filter={filter} onFilter={setFilter} showNavigation={!emptyLibrary || filter !== 'all'} searchOpen={searchOpen} onSearchOpen={setSearchOpen} search={search} onSearch={setSearch} checking={checking} error={pasteError} firstLaunch={firstLaunch} gallery={gallery} savedDot={savedDot}
+      <TopBar brandRef={brandRef} pasteRef={pasteRef} searchRef={searchRef} value={paste} onValue={setPaste} onSubmit={() => { void submitPaste(); }} filter={filter} onFilter={setFilter} showNavigation={showNavigation} searchOpen={searchOpen} onSearchOpen={setSearchOpen} search={search} onSearch={setSearch} checking={checking} error={pasteError} firstLaunch={firstLaunch} gallery={gallery} savedDot={savedDot}
         viewToggle={filter === 'saved' && !emptyLibrary ? <SavedViewToggle view={savedView} onView={setSavedView} /> : undefined}
         updateChip={chipKind ? <UpdateChip updater={updater} kind={chipKind} blocking={updateBlocking.length} currentVersion={appInfo?.version || 'development'} actions={updateActions} open={updatePopoverOpen} onOpenChange={setUpdatePopoverOpen} /> : undefined} />
       <StartupLogo targetRef={brandRef} />
       <SnagMoment rows={baseRows} onQuietCompletion={() => { if (filter !== 'saved') setSavedDot(true); }} />
-      <DropOverlay disabled={modalOpen || paletteOpen}onDropLinks={(text) => { setPaste(text); return submitPaste(text); }} />
-      {pending && <QualityPicker key={pending.url} apiBase={gallery ? window.location.origin : apiBase} inspection={pending.inspection} initial={pending.selection} onDownload={finishSelection} onCancel={() => setPending(null)} busy={checking} loadSample={loadSample} />}
+      <DropOverlay disabled={inputBlocked || paletteOpen} onDropLinks={(text) => { setPaste(text); return submitPaste(text); }} />
+      {pending && <QualityPicker key={pending.url} apiBase={gallery ? window.location.origin : apiBase} inspection={pending.inspection} initial={pending.selection} anchorRef={pasteRef} onDownload={finishSelection} onCancel={() => { setPending(null); requestAnimationFrame(() => pasteRef.current?.focus()); }} busy={checking} covered={modalOpen} loadSample={loadSample} />}
       {failure && <div className="connection-banner" role="alert"><span>{ui.unavailable}</span><button className="row-action labelled" onClick={() => { initialize(); library.refresh(); }}>{ui.tryAgain}</button><button className="row-action" onClick={() => openSettings('about')}>{ui.settings}</button></div>}
       {ready && !failure && !emptyLibrary && <PathBar tab={filter} searching={!!query} rootName={organize.rootName} rootDisplayPath={organize.rootDisplayPath} folder={folder} view={view}
         onView={(next) => { if (placeKey) organize.setView(placeKey, next); }} onNavigate={navigate}
@@ -596,14 +605,14 @@ function App() {
         onDeleteCurrent={(anchor) => { const entry = organize.folders.find((item) => item.path === folder); if (entry) void organize.requestDelete(entry, anchor); }}
         onDropVideos={(path, ids) => { void organize.move(ids, path); }} sortMenuOpen={organizePreview === 'sortmenu'} />}
       <main className="workbench-content" data-view-fade={viewFade || undefined}>
-        {!ready && !failure ? <div className="skeleton-list" role="status"><span className="sr-only">{ui.startup}</span>{[0, 1, 2].map((index) => <div key={index} className="skeleton-row" aria-hidden="true"><i /><div><span /><span /></div></div>)}</div> : showList ? filter === 'saved' && savedView === 'shelf' ? <>{hasFolderEntries && <div className="shelf-folders">{foldersLabel(false)}<div role="list" aria-label={libraryStrings.foldersSection} className="folder-chips" onKeyDown={(event) => moveGridFocus(event, '.saved-folder-chip')}>{folderEntries('chip')}</div></div>}{videosLabel(false)}{rows.length > 0 && <SavedShelf rows={rows} apiBase={gallery ? window.location.origin : apiBase} busyIds={busyIds} hasMore={!gallery && library.hasMore} loadingMore={library.loadingMore} onLoadMore={library.loadMore} onRequestPreview={requestThumbnailPreview}
+        {!ready && !failure ? <div className="skeleton-list" role="status"><span className="sr-only">{ui.startup}</span>{[0, 1, 2].map((index) => <div key={index} className="skeleton-row" aria-hidden="true"><i /><div><span /><span /></div></div>)}</div> : showList ? filter === 'saved' && savedView === 'shelf' ? <>{hasFolderEntries && <div className="shelf-folders">{foldersLabel(false)}<div role="list" aria-label={libraryStrings.foldersSection} className="folder-chips" onKeyDown={(event) => moveGridFocus(event, '.saved-folder-chip')}>{folderEntries('chip')}</div></div>}{videosLabel(false)}{(rows.length > 0 || !!sections) && <SavedShelf rows={rows} sections={sections} onToggleSection={(key) => organize.toggleSection(`${placeKey}|${key}`)} selectedIds={organize.selected} onSelect={(row, mode) => organize.select(row, mode, rows)} dragIds={(row) => (organize.selected.has(row.id) ? selectedSources : [String(row.source.id)])} apiBase={gallery ? window.location.origin : apiBase} busyIds={busyIds} hasMore={!gallery && library.hasMore} loadingMore={library.loadingMore} onLoadMore={library.loadMore} onRequestPreview={requestThumbnailPreview}
           onCommand={(row, action) => { if (action === 'details') { setSavedView('list'); setExpandedId(row.id); } else command(row, action); }} />}</> : <VideoList rows={rows} motionScope={`${filter}\n${query}\n${folder}\n${view.sort}\n${view.group}`} apiBase={gallery ? window.location.origin : apiBase} folder={saveFolder} expandedId={expandedId} renamingId={renamingId} busyIds={busyIds} hasMore={!gallery && library.hasMore && filter !== 'downloading'} loadingMore={library.loadingMore} onLoadMore={library.loadMore}
           onToggle={(row) => { if (organize.selected.size) organize.clearSelection(); setExpandedId(expandedId === row.id ? null : row.id); }} onCommand={command} onRename={rename} onRequestPreview={requestThumbnailPreview}
           prefix={folderPrefix} sections={sections} onToggleSection={(key) => organize.toggleSection(`${placeKey}|${key}`)}
           selectedIds={organize.selected} onSelect={(row, mode, from) => organize.select(row, mode, rows, from)}
           dragIds={(row) => (organize.selected.has(row.id) ? selectedSources : [String(row.source.id)])} showLocation={filter === 'all' || !!query} savedContext={savedContext}
           onRefreshLink={async (row, url) => { await run(row.id, async () => { if (gallery) mutateDemo(row, { queueStatus: 'downloading', error: null }); else await api?.refreshSource(row.jobId || row.id, url); }); }}
-          onMoveTo={(sourceId, targetId) => { if (gallery) { setDemoRows((current) => { const moving = current.find((row) => row.id === sourceId); const target = current.findIndex((row) => row.id === targetId); if (!moving || target < 0) return current; const next = current.filter((row) => row !== moving); next.splice(target, 0, moving); return next; }); return; } const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><PixelMascot variant="first" /><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{!connectedOnce && <ChromeConnectCard variant="first" active={!modalOpen} gallery={gallery} demo={gallery ? params.get('pair') : null} onInstall={() => run('chrome', () => openExternal(chromeInstallUrl))} />}</div> : !failure && (query ? <p className="empty-note">{ui.noMatches}</p>
+          onMoveTo={(sourceId, targetId) => { if (gallery) { setDemoRows((current) => { const moving = current.find((row) => row.id === sourceId); const target = current.findIndex((row) => row.id === targetId); if (!moving || target < 0) return current; const next = current.filter((row) => row !== moving); next.splice(target, 0, moving); return next; }); return; } const index = library.queue.queue.findIndex((job) => job.id === targetId); if (index >= 0) run(sourceId, () => api!.moveJob(sourceId, index)); }} /> : firstLaunch ? <div className="first-download"><PixelMascot variant="first" /><h2>{ui.firstTitle}</h2><p>{ui.firstBody}</p>{(!connectedOnce || firstLaunchCelebrating) && <ChromeConnectCard variant="first" active={!inputBlocked} gallery={gallery} demo={gallery ? params.get('pair') : null} onApproved={() => setFirstLaunchCelebrating(true)} onConnected={() => setFirstLaunchCelebrating(false)} onInstall={() => run('chrome', () => openExternal(chromeInstallUrl))} />}</div> : !failure && (query ? <p className="empty-note">{ui.noMatches}</p>
           : inFolderView && folder ? <div className="empty-state-quiet folder-empty"><PixelMascot variant="shelf" /><p className="empty-note">{libraryText('emptyFolderTitle', { name: organize.nameOf(folder) })}</p><p className="folder-empty-body">{libraryStrings.emptyFolderBody}</p></div>
             : <div className="empty-state-quiet"><PixelMascot variant={filter === 'downloading' ? 'dozing' : 'shelf'} /><p className="empty-note">{filter === 'downloading' ? ui.nothingDownloading : ui.noSaved}</p></div>)}
       </main>
@@ -612,7 +621,7 @@ function App() {
         <button className="footer-palette-hint" aria-label={`${ui.commands} (${paletteShortcut})`} onClick={() => setPaletteOpen(true)}><kbd aria-hidden="true">{paletteShortcut}</kbd><span aria-hidden="true">{ui.commands}</span></button>
         <DropdownMenu><DropdownMenuTrigger asChild><button className={`row-action footer-more${active.length >= 2 ? ' pinned' : ''}`} aria-label="Download actions"><MoreHorizontal /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => run('all', async () => { if (api) await api.pauseAll(); })}>{ui.pauseAll}</DropdownMenuItem><DropdownMenuItem onSelect={() => run('all', async () => { if (api) await api.startAll(); })}>{ui.resumeAll}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
         <button className="row-action" aria-label={ui.saveFolder} title={ui.saveFolder} onClick={() => run('folder', async () => { if (!gallery) { const result = await window.desktop.openSaveFolder(); if (!result.ok) throw new Error(result.error); } })}><FolderOpen /></button>
-        <button className="row-action" aria-label={ui.settings} title="Settings (⌘,)" onClick={() => setSettingsOpen(true)}><Settings /></button>
+        <button className="row-action" aria-label={ui.settings} title={`Settings (${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘,' : 'Ctrl+,'})`} onClick={() => setSettingsOpen(true)}><Settings /></button>
       </footer>
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} settings={settings} onSave={save} updater={updater} appInfo={appInfo} api={api} gallery={gallery}
         updateBlocking={updateBlocking.length} updateActions={updateActions} />
@@ -636,7 +645,7 @@ function App() {
           await organize.move(nameDialog.ids, nameDialog.parent ? `${nameDialog.parent}/${name.normalize('NFC')}` : name.normalize('NFC'));
           return null;
         }} onClose={() => organize.setNameDialog(null)} />
-      <FolderNameDialog open={!!renameVideoRow} title={libraryStrings.renameVideoTitle} body={libraryStrings.renameVideoBody} placeholder={libraryStrings.videoNamePlaceholder}
+      <FolderNameDialog open={!!renameVideoRow} kind="video" title={libraryStrings.renameVideoTitle} body={libraryStrings.renameVideoBody} placeholder={libraryStrings.videoNamePlaceholder}
         initial={renameVideoRow?.title || ''} confirm={libraryStrings.save} onSubmit={renameVideo} onClose={() => setRenameVideoRow(null)} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} actions={paletteActions} videos={baseRows} apiBase={gallery ? window.location.origin : apiBase} />
       <Dialog open={!!chromeSessionRow} onOpenChange={(open) => { if (!open && !(chromeSessionRow && busyIds.has(chromeSessionRow.id))) setChromeSessionRow(null); }}><DialogContent className="remove-dialog"><DialogTitle>{ui.chromeSessionTitle}</DialogTitle><DialogDescription>{ui.chromeSessionBody}</DialogDescription><p>{ui.chromeSessionHint}</p><div className="remove-options"><button className="row-action labelled primary-action" disabled={!!chromeSessionRow && busyIds.has(chromeSessionRow.id)} onClick={async () => {

@@ -47,8 +47,11 @@
       if (!context) return;
       context.sessions.delete(session);
       if (context.sessions.size) return;
-      await dnr.updateSessionRules({ removeRuleIds: [context.ruleId] });
-      contexts.delete(context.key);
+      try {
+        await dnr.updateSessionRules({ removeRuleIds: [context.ruleId] });
+      } finally {
+        contexts.delete(context.key);
+      }
     }
 
     chrome.runtime.onConnect.addListener(port => {

@@ -464,7 +464,8 @@ test('media metadata inference detects common TV episode patterns', () => {
   assert.equal(movieLike.isTvCandidate, false);
   assert.equal(movieLike.seasonNumber, null);
   assert.equal(movieLike.episodeNumber, null);
-  assert.equal(movieLike.lookupTitle, 'Dune Part Two 2024');
+  assert.equal(movieLike.lookupTitle, 'Dune Part Two');
+  assert.equal(movieLike.releaseYear, 2024);
 
   const tvRouteHint = inferMediaMetadata({
     title: 'Scrubs',
@@ -1561,6 +1562,7 @@ test('websocket channels publish compatibility and queue updates', async () => {
 
   const mediaServer = await startFixtureMediaServer();
   const apiServer = await startApi({ dataDir: tmpRoot, port });
+  apiServer.updateQueueSettings({ autoStart: false });
 
   const ws = new WebSocket(wsUrl, ['snagthis', `snagthis-auth.${TEST_AUTH_TOKEN}`]);
   await new Promise((resolve, reject) => {
@@ -1612,6 +1614,22 @@ test('websocket channels publish compatibility and queue updates', async () => {
       { timeoutMs: 7000 },
     );
     assert.equal(updateMessage.type, 'queue:update');
+
+    const second = await apiFetch(baseUrl, '/v1/jobs', {
+      method: 'POST',
+      body: { mediaUrl: `${mediaServer.baseUrl}/sample.mp4?second`, mediaType: 'file', title: 'Second queued job' },
+    });
+    assert.equal(second.status, 200);
+    await waitForWsMessage(ws, (message) => message.type === 'queue:update'
+      && message.data.queue[1]?.id === second.data.jobId);
+
+    const reordered = waitForWsMessage(ws, (message) => message.type === 'queue:update'
+      && message.data.queue[0]?.id === second.data.jobId);
+    const move = await apiFetch(baseUrl, `/api/queue/${second.data.jobId}/move`, {
+      method: 'POST', body: { position: 0 }, includeV1Headers: false,
+    });
+    assert.equal(move.status, 200);
+    assert.equal((await reordered).data.queue[1].id, createRes.data.jobId);
   } finally {
     ws.close();
     await apiServer.stop();

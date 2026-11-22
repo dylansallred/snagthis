@@ -23,8 +23,10 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
   const refreshSequence = useRef(0);
+  const loadMoreSequence = useRef(0);
   const queueRevision = useRef(0);
   const historyCount = useRef(100);
+  const disposedRef = useRef(false);
   const scopeKey = `${scope.folder ?? '\u0000'}\n${scope.sort || ''}`;
   const scopeRef = useRef(scope);
   useLayoutEffect(() => { scopeRef.current = scope; });
@@ -36,10 +38,13 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
     const requestScope = scopeRef.current;
     try {
       const [nextQueue, firstPage] = await Promise.all([api.getQueue(), api.getHistory(query, undefined, requestScope)]);
+      if (current !== generation.current || request !== refreshSequence.current) return;
       let items = firstPage.items || [];
       let nextCursor = firstPage.nextCursor;
       while (nextCursor && items.length < historyCount.current) {
+        if (current !== generation.current || request !== refreshSequence.current) return;
         const page = await api.getHistory(query, nextCursor, requestScope);
+        if (current !== generation.current || request !== refreshSequence.current) return;
         items = items.concat(page.items || []);
         nextCursor = page.nextCursor;
       }
@@ -62,30 +67,34 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
   // single reload after it. Each reload can make the app rescan the save folder.
   const background = useRef({ timer: undefined as ReturnType<typeof setTimeout> | undefined, running: false, again: false });
   const requestRefresh = useCallback(() => {
+    if (disposedRef.current) return;
     const state = background.current;
     if (state.running) { state.again = true; return; }
     if (state.timer) return;
     state.timer = setTimeout(async () => {
       state.timer = undefined;
+      if (disposedRef.current) return;
       state.running = true;
       try { await refreshRef.current(); } finally {
         state.running = false;
-        if (state.again) { state.again = false; requestRefresh(); }
+        if (state.again && !disposedRef.current) { state.again = false; requestRefresh(); }
+        else state.again = false;
       }
     }, 150);
   }, []);
   useEffect(() => {
-    generation.current += 1; historyCount.current = 100; setLoading(true); setHistory([]); setCursor(null);
+    generation.current += 1; historyCount.current = 100; setLoading(true); setLoadingMore(false); setHistory([]); setCursor(null);
   }, [api, query]);
   // A new folder or order: forget paging and load it, keeping the rows shown until then.
   const firstScope = useRef(true);
   useEffect(() => {
     if (firstScope.current) { firstScope.current = false; return; }
-    generation.current += 1; historyCount.current = 100;
+    generation.current += 1; historyCount.current = 100; setLoadingMore(false);
     refreshRef.current();
   }, [scopeKey]);
   useEffect(() => {
     if (!api) return;
+    disposedRef.current = false;
     let disposed = false;
     let socket: WebSocket | null = null;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -123,8 +132,8 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
     const onFocus = () => { requestRefresh(); };
     window.addEventListener('focus', onFocus);
     return () => {
-      disposed = true; generation.current += 1; clearTimeout(reconnect); clearInterval(fallback);
-      clearTimeout(pending.timer); pending.timer = undefined;
+      disposed = true; disposedRef.current = true; generation.current += 1; clearTimeout(reconnect); clearInterval(fallback);
+      clearTimeout(pending.timer); pending.timer = undefined; pending.again = false;
       window.removeEventListener('focus', onFocus);
       if (socket?.readyState === WebSocket.OPEN) socket.close();
       else if (socket?.readyState === WebSocket.CONNECTING) socket.onopen = () => socket?.close();
@@ -135,10 +144,12 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
   const loadMore = useCallback(async () => {
     if (!api || !cursor || loadingMore) return;
     const current = generation.current;
+    const seq = refreshSequence.current;
+    const loadId = ++loadMoreSequence.current;
     setLoadingMore(true);
     try {
       const page = await api.getHistory(query, cursor, scopeRef.current);
-      if (current !== generation.current) return;
+      if (current !== generation.current || seq !== refreshSequence.current) return;
       setHistory((items) => {
         const byId = new Map(items.map((item) => [item.id, item]));
         for (const item of page.items || []) byId.set(item.id, item);
@@ -146,8 +157,12 @@ export function useLibrary(api: ApiClient | null, query: string, scope: HistoryS
         return [...byId.values()];
       });
       setCursor(page.nextCursor || null);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load more videos'); }
-    finally { setLoadingMore(false); }
+    } catch (err) {
+      if (current !== generation.current || seq !== refreshSequence.current) return;
+      setError(err instanceof Error ? err.message : 'Unable to load more videos');
+    } finally {
+      if (loadId === loadMoreSequence.current) setLoadingMore(false);
+    }
   }, [api, cursor, loadingMore, query]);
   const rows = useMemo(() => {
     const text = query.trim().toLowerCase();

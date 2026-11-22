@@ -40,7 +40,10 @@ export function FillThumb({ row, apiBase, previewUrl, previewActive = false }: {
         ? !(loaded && settledUrl === url) && <div className={`thumb-fill thumb-placeholder${loaded ? ' done' : ''}`}><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /><i className="thumb-loading-dot" /></div>
         : <div className="thumb-fill thumb-placeholder thumb-empty"><Film className="thumb-empty-icon" /></div>}
       {/* Lazy: a long library only fetches and decodes the posters near the viewport. */}
-      {showImage && <img loading="lazy" decoding="async" className={`thumb-fill thumb-poster${loaded ? ' ready' : ''}`} src={url!} alt="" draggable={false} onLoad={() => setLoadedUrl(url)} onTransitionEnd={() => setSettledUrl(url)} onError={() => setFailedUrl(url)} />}
+      {showImage && <img loading="lazy" decoding="async" className={`thumb-fill thumb-poster${loaded ? ' ready' : ''}`} src={url!} alt="" draggable={false} onLoad={() => {
+        setLoadedUrl(url);
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setSettledUrl(url);
+      }} onTransitionEnd={() => setSettledUrl(url)} onError={() => setFailedUrl(url)} />}
       {previewActive && resolvedPreview && <MotionPreview key={resolvedPreview.split(/[?#]/, 1)[0]} url={resolvedPreview} />}
     </div>
   );

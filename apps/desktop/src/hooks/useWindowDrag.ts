@@ -10,16 +10,33 @@ type Press = { pointerId: number; x: number; y: number; dragging: boolean };
 export function useWindowDrag() {
   const press = useRef<Press | null>(null);
   const swallowClick = useRef(false);
+  const swallowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const end = () => {
-    if (press.current?.dragging) void window.desktop?.endWindowDrag?.();
+    if (press.current?.dragging) {
+      void window.desktop?.endWindowDrag?.();
+      if (swallowTimer.current) clearTimeout(swallowTimer.current);
+      swallowTimer.current = setTimeout(() => {
+        swallowClick.current = false;
+        swallowTimer.current = null;
+      }, 0);
+    }
     press.current = null;
   };
   useEffect(() => {
     window.addEventListener('blur', end);
-    return () => { window.removeEventListener('blur', end); end(); };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    return () => {
+      window.removeEventListener('blur', end);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      if (swallowTimer.current) clearTimeout(swallowTimer.current);
+      end();
+    };
   }, []);
   return {
     onPointerDown(event: PointerEvent<HTMLElement>) {
+      if (swallowTimer.current) { clearTimeout(swallowTimer.current); swallowTimer.current = null; }
       swallowClick.current = false;
       if (event.button !== 0 || !window.desktop?.startWindowDrag) return;
       press.current = { pointerId: event.pointerId, x: event.screenX, y: event.screenY, dragging: false };
@@ -27,10 +44,11 @@ export function useWindowDrag() {
     onPointerMove(event: PointerEvent<HTMLElement>) {
       const current = press.current;
       if (!current || current.dragging || event.pointerId !== current.pointerId) return;
+      if ((event.buttons & 1) === 0) { end(); return; }
       if (Math.hypot(event.screenX - current.x, event.screenY - current.y) < DRAG_THRESHOLD) return;
       current.dragging = true;
       swallowClick.current = true;
-      event.currentTarget.setPointerCapture(event.pointerId);
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Element may not accept capture. */ }
       void window.desktop?.startWindowDrag?.();
     },
     onPointerUp: end,
@@ -38,6 +56,7 @@ export function useWindowDrag() {
     onLostPointerCapture: end,
     onClickCapture(event: MouseEvent<HTMLElement>) {
       if (!swallowClick.current) return;
+      if (swallowTimer.current) { clearTimeout(swallowTimer.current); swallowTimer.current = null; }
       swallowClick.current = false;
       event.preventDefault();
       event.stopPropagation();

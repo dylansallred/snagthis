@@ -77,7 +77,25 @@
   async function copyText(text, done) {
     try { await navigator.clipboard.writeText(text); notice(done); } catch { notice('Couldn’t copy. Try again.'); }
   }
-  function notice(message) { $('notice').textContent = String(message); $('notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 5000); }
+  function hideNotice() {
+    const elNotice = $('notice');
+    try { if (elNotice.matches?.(':popover-open')) elNotice.hidePopover(); } catch {}
+    elNotice.hidden = true;
+  }
+  function notice(message) {
+    const elNotice = $('notice');
+    elNotice.textContent = String(message);
+    elNotice.hidden = false;
+    // Show in the Top Layer so notices stay visible above modal <dialog id="sheet">.
+    try {
+      if (typeof elNotice.showPopover === 'function') {
+        if (elNotice.matches?.(':popover-open')) elNotice.hidePopover();
+        elNotice.showPopover();
+      }
+    } catch {}
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(hideNotice, 5000);
+  }
   function external(url) { if (isDemo) { notice('Preview only — no app or page was opened.'); return; } chrome.tabs.create({ url }).catch(() => notice('Open SnagThis from your Applications folder.')); }
   async function request(path, options = {}) {
     if (isDemo) throw new Error('Demo cannot access the desktop app.');
@@ -235,6 +253,7 @@
     if (!active || !node.current) { stopThumbPreview(node); return; }
     stopPosterPreparation(true);
     const { row, jobId, item } = node.current;
+    if (row.state === 'external' || row.state === 'protected' || (storeBuild && youtubeItem(item))) { stopThumbPreview(node); return; }
     const demoName = isDemo && { neon: 'neon-rain', hop: 'sky-hop', tide: 'ember-tide' }[item.id];
     let clipUrl = demoName ? `popup/media/${demoName}.mp4` : reachable && compatible && appToken ? model.previewClipUrl(row.source.previewClipUrl || (node.previewJobId === jobId ? node.previewClipUrl : ''), apiBase) : '';
     if (clipUrl && node.previewFailedUrl === new URL(clipUrl, location.href).pathname) clipUrl = '';
@@ -398,14 +417,16 @@
       const completedCells = Math.floor(rowProgress / 100 * pieces.children.length);
       // Spark only cells finished while the popup watched; reopening never replays the whole lane.
       const previousCells = pieces.dataset.cells === undefined ? null : Number(pieces.dataset.cells);
-      const sparkFrom = progressActive && previousCells !== null && completedCells - previousCells <= 3 ? previousCells : completedCells;
+      const canSpark = !reducedMotion.matches && progressActive && previousCells !== null && completedCells > previousCells && completedCells - previousCells <= 3 && Date.now() - (pieces.lastSparkAt || 0) >= 250;
+      const sparkCell = canSpark ? completedCells - 1 : -1;
+      if (canSpark) pieces.lastSparkAt = Date.now();
       setData(pieces, 'cells', String(completedCells));
       // Unchanged progress leaves the lane's cells alone.
       if (pieces.drawnProgress !== rowProgress) for (const [index, cell] of Array.from(pieces.children).entries()) {
         cell.classList.toggle('done', index < completedCells);
         cell.classList.toggle('current', index === completedCells && rowProgress < 100);
         cell.style.setProperty('--piece-fill', index === completedCells ? String(rowProgress / 100 * pieces.children.length - completedCells) : '1');
-        if (index >= sparkFrom && index < completedCells) { cell.classList.add('spark'); cell.addEventListener('animationend', () => cell.classList.remove('spark'), { once: true }); }
+        if (index === sparkCell) { cell.classList.add('spark'); cell.addEventListener('animationend', () => cell.classList.remove('spark'), { once: true }); }
       }
       pieces.drawnProgress = rowProgress;
       updateThumb(node.querySelector('.thumb'), row);
@@ -416,26 +437,31 @@
       setHidden(node.querySelector('.row-duration-meta'), !row.durationLabel || problem);
       const status = node.querySelector('.row-status');
       if (row.state === 'detected') {
-        status.removeAttribute('role'); status.removeAttribute('aria-valuenow'); status.removeAttribute('aria-valuetext');
+        status.removeAttribute('role'); status.removeAttribute('aria-valuenow'); status.removeAttribute('aria-valuetext'); status.removeAttribute('aria-valuemin'); status.removeAttribute('aria-valuemax');
         const variants = item.variants || [];
+        const hasAudioChoice = (choice.audioTracks || []).length > 1;
+        const hasChoiceMenu = variants.length > 1 || hasAudioChoice;
         const sizeLabel = mediaSizeLabel(choice);
         const audioLabel = choice.audioTrack && !choice.selection.audioOnly ? choice.audioTrack.shortLabel : '';
-        const signature = `${choice.qualityLabel}|${audioLabel}|${sizeLabel}|${variants.length}`;
+        const signature = `${choice.qualityLabel}|${audioLabel}|${sizeLabel}|${variants.length}|${hasAudioChoice}`;
         setAttr(status, 'title', [choice.qualityLabel, sizeLabel].filter(Boolean).join(' · '));
         setClass(status, `row-status tone-${row.tone} status-meta`);
         if (status.dataset.signature !== signature) {
           status.dataset.signature = signature;
           // The quality button survives a size change so it keeps keyboard focus.
-          let quality = variants.length > 1 ? status.querySelector('.quality-button') : null;
+          let quality = hasChoiceMenu ? status.querySelector('.quality-button') : null;
           if (quality) { const part = quality.parentElement; while (part.nextSibling) part.nextSibling.remove(); }
           else status.replaceChildren();
-          if (variants.length > 1) {
+          if (hasChoiceMenu) {
             if (!quality) {
               quality = el('button', 'quality-button'); quality.type = 'button'; quality.setAttribute('aria-haspopup', 'menu'); quality.setAttribute('aria-expanded', 'false'); quality.setAttribute('aria-label', 'Choose quality');
               quality.addEventListener('click', () => showQuality(node.current.item, quality)); appendMetadata(status, quality);
             }
             quality.replaceChildren(qualityMark(choice.qualityLabel || 'Quality'), ...(audioLabel ? [el('span', 'aud', `· ${audioLabel}`)] : []), icon('down'));
-            quality.setAttribute('aria-label', audioLabel ? `Choose quality and audio, ${audioLabel}` : 'Choose quality');
+            const currentQuality = choice.qualityLabel ? `${choice.qualityLabel}` : '';
+            quality.setAttribute('aria-label', audioLabel
+              ? `Choose quality and audio, ${[currentQuality, audioLabel].filter(Boolean).join(', ')}`
+              : (currentQuality ? `Choose quality, ${currentQuality}` : 'Choose quality'));
           } else if (choice.qualityLabel) appendMetadata(status, qualityMark(choice.qualityLabel));
           appendMetadata(status, el('span', '', sizeLabel));
         }
@@ -463,7 +489,7 @@
       const actionKey = busy ? 'sending' : row.action ? `${row.action.id}:${row.action.style}` : '';
       if (node.dataset.actionKey !== actionKey) {
         node.querySelector(':scope > .action')?.remove(); node.dataset.actionKey = actionKey;
-        if (busy) { const button = action('Starting download', () => {}, 'primary'); button.replaceChildren(el('span', 'spinner')); button.disabled = true; node.append(button); }
+        if (busy) { const button = action('Starting download', () => {}, 'primary icon-only'); button.replaceChildren(el('span', 'spinner')); button.disabled = true; node.append(button); }
         else if (row.action) {
           const primary = ['download', 'continue'].includes(row.action.id);
           const style = primary ? 'primary icon-only' : row.action.style === 'icon' ? 'icon-only' : row.action.style;
@@ -670,7 +696,8 @@
     const popupTop = $('popup').getBoundingClientRect().top;
     syncPopupHeight(anchor.bottom + height + 6 - popupTop);
     const bounds = $('popup').getBoundingClientRect();
-    const minTop = Math.max(0, bounds.top) + 6; const bottom = bounds.bottom - 6;
+    const headerBottom = document.querySelector('.popup-header')?.getBoundingClientRect().bottom || 0;
+    const minTop = Math.max(0, bounds.top, headerBottom) + 6; const bottom = bounds.bottom - 6;
     const below = anchor.bottom + height <= bottom; const above = anchor.top - height >= minTop;
     const top = below || !above ? Math.max(minTop, Math.min(anchor.bottom, bottom - height)) : anchor.top - height;
     menu.style.top = `${top}px`;
@@ -730,7 +757,9 @@
     clearTimeout(sampleDwell); dwellRow?.classList.remove('dwelling'); dwellRow = null;
     if (!sample) return false;
     const current = sample; sample = null;
-    current.controller?.stop();
+    const immediate = ['switch', 'close', 'hidden'].includes(reason);
+    if (immediate && typeof current.controller?.destroy === 'function') current.controller.destroy();
+    else current.controller?.stop();
     paintSample(current.row, 'idle');
     if (['escape', 'user'].includes(reason)) announceSample('Sample stopped.');
     return true;
@@ -809,14 +838,18 @@
     if (!item.serviceWorkerServed && /^https?:\/\//i.test(item.url || '') && item.mediaKind !== 'youtube-page') menuItem(menu, 'Copy video address', () => copyText(item.url, 'Video address copied'));
     const pageAddress = item.sourcePageUrl || activeTab?.url || '';
     // Chrome Web Store policy: the store build never hands out a YouTube page to download elsewhere.
-    const youtubePage = storeBuild && (Boolean(SnagThisDetection.youtubeId(pageAddress)) || /^https?:\/\/([^/]+\.)?youtube\.com\//i.test(pageAddress));
+    const youtubePage = storeBuild && (Boolean(SnagThisDetection.youtubeId(pageAddress)) || /^https?:\/\/([^/]+\.)?youtube(?:-nocookie)?\.com\//i.test(pageAddress));
     if (/^https?:\/\//i.test(pageAddress) && !youtubePage) menuItem(menu, 'Copy page address', () => copyText(pageAddress, 'Page address copied. Paste it into SnagThis to download this video.'));
     if (!item.serviceWorkerServed && (!jobId || (job?.backend === 'browser' && ['failed', 'completed', 'cancelled'].includes(job.queueStatus))) && browserSupported(model.selectMedia(item, preferences, selected.get(item.id)))) menuItem(menu, 'Download with desktop', () => useDesktop(item));
     if (!jobId && !storeYoutube) {
       const expired = queue.filter(job => job.queueStatus === 'failed' && job.sourcePageUrl === item.sourcePageUrl && rows.classifyProblem(job.error).code === 'expired');
       if (expired.length === 1) menuItem(menu, 'Continue previous download', () => continueDownload(item, expired[0].id));
     }
-    if (!jobId && ((item.audio || []).length || (item.subtitles || []).length)) menuItem(menu, 'Quality and subtitles', () => showQuality(item, rowElements.get(item.id)?.querySelector('.row-status')));
+    if (!jobId && ((item.audio || []).length || (item.subtitles || []).length)) {
+      const rowNode = rowElements.get(item.id);
+      const anchor = rowNode?.querySelector('.quality-button') || rowNode?.querySelector('.row-meta') || trigger;
+      menuItem(menu, 'Quality and subtitles', () => showQuality(item, anchor));
+    }
     menu.append(el('hr'));
     menuItem(menu, 'Show all detected streams', async () => { await message({ cmd: 'SHOW_ALL_MEDIA', tabId: activeTab?.id }); await refresh(); });
     if (job?.backend === 'browser') {
@@ -829,7 +862,7 @@
     if (item.mediaKind === 'youtube-page') { external(item.sourcePageUrl || item.url); return; }
     if (isDemo) { showDemoVideo(item); return; }
     const credentialed = item.networkObserved === true;
-    const result = await message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: item.url, sourcePageUrl: item.sourcePageUrl, title: customTitles[item.id] || titles.getDisplayTitle(item), declaredType: item.type, credentialed, requestHeaders: credentialed ? item.requestHeaders : {} } });
+    const result = await message({ cmd: 'CREATE_STREAM_SESSION', session: { sourceUrl: item.url, sourcePageUrl: item.sourcePageUrl, title: customTitles[item.id] || titles.getDisplayTitle(item), declaredType: item.streamType || item.type, credentialed, requestHeaders: credentialed ? item.requestHeaders : {} } });
     if (result.ok) external(chrome.runtime.getURL(`player.html?session=${encodeURIComponent(result.sessionId)}`)); else notice(result.error || 'Preview is unavailable.');
   }
   function showDemoVideo(item) {
@@ -860,7 +893,7 @@
       pad.append(action('Open page', () => external(row.source.sourcePageUrl || `https://www.youtube.com/watch?v=${youtube}`)));
     } else {
       pad.append(el('p', '', row.problem?.raw || 'Open the source page and try again.'));
-      pad.append(action('Open page', () => external(row.source.sourcePageUrl), 'bordered'));
+      if (/^https?:\/\//i.test(row.source.sourcePageUrl || '')) pad.append(action('Open page', () => external(row.source.sourcePageUrl), 'bordered'));
     }
     content.append(pad);
   }
@@ -1071,7 +1104,7 @@
    * (docs/design/prototypes/popup-settings option 3). The last tab is kept while the popup is open. ── */
   const SETTINGS_TABS = [['downloads', 'Downloads', 'section'], ['appearance', 'Appearance', 'palette'], ['connection', 'Connection', 'plug'], ['about', 'About', 'info']];
   const CONNECTION_STATES = { paired: ['ok', 'Connected'], offline: ['amber', 'SnagThis not open'], unpaired: ['grey', 'Not connected'] };
-  let settingsTab = 'downloads'; let settingsHeight = 0; let settingsState = '';
+  let settingsTab = 'downloads'; let settingsHeight = 0; let settingsState = ''; let settingsFallback = false;
   function settingsConnection() { return !appToken ? 'unpaired' : !reachable ? 'offline' : 'paired'; }
   function settingsOpen() { return $('sheet').open && $('sheet').dataset.view === 'settings'; }
   function settingIcon(glyph, tone = '') { const badge = el('span', `setting-icon${tone ? ` ${tone}` : ''}`); badge.setAttribute('aria-hidden', 'true'); badge.append(icon(glyph)); return badge; }
@@ -1168,15 +1201,18 @@
     const content = openSheet('Settings'); $('sheet').dataset.view = 'settings'; $('sheet-link').hidden = false;
     if (SETTINGS_TABS.some(([id]) => id === tab)) settingsTab = tab;
     settingsState = settingsConnection();
+    settingsFallback = getAppFallback;
     const pane = el('div', 'settings-pane'); pane.id = 'settings-panel'; pane.setAttribute('role', 'tabpanel'); pane.tabIndex = 0;
     content.append(renderSettingsTabs(), pane);
     measureSettings(); selectSettingsTab(settingsTab, true);
   }
   // A connection change while Settings is open redraws it in place, keeping the tab and tab focus.
   function syncSettings() {
-    if (!settingsOpen() || settingsConnection() === settingsState) return;
+    const nextState = settingsConnection();
+    if (!settingsOpen() || (nextState === settingsState && settingsFallback === getAppFallback)) return;
     const tabFocused = document.activeElement?.getAttribute('role') === 'tab'; const paneFocused = $('settings-panel')?.contains(document.activeElement);
-    settingsState = settingsConnection();
+    settingsState = nextState;
+    settingsFallback = getAppFallback;
     const list = $('sheet-content').querySelector('.settings-tabs'); list.replaceWith(renderSettingsTabs());
     measureSettings(); selectSettingsTab(settingsTab, tabFocused);
     if (paneFocused) $('settings-panel').focus({ preventScroll: true });
@@ -1217,9 +1253,14 @@
     clearTimeout(healthTimer);
     if (!popupClosed) healthTimer = setTimeout(checkHealth, 2000);
   }
+  let refreshQueued = false;
   function refresh() {
     if (isDemo) return Promise.resolve();
-    if (refreshBusy) return refreshBusy;
+    if (refreshBusy) {
+      refreshQueued = true;
+      return refreshBusy.then(() => (refreshQueued ? refresh() : undefined));
+    }
+    refreshQueued = false;
     refreshBusy = (async () => {
       const tasks = [activeTab?.id ? message({ cmd: 'GET_TAB_MEDIA', tabId: activeTab.id }) : Promise.resolve(null), reachable && compatible && appToken && !tokenUpgrade ? request('/v1/queue') : Promise.resolve(null)];
       const results = await Promise.allSettled(tasks);
@@ -1235,7 +1276,11 @@
       if (results[1].status === 'rejected' && results[1].reason?.status === 401) { appToken = ''; disconnectedNotice = true; await chrome.storage.local.remove(['appToken', 'appTokenVersion']); await chrome.storage.session?.set({ 'snagthis:disconnected': true }).catch(() => {}); }
       if (results[1].status === 'rejected' && results[1].reason?.status === 426) { compatible = false; compatibilityIssue = model.compatibilityIssue(results[1].reason.compatibility, runtimeVersion); }
       renderRows();
-    })().finally(() => { refreshBusy = false; scheduleRefresh(); });
+    })().finally(() => {
+      refreshBusy = false;
+      if (refreshQueued && !popupClosed) void refresh();
+      else scheduleRefresh();
+    });
     return refreshBusy;
   }
   // Downloads in progress refresh every second; an idle list only checks now and then,

@@ -28,7 +28,28 @@ export function MoveToMenu({ request, folders, rootName, rootDisplayPath, onMove
   if (!request) return null;
   const count = request.ids.length;
   const pathOf = (folder: string) => (folder ? `${rootDisplayPath}/${folder}` : rootDisplayPath);
-  const sorted = [...folders].sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: 'base', numeric: true }));
+  // Tree-order traversal grouped by parent so children always appear directly beneath their own parent.
+  const byParent = new Map<string, LibraryFolder[]>();
+  for (const folder of folders) {
+    const siblings = byParent.get(folder.parent) || [];
+    siblings.push(folder);
+    byParent.set(folder.parent, siblings);
+  }
+  const compareNames = (a: LibraryFolder, b: LibraryFolder) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+  const sorted: LibraryFolder[] = [];
+  const visit = (parent: string) => {
+    const children = byParent.get(parent);
+    if (!children) return;
+    for (const child of [...children].sort(compareNames)) {
+      sorted.push(child);
+      visit(child.path);
+    }
+  };
+  visit('');
+  if (sorted.length < folders.length) {
+    const seen = new Set(sorted.map((entry) => entry.path));
+    for (const orphan of folders.filter((entry) => !seen.has(entry.path)).sort(compareNames)) sorted.push(orphan);
+  }
   const item = (path: string, name: string, depth: number, videos: number | null) => {
     const here = request.from === path;
     return <DropdownMenuItem key={path || '/'} disabled={here} data-folder={path} style={{ paddingLeft: 9 + depth * 14 }}

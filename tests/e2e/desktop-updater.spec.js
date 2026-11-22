@@ -32,7 +32,8 @@ test('approved Workbench component gallery: clean thumbnails, motion previews, a
         const lane = element.querySelector('.progress-pieces').getBoundingClientRect();
         const thumb = element.querySelector('.thumb').getBoundingClientRect();
         const main = ['.row-text', '.row-actions'].map(selector => element.querySelector(selector).getBoundingClientRect());
-        return lane.top > Math.max(...main.map(part => part.bottom)) && Math.abs(lane.left - main[0].left) < 1 && Math.abs(bounds.right - lane.right - 14) < 1 && Math.abs(thumb.height - bounds.height) < 1 && bounds.height <= 100;
+        const thumbnailFits = Math.abs(thumb.height - 66) < 1 && thumb.top >= bounds.top && thumb.bottom <= bounds.bottom && thumb.right < lane.left;
+        return lane.top > Math.max(...main.map(part => part.bottom)) && Math.abs(lane.left - main[0].left) < 1 && Math.abs(bounds.right - lane.right - 14) < 1 && thumbnailFits && bounds.height <= 100;
       })).toBe(true);
     };
     for (const [id, percent, moving] of [['downloading', 34, true], ['finishing', 97, true], ['paused', 48, false], ['problem-expired', 48, false]]) {
@@ -259,7 +260,7 @@ test('settings sections swap from the rail, confirm saves, pick an accent and va
     await page.goto(`${renderer.baseUrl}/?gallery=states&sheet=settings`);
     const sheet = page.locator('.settings-sheet');
     await expect(sheet).toBeVisible();
-    expect(Math.round((await sheet.boundingBox()).width)).toBe(640);
+    await expect(sheet).toHaveCSS('width', '600px');
     const rail = sheet.getByRole('tablist', { name: 'Settings sections' });
     await expect(rail.getByRole('tab')).toHaveText(['Chrome extension', 'Downloads', 'App', 'Appearance', 'Advanced', 'Updates & support']);
     // Downloads is the first section shown in a session.
@@ -314,7 +315,7 @@ test('settings sections swap from the rail, confirm saves, pick an accent and va
     // A narrow 640px window keeps the rail and a usable pane.
     await page.setViewportSize({ width: 640, height: 560 });
     await expect(sheet).toBeVisible();
-    expect(Math.round((await sheet.boundingBox()).width)).toBe(640);
+    await expect(sheet).toHaveCSS('width', '552px');
     await sheet.getByRole('tab', { name: 'Downloads' }).click();
     await expect(sheet.getByRole('button', { name: 'Change save folder' })).toBeInViewport();
   } finally { await renderer.close(); }

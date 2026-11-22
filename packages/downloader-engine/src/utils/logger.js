@@ -64,10 +64,10 @@ if (fileLoggingEnabled) {
 const logger = winston.createLogger({
   level: loggerLevel,
   format: winston.format.combine(
-    // Media URLs carry signed query tokens; never write them to disk.
-    winston.format((info) => Object.assign(info, redact(info)))(),
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
+    // Media URLs carry signed query tokens; never write them to disk (including stacks).
+    winston.format((info) => Object.assign(info, redact(info)))(),
     winston.format.json()
   ),
   defaultMeta: { service: 'm3u8-downloader' },

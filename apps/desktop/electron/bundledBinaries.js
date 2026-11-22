@@ -12,6 +12,7 @@ function findBundledExecutable(candidates, { fsModule = fs, platform = process.p
     if (!candidate) continue;
     try {
       if (!fsModule.existsSync(candidate)) continue;
+      if (typeof fsModule.statSync === 'function' && !fsModule.statSync(candidate).isFile()) continue;
     } catch {
       continue;
     }

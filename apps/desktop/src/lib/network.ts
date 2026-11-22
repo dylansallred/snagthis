@@ -6,8 +6,11 @@ export function normalizeLocalApiBase(candidate: string | null | undefined): str
 
   try {
     const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return DEFAULT_API_BASE;
+    }
     const hostname = String(parsed.hostname || '').toLowerCase();
-    const isLoopback = hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1';
+    const isLoopback = hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]';
 
     if (isLoopback && parsed.protocol === 'https:') {
       parsed.protocol = 'http:';

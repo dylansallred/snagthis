@@ -183,6 +183,7 @@ function registerJobRoutes(
       mediaType: queue.mediaType || (isHls ? 'hls' : 'file'),
       sourcePageUrl: queue.sourcePageUrl || '',
       sourceInfo: sourceInfoOf(queue),
+      ...(typeof queue.manifestText === 'string' && queue.manifestText.trim() ? { manifestText: queue.manifestText } : {}),
       totalSegments: 0,
       completedSegments: 0,
       bytesDownloaded: 0,
@@ -525,7 +526,11 @@ function registerJobRoutes(
     job._downloadAbort?.abort();
     job.updatedAt = Date.now();
     job.completedAt = job.updatedAt;
+    if (!queueManager.activeJobs.has(job.id)) {
+      queueManager.cleanupCancelledJobArtifacts(job);
+    }
     await queueManager.saveQueue();
+    queueManager.processQueue();
 
     logger.info('Job cancelled', { jobId: job.id, status: job.status });
     res.json({ ok: true });
@@ -555,7 +560,7 @@ function registerJobRoutes(
       : job.downloadName || safeFilename(job.title || path.basename(filePath));
 
     logger.info('Job file download started', { jobId: job.id, filePath, downloadName });
-    res.download(filePath, downloadName);
+    res.download(filePath, downloadName, { dotfiles: 'allow' });
   });
 
   // Stream the completed file for inline playback (e.g., video preview)
@@ -583,15 +588,7 @@ function registerJobRoutes(
     }
 
     logger.info('Job stream started', { jobId: job.id, filePath });
-    const stream = fs.createReadStream(filePath);
-    stream.on('error', () => {
-      if (!res.headersSent) {
-        res.status(500).end('Error reading file');
-      } else {
-        res.end();
-      }
-    });
-    stream.pipe(res);
+    return res.sendFile(path.basename(filePath), { root: path.dirname(filePath) });
   });
 }
 

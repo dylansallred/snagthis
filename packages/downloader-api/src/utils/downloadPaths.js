@@ -51,6 +51,26 @@ function decodeExternalDownloadPath(value) {
   }
 }
 
+function encodeRelativeAssetPath(relative) {
+  return toPosixPath(relative)
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function decodeRelativeAssetPath(relative) {
+  const parts = toPosixPath(String(relative || '')).split('/');
+  const decoded = [];
+  for (const part of parts) {
+    try {
+      decoded.push(decodeURIComponent(part));
+    } catch {
+      decoded.push(part);
+    }
+  }
+  return decoded.join('/');
+}
+
 function buildDownloadAssetUrl(downloadDir, absolutePath) {
   if (typeof absolutePath !== 'string' || !absolutePath.trim()) return null;
   const resolvedRoot = path.resolve(downloadDir);
@@ -60,11 +80,12 @@ function buildDownloadAssetUrl(downloadDir, absolutePath) {
     return encoded ? `${EXTERNAL_DOWNLOAD_PREFIX}${encoded}` : null;
   }
   const relative = toPosixPath(path.relative(resolvedRoot, resolvedTarget));
-  return `/downloads/${relative}`;
+  return `/downloads/${encodeRelativeAssetPath(relative)}`;
 }
 
 function resolveDownloadPath(downloadDir, relativePath) {
-  const safeRelative = normalizeRelativePath(relativePath);
+  const decoded = decodeRelativeAssetPath(relativePath);
+  const safeRelative = normalizeRelativePath(decoded);
   if (!safeRelative) return null;
   const fullPath = path.resolve(downloadDir, safeRelative);
   if (!isInsideDirectory(path.resolve(downloadDir), fullPath)) {

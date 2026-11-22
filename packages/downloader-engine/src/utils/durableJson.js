@@ -3,6 +3,7 @@ const path = require('path');
 // Errors that usually clear on their own (antivirus, backup or sync tools
 // holding the file, descriptor pressure). The file itself may be intact.
 const TRANSIENT_READ_CODES = new Set(['EBUSY', 'EPERM', 'EACCES', 'EAGAIN', 'EMFILE', 'ENFILE', 'EIO']);
+const TRANSIENT_RENAME_CODES = new Set(['EBUSY', 'EPERM', 'EACCES']);
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -93,7 +94,16 @@ async function syncDirectory(fsPromises, directory) {
 async function writeFileDurable(fsPromises, filePath, contents, { mode = 0o600 } = {}) {
   const temporaryPath = `${filePath}.tmp`;
   await fsPromises.writeFile(temporaryPath, contents, { encoding: 'utf8', mode, flush: true });
-  await fsPromises.rename(temporaryPath, filePath);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await fsPromises.rename(temporaryPath, filePath);
+      break;
+    } catch (error) {
+      // Windows can briefly lock the old or replacement file during a scan.
+      if (attempt >= 3 || !TRANSIENT_RENAME_CODES.has(error?.code)) throw error;
+      await delay(100 * (attempt + 1));
+    }
+  }
   await syncDirectory(fsPromises, path.dirname(filePath));
 }
 

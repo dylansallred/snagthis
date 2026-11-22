@@ -44,10 +44,17 @@ export function SpeedTrace({ jobId, state, speedBps, hidden }: {
   const frozen = useRef<number[] | null>(null);
   const scale = useRef(0);
   const span = useRef(0); // drawable width, measured from the actions edge leftward
+  const lastJobId = useRef(jobId);
   const fadeId = `speed-trace-fade-${useId().replace(/:/g, '')}`;
   const live = state === 'downloading';
 
   useEffect(() => {
+    if (lastJobId.current !== jobId) {
+      lastJobId.current = jobId;
+      frozen.current = null;
+      scale.current = 0;
+      span.current = 0;
+    }
     if (hidden) return;
     const element = root.current;
     if (!element) return;
@@ -110,9 +117,10 @@ export function SpeedTrace({ jobId, state, speedBps, hidden }: {
     };
     const stopSize = observeSize(element, (cellWidth, cellHeight) => {
       const room = Math.floor(cellWidth - GAP - END);
-      // Shrink at once (never overlap text) with a little slack; grow back only after a real change.
+      // Shrink at once (never overlap text) with a little slack; grow back only after a real change,
+      // unless the trace was previously hidden below MIN_WIDTH and now has enough room to appear.
       if (!span.current || room < span.current) span.current = Math.max(0, span.current ? room - SLACK : room);
-      else if (room > span.current + REGROW) span.current = room;
+      else if ((span.current < MIN_WIDTH && room >= MIN_WIDTH) || room > span.current + REGROW) span.current = room;
       height = cellHeight;
       const plotWidth = Math.max(0, span.current + END);
       plot.current?.setAttribute('width', String(plotWidth));

@@ -66,10 +66,10 @@ async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = f
     return result;
   }
 
-  async function fetchSource(url, requestHeaders) {
+  async function fetchSource(url, requestHeaders, allowPrivate = allowPrivateAddresses) {
     let target = httpUrl(url).href;
     for (let redirects = 0; redirects <= 4; redirects++) {
-      if (allowPrivateAddresses !== true) await assertPublicUrl(target, { lookup });
+      if (allowPrivate !== true) await assertPublicUrl(target, { lookup });
       const response = await fetchImpl(target, { headers: scopeMediaHeaders(requestHeaders, target, { credentialOrigin: url }), redirect: 'manual', signal: AbortSignal.timeout(8000) });
       if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
         const next = httpUrl(new URL(response.headers.get('location'), target));
@@ -84,10 +84,10 @@ async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = f
     throw new Error('This link redirects too many times');
   }
 
-  async function inspectSource(url, requestHeaders, metadata = {}, allowPage = false, manifestText) {
+  async function inspectSource(url, requestHeaders, metadata = {}, allowPage = false, manifestText, allowPrivate = allowPrivateAddresses) {
     let target = httpUrl(url).href;
     let response;
-    if (!manifestText) ({ response, target } = await fetchSource(target, requestHeaders));
+    if (!manifestText) ({ response, target } = await fetchSource(target, requestHeaders, allowPrivate));
     const contentType = response?.headers.get('content-type') || '';
     if (allowPage && /text\/html|application\/xhtml\+xml/i.test(contentType)) {
       await response.body?.cancel();
@@ -97,13 +97,18 @@ async function inspectMedia({ mediaUrl, headers = {}, resolvePage, fetchImpl = f
       catch { throw new Error('Could not find a video automatically. Open this page in Chrome, press play, then choose it in SnagThis.'); }
       if (!resolved?.mediaUrl || resolved.mediaUrl === target) throw new Error('No playable video was found. Open the page in Chrome, press play, and try the SnagThis extension.');
       const resolvedUrl = httpUrl(resolved.mediaUrl).href;
+      let safeThumb;
+      if (typeof resolved.thumbnailUrl === 'string' && resolved.thumbnailUrl.trim()) {
+        try { safeThumb = httpUrl(resolved.thumbnailUrl.trim()).href; } catch { safeThumb = undefined; }
+      }
+      // Media URLs emitted by untrusted page scripts must always stay public-only.
       const inspection = await inspectSource(resolvedUrl, resolved.headers || {}, {
         title: typeof resolved.title === 'string' ? resolved.title.trim().slice(0, 255) : undefined,
         // The page's own title, site name and channel, for the saved video's Source.
         ...Object.fromEntries(['pageTitle', 'siteName', 'uploader'].flatMap((key) => (typeof resolved[key] === 'string' && resolved[key].trim() ? [[key, resolved[key].trim().slice(0, 255)]] : []))),
-        sourcePageUrl: original.href, thumbnailUrl: resolved.thumbnailUrl,
+        sourcePageUrl: original.href, thumbnailUrl: safeThumb,
         headers: resolved.headers || {},
-      }, false, resolved.manifestText);
+      }, false, resolved.manifestText, false);
       return markObservedVariants(inspection, resolved.observedUrls);
     }
     if (manifestText || /mpegurl|text\/plain/i.test(contentType) || /\.m3u8(?:[?#]|$)/i.test(target)) {

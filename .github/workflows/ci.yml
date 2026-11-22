@@ -60,7 +60,9 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           PLATFORMS: ${{ inputs.platforms }}
         run: |
-          all='["ubuntu-latest","macos-15","windows-latest"]'
+          # The pinned Playwright version supports Ubuntu 24.04 for browser tests.
+          linux='["ubuntu-24.04"]'
+          all='["ubuntu-24.04","macos-15","windows-latest"]'
           if [ "$EVENT" = pull_request ]; then
             labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name')
             if ! grep -qxE 'run-ci|run-ci-all' <<< "$labels"; then
@@ -75,9 +77,9 @@ jobs:
               echo "Only docs or site files changed, so the suite is skipped." >> "$GITHUB_STEP_SUMMARY"
               echo 'os=[]' >> "$GITHUB_OUTPUT"
             elif grep -qx 'run-ci-all' <<< "$labels"; then echo "os=$all" >> "$GITHUB_OUTPUT"
-            else echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"; fi
+            else echo "os=$linux" >> "$GITHUB_OUTPUT"; fi
           elif [ "$EVENT" = workflow_dispatch ] && [ "$PLATFORMS" != all ]; then
-            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            echo "os=$linux" >> "$GITHUB_OUTPUT"
           else
             echo "os=$all" >> "$GITHUB_OUTPUT"
           fi
@@ -98,13 +100,42 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Fetch portable media tools
+      - name: Prepare Electron before Windows tests
+        if: runner.os == 'Windows'
+        run: node -e "require('electron')"
+      # The tests need FFmpeg and ffprobe on PATH. Release workflows fetch the
+      # separate pinned binaries that match the corresponding source packet.
+      - name: Install FFmpeg on Linux
+        if: runner.os == 'Linux'
         run: |
-          npm run fetch:ffmpeg --workspace @m3u8/desktop
-          npm run fetch:yt-dlp --workspace @m3u8/desktop
-      - name: Use the bundled tools for media fixtures
+          # Ubuntu 24.04's FFmpeg 6 does not support the app's HLS demuxer options.
+          archive="$RUNNER_TEMP/jellyfin-ffmpeg.tar.xz"
+          media_tools="$RUNNER_TEMP/ffmpeg"
+          curl --fail --show-error --silent --location --retry 3 \
+            https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.3-2/jellyfin-ffmpeg_8.1.3-2_portable_linux64-gpl.tar.xz \
+            --output "$archive"
+          printf '%s  %s\n' '1df84d04c4322902dba81c290508cdf3d89524d210b9fe03154bea6c4e3bfbb6' "$archive" | sha256sum -c -
+          mkdir -p "$media_tools"
+          tar -xJf "$archive" -C "$media_tools"
+          printf '%s\n' "$media_tools" >> "$GITHUB_PATH"
+      - name: Install FFmpeg on Windows
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --version=9.0.2 --yes --no-progress
+      - name: Fetch portable FFmpeg on macOS
+        if: runner.os == 'macOS'
+        run: npm run fetch:ffmpeg --workspace @m3u8/desktop
+      - name: Fetch pinned yt-dlp
+        run: npm run fetch:yt-dlp --workspace @m3u8/desktop
+      - name: Add repository media tools to PATH
         shell: bash
         run: node -p "require('path').resolve('apps/desktop/bin')" >> "$GITHUB_PATH"
+      - name: Check media tools before running fixtures
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffmpeg -hide_banner -h demuxer=hls | grep -F allowed_segment_extensions
+          ffprobe -version
+          yt-dlp --version
       - name: Install browser and Electron display dependencies
         if: runner.os == 'Linux'
         run: npx playwright install --with-deps chromium

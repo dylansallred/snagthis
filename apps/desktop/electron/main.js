@@ -100,12 +100,38 @@ function getLogsDirPath() {
   return logsDir;
 }
 
+let settingsCache = null;
+let settingsCacheMeta = null;
 function readSettings() {
-  return preferences.read(appSettingsPath());
+  const file = appSettingsPath();
+  try {
+    const stat = fs.statSync(file);
+    if (settingsCache && settingsCacheMeta && settingsCacheMeta.file === file && settingsCacheMeta.mtimeMs === stat.mtimeMs && settingsCacheMeta.size === stat.size) {
+      return { ...settingsCache };
+    }
+    const parsed = preferences.read(file);
+    settingsCache = parsed;
+    settingsCacheMeta = { file, mtimeMs: stat.mtimeMs, size: stat.size };
+    return { ...parsed };
+  } catch {
+    settingsCache = null;
+    settingsCacheMeta = null;
+    return preferences.read(file);
+  }
 }
 
 function writeSettings(next) {
-  return preferences.write(appSettingsPath(), next);
+  const file = appSettingsPath();
+  const merged = preferences.write(file, next);
+  try {
+    const stat = fs.statSync(file);
+    settingsCache = merged;
+    settingsCacheMeta = { file, mtimeMs: stat.mtimeMs, size: stat.size };
+  } catch {
+    settingsCache = null;
+    settingsCacheMeta = null;
+  }
+  return { ...merged };
 }
 
 function currentSettings() {
@@ -139,6 +165,14 @@ function saveSettings(next) {
   for (const key of ['tmdbApiKey', 'subdlApiKey', 'downloadThreads']) {
     if (key in input) apiConfig[key] = merged[key];
   }
+  if ('checkUpdatesOnStartup' in input && getUpdaterSupportState().supported) {
+    if (merged.checkUpdatesOnStartup === false && updaterTimer) {
+      clearInterval(updaterTimer);
+      updaterTimer = null;
+    } else if (merged.checkUpdatesOnStartup !== false && !updaterTimer) {
+      updaterTimer = setInterval(() => { checkForUpdatesNow(); }, UPDATER_PERIODIC_CHECK_MS);
+    }
+  }
   return currentSettings();
 }
 
@@ -154,7 +188,13 @@ function appInfo() {
 
 function safeDiagnostics(payload) {
   const settings = readSettings();
-  return diagnostics.redact(payload, [apiServer?.getAuthToken?.(), settings.tmdbApiKey, settings.subdlApiKey]);
+  return diagnostics.redact(payload, [
+    apiServer?.getAuthToken?.(),
+    settings.tmdbApiKey,
+    settings.subdlApiKey,
+    process.env.TMDB_API_KEY,
+    process.env.SUBDL_API_KEY,
+  ]);
 }
 
 function rendererUrl() {
@@ -591,10 +631,19 @@ function showPendingPairing() {
  * stays open, and the two sets of digits sit side by side. No link, so Chrome never asks
  * "Open SnagThis?" for an app that is already running.
  */
+let pairingSettleTimer = null;
+let updaterCheckGeneration = 0;
+function clearPairingSettleTimer() {
+  if (!pairingSettleTimer) return;
+  clearTimeout(pairingSettleTimer);
+  pairingSettleTimer = null;
+}
+
 function surfacePairingRequest(pending) {
   if (!pending || pending.status !== 'pending' || pairingSurfaced?.requestId === pending.requestId || !app.isReady()) return;
+  clearPairingSettleTimer();
   if (!mainWindow || mainWindow.isDestroyed()) createWindow();
-  const restore = !mainWindow.isVisible() ? 'hidden' : mainWindow.isMinimized() ? 'minimized' : null;
+  const restore = !mainWindow.isVisible() ? (process.platform === 'darwin' ? 'hidden' : 'minimized') : mainWindow.isMinimized() ? 'minimized' : null;
   pairingSurfaced = { requestId: pending.requestId, restore };
   if (!mainWindow.isFocused()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -618,11 +667,15 @@ function settleSurfacedPairing(state) {
   pairingSurfaced = { requestId: state.requestId, restore: null };
   if (!backgroundTestWindow && process.platform !== 'darwin' && mainWindow && !mainWindow.isDestroyed()) mainWindow.flashFrame(false);
   if (!restore) return;
+  clearPairingSettleTimer();
   // Long enough for the card's "Connected" to be seen before the window goes back.
-  setTimeout(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (restore === 'hidden') mainWindow.hide(); else mainWindow.minimize();
-  }, 1600).unref?.();
+  pairingSettleTimer = setTimeout(() => {
+    pairingSettleTimer = null;
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isFocused()) return;
+    if (restore === 'hidden' && process.platform === 'darwin') mainWindow.hide();
+    else mainWindow.minimize();
+  }, 1600);
+  pairingSettleTimer.unref?.();
 }
 
 function onPairingChange(pending) {
@@ -830,14 +883,31 @@ function watchIdleInstall() {
   }, UPDATER_IDLE_POLL_MS);
 }
 
-function failUpdateInstall(error) {
+let updateBridgeStop = null;
+
+async function failUpdateInstall(error) {
+  clearUpdaterInstallTimer();
   updaterInstallRequested = false;
   clearUpdaterInstallState();
   updaterState.phase = 'error';
   updaterState.errorKind = 'install';
   updaterState.message = 'Update install failed';
   updaterState.error = error;
+  updaterState.currentVersion = app.getVersion();
   sendToRenderer('updater:event', updaterState);
+
+  const stopping = updateBridgeStop;
+  updateBridgeStop = null;
+  if (!stopping) return;
+  try {
+    await stopping;
+    const address = await apiServer.start();
+    apiPort = Number(address?.port || apiPort);
+    apiShutdownComplete = false;
+    sendToRenderer('app:info-update', appInfo());
+  } catch (err) {
+    console.error('[desktop] Could not restart the local bridge after an update failure', err);
+  }
 }
 
 function recordInstallAttempt(reopen) {
@@ -907,7 +977,7 @@ async function installDownloadedUpdate({ reason = 'restart' } = {}) {
     if (!staged || blocked()) {
       updaterInstallRequested = false;
       if (!staged && !idle) {
-        failUpdateInstall('SnagThis couldn’t get the update ready to install. Try again, or download the installer from snagthisvid.com.');
+        await failUpdateInstall('SnagThis couldn’t get the update ready to install. Try again, or download the installer from snagthisvid.com.');
         return { ok: false, error: updaterState.error };
       }
       // Idle installs try again later; a download that just started keeps the update waiting.
@@ -918,17 +988,32 @@ async function installDownloadedUpdate({ reason = 'restart' } = {}) {
       return { ok: false, error: staged ? 'A download started, so the update waits.' : 'The update is still being prepared.' };
     }
     recordInstallAttempt(reopen);
+    if (apiServer && !apiShutdownComplete) {
+      let stopTimer;
+      updateBridgeStop = apiServer.stop().catch((err) => {
+        console.error('[desktop] Could not stop the local bridge before updating', err);
+      });
+      try {
+        await Promise.race([
+          updateBridgeStop,
+          new Promise((resolve) => { stopTimer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS); }),
+        ]);
+      } finally { clearTimeout(stopTimer); }
+      if (updaterState.phase !== 'installing') return { ok: false, error: updaterState.error };
+      apiShutdownComplete = true;
+    }
     // Silent (NSIS /S) and relaunch. On macOS the staged update installs and SnagThis reopens.
     autoUpdater.quitAndInstall(true, true);
+    if (updaterState.phase !== 'installing') return { ok: false, error: updaterState.error };
     updaterInstallTimer = setTimeout(() => {
       updaterInstallTimer = null;
       if (updaterState.phase !== 'installing') return;
-      failUpdateInstall('SnagThis didn’t restart to install the update. Try again, or download the installer from snagthisvid.com.');
+      void failUpdateInstall('SnagThis didn’t restart to install the update. Try again, or download the installer from snagthisvid.com.');
       console.error('[desktop] update install did not restart the app');
     }, UPDATER_INSTALL_TIMEOUT_MS);
     return { ok: true };
   } catch (err) {
-    failUpdateInstall(String((err && err.message) || err || 'Unknown updater error'));
+    await failUpdateInstall(String((err && err.message) || err || 'Unknown updater error'));
     console.error('[desktop] quitAndInstall failed', err);
     return { ok: false, error: updaterState.error };
   }
@@ -1069,9 +1154,13 @@ function configureAutoUpdater() {
     clearUpdaterInstallTimer();
     updaterInstallRequested = false;
     clearIdleInstall();
+    if (failedPhase === 'installing') {
+      void failUpdateInstall(String(error?.message || error || 'Unknown updater error'));
+      return;
+    }
     updaterState.phase = 'error';
     // A downloaded update only fails while Squirrel.Mac stages or installs it.
-    const kind = ['installing', 'downloaded'].includes(failedPhase) ? 'install' : failedPhase === 'downloading' ? 'download' : 'check';
+    const kind = failedPhase === 'downloaded' ? 'install' : failedPhase === 'downloading' ? 'download' : 'check';
     updaterState.errorKind = kind;
     updaterState.message = kind === 'install' ? 'Update install failed'
       : kind === 'download' ? 'Update download failed' : 'Update check failed';
@@ -1115,10 +1204,13 @@ async function checkForUpdatesNow({ userInitiated = false } = {}) {
   updaterState.lastCheckedAt = Date.now();
   sendToRenderer('updater:event', updaterState);
 
+  const checkGeneration = ++updaterCheckGeneration;
   updaterCheckPromise = (async () => {
     clearUpdaterCheckTimeout();
     updaterCheckTimeout = setTimeout(() => {
       updaterCheckTimeout = null;
+      if (checkGeneration !== updaterCheckGeneration) return;
+      updaterCheckPromise = null;
       if (updaterState.phase !== 'checking') return;
       updaterState.phase = 'error';
       updaterState.errorKind = 'check';
@@ -1134,6 +1226,7 @@ async function checkForUpdatesNow({ userInitiated = false } = {}) {
       // checkForUpdates resolves before the download. The updater emits its
       // error event and also rejects this separate promise on download failure.
       result?.downloadPromise?.catch(() => {});
+      if (checkGeneration !== updaterCheckGeneration) return { ok: false, stale: true };
       if (updaterState.phase === 'checking') {
         const nextVersion = result && result.updateInfo && result.updateInfo.version
           ? String(result.updateInfo.version)
@@ -1157,6 +1250,7 @@ async function checkForUpdatesNow({ userInitiated = false } = {}) {
       }
       return { ok: true };
     } catch (err) {
+      if (checkGeneration !== updaterCheckGeneration) return { ok: false, stale: true };
       updaterState.phase = 'error';
       updaterState.errorKind = 'check';
       updaterState.message = 'Update check failed';
@@ -1166,8 +1260,10 @@ async function checkForUpdatesNow({ userInitiated = false } = {}) {
       sendToRenderer('updater:event', updaterState);
       return { ok: false, error: updaterState.error };
     } finally {
-      clearUpdaterCheckTimeout();
-      updaterCheckPromise = null;
+      if (checkGeneration === updaterCheckGeneration) {
+        clearUpdaterCheckTimeout();
+        updaterCheckPromise = null;
+      }
     }
   })();
 
@@ -1196,15 +1292,12 @@ async function startLocalApi() {
   }
 
   const savedSettings = readSettings();
-  if (savedSettings.tmdbApiKey) {
-    process.env.TMDB_API_KEY = savedSettings.tmdbApiKey;
-  }
-  if (savedSettings.subdlApiKey) {
-    process.env.SUBDL_API_KEY = savedSettings.subdlApiKey;
-  }
 
   const { createApiServer } = require('@m3u8/downloader-api');
   const apiConfig = require('@m3u8/downloader-api/src/config');
+  // Keep user API keys in memory rather than process.env so child processes do not inherit them.
+  if (savedSettings.tmdbApiKey) apiConfig.tmdbApiKey = savedSettings.tmdbApiKey;
+  if (savedSettings.subdlApiKey) apiConfig.subdlApiKey = savedSettings.subdlApiKey;
   if (savedSettings.downloadThreads > 0) {
     apiConfig.downloadThreads = savedSettings.downloadThreads;
   }
@@ -1234,9 +1327,11 @@ async function startLocalApi() {
     onResolvePage: resolveMediaPage,
     onTrashFile: async (filePath) => { await shell.trashItem(filePath); },
     onOpenFile: async (filePath) => {
-      // openPath launches whatever handler owns the extension; allow media only.
-      if (!isMediaFilePath(filePath)) throw new Error('Only video and audio files can be opened');
-      const error = await shell.openPath(filePath);
+      // openPath launches whatever handler owns the extension; resolve symlinks and allow media files only.
+      const real = await fs.promises.realpath(filePath);
+      const stat = await fs.promises.stat(real);
+      if (!stat.isFile() || !isMediaFilePath(real)) throw new Error('Only video and audio files can be opened');
+      const error = await shell.openPath(real);
       if (error) throw new Error(error);
     },
     onLocateFile: async (item) => {
@@ -1527,18 +1622,24 @@ function registerIpc() {
     deliverRequestedView();
   });
   handleIpc('app:open-external', async (_event, url) => openExternal(url));
+  const MACOS_BUNDLE_DIR = /\.(?:app|bundle|framework|plugin|kext|workflow|action|pkg|mpkg|command)$/i;
   handleIpc('app:open-save-folder', async () => {
-    const folderPath = saveFolderPath();
-    fs.mkdirSync(folderPath, { recursive: true });
-    const error = await shell.openPath(folderPath);
-    return error ? { ok: false, error } : { ok: true, folderPath };
+    try {
+      const folderPath = saveFolderPath();
+      if (MACOS_BUNDLE_DIR.test(path.basename(folderPath))) return { ok: false, error: 'Folder not found' };
+      fs.mkdirSync(folderPath, { recursive: true });
+      const error = await shell.openPath(folderPath);
+      return error ? { ok: false, error } : { ok: true, folderPath };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
   });
   handleIpc('library:open-folder', async (_event, folderPath) => {
     try {
       // The renderer names a folder of Saved; it is resolved inside the save folder and never follows links out of it.
       const root = path.resolve(saveFolderPath());
       const segments = typeof folderPath === 'string' && folderPath ? folderPath.split('/') : [];
-      if (typeof folderPath !== 'string' || folderPath.length > 4096 || /[\\\0]/.test(folderPath) || segments.some((part) => !part || part === '.' || part === '..')) {
+      if (typeof folderPath !== 'string' || folderPath.length > 4096 || /[\\\0]/.test(folderPath) || segments.some((part) => !part || part === '.' || part === '..' || MACOS_BUNDLE_DIR.test(part))) {
         return { ok: false, error: 'Folder not found' };
       }
       let current = root;
@@ -1608,7 +1709,10 @@ function registerIpc() {
       // trusted history index or current queue, including unfinished downloads.
       const job = apiServer?.getState?.().queue?.find(item => item.id === safeHistoryId);
       const folderPath = resolveHistoryFolderPath(safeHistoryId) || job?.outputDirectory;
-      if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath) || !fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+      const stat = typeof folderPath === 'string' && path.isAbsolute(folderPath)
+        ? fs.lstatSync(folderPath, { throwIfNoEntry: false })
+        : null;
+      if (!stat || !stat.isDirectory() || stat.isSymbolicLink() || MACOS_BUNDLE_DIR.test(path.basename(folderPath))) {
         return { ok: false, error: 'Folder not found' };
       }
       const error = await shell.openPath(folderPath);
@@ -1697,12 +1801,12 @@ async function bootstrap() {
     } catch { /* Ignore unrelated launch arguments. */ }
   };
   app.on('second-instance', (_event, argv) => {
-    const url = argv.find((value) => value.startsWith('snagthis://'));
+    const url = argv.find((value) => /^snagthis:\/\//i.test(value));
     if (url) handleProtocol(url);
     else focusMainWindow();
   });
   app.on('open-url', (event, url) => { event.preventDefault(); handleProtocol(url); });
-  const initialProtocol = process.argv.find((value) => value.startsWith('snagthis://'));
+  const initialProtocol = process.argv.find((value) => /^snagthis:\/\//i.test(value));
   if (initialProtocol) handleProtocol(initialProtocol);
 
   await app.whenReady();
@@ -1716,9 +1820,29 @@ async function bootstrap() {
   const launchHidden = reopen === 'hidden' && process.platform === 'darwin' && !pairingDialogRequested && !requestedView;
   if (!launchHidden) {
     createWindow({ reveal: reopen ? 'minimized' : 'show' });
-    // Paint the usable window before synchronous binary discovery and API startup.
+    // Paint the usable window before synchronous binary discovery and API startup,
+    // without ever deadlocking if the window fails to load or closes early.
     const firstWindow = mainWindow;
-    await new Promise((resolve) => firstWindow.webContents.once('did-finish-load', resolve));
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (!firstWindow.isDestroyed()) {
+          firstWindow.off('closed', finish);
+          firstWindow.webContents.off('did-finish-load', finish);
+          firstWindow.webContents.off('did-fail-load', finish);
+          firstWindow.webContents.off('render-process-gone', finish);
+        }
+        resolve();
+      };
+      const timer = setTimeout(finish, 4000);
+      firstWindow.once('closed', finish);
+      firstWindow.webContents.once('did-finish-load', finish);
+      firstWindow.webContents.once('did-fail-load', finish);
+      firstWindow.webContents.once('render-process-gone', finish);
+    });
   }
   try {
     await startLocalApi();
@@ -1757,8 +1881,15 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('activate', () => {
-  // Hidden page-resolver windows do not count: the Dock icon must reopen the app.
-  if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) createWindow();
+  // Hidden page-resolver windows do not count: the Dock icon must reopen or reveal the app.
+  if (!app.isReady()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (typeof mainWindow.isMinimized === 'function' && mainWindow.isMinimized()) mainWindow.restore();
+  if (typeof mainWindow.show === 'function') mainWindow.show();
+  if (typeof mainWindow.focus === 'function') mainWindow.focus();
 });
 
 // yt-dlp runs in its own process group and FFmpeg is not tied to this
@@ -1788,6 +1919,7 @@ let apiShutdownPromise = null;
 // child or socket keep the app from quitting.
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 let apiShutdownComplete = false;
+let quitShutdownFinished = false;
 let quitConfirmed = false;
 let quitPrompt = null;
 
@@ -1835,7 +1967,7 @@ app.on('before-quit', (event) => {
   }
   const installingUpdate = updaterInstallRequested;
   updaterInstallRequested = false;
-  clearUpdaterInstallTimer();
+  if (!installingUpdate) clearUpdaterInstallTimer();
   if (updaterTimer) {
     clearInterval(updaterTimer);
     updaterTimer = null;
@@ -1843,27 +1975,32 @@ app.on('before-quit', (event) => {
   clearIdleInstall();
   clearUpdaterCheckTimeout();
 
-  if (!apiServer || apiShutdownComplete) return;
-  // Keep the installer's quit direct. Normal quit must wait for local cleanup;
-  // Electron does not wait for promises returned by event listeners.
+  const needsApiStop = Boolean(apiServer && !apiShutdownComplete);
+  const canInstallOnQuit = !installingUpdate && updaterState.phase === 'downloaded' && Boolean(autoUpdater) && getUpdaterSupportState().supported;
+  if (quitShutdownFinished || (!needsApiStop && !canInstallOnQuit && !apiShutdownPromise)) return;
+  // Keep the installer's quit direct. Normal quit must wait for local cleanup
+  // and install-on-quit staging; Electron does not wait for async listeners.
   if (!installingUpdate) event.preventDefault();
   if (apiShutdownPromise) return;
   apiShutdownPromise = (async () => {
-    let shutdownTimer;
-    try {
-      await Promise.race([
-        apiServer.stop(),
-        new Promise((resolve) => { shutdownTimer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS); }),
-      ]);
-    } catch {
-      // ignore shutdown error
-    } finally {
-      clearTimeout(shutdownTimer);
+    if (needsApiStop) {
+      let shutdownTimer;
+      try {
+        await Promise.race([
+          apiServer.stop(),
+          new Promise((resolve) => { shutdownTimer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS); }),
+        ]);
+      } catch {
+        // ignore shutdown error
+      } finally {
+        clearTimeout(shutdownTimer);
+      }
+      apiShutdownComplete = true;
     }
-    apiShutdownComplete = true;
     if (installingUpdate) return;
     // Install on quit: with the queue saved, a ready update installs as SnagThis quits.
     if (await installUpdateOnQuit()) return;
+    quitShutdownFinished = true;
     app.quit();
   })();
 });

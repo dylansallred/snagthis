@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { Check, X } from 'lucide-react';
 import { formatDuration, formatSize } from '@m3u8/contracts/src/rows.mjs';
 import { describeAudioTracks, defaultAudioTrack, type AudioTrack } from '@m3u8/contracts/src/audioTracks.mjs';
@@ -29,15 +29,16 @@ function Speaker() {
 
 type SampleState = { key: string; phase: 'loading' | 'playing'; progress: number } | null;
 
-export function QualityPicker({ inspection, initial, onDownload, onCancel, busy, apiBase, loadSample }: {
+export function QualityPicker({ inspection, initial, onDownload, onCancel, busy, covered = false, apiBase, loadSample, anchorRef }: {
   inspection: MediaInspection; initial: MediaSelection; onDownload: (selection: MediaSelection) => void; onCancel: () => void; busy: boolean; apiBase: string;
-  loadSample?: AudioSampleLoader;
+  loadSample?: AudioSampleLoader; anchorRef?: RefObject<HTMLElement | null>; covered?: boolean;
 }) {
   const variants = [...(inspection.variants || [])].sort((a, b) => (b.height || 0) - (a.height || 0));
   const tracks = useMemo(() => selectableTracks(inspection), [inspection]);
   const defaultTrack = defaultAudioTrack(tracks);
   const [selection, setSelection] = useState<MediaSelection>(initial);
   const panel = useRef<HTMLElement>(null);
+  const [anchorLeft, setAnchorLeft] = useState<number | null>(null);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const thumbnail = thumbnailFailed ? null : resolveThumbnailUrl(inspection.thumbnailUrl, apiBase);
   const duration = formatDuration(inspection.durationSeconds);
@@ -121,7 +122,36 @@ export function QualityPicker({ inspection, initial, onDownload, onCancel, busy,
   };
   const stopRef = useRef(stopSample);
   stopRef.current = stopSample;
+  const cancelRef = useRef(onCancel);
+  cancelRef.current = onCancel;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   useEffect(() => { panel.current?.querySelector<HTMLInputElement>('input:checked')?.focus(); }, []);
+  useLayoutEffect(() => {
+    const place = () => {
+      const anchor = anchorRef?.current?.closest<HTMLElement>('.paste-field') || anchorRef?.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const width = tracks.length > 1 ? 312 : 270;
+      setAnchorLeft(Math.max(12, Math.min(window.innerWidth - width - 12, Math.round(rect.left))));
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [anchorRef, tracks.length]);
+  useEffect(() => {
+    if (covered) { stopRef.current('close'); return; }
+    const onPointerDown = (event: PointerEvent) => {
+      if (busyRef.current) return;
+      const target = event.target as Node | null;
+      if (!target || panel.current?.contains(target)) return;
+      if (anchorRef?.current?.closest('.paste-form')?.contains(target)) return;
+      stopRef.current('close');
+      cancelRef.current();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [anchorRef, covered]);
   useEffect(() => {
     const hidden = () => { if (document.hidden) stopRef.current('hidden'); };
     document.addEventListener('visibilitychange', hidden);
@@ -135,7 +165,7 @@ export function QualityPicker({ inspection, initial, onDownload, onCancel, busy,
     else setSelection({ ...rest, audioLang: track.languageCode || undefined });
   };
   const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  return <section ref={panel} className={`quality-picker${tracks.length > 1 ? ' wide' : ''}`} aria-label="Choose video quality" onKeyDown={(event) => {
+  return <section ref={panel} className={`quality-picker${tracks.length > 1 ? ' wide' : ''}`} style={anchorLeft !== null ? { left: anchorLeft } : undefined} aria-label="Choose video quality" onKeyDown={(event) => {
     const target = event.target as HTMLElement;
     if (event.key === 'Escape') { event.preventDefault(); if (!stopSample('escape')) onCancel(); return; }
     const row = target.closest<HTMLElement>('.atrack');
@@ -149,7 +179,7 @@ export function QualityPicker({ inspection, initial, onDownload, onCancel, busy,
   }}>
     {/* Name the video being chosen for, so a paste never downloads the wrong thing unseen. */}
     <div className="quality-heading">{thumbnail && <img src={thumbnail} alt="" onError={() => setThumbnailFailed(true)} />}<div><strong title={inspection.title}>{inspection.title || ui.quality}</strong><small>{[inspection.title && ui.quality, duration].filter(Boolean).join(' · ')}</small></div><button className="row-action" aria-label={ui.cancel} onClick={onCancel}><X /></button></div>
-    <fieldset><legend className="sr-only">{ui.quality}</legend>{variants.map((variant) => <label className="quality-option" key={variant.url}><input type="radio" name="quality" checked={!selection.audioOnly && selection.variantUrl === variant.url} onChange={() => setSelection({ ...selection, audioOnly: false, variantUrl: variant.url, height: variant.height })} /><Check aria-hidden="true" /><span>{variant.height ? `${variant.height}p` : ui.best}</span><small>{formatSize(variant.estimatedSizeBytes ?? variant.sizeBytes)}</small></label>)}
+    <fieldset><legend className="sr-only">{ui.quality}</legend>{variants.map((variant) => <label className="quality-option" key={variant.url}><input type="radio" name="quality" checked={!selection.audioOnly && selection.variantUrl === variant.url} onChange={() => setSelection({ ...selection, audioOnly: false, variantUrl: variant.url, height: variant.height })} /><Check aria-hidden="true" /><span>{variant.height ? `${variant.height}p` : ui.best}</span><small>{formatSize(variant.estimatedSizeBytes ?? variant.sizeBytes, { estimated: variant.estimatedSizeBytes != null && variant.sizeBytes == null })}</small></label>)}
       {(inspection.audio || []).some((audio) => audio.url) && <label className="quality-option"><input type="radio" name="quality" checked={!!selection.audioOnly} onChange={() => setSelection({ ...selection, audioOnly: true })} /><Check aria-hidden="true" /><span>Audio only</span></label>}
     </fieldset>
     {tracks.length > 1 && <fieldset className="audio-set">

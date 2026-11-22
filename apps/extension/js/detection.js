@@ -36,7 +36,7 @@
   function youtubeId(raw) {
     try {
       const url = new URL(raw); const host = url.hostname.replace(/^www\./, '');
-      const id = host === 'youtu.be' ? url.pathname.split('/')[1] : /(^|\.)youtube\.com$/.test(host) ? url.searchParams.get('v') || /^\/(?:shorts|live|embed)\/([^/]+)/.exec(url.pathname)?.[1] : '';
+      const id = host === 'youtu.be' ? url.pathname.split('/')[1] : /(^|\.)youtube(?:-nocookie)?\.com$/.test(host) ? url.searchParams.get('v') || /^\/(?:shorts|live|embed)\/([^/]+)/.exec(url.pathname)?.[1] : '';
       return /^[\w-]{6,20}$/.test(id || '') ? id : '';
     } catch { return ''; }
   }
@@ -111,9 +111,9 @@
       let locked = Boolean(manifest?.isDrm);
       if (!locked && frame) {
         const stream = item.streamType === 'hls' || item.streamType === 'dash';
-        // A parsed manifest without keys proves that stream is clear (a
-        // trailer beside the protected film); an HLS master defers to its renditions.
-        if (stream) locked = !manifest;
+        // A parsed media playlist without DRM keys proves that stream is clear;
+        // an HLS master without #EXT-X-SESSION-KEY defers to its renditions, so keep it locked under active EME.
+        if (stream) locked = !manifest || Boolean(manifest.isMaster);
         else if (item.mediaKind === 'video') locked = item.delivery === 'script' || Boolean(frame.mediaSourceUrl && frame.mediaSourceUrl === item.url);
       }
       if (!locked) return item;
