@@ -255,3 +255,16 @@ test('assessPlaybackCompatibility skips re-encoding for standard H.264 and 4K HD
   assert.equal(vp9Aac.videoCompatible, false);
   assert.equal(vp9Aac.audioCompatible, true);
 });
+
+test('normalizeMp4ForPlayback still probes streams when forcePlaybackCompatibility is true on HLS jobs', () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../packages/downloader-engine/src/core/VideoConverter.js'),
+    'utf8',
+  );
+  assert.equal(
+    source.includes('if (job.forcePlaybackCompatibility !== true)'),
+    false,
+    'HLS jobs set forcePlaybackCompatibility: true by default, so it must not bypass stream probing',
+  );
+});
