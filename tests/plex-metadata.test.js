@@ -91,3 +91,66 @@ test('buildFfmpegMetadataArgs emits tv season and episode tags', () => {
     '-metadata', 'episode_id=S02E03',
   ]);
 });
+
+test('buildFfmpegMetadataArgs emits tv tags from SxxExx title even without tmdb metadata', () => {
+  const args = buildFfmpegMetadataArgs({
+    title: 'VisionQuest S01E08',
+    tmdbMetadata: null,
+  });
+
+  assert.deepEqual(args, [
+    '-metadata', 'title=VisionQuest',
+    '-metadata', 'show=VisionQuest',
+    '-metadata', 'media_type=10',
+    '-metadata', 'season_number=1',
+    '-metadata', 'episode_sort=8',
+    '-metadata', 'episode_id=S01E08',
+  ]);
+});
+
+test('buildFfmpegMetadataArgs emits tv tags from mediaHints when tmdb metadata is missing', () => {
+  const args = buildFfmpegMetadataArgs({
+    title: 'VisionQuest',
+    tmdbMetadata: null,
+    mediaHints: {
+      lookupTitle: 'VisionQuest',
+      isTvCandidate: true,
+      seasonNumber: 1,
+      episodeNumber: 8,
+    },
+  });
+
+  assert.deepEqual(args, [
+    '-metadata', 'title=VisionQuest',
+    '-metadata', 'show=VisionQuest',
+    '-metadata', 'media_type=10',
+    '-metadata', 'season_number=1',
+    '-metadata', 'episode_sort=8',
+    '-metadata', 'episode_id=S01E08',
+  ]);
+});
+
+test('buildPlexBaseName preserves SxxExx numbering for tv without tmdb metadata and avoids duplication', () => {
+  assert.equal(
+    buildPlexBaseName({
+      title: 'VisionQuest S01E08',
+      tmdbMetadata: null,
+    }),
+    'VisionQuest - S01E08',
+  );
+  assert.equal(
+    buildPlexBaseName({
+      title: 'VisionQuest',
+      tmdbMetadata: null,
+      mediaHints: { lookupTitle: 'VisionQuest', seasonNumber: 1, episodeNumber: 8 },
+    }),
+    'VisionQuest - S01E08',
+  );
+  assert.equal(
+    buildPlexBaseName({
+      title: 'Movie 1920x1080',
+      tmdbMetadata: null,
+    }),
+    'Movie 1920x1080',
+  );
+});

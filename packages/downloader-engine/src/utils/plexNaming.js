@@ -17,6 +17,56 @@ function normalizeWhitespace(value) {
     .trim();
 }
 
+const EPISODE_TITLE_PATTERNS = [
+  /(?:^|[\s._\-([])[Ss](\d{1,2})[\s._-]*[Ee](\d{1,3})(?:$|[\s._\-)\]])/,
+  /(?:^|[\s._\-([])(\d{1,2})[xX](\d{1,3})(?:$|[\s._\-)\]])/,
+  /\bSeason[\s._-]*(\d{1,2})[\s._-]*Episode[\s._-]*(\d{1,3})\b/i,
+];
+
+function parseEpisodeFromText(value) {
+  const text = String(value || '');
+  if (!text.trim()) return null;
+  for (const pattern of EPISODE_TITLE_PATTERNS) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+    const seasonNumber = Number.parseInt(match[1], 10);
+    const episodeNumber = Number.parseInt(match[2], 10);
+    if (!Number.isFinite(seasonNumber) || !Number.isFinite(episodeNumber)) continue;
+    if (seasonNumber < 0 || seasonNumber > 99 || episodeNumber < 0 || episodeNumber > 999) continue;
+    const stripped = normalizeWhitespace(
+      text.slice(0, match.index).replace(/[-–—_([.]+$/, ''),
+    );
+    return {
+      seasonNumber,
+      episodeNumber,
+      cleanTitle: stripped || null,
+    };
+  }
+  return null;
+}
+
+function toValidNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return null;
+}
+
+function resolveEpisodeInfo(job) {
+  const hintedSeason = toValidNumber(job && job.mediaHints && job.mediaHints.seasonNumber);
+  const hintedEpisode = toValidNumber(job && job.mediaHints && job.mediaHints.episodeNumber);
+  if (hintedSeason !== null || hintedEpisode !== null) {
+    return { seasonNumber: hintedSeason, episodeNumber: hintedEpisode, cleanTitle: null };
+  }
+  const fromTitle = parseEpisodeFromText(job && job.title);
+  if (fromTitle) return fromTitle;
+  const fromDownloadName = parseEpisodeFromText(job && job.downloadName);
+  if (fromDownloadName) return fromDownloadName;
+  return { seasonNumber: null, episodeNumber: null, cleanTitle: null };
+}
+
 function titleAlreadyIncludesYear(title, year) {
   const normalizedTitle = normalizeWhitespace(title);
   const normalizedYear = String(year || '').trim();
@@ -28,7 +78,17 @@ function titleAlreadyIncludesYear(title, year) {
 }
 
 function getMediaType(job) {
-  return job && job.tmdbMetadata && job.tmdbMetadata.mediaType === 'tv' ? 'tv' : 'movie';
+  if (job && job.tmdbMetadata && job.tmdbMetadata.mediaType === 'tv') return 'tv';
+  const { seasonNumber, episodeNumber } = resolveEpisodeInfo(job);
+  if (Number.isFinite(seasonNumber) && Number.isFinite(episodeNumber)) return 'tv';
+  if (job && job.tmdbMetadata && job.tmdbMetadata.mediaType === 'movie') return 'movie';
+  if (job && job.mediaHints && job.mediaHints.isTvCandidate) return 'tv';
+  return 'movie';
+}
+
+function stripEpisodeMarker(title) {
+  const parsed = parseEpisodeFromText(title);
+  return (parsed && parsed.cleanTitle) || title;
 }
 
 function resolvePreferredMediaTitle(job) {
@@ -36,12 +96,15 @@ function resolvePreferredMediaTitle(job) {
   const hintedTitle = normalizeWhitespace(job && job.mediaHints && job.mediaHints.lookupTitle);
   const tmdbTitle = normalizeWhitespace(job && job.tmdbTitle);
   const rawTitle = normalizeWhitespace(job && job.title);
+  const isTv = getMediaType(job) === 'tv';
 
   if (job && job.manualTitleOverride) {
-    return hintedTitle || manualTitle || 'Download';
+    const picked = hintedTitle || manualTitle || 'Download';
+    return isTv ? stripEpisodeMarker(picked) : picked;
   }
 
-  return tmdbTitle || hintedTitle || rawTitle || 'Download';
+  const picked = tmdbTitle || hintedTitle || rawTitle || 'Download';
+  return isTv ? stripEpisodeMarker(picked) : picked;
 }
 
 function buildPlexBaseName(job) {
@@ -50,8 +113,9 @@ function buildPlexBaseName(job) {
   const year = extractYear(job && job.tmdbReleaseDate);
 
   if (mediaType === 'tv') {
-    const season = padNumber(job && job.mediaHints && job.mediaHints.seasonNumber);
-    const episode = padNumber(job && job.mediaHints && job.mediaHints.episodeNumber);
+    const { seasonNumber, episodeNumber } = resolveEpisodeInfo(job);
+    const season = padNumber(seasonNumber);
+    const episode = padNumber(episodeNumber);
     const showName = year && !titleAlreadyIncludesYear(fallbackTitle, year)
       ? `${fallbackTitle} (${year})`
       : fallbackTitle;
@@ -74,5 +138,8 @@ function buildPlexBaseName(job) {
 module.exports = {
   buildPlexBaseName,
   extractYear,
+  getMediaType,
+  parseEpisodeFromText,
+  resolveEpisodeInfo,
   resolvePreferredMediaTitle,
 };

@@ -1,4 +1,9 @@
-const { extractYear, resolvePreferredMediaTitle } = require('./plexNaming');
+const {
+  extractYear,
+  getMediaType,
+  resolveEpisodeInfo,
+  resolvePreferredMediaTitle,
+} = require('./plexNaming');
 
 function pushTag(args, key, value) {
   const text = String(value || '').trim();
@@ -9,7 +14,7 @@ function pushTag(args, key, value) {
 function buildFfmpegMetadataArgs(job) {
   const args = [];
   const title = resolvePreferredMediaTitle(job);
-  const mediaType = job && job.tmdbMetadata && job.tmdbMetadata.mediaType === 'tv' ? 'tv' : 'movie';
+  const mediaType = getMediaType(job);
   const year = extractYear(job && job.tmdbReleaseDate);
   const genres = Array.isArray(job && job.tmdbMetadata && job.tmdbMetadata.genres)
     ? job.tmdbMetadata.genres.filter(Boolean)
@@ -22,14 +27,15 @@ function buildFfmpegMetadataArgs(job) {
   pushTag(args, 'date', year);
 
   if (mediaType === 'tv') {
+    const { seasonNumber, episodeNumber } = resolveEpisodeInfo(job);
     pushTag(args, 'show', title);
     pushTag(args, 'media_type', '10');
-    if (Number.isFinite(job && job.mediaHints && job.mediaHints.seasonNumber)) {
-      pushTag(args, 'season_number', job.mediaHints.seasonNumber);
+    if (Number.isFinite(seasonNumber)) {
+      pushTag(args, 'season_number', seasonNumber);
     }
-    if (Number.isFinite(job && job.mediaHints && job.mediaHints.episodeNumber)) {
-      pushTag(args, 'episode_sort', job.mediaHints.episodeNumber);
-      pushTag(args, 'episode_id', `S${String(job.mediaHints.seasonNumber || 0).padStart(2, '0')}E${String(job.mediaHints.episodeNumber).padStart(2, '0')}`);
+    if (Number.isFinite(episodeNumber)) {
+      pushTag(args, 'episode_sort', episodeNumber);
+      pushTag(args, 'episode_id', `S${String(seasonNumber || 0).padStart(2, '0')}E${String(episodeNumber).padStart(2, '0')}`);
     }
   } else {
     pushTag(args, 'media_type', '9');
